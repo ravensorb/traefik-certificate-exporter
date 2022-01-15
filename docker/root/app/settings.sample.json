@@ -1,0 +1,12 @@
+{
+    "watchPath": "./",
+    "fileSpec": "*.json",
+    "outputPath": "./certs",
+    "flat": false,
+    "dryRun": false,
+    "restartContainers": false,
+    "domains": {
+        "include": [],
+        "exclude": []
+    }
+}

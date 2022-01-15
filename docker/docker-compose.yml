@@ -1,0 +1,24 @@
+version: "3.7"
+
+services:
+  traefik-certificate-exporter:
+    image: ravensorb/traefik-certificate-exporter:latest
+    build:
+      context: .
+      args:
+        - BUILD_DATE=2022/01/14
+        - VERSION=0.0.1
+        - TEST_VERSION=Yes
+    environment:
+      # - CONFIG_FILE="/config/settings.json"
+      - TRAEFIK_FILESPEC="*.json"
+      - TRAEFIK_RESOLVERID="resolver-http"
+      # - DRYRUN=1
+      # - FLAT=1
+      # - RESTART_CONTAINERS=1
+      # - DOMAINS_INCLUDE=
+      # - DOMAINS_EXCLUDE=
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Only needed if you are going to be restarting containers
+      - ./data/letsencrypt:/data:ro
+      - ./data/certs:/certs:rw
