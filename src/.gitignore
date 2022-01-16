@@ -1,1 +1,2 @@
-traefik_certificate_exporter.egg-info
+_version.py
+*.egg-info

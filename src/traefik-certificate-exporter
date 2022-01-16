@@ -4,7 +4,6 @@ import sys
 import os
 import time
 import json
-from xmlrpc.client import boolean
 import docker
 import threading
 import argparse
@@ -44,9 +43,13 @@ class AcmeCertificateExporter:
         data = json.loads(open(sourceFile).read())
 
         keys = "uppercase"
-        if self.__settings["traefikResolverId"]:
+        if self.__settings["traefikResolverId"] and len(self.__settings["traefikResolverId"]) > 0:
             data = data[self.__settings["traefikResolverId"]]
             keys = "lowercase"
+
+        # Should we try to get the first resolver if it is there?
+        # if "DomainsCertificate" not in data and "Certificates" not in data:
+        #     data = data[0]
 
         # Determine ACME version
         acme_version = 2 if 'acme-v02' in data['Account']['Registration']['uri'] else 1
@@ -142,6 +145,7 @@ class AcmeCertificateExporter:
 class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
     def __init__(self, exporter : AcmeCertificateExporter, settings : dict):
         self.__exporter = exporter
+        self.__settings = settings
 
         self.isWaiting = False
         self.lock = threading.Lock()
@@ -225,7 +229,7 @@ if __name__ == "__main__":
                                 help="file that contains the traefik certificates (default: %(default)s)")
     parser.add_argument("-od", "--output-directory", dest="outputPath", default=settings["outputPath"], type=str, 
                                 help="The folder to exports the certificates in to (default: %(default)s)")
-    parser.add_argument("--traefik-resolver-id", dest="traefikResolverId", default=settings["traefikResolverId]"],
+    parser.add_argument("--traefik-resolver-id", dest="traefikResolverId", default=settings["traefikResolverId"],
                                 help="Traefik certificate-resolver-id.")
     parser.add_argument("-f", "--flat", action="store_true", dest="flat",
                                 help="If specified, all certificates into a single folder")
@@ -250,10 +254,11 @@ if __name__ == "__main__":
         settings = json.loads(open(args.configFile).read())
 
     # Letts override the settings from the dommain line
-    settings["watch-path"] = args.watchPath
-    settings["fileSpec"] = args.fileSpec
-    settings["outputPath"] = args.outputPath
-    settings["traefikResolverId"] = args.traefikResolverId
+    settings.update(watchPath=args.watchPath)
+    settings.update(fileSpec=args.fileSpec)
+    settings.update(outputPath= args.outputPath)
+    settings.update(traefikResolverId= args.traefikResolverId)
+
     settings["flat"] = args.flat
     settings["restartContainers"] = args.restartContainer
     settings["dryRun"] = args.dry
