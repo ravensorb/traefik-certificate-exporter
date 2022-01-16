@@ -1,7 +1,8 @@
 # Overview
 
-[![PyPI version](https://badge.fury.io/py/traefik-certificate-exporter.svg)](https://badge.fury.io/py/traefik-certificate-exporter)
-[![GitHub version](https://badge.fury.io/gh/ravensorb%2Ftraefik-certificate-exporter.svg)](https://badge.fury.io/gh/ravensorb%2Ftraefik-certificate-exporter)
+[![Github Tags](https://img.shields.io/github/v/tag/ravensorb/traefik-certificate-exporter?logo=github&logoColor=white)](https://github.com/ravensorb/traefik-certificate-exporter) [![PyPi Version](https://img.shields.io/pypi/v/traefik-certificate-exporter?color=g&label=pypi%20package&logo=pypi&logoColor=white)](https://pypi.org/project/traefik-certificate-exporter/) [![Docker](https://badgen.net/badge/icon/docker?icon=docker&label)](https://hub.docker.com/r/ravensorb/traefik-certificate-exporter)
+
+
 
 This tool can be used to extract acme certificates (ex: lets encrupt) from traefik json files. The tool is design to watch for changes to a folder for any files that match a filespec (defaults to *,json however can be set to a specific file name) and when changes are detected it will process the file and extract any certificates that are in it to the specified output path
 
@@ -11,11 +12,6 @@ This tool can be used to extract acme certificates (ex: lets encrupt) from traef
 Installation can be done via the python package installer tool pip
 ```
 $ pip install traefik-certificate-exporter
-```
-
-## Docker
-```
-docker pull ravensorb/traefik-certificate-exporter:latest
 ```
 
 # Usage
@@ -55,13 +51,23 @@ optional arguments:
 Watch the letsencrypt folder for any changes to files matching acme-*.json and export any certs managed by the resolver called "resolver-http"
 
 ## Script
+Run it once and exite
 ```bash
-traefik-certificate-exporter -wp /mnt/traefik-data/letsencrypt -od /mnt/certs -fs "acme-*.json" --traefik-resolver-id "resolver-http" 
+traefik-certificate-exporter \
+                            -d /mnt/traefik-data/letsencrypt \
+                            -o /mnt/certs \
+                            -fs "acme-*.json" \
+                            --traefik-resolver-id "resolver-http" 
 ```
 
-## Docker
+Run it and watch for changes to the files
 ```bash
-docker run -it ravensorb/traefik-certificate-exporter:latest -v /mnt/traefik-data/letsencrypt:/data -v /mnt/certs:/certs -e "TRAEFIK_RESOLVERID=resolver-http" -e "TRAEFIK_FILESPEC=acme-*.json"
+traefik-certificate-exporter \
+                            -d /mnt/traefik-data/letsencrypt \
+                            -o /mnt/certs \
+                            -fs "acme-*.json" \
+                            --traefik-resolver-id "resolver-http" \
+                            -w
 ```
 
 # Credits
