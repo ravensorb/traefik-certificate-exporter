@@ -29,7 +29,7 @@ docker build \
     -t $IMAGE_NAME:${VERSION} \
     -t $IMAGE_NAME:latest . 
 
-if [[ "$ACTION" == *"test"* ]]; then
+if [[ "$ACTION" == *"run"* ]]; then
     docker run \
             --rm \
             -v ${PWD}/data/data:/data:ro \

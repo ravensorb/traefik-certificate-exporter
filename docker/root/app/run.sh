@@ -4,7 +4,7 @@ if [ ! -f /config/settings.sample.json ]; then
     cp /app/settings.sample.json /config
 fi
 
-appParams="-d /data -o /certs --watch-for-changes"
+appParams="-data-path /data --output-path /certs --watch-for-changes"
 
 if [ ! -z ${CONFIG_FILE+x} ]; then 
     appParams+=" --config-file ${CONFIG_FILE}"
@@ -19,7 +19,7 @@ if [ ! -z ${TRAEFIK_RESOLVERID+x} ]; then
 fi
 
 if [ ! -z ${TRAEFIK_RESOLVERID_INOUTPUTPATHNAME+x} ]; then
-    appParams+=" --resolverInPathName"
+    appParams+=" --include-resolvername-in-outputpath"
 fi
 
 if [ ! -z ${DRYRUN+x} ]; then 
