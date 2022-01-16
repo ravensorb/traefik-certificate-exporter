@@ -22,7 +22,6 @@ services:
       args:
         - BUILD_DATE=2022/01/14
         - VERSION=0.0.1
-        - TEST_VERSION=Yes
     environment:
       - CONFIG_FILE="/config/settings.json"   # Define this to set the config file
       - TRAEFIK_FILESPEC="*.json"             # Define this to set the file space to watch for changes

@@ -4,7 +4,7 @@ if [ ! -f /config/settings.sample.json ]; then
     cp /app/settings.sample.json /config
 fi
 
-appParams="--data-path /data --output-path /certs --watch-for-changes"
+appParams="-d /data -o /certs --watch-for-changes"
 
 if [ ! -z ${CONFIG_FILE+x} ]; then 
     appParams+=" --config-file ${CONFIG_FILE}"
@@ -18,7 +18,7 @@ if [ ! -z ${TRAEFIK_RESOLVERID+x} ]; then
     appParams+=" --traefik-resolver-id ${TRAEFIK_RESOLVERID}"
 fi
 
-if [ ! - z ${TRAEFIK_RESOLVERID_INOUTPUTPATHNAME+x} ]; then
+if [ ! -z ${TRAEFIK_RESOLVERID_INOUTPUTPATHNAME+x} ]; then
     appParams+=" --resolverInPathName"
 fi
 
@@ -42,4 +42,5 @@ if [ ! -z ${DOMAINS_EXCLUDE+x} ]; then
     appParams+=" --exclude-domains ${DOMAINS_EXCLUDE}"
 fi
 
+#echo traefik-certificate-exporter $appParams
 traefik-certificate-exporter $appParams

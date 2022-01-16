@@ -273,7 +273,7 @@ if __name__ == "__main__":
                                 help="If specified, monitor and watch for changes to acme files")
     parser.add_argument("-fs", "--file-spec", dest="fileSpec", default=settings["fileSpec"], type=str, 
                                 help="file that contains the traefik certificates (default: %(default)s)")
-    parser.add_argument("-o", "--output-directory", dest="outputPath", default=settings["outputPath"], type=str, 
+    parser.add_argument("-o", "--output-path", dest="outputPath", default=settings["outputPath"], type=str, 
                                 help="The folder to exports the certificates in to (default: %(default)s)")
     parser.add_argument("--traefik-resolver-id", dest="traefikResolverId", default=settings["traefikResolverId"],
                                 help="Traefik certificate-resolver-id.")
