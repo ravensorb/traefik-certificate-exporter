@@ -6,13 +6,14 @@ services:
     build:
       context: .
       args:
-        - BUILD_DATE=2022/01/14
-        - VERSION=0.0.1
-        - TEST_VERSION=Yes
+        - BUILD_DATE="2022/01/14"
+        - VERSION="0.0.5-dev1"
+        #- TEST_VERSION=Yes
     environment:
       # - CONFIG_FILE="/config/settings.json"
       - TRAEFIK_FILESPEC="*.json"
       - TRAEFIK_RESOLVERID="resolver-http"
+      - TRAEFIK_RESOLVERID_INOUTPUTPATHNAME=1
       # - DRYRUN=1
       # - FLAT=1
       # - RESTART_CONTAINERS=1

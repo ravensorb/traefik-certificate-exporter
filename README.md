@@ -18,21 +18,25 @@ docker pull ravensorb/traefik-certificate-exporter:latest
 # Usage
 
 ```bash
-usage: traefik-certificate-exporter [-h] [-wp WATCHPATH] [-fs FILEPATTERN] [--traefik-resolver-id TRAEFIKRESOLVERID] [-od OUTPUTPATH] [-f] [-r] [--dry-run] [-id [INCLUDEDOMAINS [INCLUDEDOMAINS ...]] | -xd
-                                     [EXCLUDEDOMAINS [EXCLUDEDOMAINS ...]]]
+usage: traefik-certificate-exporter [-h] [-c CONFIGFILE] [-d DATAPATH] [-w] [-fs FILESPEC] [-o OUTPUTPATH] [--traefik-resolver-id TRAEFIKRESOLVERID] [-f] [-r] [--dry-run] [-id [INCLUDEDOMAINS [INCLUDEDOMAINS ...]] | -xd
+                                    [EXCLUDEDOMAINS [EXCLUDEDOMAINS ...]]]
 
 Extract traefik letsencrypt certificates.
 
 optional arguments:
   -h, --help            show this help message and exit
-  -wp WATCHPATH, --watch-path WATCHPATH
-                        the path to watch for changes (default: .)
-  -fs FILEPATTERN, --file-spec FILEPATTERN
+  -c CONFIGFILE, --config-file CONFIGFILE
+                        the path to watch for changes (default: None)
+  -d DATAPATH, --data-path DATAPATH
+                        the path that contains the acme json files (default: ./)
+  -w, --watch-for-changes
+                        If specified, monitor and watch for changes to acme files
+  -fs FILESPEC, --file-spec FILESPEC
                         file that contains the traefik certificates (default: *.json)
+  -o OUTPUTPATH, --output-directory OUTPUTPATH
+                        The folder to exports the certificates in to (default: ./certs)
   --traefik-resolver-id TRAEFIKRESOLVERID
                         Traefik certificate-resolver-id.
-  -od OUTPUTPATH, --output-directory OUTPUTPATH
-                        The folder to exports the certificates in to (default: ./certs)
   -f, --flat            If specified, all certificates into a single folder
   -r, --restart_container
                         If specified, any container that are labeled with 'com.github.ravensorb.traefik-certificate-exporter.domain-restart=<DOMAIN>' will be restarted if the domain name of a generated certificates matches the value

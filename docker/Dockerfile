@@ -27,7 +27,7 @@ RUN \
 		traefik-certificate-exporter; \
  else \
 	python3 -m pip install --index-url https://test.pypi.org/simple/ \
-		traefik-certificate-exporter\
+		traefik-certificate-exporter; \
  fi && \
  echo "**** creating folders ****" && \
  mkdir -p \
