@@ -1,5 +1,8 @@
 # Overview
 
+[![PyPI version](https://badge.fury.io/py/traefik-certificate-exporter.svg)](https://badge.fury.io/py/traefik-certificate-exporter)
+[![GitHub version](https://badge.fury.io/gh/ravensorb%2Ftraefik-certificate-exporter.svg)](https://badge.fury.io/gh/ravensorb%2Ftraefik-certificate-exporter)
+
 This tool can be used to extract acme certificates (ex: lets encrupt) from traefik json files. The tool is design to watch for changes to a folder for any files that match a filespec (defaults to *,json however can be set to a specific file name) and when changes are detected it will process the file and extract any certificates that are in it to the specified output path
 
 # Installation
