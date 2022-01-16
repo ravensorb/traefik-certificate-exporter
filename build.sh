@@ -9,7 +9,9 @@ if [ -d dist ]; then
     rm -r dist
 fi
 
-python3 -m build
+if [[ "$ACTION" == *"build"* ]]; then
+    python3 -m build
+fi
 
 if [ "$ACTION" == *"publish"* ]; then
     python3 -m twine upload --repository $PYPI_INDEX dist/*
