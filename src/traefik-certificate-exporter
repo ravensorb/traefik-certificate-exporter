@@ -283,6 +283,8 @@ if __name__ == "__main__":
                                 help="If specified, any container that are labeled with '" + DOCKER_LABLE + "=<DOMAIN>' will be restarted if the domain name of a generated certificates matches the value of the lable. Multiple domains can be seperated by ','")
     parser.add_argument("--dry-run", action="store_true", dest="dry", 
                                 help="Don't write files and do not restart docker containers.")
+    parser.add_argument("--run-at-start", action="store_true", dest="runAtStart", 
+                                help="Runs Export immediately on start (used with watch-for-changes).")
     parser.add_argument("--include-resolvername-in-outputpath", action="store_true", dest="resolverInPathName", 
                                 help="Added the resolvername in the path used to export the certificates (ignored if flat is specified).")
 
@@ -329,12 +331,13 @@ if __name__ == "__main__":
     exporter = AcmeCertificateExporter(settings=settings)
     dockerManager = DockerManager(settings=settings)
 
-    if not args.watch:
+    if not args.watch or args.runAtStart:
         logging.info("Exporting certificates....")
         domainsProcessed = exporter.exportCertificates()
         if domainsProcessed and len(domainsProcessed) > 0 and settings["restartContainers"]:
             dockerManager.restartLabeledContainers(domainsProcessed)
-    else:
+    
+    if args.watch:
         logging.info("Watching for changes to files....")
         event_handler = AcmeCertificateFileHandler(exporter=exporter, 
                                                     dockerManager=dockerManager,
