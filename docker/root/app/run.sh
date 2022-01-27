@@ -42,5 +42,9 @@ if [ ! -z ${DOMAINS_EXCLUDE+x} ]; then
     appParams+=" --exclude-domains ${DOMAINS_EXCLUDE}"
 fi
 
+if [ ! -z ${RUN_AT_START+x} ]; then
+    appParams+=" --run-at-start"
+fi
+
 #echo traefik-certificate-exporter $appParams
 traefik-certificate-exporter $appParams
