@@ -2,10 +2,6 @@
 
 ACTION=${1:-test}
 
-if [ -d data ]; then
-    sudo rm -r data
-fi
-
 [[ "$ACTION" != *"test"* ]] || TEST_VERSION=1
 
 [ -n "$DOCKER_REPO" ]    || DOCKER_REPO="ravensorb/"
@@ -18,7 +14,18 @@ fi
 [ -n "$DOCKERFILE_PATH" ]    || DOCKERFILE_PATH=.
 [ -n "$IMAGE_NAME" ]         || IMAGE_NAME=${DOCKER_REPO}traefik-certificate-exporter
 
+echo "Docker Action: ${ACTION}"
+echo "Git Branch: ${SOURCE_BRANCH}"
+echo "Git Version: ${VERSION}"
+echo "Docker Repo: ${DOCKER_REPO}"
+echo "Docker Image: ${IMAGE_NAME}"
+
 if [[ "$ACTION" == *"build"* ]]; then
+    echo "Building Image"
+    if [ -d data ]; then
+        sudo rm -r data
+    fi
+
     docker build \
         -f $DOCKERFILE \
         --rm \
@@ -32,6 +39,8 @@ if [[ "$ACTION" == *"build"* ]]; then
 fi
 
 if [[ "$ACTION" == *"run"* ]]; then
+    echo "Running Container"
+
     docker run \
             --rm \
             -v ${PWD}/data/data:/data:ro \
@@ -42,6 +51,8 @@ if [[ "$ACTION" == *"run"* ]]; then
 fi
 
 if [[ "$ACTION" == *"publish"* ]]; then
+    echo "Publishing Image"
+
     docker push $IMAGE_NAME:latest
     docker push $IMAGE_NAME:${VERSION}
 fi
