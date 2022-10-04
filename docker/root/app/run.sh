@@ -4,7 +4,7 @@ if [ ! -f /config/settings.sample.json ]; then
     cp /app/settings.sample.json /config
 fi
 
-appParams="--data-path /data --output-path /certs --watch-for-changes"
+appParams="--data-path /data -o /certs --watch-for-changes"
 
 if [ ! -z ${CONFIG_FILE+x} ]; then 
     appParams+=" --config-file ${CONFIG_FILE}"
@@ -44,6 +44,10 @@ fi
 
 if [ ! -z ${RUN_AT_START+x} ]; then
     appParams+=" --run-at-start"
+fi
+
+if [ ! -z ${TEST_VERSION+x} ]; then 
+    echo "[DEBUG] Commandline Arguments: $appParams"
 fi
 
 #echo traefik-certificate-exporter $appParams
