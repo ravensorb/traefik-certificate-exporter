@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 import logging
 from typing import Optional
+from _version import __version__
 
 DOCKER_LABLE = "com.github.ravensorb.traefik-certificate-exporter.domain-restart"
 
@@ -291,7 +292,7 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
 if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.DEBUG)
 
-    logging.info("Traefik Cretificate Exporter starting....")
+    logging.info("Traefik Cretificate Exporter v{} starting....".format(__version__))
 
     ###########################################################################################################
     parser = argparse.ArgumentParser(description="Extract traefik letsencrypt certificates.")
