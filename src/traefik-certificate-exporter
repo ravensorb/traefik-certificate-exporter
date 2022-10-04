@@ -15,6 +15,7 @@ import watchdog.observers
 import time
 from pathlib import Path
 import logging
+from typing import Optional
 
 DOCKER_LABLE = "com.github.ravensorb.traefik-certificate-exporter.domain-restart"
 
@@ -41,13 +42,15 @@ class AcmeCertificateExporter:
 
         self.__settings = settings
 
-    def __exportCertificate(self, data : dict, resolverName : str = None, keys : str = "lowercase") -> list:
+    # --------------------------------------------------------------------------------------
+    def __exportCertificate(self, data : dict, resolverName : Optional[str] = None, keys : str = "lowercase") -> Optional[list]:
         names = []
 
         # Determine ACME version
         acme_version = 2 if 'acme-v02' in data['Account']['Registration']['uri'] else 1
 
         # Find certificates
+        certs = []
         if acme_version == 1:
             certs = data['DomainsCertificate']['Certs']
         elif acme_version == 2:
@@ -55,6 +58,11 @@ class AcmeCertificateExporter:
 
         # Loop over all certificates
         for c in certs:
+            name = ""
+            privatekey = ""
+            fullchain = ""
+            sans = ""
+            
             if acme_version == 1:
                 name = c['Certificate']['Domain']
                 privatekey = c['Certificate']['PrivateKey']
@@ -71,11 +79,19 @@ class AcmeCertificateExporter:
                     privatekey = c['key']
                     fullchain = c['certificate']
                     sans = c['domain']['sans'] if'sans' in c['domain'] else []  # not sure what this is - can't find any here...
-
+            else:
+                # Thios should NEVER happen
+                logging.error("CRITICAL ERROR - Unknown ACME version detected: {}".format(acme_version))
+                continue
+            
             if name.startswith("*."):
                 name = name[2:]
 
             if (self.__settings["domains"]["include"] and name not in self.__settings["domains"]["include"]) or (self.__settings["domains"]["exclude"] and name in self.__settings["domains"]["exclude"]):
+                continue
+
+            if len(privatekey) <= 0 or len(fullchain) <= 0:
+                logging.warning("Unable to find private key or full chain for cert domain: {}".format(name))
                 continue
 
             # Decode private key, certificate and chain
@@ -135,7 +151,8 @@ class AcmeCertificateExporter:
 
             names.append(name)
 
-    def exportCertificatesForFile(self, sourceFile : str) -> list:
+    # --------------------------------------------------------------------------------------
+    def exportCertificatesForFile(self, sourceFile : str) -> 'Optional[list[str]]':
         data = json.loads(open(sourceFile).read())
 
         resolversToProcess = []
@@ -146,7 +163,7 @@ class AcmeCertificateExporter:
                 keys = "lowercase"
             else:
                 logging.warning("Specified traefik resolver id '{}' is not found in acme file '{}'. Skipping file".format(self.__settings["traefikResolverId"], sourceFile))
-                return
+                return []
         else:
             # Should we try to get the first resolver if it is there?
             elementNames = list(data.keys())
@@ -167,6 +184,7 @@ class AcmeCertificateExporter:
 
         return names
 
+    # --------------------------------------------------------------------------------------
     def exportCertificates(self) -> list:
         processedDomains = []
 
@@ -182,24 +200,33 @@ class DockerManager:
     def __init__(self, settings : dict):
         self.__settings = settings
 
-    def restartLabeledContainers(self, domains : list):
+    # --------------------------------------------------------------------------------------
+    def restartLabeledContainers(self, domains : 'Optional[list[str]]'):
         if not self.__settings["restartContainers"]:
             return
+
+        if domains is None:
+            domains = []
 
         try:
             client = docker.from_env()
             container = client.containers.list(filters = {"label" : DOCKER_LABLE})
             for c in container:
-                restartDomains = str.split(c.labels[ DOCKER_LABLE ], ',')
+                restartDomains = str.split(c.labels[ DOCKER_LABLE ], ',')  # type: ignore
                 if not set(domains).isdisjoint(restartDomains):
                     logging.info("Restarting container: {}".format(c.id))
                     if not self.__settings["dry"]:
-                        c.restart()
+                        try:
+                            c.restart()  # type: ignore
+                        except Exception as ex:
+                            logging.error("Failed restarting container: {}".format(c.id))
+                            
         except Exception as ex:
             logging.error("Failed restarting containers", exc_info=True)
 
 ###########################################################################################################
 class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
+    # --------------------------------------------------------------------------------------
     def __init__(self, exporter : AcmeCertificateExporter, dockerManager : DockerManager, settings : dict):
         self.__exporter = exporter
         self.__dockerManager = dockerManager
@@ -212,15 +239,18 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
         watchdog.events.PatternMatchingEventHandler.__init__(self, patterns = [ self.__settings["fileSpec"] ],
                                                                     ignore_directories = True, 
                                                                     case_sensitive = False)
-   
+
+    # --------------------------------------------------------------------------------------
     def on_created(self, event):
         logging.debug("Watchdog received created event - % s." % event.src_path)
         self.handleEvent(event)
 
+    # --------------------------------------------------------------------------------------
     def on_modified(self, event):
         logging.debug("Watchdog received modified event - % s." % event.src_path)
         self.handleEvent(event)
 
+    # --------------------------------------------------------------------------------------
     def handleEvent(self, event):
 
         if not event.is_directory:
@@ -232,6 +262,7 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
                     self.timer = threading.Timer(2, self.doTheWork, args=[event])
                     self.timer.start()
 
+    # --------------------------------------------------------------------------------------
     def doTheWork(self, *args, **kwargs):
         ''' 
         This is a workaround to handle multiple events for the same file
