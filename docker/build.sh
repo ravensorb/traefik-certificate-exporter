@@ -46,6 +46,7 @@ if [[ "$ACTION" == *"run"* ]]; then
             -v ${PWD}/data/data:/data:ro \
             -v ${PWD}/data/certs:/certs:rw \
             -v ${PWD}/data/config:/config:rw \
+            ${TEST_VERSION:+--env "TEST_VERSION=1"} \
             -v /var/run/docker.sock:/var/run/docker.sock:ro \
             $IMAGE_NAME:latest 
 fi
