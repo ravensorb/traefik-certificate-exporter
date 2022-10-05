@@ -1,8 +1,40 @@
+[project]
+name = "traefik-certificate-exporter"
+description = "Watches for changes to traefik acme json files and extracts certificates to a specific folder"
+authors = [
+    { name = "Shawn Anderson", email = "sanderson@eye-catcher.com" }
+]
+readme = "README.md"
+requires-python = ">=3.7"
+keywords = [ "traefik", "certificates" ]
+license = {text = "MIT License" }
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.7"
+]
+dependencies = [
+    'importlib-metadata; python_version<"3.8"',
+    "watchdog",
+    "docker",
+    "requests",
+    "docker-pycreds"
+]
+dynamic = ["version"]
+
+[project.urls]
+   homepage =  "https://github.com/ravensorb/traefik-certificate-exporter"
+   repository = "https://github.com/ravensorb/traefik-certificate-exporter/issues"
+
+
 [build-system]
 requires = [
-    "setuptools>=42",
-    "wheel",
-    "setuptools_scm>=6.2"
+    "setuptools>=45",
+    "setuptools_scm>=6.2",
+    "wheel"
 ]
 build-backend = "setuptools.build_meta"
 
@@ -11,3 +43,15 @@ write_to = "src/_version.py"
 #version_scheme = "post-release"
 local_scheme = "no-local-version"
 #local_scheme = "node-and-timestamp"
+
+[tool.pylint]
+max-line-length = 88
+disable = [
+    "C0103", # (invalid-name)
+    "C0114", # (missing-module-docstring)
+    "C0115", # (missing-class-docstring)
+    "C0116", # (missing-function-docstring)
+    "R0903", # (too-few-public-methods)
+    "R0913", # (too-many-arguments)
+    "W0105", # (pointless-string-statement)
+]
