@@ -1,57 +1,36 @@
-[project]
+[tool.poetry]
 name = "traefik-certificate-exporter"
+version = "0.0.1.dev1+7b4a7c3"
 description = "Watches for changes to traefik acme json files and extracts certificates to a specific folder"
-authors = [
-    { name = "Shawn Anderson", email = "sanderson@eye-catcher.com" }
-]
+authors = ["Shawn Anderson <sanderson@eye-catcher.com>"]
 readme = "README.md"
-requires-python = ">=3.7"
-keywords = [ "traefik", "certificates" ]
-license = {text = "MIT License" }
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
-    "Natural Language :: English",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3.7"
-]
-dependencies = [
-    'importlib-metadata; python_version<"3.8"',
-    "watchdog",
-    "docker",
-    "requests",
-    "docker-pycreds"
-]
-dynamic = ["version"]
+repository = "https://github.com/ravensorb/traefik-certificate-exporter"
+homepage = "https://github.com/ravensorb/traefik-certificate-exporter"
+keywords = ['traefik', 'letsencrypt']
+packages = [{include = "traefik_certificate_exporter", from = "src"}]
 
-[project.urls]
-   homepage =  "https://github.com/ravensorb/traefik-certificate-exporter"
-   repository = "https://github.com/ravensorb/traefik-certificate-exporter/issues"
+[tool.poetry.dependencies]
+python = "^3.8"
+watchdog = "^2.1.9"
+docker = "^6.0.0"
+requests = "^2.28.1"
+docker-pycreds = "^0.4.0"
 
+[tool.poetry.scripts]
+traefik-certificate-exporter = "traefik_certificate_exporter.app:main"
 
 [build-system]
-requires = [
-    "setuptools>=45",
-    "setuptools_scm>=6.2",
-    "wheel"
-]
-build-backend = "setuptools.build_meta"
+requires = ["poetry-core", "poetry-dynamic-versioning"]
+build-backend = "poetry_dynamic_versioning.backend"
 
-[tool.setuptools_scm]
-write_to = "src/_version.py"
-#version_scheme = "post-release"
-local_scheme = "no-local-version"
-#local_scheme = "node-and-timestamp"
+[tool.poetry-dynamic-versioning]
+enable = true
+vcs = "git"
+#style = "semver"
+bump = true
+stage = true
 
-[tool.pylint]
-max-line-length = 88
-disable = [
-    "C0103", # (invalid-name)
-    "C0114", # (missing-module-docstring)
-    "C0115", # (missing-class-docstring)
-    "C0116", # (missing-function-docstring)
-    "R0903", # (too-few-public-methods)
-    "R0913", # (too-many-arguments)
-    "W0105", # (pointless-string-statement)
+[tool.poetry-dynamic-versioning.substitution]
+folders = [
+  { path = "src" }
 ]
