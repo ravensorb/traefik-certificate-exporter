@@ -26,7 +26,7 @@ build-backend = "poetry_dynamic_versioning.backend"
 [tool.poetry-dynamic-versioning]
 enable = true
 vcs = "git"
-#style = "semver"
+style = "semver"
 bump = true
 stage = true
 

@@ -3,7 +3,7 @@
 ACTION=${1:-build}
 
 PYPI_INDEX=pypi
-[[ "$ACTION" != *"test"* ]] || PYPI_INDEX=testpypi
+[[ "$ACTION" != *"test"* ]] || PYPI_INDEX=test-pypi
 
 echo "Python Action: ${ACTION}"
 echo "PyPi Index: ${PYPI_INDEX}"
@@ -15,12 +15,12 @@ if [[ "$ACTION" == *"build"* ]]; then
     fi
 
     echo "Building Package"
-    python3 -m build
+    poetry build
 fi
 
 if [[ "$ACTION" == *"publish"* ]]; then
     echo "Publishing python package"
-    python3 -m twine upload --repository $PYPI_INDEX dist/*
+    poetry publish -r $PYPI_INDEX
 
     if [[ "$ACTION" == *"docker"* ]]; then
         echo "Sleaping 30 secods to allow $PYPI_INDEX enough time to process upload of new version"
