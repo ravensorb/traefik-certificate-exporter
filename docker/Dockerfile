@@ -26,7 +26,6 @@ RUN \
 	python3 -m pip install \
 		traefik-certificate-exporter; \
  else \
-	echo "*** TEST PYTHON PACKAGE INSTALLED ****" \
 	python3 -m pip install --index-url https://test.pypi.org/simple/ \
 		traefik-certificate-exporter; \
  fi && \
