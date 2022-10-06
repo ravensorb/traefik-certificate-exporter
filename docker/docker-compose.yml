@@ -3,19 +3,18 @@ version: "3.7"
 services:
   traefik-certificate-exporter:
     image: ravensorb/traefik-certificate-exporter:latest
-    volumes:
-        - '/var/run/docker.sock:/var/run/docker.sock:ro'
-        - './data/data:/data:ro'
-        - './data/certs:/certs:rw'
-        - './data/config:/config:rw'
     environment:
-      - TEST_VERSION=1 
-      # - CONFIG_FILE="/config/settings.json"
-      - TRAEFIK_FILESPEC="*.json"
-      - TRAEFIK_RESOLVERID="resolver-http"
-      - TRAEFIK_RESOLVERID_INOUTPUTPATHNAME=1
-      # - DRYRUN=1
-      # - FLAT=1
-      # - RESTART_CONTAINERS=1
-      # - DOMAINS_INCLUDE=
-      # - DOMAINS_EXCLUDE=
+      - CONFIG_FILE="/config/settings.json"           # Define this to set the config file
+      - TRAEFIK_FILESPEC="*.json"                     # Define this to set the file space to watch for changes
+      - TRAEFIK_RESOLVERID="resolver-http"            # Define this to set the resolver id to match against
+      - TRAEFIK_RESOLVERID_INOUTPUTPATHNAME=true      # Define this to include the resolver name in the output path
+      # - DRYRUN=true                                   # Define this to indicate you want to do a dry run (don't actually export or restart)
+      # - FLAT=true                                     # Define this to export all certificates in a single flat folder
+      - RESTART_CONTAINERS=true                       # Define this to indicate if containers with label set should be restarted
+      # - DOMAINS_INCLUDE=                              # comma seperated list of domain names to only export
+      # - DOMAINS_EXCLUDE=                              # comma seperated list of domain names to exlude from exporting
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Only needed if you are going to be restarting containers
+      - ./data/config:/config:rw                      # Only needed if you are going to set a config file to load
+      - ./data/letsencrypt:/data:ro                   # Location of your acme files
+      - ./data/certs:/certs:rw                        # Location you want to export certificates to      

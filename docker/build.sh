@@ -7,7 +7,7 @@ ACTION=${1:-test}
 [ -n "$DOCKER_REPO" ]    || DOCKER_REPO="ravensorb/"
 [ -n "$SOURCE_BRANCH" ]  || SOURCE_BRANCH=$(git symbolic-ref -q --short HEAD)  
 [ -n "$GIT_SHA1" ]       || GIT_SHA1=$(git rev-parse -q HEAD)
-[ -n "$VERSION" ]        || VERSION=$(git describe --long)
+[ -n "$VERSION" ]        || VERSION=$(git describe --long --tags)
 
 [ -n "$SOURCE_TYPE" ]        || SOURCE_TYPE=git 
 [ -n "$DOCKERFILE" ]         || DOCKERFILE=Dockerfile
@@ -56,4 +56,5 @@ if [[ "$ACTION" == *"publish"* ]]; then
 
     docker push $IMAGE_NAME:latest
     docker push $IMAGE_NAME:${VERSION}
+    docker pushrm
 fi
