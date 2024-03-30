@@ -50,6 +50,11 @@ handlers:
     stream: ext://sys.stdout
 
 loggers:
+  traefik_certificate_exporter_consoleonly:
+    handlers: [standard_console_handler]
+    level: INFO
+    propagate: False
+
   traefik_certificate_exporter:
     handlers: [standard_console_handler, extended_file_handler]
     level: INFO

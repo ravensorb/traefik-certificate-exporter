@@ -94,4 +94,7 @@ def setup_logging(
     if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
         #print(logging.getLogger().__dict__)
         logging_tree.printout()
-    
+
+
+globalLoggerName = "traefik_certificate_exporter_consoleonly" if str(os.getenv("TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY", 0)).lower() in ['true', '1', 't', 'y', 'yes'] else "traefik_certificate_exporter"
+globalLogger = logging.getLogger(globalLoggerName)

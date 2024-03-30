@@ -10,13 +10,14 @@ import logging
 from typing import Optional
 from .docker import DockerManager
 from .settings import Settings
+from .logging_utils import globalLogger
 
 ###########################################################################################################
 class AcmeCertificateExporter:
     def __init__(self, settings : Settings):
 
         self.__settings = settings
-        self.__logger = logging.getLogger("traefik_certificate_exporter")
+        self.__logger = globalLogger
 
     # --------------------------------------------------------------------------------------
     def __exportCertificate(self, data : dict, resolverName : Optional[str] = None, keys : str = "lowercase") -> Optional[list]:
@@ -201,7 +202,7 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
 
         self.isWaiting = False
         self.lock = threading.Lock()
-        self.__logger = logging.getLogger("traefik_certificate_exporter")
+        self.__logger = globalLogger
 
         # Set the patterns for PatternMatchingEventHandler
         watchdog.events.PatternMatchingEventHandler.__init__(self, patterns = [ self.__settings.fileSpec ],

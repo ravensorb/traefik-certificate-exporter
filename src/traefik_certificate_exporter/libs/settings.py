@@ -15,7 +15,8 @@ import jsonpickle
 from dotenv import load_dotenv
 from expandvars import expandvars
 
-from traefik_certificate_exporter.libs.object import ObjectBase
+from .object import ObjectBase
+from .logging_utils import globalLogger
 
 #######################################################################
 
@@ -57,7 +58,7 @@ class SettingsManager(ObjectBase):
     def __init__(self) -> None:
         super().__init__()
         
-        self.__logger  = logging.getLogger("traefik_certificate_exporter")
+        self.__logger = globalLogger
         self.modulePath = Path(str(importlib_resources.files("traefik_certificate_exporter")))
 
     def loadFromFile(self, fileName: str, cmdLineArgs=None) -> None:

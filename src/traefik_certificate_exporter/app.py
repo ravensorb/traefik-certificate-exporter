@@ -11,7 +11,7 @@ from ._version import __version__
 from .libs.certificate_exporter import AcmeCertificateExporter, AcmeCertificateFileHandler
 from .libs.docker import DockerManager
 
-from .libs.logging_utils import setup_logging
+from .libs.logging_utils import setup_logging, globalLogger
 from .libs.cli_args import globalArgs
 from .libs.settings import globalSettingsMgr
 
@@ -21,7 +21,7 @@ from .libs.settings import globalSettingsMgr
 def main():
     setup_logging(cfg_file_name="logging.yaml", default_level=globalArgs.logginglevel, env_key="TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CFGFILE")
 
-    logger = logging.getLogger("traefik_certificate_exporter")
+    logger = globalLogger
     logger.setLevel(globalArgs.logginglevel)
     
     globalSettingsMgr.loadFromFile(fileName=globalArgs.configfile, cmdLineArgs=globalArgs)

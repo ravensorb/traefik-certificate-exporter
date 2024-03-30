@@ -2,6 +2,7 @@ import docker
 import logging
 from typing import Optional
 from .settings import Settings
+from .logging_utils import globalLogger
 
 ###########################################################################################################
 
@@ -11,7 +12,7 @@ DOCKER_LABLE = "com.github.ravensorb.traefik-certificate-exporter.domain-restart
 class DockerManager:
     def __init__(self, settings : Settings):
         self.__settings = settings
-        self.__logger = logging.getLogger("traefik_certificate_exporter")
+        self.__logger = globalLogger
 
     # --------------------------------------------------------------------------------------
     def restartLabeledContainers(self, domains : 'Optional[list[str]]'):
