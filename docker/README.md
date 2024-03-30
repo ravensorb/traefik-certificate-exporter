@@ -16,8 +16,8 @@ Then to run it via docker.  This will only watch json file sthat start with "acm
 docker run -it ravensorb/traefik-certificate-exporter:latest \
                 -v /mnt/traefik-data/letsencrypt:/data \
                 -v /mnt/certs:/certs \
-                -e "TRAEFIK_CERTIFICATE_EXPORTER_RESOLVERID=resolver-http" \
-                -e "TRAEFIK_CERTIFICATE_EXPORTER_FILESPEC=acme-*.json" 
+                -e "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_TRAEFIKRESOLVERID=resolver-http" \
+                -e "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FILESPEC=acme-*.json" 
 ```
 
 or with docker-compose
