@@ -10,14 +10,14 @@ This tool can be used to extract acme certificates (ex: lets encrupt) from traef
 docker pull ravensorb/traefik-certificate-exporter:latest
 ```
 
-Then to run it via docker
+Then to run it via docker.  This will only watch json file sthat start with "acme" and container the resolver name "resolver-http"
 
 ```bash
 docker run -it ravensorb/traefik-certificate-exporter:latest \
                 -v /mnt/traefik-data/letsencrypt:/data \
                 -v /mnt/certs:/certs \
                 -e "TRAEFIK_CERTIFICATE_EXPORTER_RESOLVERID=resolver-http" \
-                -e "TRAEFIK_CERTIFICATE_EXPORTER_FILESPEC=acme-*.json"
+                -e "TRAEFIK_CERTIFICATE_EXPORTER_FILESPEC=acme-*.json" 
 ```
 
 or with docker-compose
@@ -32,16 +32,20 @@ version: "3.7"
 services:
   traefik-certificate-exporter:
     image: ravensorb/traefik-certificate-exporter:latest
-    environment:
-      - TRAEFIK_CERTIFICATE_EXPORTER_CONFIG_FILE="/config/settings.json"  # Define this to set the config file
-      - TRAEFIK_CERTIFICATE_EXPORTER_FILESPEC="*.json"                    # Define this to set the file space to watch for changes
-      - TRAEFIK_CERTIFICATE_EXPORTER_RESOLVERID="resolver-http"           # Define this to set the resolver id to match against (optional)
-      - TRAEFIK_RESOLVERID_INOUTPUTPATHNAME=true                          # Define this to include the resolver name in the output path
-      # - TRAEFIK_CERTIFICATE_EXPORTER_DRYRUN=true                        # Define this to indicate you want to do a dry run (don't actually export or restart)
-      # - TRAEFIK_CERTIFICATE_EXPORTER_FLAT=true                          # Define this to export all certificates in a single flat folder
-      - TRAEFIK_CERTIFICATE_EXPORTER_RESTART_CONTAINERS=true              # Define this to indicate if containers with label set should be restarted
-      # - TRAEFIK_CERTIFICATE_EXPORTER_INCLUDE_DOMAINS=                   # comma seperated list of domain names to only export
-      # - TRAEFIK_CERTIFICATE_EXPORTER_EXCLUDE_DOMAINS=                   # comma seperated list of domain names to exlude from exporting
+    environment:      
+      # - TRAEFIK_CERTIFICATE_EXPORTER_CONFIGFILE="/config/config.yaml"         # Config file to load for settings 
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH="/data"                # The base path to look for traefik certificate json files
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FILESPEC="*.json"               # Default filespec to search for (can be set to a specific file)
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_OUTPUTPATH="/certs"             # The base path to export the certificates to
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_TRAEFIKRESOLVERID=              # Specify a specific resolver id to match against (optional)
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FLAT=false                      # Indicates if certificates are exported in sub folders or a single folder
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS.RESTARTCONTAINER=false          # Indicates of the containers should be restarted after the export
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DRYRUN=false                    # Set this to show what wil le exported (files will not actually be created)
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RUNATSTART=true                 # Set this to run the export immediately on stratup
+      - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESOLVERINPATHNAME=true         # Include the resolver name in the path when exporting
+      - TRAEFIK_CERTIFICATE_EXPORTER_LOGGINGLEVEL=INFO                        # Logging level 
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_INCLUDE_DOMAINS=              # comma seperated list of domain names to only export
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_XCLUDE_DOMAINS=               # comma seperated list of domain names to exlude from exporting
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Only needed if you are going to be restarting containers
       - ./data/config:/config:rw                      # Only needed if you are going to set a config file to load
