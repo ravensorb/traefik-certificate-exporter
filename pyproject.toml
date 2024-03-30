@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "traefik-certificate-exporter"
-version = "0.0.10.0"
+version = "0.1.0.0"
 description = "Watches for changes to traefik acme json files and extracts certificates to a specific folder"
 authors = ["Shawn Anderson <sanderson@eye-catcher.com>"]
 readme = "README.md"

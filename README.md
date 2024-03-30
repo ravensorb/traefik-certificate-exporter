@@ -19,32 +19,37 @@ $ pip install traefik-certificate-exporter
 # Usage
 
 ```bash
-usage: traefik-certificate-exporter [-h] [-c CONFIGFILE] [-d DATAPATH] [-w] [-fs FILESPEC] [-o OUTPUTPATH] [--traefik-resolver-id TRAEFIKRESOLVERID] [-f] [-r] [--dry-run] [-id [INCLUDEDOMAINS [INCLUDEDOMAINS ...]] | -xd [EXCLUDEDOMAINS [EXCLUDEDOMAINS ...]]]
+usage: traefik-certificate-exporter [-h] [-c CONFIGFILE] [-d SETTINGS.DATAPATH] [-w] [-fs SETTINGS.FILESPEC] [-o SETTINGS.OUTPUTPATH] [--traefik-resolver-id SETTINGS.TRAEFIKRESOLVERID] [--flat] [--restart-container]
+                                    [--dry-run] [-r] [--include-resolvername-in-outputpath] [-ll {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [-id [SETTINGS.DOMAINS.INCLUDE ...] | -xd [SETTINGS.DOMAINS.EXCLUDE ...]]
 
 Extract traefik letsencrypt certificates.
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   -c CONFIGFILE, --config-file CONFIGFILE
                         the path to watch for changes (default: config.yaml)
-  -d DATAPATH, --data-path DATAPATH
-                        the path that contains the acme json files (default: ./)
+  -d SETTINGS.DATAPATH, --data-path SETTINGS.DATAPATH
+                        the path that contains the acme json files
   -w, --watch-for-changes
                         If specified, monitor and watch for changes to acme files
-  -fs FILESPEC, --file-spec FILESPEC
-                        file that contains the traefik certificates (default: *.json)
-  -o OUTPUTPATH, --output-directory OUTPUTPATH
-                        The folder to exports the certificates in to (default: ./certs)
-  --traefik-resolver-id TRAEFIKRESOLVERID
+  -fs SETTINGS.FILESPEC, --file-spec SETTINGS.FILESPEC
+                        file that contains the traefik certificates
+  -o SETTINGS.OUTPUTPATH, --output-path SETTINGS.OUTPUTPATH
+                        The folder to exports the certificates in to
+  --traefik-resolver-id SETTINGS.TRAEFIKRESOLVERID
                         Traefik certificate-resolver-id.
-  -f, --flat            If specified, all certificates into a single folder
-  -r, --restart_container
-                        If specified, any container that are labeled with 'com.github.ravensorb.traefik-certificate-exporter.domain-restart=<DOMAIN>' will be restarted if the domain name of a generated certificates matches the value
-                        of the lable. Multiple domains can be seperated by ','
+  --flat                If specified, all certificates into a single folder
+  --restart-container   If specified, any container that are labeled with 'com.github.ravensorb.traefik-certificate-exporter.domain-restart=<DOMAIN>' will be restarted if the domain name of a generated certificates
+                        matches the value of the lable. Multiple domains can be seperated by ','
   --dry-run             Don't write files and do not restart docker containers.
-  -id [INCLUDEDOMAINS [INCLUDEDOMAINS ...]], --include-domains [INCLUDEDOMAINS [INCLUDEDOMAINS ...]]
+  -r, --run-at-start    Runs Export immediately on start (used with watch-for-changes).
+  --include-resolvername-in-outputpath
+                        Added the resolvername in the path used to export the certificates (ignored if flat is specified).
+  -ll {DEBUG,INFO,WARNING,ERROR,CRITICAL}, --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+                        Set the logging level (default: INFO)
+  -id [SETTINGS.DOMAINS.INCLUDE ...], --include-domains [SETTINGS.DOMAINS.INCLUDE ...]
                         If specified, only certificates that match domains in this list will be extracted
-  -xd [EXCLUDEDOMAINS [EXCLUDEDOMAINS ...]], --exclude-domains [EXCLUDEDOMAINS [EXCLUDEDOMAINS ...]]
+  -xd [SETTINGS.DOMAINS.EXCLUDE ...], --exclude-domains [SETTINGS.DOMAINS.EXCLUDE ...]
                         If specified. certificates that match domains in this list will be ignored
 ```
 
@@ -54,14 +59,14 @@ Watch the letsencrypt folder for any changes to files matching acme-*.json and e
 
 ### Script
 
-Run itonce and then exit
+Run it once and then exit
 
 ```bash
 traefik-certificate-exporter \
                             -d /mnt/traefik-data/letsencrypt \
                             -o /mnt/certs \
                             -fs "acme-*.json" \
-                            --traefik-resolver-id "resolver-http" 
+                            -r
 ```
 
 Run it and watch for changes to the files
@@ -70,8 +75,7 @@ Run it and watch for changes to the files
 traefik-certificate-exporter \
                             -d /mnt/traefik-data/letsencrypt \
                             -o /mnt/certs \
-                            -fs "acme-*.json" \
-                            --traefik-resolver-id "resolver-http" \
+                            -fs "acme-*.json" 
                             -w
 ```
 

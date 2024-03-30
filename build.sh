@@ -6,7 +6,7 @@
 [ -n "$ACTION" ]                 || ACTION=build
 
 [ -z "$PACKAGE_VERSIONTAG" ]     && PACKAGE_VERSIONTAG=$(git describe --abbrev=0 --tags)
-[ -z "$PACKAGE_REPO" ]           && PACKAGE_REPO="ravenwolf"
+[ -z "$PACKAGE_REPO" ]           && PACKAGE_REPO="pypi"
 
 [ -z "$SOURCE_TYPE" ]            && SOURCE_TYPE=git 
 [ -z "$SOURCE_BRANCH" ]          && SOURCE_BRANCH=$(git symbolic-ref -q --short HEAD)  

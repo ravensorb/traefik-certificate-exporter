@@ -19,14 +19,13 @@ from .libs.settings import globalSettingsMgr
 ###########################################################################################################
 
 def main():
-    setup_logging()
+    setup_logging(cfg_file_name="logging.yaml", default_level=globalArgs.logginglevel, env_key="TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CFGFILE")
 
     logger = logging.getLogger("traefik_certificate_exporter")
+    logger.setLevel(globalArgs.logginglevel)
     
     globalSettingsMgr.loadFromFile(fileName=globalArgs.configfile, cmdLineArgs=globalArgs)
     settings = globalSettingsMgr.settings
-
-    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.DEBUG)
 
     logger.info("Traefik Cretificate Exporter v{} starting....".format(__version__))
 

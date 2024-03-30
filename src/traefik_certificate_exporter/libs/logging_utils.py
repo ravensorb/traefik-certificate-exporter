@@ -41,6 +41,10 @@ def setup_logging(
     | Logging Setup
     """
 
+    if isinstance(default_level, str):
+        # default_level = getattr(logging, default_level.upper())
+        default_level = logging.getLevelName(default_level.upper())
+
     path : str | None = None
     value = os.getenv(env_key, None)
     if value:
@@ -60,7 +64,9 @@ def setup_logging(
         path = cfg_file_name
         
     if os.path.exists(path):
-        print(f"Loading logging configuration from {path}")
+        if default_level == logging.DEBUG:
+            print(f"Loading logging configuration from {path}")
+            
         with open(path, "rt") as f:
             try:
                 config = yaml.safe_load(f.read())
@@ -77,11 +83,13 @@ def setup_logging(
     else:
         #logging.basicConfig(level=default_level)
         coloredlogs.install(level=default_level)
-        print("Failed to load loogging configuration file. Using default logging configs")
+        if default_level == logging.DEBUG:
+            print("No logging configuration file found. Using default logging configs")
 
     for handler in logging.getLogger().handlers:
         if isinstance(handler, type(logging.StreamHandler())):
             handler.setLevel(logging.DEBUG)
+    #         handler.setLevel(default_level)
 
     if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
         #print(logging.getLogger().__dict__)

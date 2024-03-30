@@ -52,7 +52,7 @@ handlers:
 loggers:
   traefik_certificate_exporter:
     handlers: [standard_console_handler, extended_file_handler]
-    level: DEBUG
+    level: INFO
     propagate: False
 
 root:

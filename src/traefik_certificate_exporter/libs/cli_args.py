@@ -39,12 +39,12 @@ globalArgParser.add_argument("--traefik-resolver-id",
                              default=None,
                              type=str,
                              help="Traefik certificate-resolver-id.")
-globalArgParser.add_argument("-f", "--flat", 
+globalArgParser.add_argument("--flat", 
                              action="store_const", const=True,
                              dest="settings.flat",
                              default=None,
                              help="If specified, all certificates into a single folder")
-globalArgParser.add_argument("-r", "--restart-container", 
+globalArgParser.add_argument("--restart-container", 
                              action="store_const", const=True,
                              dest="settings.restartcontainer",
                              default=None,
@@ -54,7 +54,7 @@ globalArgParser.add_argument("--dry-run",
                              dest="settings.dryrun", 
                              default=None,
                              help="Don't write files and do not restart docker containers.")
-globalArgParser.add_argument("--run-at-start", 
+globalArgParser.add_argument('-r', "--run-at-start", 
                              action="store_const", const=True,
                              dest="settings.runatstart", 
                              default=None,
@@ -64,6 +64,13 @@ globalArgParser.add_argument("--include-resolvername-in-outputpath",
                              dest="settings.resolverinpathname", 
                              default=None,
                              help="Added the resolvername in the path used to export the certificates (ignored if flat is specified).")
+
+globalArgParser.add_argument('-ll', '--log-level',
+                             choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                             dest="logginglevel",
+                             default='INFO',
+                             help='Set the logging level (default: %(default)s)',
+                             )
 
 group = globalArgParser.add_mutually_exclusive_group()
 group.add_argument("-id", "--include-domains", nargs="*", 
