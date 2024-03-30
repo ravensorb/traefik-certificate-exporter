@@ -9,12 +9,14 @@ from pathlib import Path
 import logging
 from typing import Optional
 from .docker import DockerManager
+from .settings import Settings
 
 ###########################################################################################################
 class AcmeCertificateExporter:
-    def __init__(self, settings : dict):
+    def __init__(self, settings : Settings):
 
         self.__settings = settings
+        self.__logger = logging.getLogger("traefik_certificate_exporter")
 
     # --------------------------------------------------------------------------------------
     def __exportCertificate(self, data : dict, resolverName : Optional[str] = None, keys : str = "lowercase") -> Optional[list]:
@@ -56,19 +58,19 @@ class AcmeCertificateExporter:
                         sans = c['domain']['sans'] if'sans' in c['domain'] else []  # not sure what this is - can't find any here...
                 else:
                     # This should NEVER happen
-                    logging.error("CRITICAL ERROR - Unknown ACME version detected: {}".format(acme_version))
+                    self.__logger .error("CRITICAL ERROR - Unknown ACME version detected: {}".format(acme_version))
                     continue
                 
                 if name.startswith("*."):
                     name = name[2:]
 
-                if (self.__settings["domains"]["include"] and name not in self.__settings["domains"]["include"]) or (self.__settings["domains"]["exclude"] and name in self.__settings["domains"]["exclude"]):
-                    logging.warning("Skipping domain: {}".format(name))
+                if (len(self.__settings.domains["include"]) > 0 and name not in self.__settings.domains["include"]) or (len(self.__settings.domains["exclude"]) > 0 and name in self.__settings.domains["exclude"]):
+                    self.__logger .warning("Skipping domain: {}".format(name))
                     
                     continue
 
                 if len(privatekey) <= 0 or len(fullchain) <= 0:
-                    logging.warning("Unable to find private key or full chain for cert domain: {}".format(name))
+                    self.__logger .warning("Unable to find private key or full chain for cert domain: {}".format(name))
                     continue
 
                 # Decode private key, certificate and chain
@@ -78,16 +80,16 @@ class AcmeCertificateExporter:
                 cert = fullchain[0:start]
                 chain = fullchain[start:]
 
-                if not self.__settings["dryRun"]:
+                if not self.__settings.dryRun:
                     # Create domain     directory if it doesn't exist
-                    directory = Path(self.__settings["outputPath"])
-                    if "resolverInPathName" in self.__settings and self.__settings["resolverInPathName"] and resolverName and len(resolverName) > 0:
+                    directory = Path(self.__settings.outputPath) if self.__settings.outputPath else Path.cwd()
+                    if self.__settings.resolverInPathName and resolverName and len(resolverName) > 0:
                         directory = directory / resolverName
 
                     if not directory.exists():
                         directory.mkdir(parents=True, exist_ok=True)
 
-                    if self.__settings["flat"]:
+                    if self.__settings.flat:
                         # Write private key, certificate and chain to flat files
                         with (directory / (str(name) + '.key')).open('w') as f:
                             f.write(privatekey)
@@ -126,40 +128,40 @@ class AcmeCertificateExporter:
 
                 names.append(name)
 
-                logging.info("Extracted certificate for: {} ({})".format(name, ', '.join(sans) if sans else ''))
+                self.__logger .info("Extracted certificate for: {} ({})".format(name, ', '.join(sans) if sans else ''))
             except Exception as e:
-                logging.error("Error processing domain: {}".format(e))
+                self.__logger .error("Error processing domain: {}".format(e))
 
     # --------------------------------------------------------------------------------------
     def exportCertificatesForFile(self, sourceFile : str) -> 'Optional[list[str]]':
-        logging.info("Processing file: {}".format(sourceFile))
+        self.__logger .info("Processing file: {}".format(sourceFile))
 
         try:
             # does the file exist
             if not os.path.isfile(sourceFile):
-                logging.error("File not found: {}".format(sourceFile))
+                self.__logger .error("File not found: {}".format(sourceFile))
                 return []
 
             # is the file size greater than 0
             if os.stat(sourceFile).st_size == 0:
-                logging.error("File is empty: {}".format(sourceFile))
+                self.__logger .error("File is empty: {}".format(sourceFile))
                 return []
             
             data = json.loads(open(sourceFile).read())
 
             resolversToProcess = []
             keys = "uppercase"
-            if self.__settings["traefikResolverId"] and len(self.__settings["traefikResolverId"]) > 0:
-                if self.__settings["traefikResolverId"] in data:
-                    resolversToProcess.append(self.__settings["traefikResolverId"])
+            if self.__settings.traefikResolverId and len(self.__settings.traefikResolverId) > 0:
+                if self.__settings.traefikResolverId in data:
+                    resolversToProcess.append(self.__settings.traefikResolverId)
                     keys = "lowercase"
                 else:
-                    logging.warning("Specified traefik resolver id '{}' is not found in acme file '{}'. Skipping file".format(self.__settings["traefikResolverId"], sourceFile))
+                    self.__logger .warning("Specified traefik resolver id '{}' is not found in acme file '{}'. Skipping file".format(self.__settings.traefikResolverId, sourceFile))
                     return []
             else:
                 # Should we try to get the first resolver if it is there?
                 elementNames = list(data.keys())
-                logging.debug("[DEBUG] Checking node '{}' to see if it is a resolver node".format(elementNames[0]))
+                self.__logger .debug("[DEBUG] Checking node '{}' to see if it is a resolver node".format(elementNames[0]))
                 if "Account" in data[elementNames[0]]:
                     resolversToProcess = elementNames
                     keys = "lowercase"
@@ -167,7 +169,7 @@ class AcmeCertificateExporter:
             names = []
 
             if len(resolversToProcess) > 0:
-                logging.info("Resolvers to process: {}".format(resolversToProcess))
+                self.__logger .info("Resolvers to process: {}".format(resolversToProcess))
 
                 for resolver in resolversToProcess:
                     names.append(self.__exportCertificate(data[resolver], resolverName=resolver, keys=keys))
@@ -176,13 +178,13 @@ class AcmeCertificateExporter:
 
             return names
         except Exception as e:
-            logging.error("Error processing file '{}': {}".format(sourceFile, e))
+            self.__logger .error("Error processing file '{}': {}".format(sourceFile, e))
 
     # --------------------------------------------------------------------------------------
     def exportCertificates(self) -> list:
         processedDomains = []
 
-        for name in glob.glob(os.path.join(self.__settings["dataPath"], self.__settings["fileSpec"])):
+        for name in glob.glob(os.path.join(str(self.__settings.dataPath), self.__settings.fileSpec)):
             domains = self.exportCertificatesForFile(name)
             if domains and len(domains) > 0:
                 processedDomains.extend(x for x in domains if x not in processedDomains)
@@ -192,34 +194,35 @@ class AcmeCertificateExporter:
 ###########################################################################################################
 class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
     # --------------------------------------------------------------------------------------
-    def __init__(self, exporter : AcmeCertificateExporter, dockerManager : DockerManager, settings : dict):
+    def __init__(self, exporter : AcmeCertificateExporter, dockerManager : DockerManager, settings : Settings):
         self.__exporter = exporter
         self.__dockerManager = dockerManager
         self.__settings = settings
 
         self.isWaiting = False
         self.lock = threading.Lock()
+        self.__logger = logging.getLogger("traefik_certificate_exporter")
 
         # Set the patterns for PatternMatchingEventHandler
-        watchdog.events.PatternMatchingEventHandler.__init__(self, patterns = [ self.__settings["fileSpec"] ],
+        watchdog.events.PatternMatchingEventHandler.__init__(self, patterns = [ self.__settings.fileSpec ],
                                                                     ignore_directories = True, 
                                                                     case_sensitive = False)
 
     # --------------------------------------------------------------------------------------
     def on_created(self, event):
-        logging.debug("Watchdog received created event - % s." % event.src_path)
+        self.__logger .debug("Watchdog received created event - % s." % event.src_path)
         self.handleEvent(event)
 
     # --------------------------------------------------------------------------------------
     def on_modified(self, event):
-        logging.debug("Watchdog received modified event - % s." % event.src_path)
+        self.__logger .debug("Watchdog received modified event - % s." % event.src_path)
         self.handleEvent(event)
 
     # --------------------------------------------------------------------------------------
     def handleEvent(self, event):
 
         if not event.is_directory:
-            logging.info("Certificates changed found in file: {}".format(event.src_path))
+            self.__logger .info("Certificates changed found in file: {}".format(event.src_path))
 
             with self.lock:
                 if not self.isWaiting:
@@ -232,20 +235,20 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
         ''' 
         This is a workaround to handle multiple events for the same file
         '''
-        logging.debug("[DEBUG] SStarting the work")
+        self.__logger .debug("[DEBUG] SStarting the work")
 
         if not args or len(args) == 0:
-            logging.error("No event passed to worker")
+            self.__logger .error("No event passed to worker")
             self.isWaiting = False
 
             return
 
         domains = self.__exporter.exportCertificatesForFile(args[0].src_path)
 
-        if (self.__settings["restartContainers"]):
+        if (self.__settings.restartContainers):
             self.__dockerManager.restartLabeledContainers(domains)
 
         with self.lock:
             self.isWaiting = False
         
-        logging.debug('[DEBUG] Finished')
+        self.__logger .debug('[DEBUG] Finished')

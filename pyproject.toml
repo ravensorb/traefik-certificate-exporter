@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "traefik-certificate-exporter"
-version = "0.0.9.2"
+version = "0.0.10.0"
 description = "Watches for changes to traefik acme json files and extracts certificates to a specific folder"
 authors = ["Shawn Anderson <sanderson@eye-catcher.com>"]
 readme = "README.md"
@@ -10,11 +10,18 @@ keywords = ['traefik', 'letsencrypt']
 packages = [{include = "traefik_certificate_exporter", from = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.10"
 watchdog = "^2.1.9"
 docker = "^6.0.0"
 requests = "^2.28.1"
 docker-pycreds = "^0.4.0"
+confuse = "^2.0.1"
+poetry = "^1.8.2"
+python-dotenv = "^1.0.1"
+importlib-resources = "^6.4.0"
+jsonpickle = "^3.0.3"
+coloredlogs = "^15.0.1"
+logging-tree = "^1.9"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.2.1"

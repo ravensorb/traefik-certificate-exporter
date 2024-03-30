@@ -9,23 +9,24 @@ This tool can be used to extract acme certificates (ex: lets encrupt) from traef
 # Installation
 
 ## Python Script/Tool
+
 Installation can be done via the python package installer tool pip
-```
+
+```basah
 $ pip install traefik-certificate-exporter
 ```
 
 # Usage
 
 ```bash
-usage: traefik-certificate-exporter [-h] [-c CONFIGFILE] [-d DATAPATH] [-w] [-fs FILESPEC] [-o OUTPUTPATH] [--traefik-resolver-id TRAEFIKRESOLVERID] [-f] [-r] [--dry-run] [-id [INCLUDEDOMAINS [INCLUDEDOMAINS ...]] | -xd
-                                    [EXCLUDEDOMAINS [EXCLUDEDOMAINS ...]]]
+usage: traefik-certificate-exporter [-h] [-c CONFIGFILE] [-d DATAPATH] [-w] [-fs FILESPEC] [-o OUTPUTPATH] [--traefik-resolver-id TRAEFIKRESOLVERID] [-f] [-r] [--dry-run] [-id [INCLUDEDOMAINS [INCLUDEDOMAINS ...]] | -xd [EXCLUDEDOMAINS [EXCLUDEDOMAINS ...]]]
 
 Extract traefik letsencrypt certificates.
 
 optional arguments:
   -h, --help            show this help message and exit
   -c CONFIGFILE, --config-file CONFIGFILE
-                        the path to watch for changes (default: None)
+                        the path to watch for changes (default: config.yaml)
   -d DATAPATH, --data-path DATAPATH
                         the path that contains the acme json files (default: ./)
   -w, --watch-for-changes
@@ -48,10 +49,13 @@ optional arguments:
 ```
 
 ## Examples
+
 Watch the letsencrypt folder for any changes to files matching acme-*.json and export any certs managed by the resolver called "resolver-http"
 
-## Script
-Run it once and exite
+### Script
+
+Run itonce and then exit
+
 ```bash
 traefik-certificate-exporter \
                             -d /mnt/traefik-data/letsencrypt \
@@ -61,6 +65,7 @@ traefik-certificate-exporter \
 ```
 
 Run it and watch for changes to the files
+
 ```bash
 traefik-certificate-exporter \
                             -d /mnt/traefik-data/letsencrypt \
@@ -70,5 +75,6 @@ traefik-certificate-exporter \
                             -w
 ```
 
-# Credits
+## Credits
+
 This tool is HEAVLY influenced by the excellent work of [DanielHuisman](https://github.com/DanielHuisman) and [Marc Brückner](https://github.com/SnowMB)

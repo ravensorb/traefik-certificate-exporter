@@ -1,0 +1,13 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+
+if [[ "$TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES" == "true" || "$TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES" == "1" ]]; then
+    echo "Starting application..."
+
+    exec \
+        s6-setuidgid root \
+        traefik-certificate-exporter -c /config/config.yaml
+else
+    echo "Skipping start of application..."
+    # env | sort 
+fi

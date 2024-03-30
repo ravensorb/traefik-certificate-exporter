@@ -1,0 +1,13 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+
+# Load in the utils
+# source ${LLL_EX_PATH_COMMON_SCRIPTS:-.}/00-utils
+
+if [ ! -f /config/config.yaml ]; then
+    # write_info "Creating default config.yaml"
+    echo "Setting up sample config.yaml"
+    cp -u /defaults/config/config.yaml.sample /config/config.yaml.sample
+fi
+
+# [[ -n "${DEBUG}" ]] && env | sort

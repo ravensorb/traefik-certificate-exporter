@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 
 #############################################################################################################
-[ -z "$DEBUG" ]                  && DEBUG=0
+[ -z "$DEBUG" ]                  && DEBUG=1
 
 [ -n "$ACTION" ]                 || ACTION=build
 
-[ -z "$DOCKER_IMAGENAME" ]       && DOCKER_IMAGENAME=ravensorb/traefik-certificate-exporter
+[ -z "$DOCKER_IMAGENAME" ]       && DOCKER_IMAGENAME=traefik-certificate-exporter
+[ -z "$DOCKER_REGISTRY" ]        && DOCKER_REGISTRY=gcr.ravenwolf.org
+[ -z "$DOCKER_LIBRARY" ]         && DOCKER_LIBRARY=ravensorb
 
 [ -z "$DOCKER_IMAGETAG" ]        && DOCKER_IMAGETAG=latest
+[ -z "$DOCKER_VERSIONTAG" ]      && DOCKER_VERSIONTAG="$(git describe --abbrev=0 --tags)"
 
 [ -z "$DOCKER_FILE" ]            && DOCKER_FILE=Dockerfile
 [ -z "$DOCKER_MULTIARCH"]        && DOCKER_MULTIARCH=0
@@ -22,9 +25,8 @@
 #############################################################################################################
 # In case git isn't initialized
 [ -z "$SOURCE_BRANCH" ]          && SOURCE_BRANCH="main"
-[ -z "$GIT_VERSION" ]            && GIT_VERSION="0.0.9"
-
-[ -z "$DOCKER_VERSIONTAG" ]      && DOCKER_VERSIONTAG="$(echo $GIT_VERSION | sed 's/v//g')"
+[ -z "$DOCKER_VERSIONTAG" ]      && DOCKER_VERSIONTAG="0.0.1"
+[ -z "$GIT_VERSION" ]            && GIT_VERSION="0.0.1"
 
 #############################################################################################################
 #############################################################################################################
@@ -78,7 +80,7 @@ function parse_yaml {
    }'
 }
 
-function load_jenkins_vars()
+function load_jenkins_vars
 {
     if [ -f "jenkins-vars.yml" ]; then
         write_info "Reading jenkins-vars.yml..."
@@ -92,11 +94,27 @@ function load_jenkins_vars()
     fi
 }
 
-function load_env_vars()
+function load_env_vars
 {
-    if [ -f ".env" ]; then
-        write_error "Not implemented..."
-    fi
+    set +e 
+    set -o allexport
+
+    write_info "Loading env vars..."
+
+    envFiles=(".env" ".env.$DOCKER_IMAGENAME" ".pipeline.env" ".pipeline.env.$DOCKER_IMAGENAME" )
+
+    for envFile in ${envFiles[@]}
+    do
+        if [ -f "$envFile" ]; then
+            write_info "  from: $envFile..."
+            source $envFile
+        fi
+    done
+
+    write_info ""
+
+    set +o allexport
+    set -e 
 }
 
 
@@ -104,6 +122,9 @@ function load_env_vars()
 #############################################################################################################
 show_info
 load_jenkins_vars
+load_env_vars
+
+write_debug "Handling command line options..."
 
 while getopts "ha:i:r:u:f:t:p:v:m" option; do
     case $option in 
@@ -129,7 +150,7 @@ while getopts "ha:i:r:u:f:t:p:v:m" option; do
             DOCKER_IMAGETAG=$OPTARG;;
         v) # Docker Version Tag
             write_info "Setting docker version tag: $OPTARG"
-           DOCKER_VERSIONTAG=$OPTARG;;
+            VERSION=$OPTARG;;
 
         m) # Docker Multi-arch build
             write_info "Setting docker multi arch build"
@@ -168,16 +189,31 @@ function docker_build()
     local image_registry=$7
 
     shift 7
-    local env_args=($@)
+    local env_files=($@)
+    local build_args=()
     
     [[ "$DOCKER_MULTIARCH" == "1" || "$DOCKER_MULTIARCH" == "true" ]] && build_mode="buildx build --load " || build_mode="build"
     #build_mode="build"
 
-    local build_args=""
-    for i in "${env_args[@]}"
+    local build_args_file=".build.args.tmp"
+
+    [[ -f $build_args_file ]] && rm -f $build_args_file 2>/dev/null
+    for i in "${env_files[@]}"
     do
-        build_args+="--build-arg $i "
+        if [ -f "$i" ]; then
+            sed -e '/^[[:space:]]*$/d' -e '/[#]/d' -e 's/\(^[^=]*\)=\(.*\)/--build-arg \1=\2/' -e 's/\"\"/\"/g' $i >> $build_args_file
+            echo "" >> .build.args.tmp
+            # build_args+=("-f $i")
+        fi
     done
+
+    if [[ -f $build_args_file ]]; then
+        write_debug "Reading build args from $build_args_file..."
+        readarray -t build_args_array < $build_args_file
+        build_args=$(printf " %s" "${build_args_array[@]}")
+        rm -f $build_args_file 2>/dev/null
+        # write_debug "Build Args: ${build_args}"
+    fi
 
     [ -n "$image_registry" ] && image_name_full=$image_registry/$image_name || image_name_full=$image_name
 
@@ -188,9 +224,9 @@ function docker_build()
         --network host \
         --no-cache \
         --force-rm \
+        ${DEBUG:+--progress plain} \
         --build-arg SOURCE_COMMIT=$GIT_SHA1 \
-        --build-arg SOURCE_TYPE=$SOURCE_TYPE \
-        --build-arg BUILD_DATE=`date -u +"%Y-%m-%dT%H:%M:%SZ"` ${build_args:-} \
+        --build-arg SOURCE_TYPE=$SOURCE_TYPE ${build_args} \
         ${image_tag_version:+--build-arg VERSION=$image_tag_version} \
         ${docker_file:+--file $docker_file} \
         --tag $image_name_full \
@@ -231,8 +267,16 @@ function docker_publish()
 
 #############################################################################################################
 
-if [[ "$ACTION" == *"build"* ]]; then
+if [[ -f "mount-common.sh" ]]; then
+    ./mount-common.sh
+fi 
 
+if [[ "$ACTION" == "dump-env" ]]; then
+    env | sort
+    exit 0
+fi
+
+if [[ "$ACTION" == *"build"* ]]; then
     docker_build \
         "${DOCKERFILE}" \
         "." \
@@ -240,8 +284,10 @@ if [[ "$ACTION" == *"build"* ]]; then
         "${DOCKER_IMAGETAG}" \
         "$DOCKER_VERSIONTAG" \
         "$GIT_SHA1_SHORT" \
-        "" \
-        "DEBIAN_FRONTEND=noninteractive" 
+        "${DOCKER_REGISTRY}/${DOCKER_LIBRARY}" \
+        ".env" \
+        ".env.${DOCKER_IMAGENAME}" \
+        ".pipeline.env.${DOCKER_IMAGENAME}" 
 fi
 
 if [[ "$ACTION" == *"publish"* ]]; then
@@ -249,21 +295,41 @@ if [[ "$ACTION" == *"publish"* ]]; then
     docker_publish \
         "${DOCKER_IMAGENAME}" \
         "${DOCKER_IMAGETAG}" \
-        "$DOCKER_VERSIONTAG" \
-        "$GIT_SHA1_SHORT" \
-        ""
+        "${DOCKER_VERSIONTAG}" \
+        "${GIT_SHA1_SHORT}" \
+        "${DOCKER_REGISTRY}/${DOCKER_LIBRARY}"
+fi
+
+if [[ "$ACTION" == *"remove"* ]]; then
+    write_info "Removing Container"
+    docker rm -f ${DOCKER_IMAGENAME}-debug
 fi
 
 if [[ "$ACTION" == *"run"* ]]; then
-    echo "Running Container"
+    write_info "Running Container"
+
+    dockerArgsEnvFiles=()
+    [[ -f ".env" ]] && dockerArgsEnvFiles+=("-e .env")
+    [[ -f ".env.${DOCKER_IMAGENAME}" ]] && dockerArgsEnvFiles+=("-e .env.${DOCKER_IMAGENAME}")
 
     docker run \
-            --rm \
-            --env-file .env \
+            -d \
+            --rm ${dockerArgsEnvFiles[@]} \
             -v ${PWD}/data/data:/data:ro \
             -v ${PWD}/data/certs:/certs:rw \
             -v ${PWD}/data/config:/config:rw \
-            ${TEST_VERSION:+--env "TEST_VERSION=1"} \
             -v /var/run/docker.sock:/var/run/docker.sock:ro \
-            $DOCKER_IMAGENAME:${DOCKER_IMAGETAG} 
+            --name ${DOCKER_IMAGENAME}-debug \
+            ${DOCKER_REGISTRY}/${DOCKER_LIBRARY}/${DOCKER_IMAGENAME}:${DOCKER_IMAGETAG} 
+fi 
+
+if [[ "$ACTION" == *"logs"* ]]; then
+    write_info "Displaying logs for the container"
+    docker logs -f ${DOCKER_IMAGENAME}-debug
+fi 
+
+if [[ "$ACTION" == *"shell"* ]]; then
+    docker exec -it ${DOCKER_IMAGENAME}-debug /bin/bash
 fi
+
+#############################################################################################################

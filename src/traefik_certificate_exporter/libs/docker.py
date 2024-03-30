@@ -1,6 +1,7 @@
 import docker
 import logging
 from typing import Optional
+from .settings import Settings
 
 ###########################################################################################################
 
@@ -8,12 +9,13 @@ DOCKER_LABLE = "com.github.ravensorb.traefik-certificate-exporter.domain-restart
 
 ###########################################################################################################
 class DockerManager:
-    def __init__(self, settings : dict):
+    def __init__(self, settings : Settings):
         self.__settings = settings
+        self.__logger = logging.getLogger("traefik_certificate_exporter")
 
     # --------------------------------------------------------------------------------------
     def restartLabeledContainers(self, domains : 'Optional[list[str]]'):
-        if not self.__settings["restartContainers"]:
+        if not self.__settings.restartContainers:
             return
 
         if domains is None:
@@ -25,12 +27,14 @@ class DockerManager:
             for c in container:
                 restartDomains = str.split(c.labels[ DOCKER_LABLE ], ',')  # type: ignore
                 if not set(domains).isdisjoint(restartDomains):
-                    logging.info("Restarting container: {}".format(c.id))
-                    if not self.__settings["dry"]:
+                    self.__logger .info("Restarting container: {}".format(c.id))
+                    if not self.__settings.dryRun:
                         try:
                             c.restart()  # type: ignore
                         except Exception as ex:
-                            logging.error("Failed restarting container: {}".format(c.id))
+                            self.__logger .error("Failed restarting container: {}".format(c.id))
+                    else:
+                        self.__logger .info("[DRYRUN] restarting container: {}".format(c.id))
                             
         except Exception as ex:
-            logging.error("Failed restarting containers", exc_info=True)
+            self.__logger .error("Failed restarting containers", exc_info=True)

@@ -1,0 +1,174 @@
+name: docker-multi-arch-push
+
+on:
+  push:
+    branches:
+      - 'master'
+      - 'main'
+
+env:
+  DOCKER_PLATFORMS: ${{ vars.DOCKER_PLATFORMS || 'linux/amd64' }}
+  DOCKER_PUBLISH_MODE: ${{ vars.DOCKER_PUBLISH_MODE || 'push' }}
+  DOCKER_REGISTRY: ${{ vars.DOCKER_REGISTRY || 'docker.io' }}
+  DOCKER_REPONAME: ${{ vars.DOCKER_REPONAME || 'ravensorb' }}
+  DOCKER_FILE: ${{ vars.DOCKER_FILE || 'Dockerfile' }}
+  DOCKER_IMAGENAME: ${{ vars.DOCKER_IMAGENAME }}
+  DOCKER_IMAGE_VERSION: ${{ vars.DOCKER_IMAGE_VERSION || '1.0' }}
+  DOCKER_IMAGE_TAG: ${{ vars.DOCKER_IMAGE_TAG || 'latest' }}
+  GIT_REPO_URL: ${{ vars.GIT_REPO || 'https://github.com' }}
+  GIT_REPO_OWNER: ${{ vars.GIT_REPO_OWNER || 'ravensorb' }}
+  GIT_REPO_NAME: ${{ vars.GIT_REPO_NAME || 'ravensorb' }}
+  LLL_EX_MODE: ${{ vars.LLL_EX_MODE || 'build' }}
+  LLL_EX_PATH_BASE: ${{ vars.LLL_EX_PATH_BASE }}
+  LLL_EX_PATH_COMMON_SCRIPTS: ${{ vars.LLL_EX_PATH_COMMON_SCRIPTS || '/opt/l3io/build/scripts/common' }}
+  LLL_EX_PATH_SCRIPTS: ${{ vars.LLL_EX_PATH_SCRIPTS || '/opt/l3io/build/scripts' }}
+  LLL_EX_PATH_CONFIG: ${{ vars.LLL_EX_PATH_CONFIG || '/opt/l3io/build/config' }}
+  LLL_EX_INSTALL_PACKAGES: ${{ vars.LLL_EX_INSTALL_PACKAGES }}
+  BUILDKIT_FLAGS: ${{ vars.BUILDKIT_FLAGS || '' }}
+
+jobs:
+  docker-build-push:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: "Set current date as env variable"
+        run: |
+          echo "current=$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
+        id: builddate  # this is used on variable path
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Docker meta (docker.io)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # list of Docker images to use as base name for tags
+          images: |
+            ${{ env.DOCKER_REPONAME }}/${{ env.DOCKER_IMAGENAME }}
+          tags: |
+            type=ref,event=tag
+            type=sha,format=short
+            type=edge,branch=$repo.default_branch
+            type=raw,value=${{ env.DOCKER_IMAGE_TAG }}
+            type=raw,value=${{ steps.builddate.outputs.current }}
+          labels: |
+            # org.opencontainers.image.description=
+            # org.opencontainers.image.licenses=
+            # org.opencontainers.image.title=
+            org.opencontainers.image.url=https://${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPONAME }}/${{ env.DOCKER_IMAGENAME }}
+            org.opencontainers.image.source=https://${{ env.GIT_REPO_URL }}/${{ env.GIT_REPO_OWNER }}/${{ env.GIT_REPO_NAME }}
+            org.opencontainers.image.version=${{ env.DOCKER_IMAGE_TAG }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            # org.opencontainers.image.created=${{ steps.builddate.outputs.current }}
+            org.opencontainers.image.authors=${{ env.GIT_REPO_OWNER }}
+
+      - name: Docker meta (custom registry)
+        id: meta_custom
+        uses: docker/metadata-action@v5
+        with:
+          # list of Docker images to use as base name for tags
+          images: |
+            ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPONAME }}/${{ env.DOCKER_IMAGENAME }}
+          tags: |
+            type=ref,event=tag
+            type=sha,format=short
+            type=edge,branch=$repo.default_branch
+            type=raw,value=${{ env.DOCKER_IMAGE_TAG }}
+            type=raw,value=${{ steps.builddate.outputs.current }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Install root certificates
+        if: ${{ env.ACT }}
+        run: |
+          sudo cp /mnt/certificates/ca-ravenwolf.pfx.crt /usr/local/share/ca-certificates
+          sudo update-ca-certificates
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-flags: ${{ env.BUILDKIT_FLAGS }}
+          platforms: ${{ env.DOCKER_PLATFORMS }}
+          use: true
+          config-inline: |
+            [dns]
+            nameservers = ["10.0.1.13"]
+            searchDomains=["ravenwolf.org"]
+            [registry."harbor.ravenwolf.org"]
+            http = false
+            insecure = true
+            ca=["/mnt/certificates/ca-ravenwolf.pfx.crt"]
+            [registry."harbor.home.linux.docker.ravenwolf.org"]
+            http = false
+            insecure = true
+            ca=["/mnt/certificates/ca-ravenwolf.pfx.crt"]
+            [registry."harbor.prod.linux.docker.ravenwolf.org"]
+            http = false
+            insecure = true
+            ca=["/mnt/certificates/ca-ravenwolf.pfx.crt"]
+
+      - name: Login to Docker Hub Registry 
+        if: github.event_name != 'pull_request' && env.DOCKER_PUBLISH_MODE == 'push' && (env.DOCKER_REGISTRY == 'docker.io' || env.DOCKER_REGISTRY == '')
+        uses: docker/login-action@v3
+        with:
+          logout: false
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to Github Registry
+        if: github.event_name != 'pull_request' && env.DOCKER_PUBLISH_MODE == 'push' && env.DOCKER_REGISTRY == 'ghcr.io'
+        uses: docker/login-action@v3
+        with:
+          logout: false
+          registry: ghcr.io
+          username: ${{ secrets.GITHUB_USERNAME }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Custom Registry
+        if: github.event_name != 'pull_request' && env.DOCKER_PUBLISH_MODE == 'push' && (env.DOCKER_REGISTRY != 'docker.io' && env.DOCKER_REGISTRY != 'ghcr.io' && env.DOCKER_REGISTRY != '')
+        uses: docker/login-action@v3
+        with:
+          logout: false
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+  
+      - name: Build and push (docker.io)
+        if: github.event_name != 'pull_request' && (env.DOCKER_REGISTRY == 'docker.io' || env.DOCKER_REGISTRY == '')
+        id: dockerhub_build
+        uses: docker/build-push-action@v5
+        with:
+          # builder: act-builder
+          context: .
+          file: ${{ env.DOCKER_FILE }}
+          platforms: ${{ env.DOCKER_PLATFORMS }}
+          push: ${{ env.DOCKER_PUBLISH_MODE == 'push' }}
+          load: ${{ env.DOCKER_PUBLISH_MODE != 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # cache-from: type=registry,ref=harbor.ravenwolf.org/my-image:buildcache
+          # cache-to: type=registry,ref=harbor.ravenwolf.org/my-image:buildcache,mode=max
+          build-args: |
+            DEBIAN_FRONTEND: noninteractive
+            LLL_EX_INSTALL_PACKAGES: ${{ env.LLL_EX_INSTALL_PACKAGES }}
+
+      - name: Build and push (ghcr and custom registry)
+        if: github.event_name != 'pull_request' && (env.DOCKER_REGISTRY != 'docker.io' && env.DOCKER_REGISTRY != '')
+        id: dockercustom_build
+        uses: docker/build-push-action@v5
+        with:
+          # builder: act-builder
+          context: .
+          file: ${{ env.DOCKER_FILE }}
+          platforms: ${{ env.DOCKER_PLATFORMS }}
+          push: ${{ env.DOCKER_PUBLISH_MODE == 'push' }}
+          load: ${{ env.DOCKER_PUBLISH_MODE != 'push' }}
+          tags: ${{ steps.meta_custom.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # cache-from: type=registry,ref=harbor.ravenwolf.org/my-image:buildcache
+          # cache-to: type=registry,ref=harbor.ravenwolf.org/my-image:buildcache,mode=max
+          build-args: |
+            DEBIAN_FRONTEND: noninteractive
+            LLL_EX_INSTALL_PACKAGES: ${{ env.LLL_EX_INSTALL_PACKAGES }}
+    

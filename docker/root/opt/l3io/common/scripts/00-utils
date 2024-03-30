@@ -1,0 +1,374 @@
+function write_info() {
+    local MSG=$@
+    local len=${#BASH_SOURCE[@]}
+    local caller_script=$(basename ${BASH_SOURCE[$((len-1))]})
+    local caller_func=${FUNCNAME[1]}
+
+    echo "[$caller_script:$caller_func:INF] $MSG"
+}
+
+function write_error() {
+    local MSG=$@
+    local len=${#BASH_SOURCE[@]}
+    local caller_script=$(basename ${BASH_SOURCE[$((len-1))]})
+    local caller_func=${FUNCNAME[1]}
+
+    echo "[$caller_script:$caller_func:ERR] $MSG"
+}
+
+function write_debug() {
+    local MSG=$@
+    local len=${#BASH_SOURCE[@]}
+    local caller_script=$(basename ${BASH_SOURCE[$((len-1))]})
+    local caller_func=${FUNCNAME[1]}
+
+    [ "${LLL_EX_DEBUG:-}" ] && echo "[$caller_script:$caller_func:DBG] $MSG"
+}
+
+function is_app_installed {
+    local app_name=$1
+    local app_enabled_flag=${2:-0}
+    local app_cmd=${3:-}
+    local app_state_file=${4:-}
+
+    if [ -z "${app_enabled_flag}" -o "${app_enabled_flag}" == "0" ]; then
+        write_debug "App '$app_name' is NOT enabled"
+        return 0
+    else
+        write_debug "App '$app_name' is enabled"
+    fi
+
+    if check_exists_state_file ${app_state_file}; then
+        write_debug "App '$app_name' state file '$app_state_file' was found"
+        return 0
+    else
+        write_debug "App '$app_name' state file '$app_state_file' was NOT found"
+    fi
+
+    if [ -x "$(command -v ${app_cmd})" ]; then
+        write_debug "App '$app_name' is already installed"
+        return 0
+    else
+        write_debug "App '$app_name' is NOT already installed"
+    fi
+
+    write_debug "App '$app_name' is not installed and has been requested"
+
+    return 1
+}
+
+function install_app_package {
+    local package_app_name=$1
+    local package_name_apt=${2:-}
+    local package_name_apk=${3:-}
+    local force_package_refresh=${4:-}
+
+    if [ -z "${package_name_apk}" ] || [ "${package_name_apk}" == "x" ]; then
+        package_name_apk=$package_name_apt
+    fi
+
+    if [ -z "$package_name_apt" -a -z "$package_name_apk" ]; then
+        write_info "**** ERROR: No Packages Specified to install ********"
+        return 0
+    fi
+
+    if  [ ! -z "${package_app_name}" -o ! -x "$(command -v ${package_app_name})" ]; then
+        [[ -n "${force_package_refresh}" ]] && refresh_app_package_manager
+
+        # If APT is avialable use that to update installed system
+        if [ -x "$(command -v apt)" ]; then
+            write_info "**** Installing ${package_name_apt} (apt)"
+            apt-get -y -qq -o Dpkg::Use-Pty=0 install --no-install-recommends ${package_name_apt}
+        fi
+
+        # If APK is avialable use that to update installed system
+        if [ -x "$(command -v apk)" ]; then
+            write_info "**** Installing ${package_name_apk} (apk)"
+            apk add --no-cache ${package_name_apk} 
+        fi
+    else   
+        write_info "'${package_app_name}' (${package_name_apt}) is already installed. Skipping...."
+    fi
+}
+
+function install_app_package_s6 {
+    local package_app_name=$1
+    local package_name_apt=${2:-}
+    local package_name_apk=${3:-}
+
+    if  [ ! -z "${package_app_name}" -o ! -x "$(command -v ${package_app_name})" ]; then
+        write_info "Queuing ${package_app_name} to be installed..."
+        if [ -x "$(command -v apt)" ]; then
+            echo -e "${package_name_apt}\n" >> /mod-repo-packages-to-install.list
+        fi
+
+        if [ -x "$(command -v apk)" ]; then
+            echo -e "${package_name_apk}\n" >> /mod-repo-packages-to-install.list
+        fi
+    else   
+        write_debug "'${package_app_name}' (${package_name_apt}) is already installed. Skipping...."
+    fi
+}
+
+function refresh_app_package_manager {
+    export DEBIAN_FRONTEND=noninteractive
+
+    # If APT is avialable use that to update installed system
+    if [ -x "$(command -v apt)" ]; then
+        write_info "**** Refreshing cache (apt)"
+        apt-get -y -qq -o Dpkg::Use-Pty=0 update
+    fi
+
+    # If APK is avialable use that to update installed system
+    if [ -x "$(command -v apk)" ]; then
+        write_info "**** Refreshing cache (apk)"
+        apk update     
+    fi
+}
+
+function upgrade_app_packages {
+    export DEBIAN_FRONTEND=noninteractive
+    
+    # If APT is avialable use that to update installed system
+    if [ -x "$(command -v apt)" ]; then
+        write_info "**** Updating all installed packages (apt)"
+        apt-get -y -qq -o Dpkg::Use-Pty=0 update && apt upgrade -y -qq -o Dpkg::Use-Pty=0 
+    fi
+
+    # If APK is avialable use that to update installed system
+    if [ -x "$(command -v apk)" ]; then
+        write_info "**** Updating all installed packages (apt)"
+        apk update && apk upgrade
+    fi
+}
+
+function clean_app_package_manager {
+    # If APT is avialable use that to update installed system
+    if [ -x "$(command -v apt)" ]; then
+        write_info "**** Cleaning cache (apt)"
+        apt-get -y -qq -o Dpkg::Use-Pty=0 clean && apt-get -y -qq -o Dpkg::Use-Pty=0 autoremove && apt-get -y -qq -o Dpkg::Use-Pty=0 purge
+    fi
+
+    # If APK is avialable use that to update installed system
+    if [ -x "$(command -v apk)" ]; then
+        echo     
+    fi
+}
+
+function clean_tmp_cache {
+    write_info "**** Cleaning temp files"
+    rm -rf \
+        /tmp/* \
+        /var/lib/apt/lists/* \
+        /var/tmp/* || true
+}
+
+function clean_build_files {
+    write_info "**** Cleaning build files"
+    [[ -d /opt/l3io/build ]] && rm -rf /opt/l3io/build || true
+}
+
+function add_apprepository {
+    local repo_name=$1
+
+    # If APT is avialable use that to update installed system
+    if [ -x "$(command -v apt)" ]; then
+        write_info "**** Adding repository ${repo_name} (apt)"
+        if ! [ -x "$(command -v add-apt-repository)" ]; then
+            install_app_package "software-properties-common" "software-properties-common" ""
+        fi
+        
+        add-apt-repository -y ${repo_name}
+    fi
+
+    # If APK is avialable use that to update installed system
+    if [ -x "$(command -v apk)" ]; then
+        write_info "******** Custom APK Repos NOT supported yet ********"
+    fi
+}
+
+function install_pip_package {
+    local package_name=$1
+    local pip_version=${2:-3}
+    local use_test_version=${3:-0}
+
+    PARAMS="--upgrade --index-url https://pypi.org/simple $package_name"
+
+    if [ "${use_test_version}" == "1" ]; then
+        PARAMS="--upgrade --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple $package_name"
+    fi
+
+    if [ "$pip_version" == "2" ]; then
+        if [ -x "$(command -v pip2)" ]; then
+            write_info "**** Install Pip Package(s): ${package_name}"
+            python2 -m pip -qq install $PARAMS
+        else   
+            write_info "Pip2 is not installed. ${package_name} skipped...."
+        fi
+    fi
+
+    if [ "$pip_version" == "3" ]; then
+        if [ -x "$(command -v pip3)" ]; then
+            write_info "**** Install Pip Package(s): ${package_name}"
+            python3 -m pip -qq install $PARAMS
+        else   
+            write_info "Pip3 is not installed. ${package_name} skipped...."
+        fi
+    fi
+}
+
+function install_pip_requirements {
+    local requirements_file=$1
+    local pip_version=${2:-3}
+
+    if [ -f ${requirements_file} ]; then
+        if [ "$pip_version" == "2" ]; then
+            if [ -x "$(command -v pip2)" ]; then
+                write_info "**** Installing pip2 requirements from ${requirements_file} (pip2)"
+                python2 -m pip -qq install -r ${requirements_file}
+            else   
+                write_info "Pip2 is not installed. ${requirements_file} skipped...."
+            fi
+        fi
+
+        if [ "$pip_version" == "3" ]; then
+            if [ -x "$(command -v pip3)" ]; then
+                write_info "**** Installing pip3 requirements from ${requirements_file} (pip3)"
+                python3 -m pip -qq install -r ${requirements_file}
+            else   
+                write_info "Pip3 is not installed. ${requirements_file} skipped...."
+            fi
+        fi
+    else   
+        write_info "${requirements_file} does not exist. Skipping...."
+    fi
+}
+
+function envsubst_file {
+    local infile=$1
+    local outfile=${2:-.}
+    local quiet=${3:-}
+
+    if [ ! -f ${infile} ]; then
+        write_info "${infile} does not exist. Skipping...."
+        return
+    fi
+
+    if [ -z ${outfile} ] || [ "${outfile}" == "." ]; then
+        outfile=${infile}
+    fi
+
+    if [ -x "$(command -v /usr/bin/envsubst)" ]; then
+        [[ -z ${quiet} ]] && write_info "Processing envsubst for file '${infile}' to '${outfile}'"
+        /usr/bin/envsubst -i ${infile} -o ${outfile}
+    else
+        write_info "/usr/bin/envsubst is not installed"
+    fi
+}
+
+function create_state_file {
+    local filename="${LLL_EX_PATH_BASE:-/opt/l3io}/$1"
+    local content=$@
+
+    write_debug "Creating $filename"
+    touch ${filename}
+
+    if [ -n "$content" ]; then
+        echo $content > $filename
+    fi
+}
+
+function check_exists_state_file {
+    filename="${LLL_EX_PATH_BASE:-/opt/l3io}/$1"
+
+    [ -f $filename ] && return
+
+    false
+}
+
+function execute_scripts_in_folder {
+    set +e 
+
+    local script_path=${1:-.}
+    local script_type=${2:-}
+
+    if [ -d ${script_path} ]; then
+        # Execute all install scripts in order
+        write_info "Processing scripts in ${script_path}"
+        for script in ${script_path}/[1-9]*${script_type}*.sh; do
+            if [ -f $script ]; then
+                write_info "Executing $script"
+
+                eval "$script"
+            fi
+        done 
+    else
+        write_debug "${script_path} does not exist. Skipping...."
+    fi 
+
+    set -e 
+}
+
+function import_env_files_in_folder {
+    set +e 
+    set -o allexport
+
+    local script_path=${1:-.}
+    local script_name=${2:-}
+
+    if [ -d ${script_path} ]; then
+        # Execute all install scripts in order
+        write_info "Processing env files in ${script_path}"
+        #export $(egrep -v '^#' .env.* | awk -F '#' '{print $1}' | xargs)
+
+        for script in ${script_path}/.env.*${script_name}; do
+            write_info "Importing $script"
+
+            source "$script"
+        done 
+    fi 
+    
+    [ "${LLL_EX_DEBUG:-}" ] && env | sort
+
+    set +o allexport
+    set -e 
+}
+
+function get_github_latest_version_url() {
+    repo_name=$1
+    system_type=${2:-`uname -s`}
+    arch_type=${3:-`dpkg --print-architecture`}
+
+    local url=$(curl -fsSL https://api.github.com/repos/$1/releases/latest | grep browser_download_url)
+    local urlSystemType=$(echo $url | grep -i "$system_type")
+    [[ -n "$urlSystemType" ]] && url=$urlSystemType
+    local urlArchType=$(echo $url | grep -i "$arch_type")
+    [[ -n "$urlArchType" ]] && url=$urlArchType
+
+    echo $url | head -1 | cut -d '"' -f 4
+}
+
+function download_github_latest_version() {
+    repo_name=$1
+    output_file=${2:-}
+    system_type=${3:-`uname -s`}
+    arch_type=${4:-`uname -m`}
+
+    # write_info "Downloading $repo_name"
+
+    download_url=$(get_github_latest_version_url $repo_name $system_type $arch_type)
+
+    if [ -z "${output_file}" ]; then
+        output_file=$(basename $download_url)
+    fi
+
+    #write_info "Downloading $download_url to $output_file"
+
+    if [ $download_url == *".tar.gz" ]; then
+        curl -fsSL $download_url | tar -xz > ${output_file}
+    else 
+        curl -fsSL $download_url -o ${output_file}
+    fi
+
+    chmod +x ${output_file}
+}
