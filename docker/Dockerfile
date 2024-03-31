@@ -46,6 +46,7 @@ RUN \
 	coloredlogs \
 	logging-tree \
 	expandvars \
+	pyOpenSSL \
 	pyyaml && \
  if [ -z ${PACKAGE_REPO_URL+x} ]; then \
 	echo "**** install traefik-certificate-exporter from pypi ****" && \

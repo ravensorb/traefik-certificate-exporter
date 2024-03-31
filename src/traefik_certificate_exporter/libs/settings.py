@@ -33,8 +33,30 @@ class Settings:
     watchForChanges : bool
     runAtStart : bool
     watchInterval : int
+    pkcs12Passphrase : str | None
     
-    def __init__(self, dataPath : str | Path | None, fileSpec : str, outputPath : str | Path | None, resolverInPathName : bool, traefikResolverId: str,flat : bool, dryRun : bool, restartContainers : bool, domains : dict, watchForChanges : bool, runAtStart : bool, watchInterval : int):
+    def __init__(self, dataPath : str | Path | None, fileSpec : str, outputPath : str | Path | None, resolverInPathName : bool, traefikResolverId: str,flat : bool, dryRun : bool, restartContainers : bool, domains : dict, watchForChanges : bool, runAtStart : bool, watchInterval : int, pkcs12Passphrase : str | None) -> None:
+        """
+        Initialize the class with the provided parameters.
+
+        Parameters:
+            dataPath (str | Path | None): The path to the data.
+            fileSpec (str): The specification of the file.
+            outputPath (str | Path | None): The path to the output.
+            resolverInPathName (bool): Flag indicating if the resolver is in the path name.
+            traefikResolverId (str): The ID of the Traefik resolver.
+            flat (bool): Flag indicating if the structure is flat.
+            dryRun (bool): Flag indicating if it's a dry run.
+            restartContainers (bool): Flag indicating if containers need to be restarted.
+            domains (dict): Dictionary of domains.
+            watchForChanges (bool): Flag indicating if changes should be watched.
+            runAtStart (bool): Flag indicating if it should run at start.
+            watchInterval (int): The interval to watch for changes.
+            pkcs12Passphrase (str | None): Passphrase for PKCS12, if needed.
+
+        Returns:
+            None
+        """
         self.dataPath = str(dataPath)
         self.fileSpec = fileSpec
         self.outputPath = str(outputPath)
@@ -47,6 +69,7 @@ class Settings:
         self.watchForChanges = watchForChanges
         self.runAtStart = runAtStart
         self.watchInterval = watchInterval
+        self.pkcs12Passphrase = pkcs12Passphrase
 
 #######################################################################
 
@@ -114,6 +137,7 @@ class SettingsManager(ObjectBase):
             watchForChanges=self._config['settings']['watchforchanges'].get(bool),                      # type: ignore
             runAtStart=self._config['settings']['runatstart'].get(bool),                                # type: ignore
             watchInterval=self._config['settings']['watchinterval'].get(int),                           # type: ignore
+            pkcs12Passphrase=self._config['settings']['pkcs12passphrase'].get(confuse.Optional(str)),   # type: ignore
         )
 
         self._dump_settings()
