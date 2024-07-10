@@ -43,6 +43,7 @@ RUN \
 	python-dotenv \
 	importlib-resources \
 	jsonpickle \
+	expandvars \
 	coloredlogs \
 	logging-tree \
 	expandvars \
