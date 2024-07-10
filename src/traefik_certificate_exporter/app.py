@@ -27,7 +27,7 @@ def main():
     globalSettingsMgr.loadFromFile(fileName=globalArgs.configfile, cmdLineArgs=globalArgs)
     settings = globalSettingsMgr.settings
 
-    logger.info("Traefik Cretificate Exporter v{} starting....".format(__version__))
+    logger.info("Traefik Certificate Exporter v{} starting....".format(__version__))
 
     ###########################################################################################################
 
