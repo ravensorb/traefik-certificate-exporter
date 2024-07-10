@@ -1,0 +1,13 @@
+settings:
+  filespec: "*.json"
+  # traefikresolverid:
+  resolverinpathname: true
+  flat: false
+  dryrun: false
+  restartcontainers: false
+  domains:
+    include: []
+    exclude: []
+  watchforchanges: false
+  runatstart: false
+  watchinterval: 60
