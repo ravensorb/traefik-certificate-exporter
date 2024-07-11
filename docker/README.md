@@ -26,7 +26,7 @@ docker run -it ravensorb/traefik-certificate-exporter:latest \
 
 This will run the container and maps the local ./data/config into the container.  This folder should contain the config.yml file that the application will use.
 
-```
+```bash
 docker run -it ravensorb/traefik-certificate-exporter:latest \
                 -v ${PWD}/data/config:/config \
                 -v /mnt/traefik-data/letsencrypt:/data 
@@ -63,7 +63,7 @@ services:
       - ./data/certs:/certs:rw                        # Location you want to export certificates to      
 ```
 
-### docker-compose (using env vars)
+### docker-compose (using config file)
 
 This will start the container and look in the ./data/config path that is mapped to /config for the configuration file
 
@@ -82,6 +82,6 @@ services:
       - ./data/certs:/certs:rw                        # Location you want to export certificates to      
 ```
 
-# Credits
+## Credits
 
-This tool is HEAVLY influenced by the excellent work of [DanielHuisman](https://github.com/DanielHuisman) and [Marc Brückner](https://github.com/SnowMB)
+This tool is HEAVILY influenced by the excellent work of [DanielHuisman](https://github.com/DanielHuisman) and [Marc Brückner](https://github.com/SnowMB)

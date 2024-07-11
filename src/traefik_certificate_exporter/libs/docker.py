@@ -6,7 +6,7 @@ from .logging_utils import globalLogger
 
 ###########################################################################################################
 
-DOCKER_LABLE = "com.github.ravensorb.traefik-certificate-exporter.domain-restart"
+DOCKER_LABEL = "com.github.ravensorb.traefik-certificate-exporter.domain-restart"
 
 ###########################################################################################################
 class DockerManager:
@@ -24,9 +24,9 @@ class DockerManager:
 
         try:
             client = docker.from_env()
-            container = client.containers.list(filters = {"label" : DOCKER_LABLE})
+            container = client.containers.list(filters = {"label" : DOCKER_LABEL})
             for c in container:
-                restartDomains = str.split(c.labels[ DOCKER_LABLE ], ',')  # type: ignore
+                restartDomains = str.split(c.labels[ DOCKER_LABEL ], ',')  # type: ignore
                 if not set(domains).isdisjoint(restartDomains):
                     self.__logger .info("Restarting container: {}".format(c.id))
                     if not self.__settings.dryRun:

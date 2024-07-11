@@ -65,7 +65,7 @@ def main():
             observer.stop()
         observer.join()
 
-    logger.info("Traefik Cretificate Exporter stopping....")
+    logger.info("Traefik Certificate Exporter stopping....")
 
 if __name__ == "__main__":
     main()

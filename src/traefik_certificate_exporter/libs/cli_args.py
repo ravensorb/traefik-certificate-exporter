@@ -3,7 +3,7 @@
 
 import argparse
 import logging
-from .docker import DOCKER_LABLE
+from .docker import DOCKER_LABEL
 
 ###################################################################################################
 
@@ -48,7 +48,7 @@ globalArgParser.add_argument("--restart-container",
                              action="store_const", const=True,
                              dest="settings.restartcontainer",
                              default=None,
-                             help="If specified, any container that are labeled with '" + DOCKER_LABLE + "=<DOMAIN>' will be restarted if the domain name of a generated certificates matches the value of the lable. Multiple domains can be seperated by ','")
+                             help="If specified, any container that are labeled with '" + DOCKER_LABEL + "=<DOMAIN>' will be restarted if the domain name of a generated certificates matches the value of the label. Multiple domains can be separated by ','")
 globalArgParser.add_argument("--dry-run", 
                              action="store_const", const=True,
                              dest="settings.dryrun", 

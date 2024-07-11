@@ -1,22 +1,22 @@
-# Overview
+# traefik-certificate-exporter
+
+## Overview
 
 [![Github Tags](https://img.shields.io/github/v/tag/ravensorb/traefik-certificate-exporter?logo=github&logoColor=white)](https://github.com/ravensorb/traefik-certificate-exporter) [![PyPi Version](https://img.shields.io/pypi/v/traefik-certificate-exporter?color=g&label=pypi%20package&logo=pypi&logoColor=white)](https://pypi.org/project/traefik-certificate-exporter/) [![Docker](https://badgen.net/badge/icon/docker?icon=docker&label)](https://hub.docker.com/r/ravensorb/traefik-certificate-exporter)
 
-
-
 This tool can be used to extract acme certificates (ex: lets encrupt) from traefik json files. The tool is design to watch for changes to a folder for any files that match a filespec (defaults to *,json however can be set to a specific file name) and when changes are detected it will process the file and extract any certificates that are in it to the specified output path
 
-# Installation
+## Installation
 
-## Python Script/Tool
+### Python Script/Tool
 
 Installation can be done via the python package installer tool pip
 
 ```basah
-$ pip install traefik-certificate-exporter
+pip install traefik-certificate-exporter
 ```
 
-# Usage
+## Usage
 
 ```bash
 usage: traefik-certificate-exporter [-h] [-c CONFIGFILE] [-d SETTINGS.DATAPATH] [-w] [-fs SETTINGS.FILESPEC] [-o SETTINGS.OUTPUTPATH] [--traefik-resolver-id SETTINGS.TRAEFIKRESOLVERID] [--flat] [--restart-container]
