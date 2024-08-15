@@ -4,10 +4,6 @@ FROM ghcr.io/linuxserver/baseimage-alpine:3.19
 # environment settings
 ENV \
     DOCKER_PLATFORMS="linux/amd64,linux/arm64"  \
-    LLL_EX_PATH_BASE="/opt/l3io"  \
-    LLL_EX_PATH_COMMON_SCRIPTS="/opt/l3io/common/scripts"  \
-    LLL_EX_PATH_CONFIG="/opt/l3io/build/config"  \
-    LLL_EX_PATH_SCRIPTS="/opt/l3io/build/scripts" \
 	TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY=true \
 	TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH=/data \
 	TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_OUTPUTPATH=/certs \
@@ -18,8 +14,7 @@ ENV \
 ARG PACKAGE_REPO_URL
 
 # Labels
-LABEL org.opencontainers.image.description "utility to export certificates 	from traefik and is based on the linuxserver.io container baseimage for alpine"
-LABEL maintainer="ravensorb"
+LABEL org.opencontainers.image.description="Utility to export certificates from traefik and is based on the linuxserver.io container baseimage for alpine"
 
 # Copy files into container
 COPY root /
@@ -60,7 +55,7 @@ RUN \
  fi && \
  echo "**** creating folders ****" && \
  mkdir -p \
-	/data /certs && \
+	/config /data /certs && \
  echo "**** cleanup ****" && \
  rm -rf \
 	/tmp/* \
@@ -68,7 +63,7 @@ RUN \
 	/var/tmp/* || true
 
 # volumes
-VOLUME /data /certs
+VOLUME /config /data /certs
 
 # Working directory
 WORKDIR /config
