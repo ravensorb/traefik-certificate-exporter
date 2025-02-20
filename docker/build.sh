@@ -6,7 +6,7 @@
 [ -n "$ACTION" ]                 || ACTION=build
 
 [ -z "$DOCKER_IMAGENAME" ]       && DOCKER_IMAGENAME=traefik-certificate-exporter
-[ -z "$DOCKER_REGISTRY" ]        && DOCKER_REGISTRY=gcr.ravenwolf.org
+[ -z "$DOCKER_REGISTRY" ]        && DOCKER_REGISTRY=
 [ -z "$DOCKER_LIBRARY" ]         && DOCKER_LIBRARY=ravensorb
 
 [ -z "$DOCKER_IMAGETAG" ]        && DOCKER_IMAGETAG=latest

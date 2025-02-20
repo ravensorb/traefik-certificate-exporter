@@ -38,8 +38,8 @@ build-backend = "poetry_dynamic_versioning.backend"
 [tool.poetry-dynamic-versioning]
 enable = false
 vcs = "git"
-#style = "semver"
-#format = "{base}.{distance}-{commit}"
+# style = "pep440"
+# format = "{base}.{distance}-{commit}"
 format-jinja = """
     {%- if distance == 0 -%}
         {{ serialize_pep440(base, stage, revision) }}

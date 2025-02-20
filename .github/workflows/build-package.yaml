@@ -1,0 +1,80 @@
+name: Build and publish python package
+
+on:
+  release:
+    types: [ published ]
+
+permissions:
+    contents: write
+    pull-requests: write
+
+env:
+    PACKAGE_REPO: ${{ vars.PACKAGE_REPO || 'testpypi' }}
+    GITHUB_TAG: ${{ vars.GITHUB_TAG || '' }}
+    PYTHON_VERSION: ${{ vars.PYTHON_VERSION || '3.11' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository # You must checkout your repository first.
+        uses: actions/checkout@v3
+    
+      - name: Set up Python
+        id: setup-python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          installer-parallel: true
+
+      - name: Publish PyPi package
+        uses: cadifyai/poetry-publish@v0.1.0
+        with:
+          ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
+          PUBLISH_REGISTRY: ${{ env.PACKAGE_REPO }}
+          PUBLISH_REGISTRY_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          PUBLISH_REGISTRY_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+      
+      # - name: Publish Package
+      #   uses: celsiusnarhwal/poetry-publish@v2
+      #   with:
+      #     python-version: ${{ env.PYTHON_VERSION }}
+      #     # poetry-version: 1.3.1
+      #     token: ${{ secrets.PYPI_TOKEN }}
+      #     repo: ${{ env.PACKAGE_REPO }}
+      #     build: true
+
+      # - name: Load cached venv
+      #   id: cached-poetry-dependencies
+      #   uses: actions/cache@v2
+      #   with:
+      #     path: .venv
+      #     key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      # - name: Install Dependencies
+      #   run: poetry install --no-root
+
+      # - name: Build
+      #   run: poetry build
+      #   env:
+      #     POETRY_VIRTUALENVS_CREATE: true
+      #     POETRY_VIRTUALENVS_IN_PROJECT: true
+      #     POETRY_NO_INTERACTION: 1
+      #     POETRY_INSTALLER_PARALLEL: true
+
+      # - name: Publish
+      #   run: |
+      #       poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
+
+      #       if [ "${{ vars.PACKAGE_REPO }}" == "pypi" || "${{ vars.PACKAGE_REPO }}" == "" ]; then
+      #           poetry publish
+      #       else
+      #           poetry publish -r ${{ vars.PACKAGE_REPO }}
+      #       fi

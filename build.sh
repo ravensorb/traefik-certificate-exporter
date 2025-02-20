@@ -6,7 +6,7 @@
 [ -n "$ACTION" ]                 || ACTION=build
 
 [ -z "$PACKAGE_VERSIONTAG" ]     && PACKAGE_VERSIONTAG=$(git describe --abbrev=0 --tags)
-[ -z "$PACKAGE_REPO" ]           && PACKAGE_REPO="ravenwolf"
+[ -z "$PACKAGE_REPO" ]           && PACKAGE_REPO="pypi"
 
 [ -z "$SOURCE_TYPE" ]            && SOURCE_TYPE=git 
 [ -z "$SOURCE_BRANCH" ]          && SOURCE_BRANCH=$(git symbolic-ref -q --short HEAD)  
@@ -137,7 +137,7 @@ if [[ "$ACTION" == *"publish"* ]]; then
     poetry publish -r $PACKAGE_REPO
 
     if [[ "$ACTION" == *"docker"* ]]; then
-        echo "Sleaping 30 secods to allow $PACKAGE_REPO enough time to process upload of new version"
+        echo "Sleeping 30 seconds to allow $PACKAGE_REPO enough time to process upload of new version"
         sleep 30s
     fi
 fi
