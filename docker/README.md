@@ -49,13 +49,14 @@ services:
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_OUTPUTPATH="/certs"             # The base path to export the certificates to
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_TRAEFIKRESOLVERID=              # Specify a specific resolver id to match against (optional)
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FLAT=false                      # Indicates if certificates are exported in sub folders or a single folder
-      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS.RESTARTCONTAINER=false          # Indicates of the containers should be restarted after the export
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESTARTCONTAINER=false          # Indicates of the containers should be restarted after the export
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DRYRUN=false                    # Set this to show what wil le exported (files will not actually be created)
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RUNATSTART=true                 # Set this to run the export immediately on startup
       - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESOLVERINPATHNAME=true           # Include the resolver name in the path when exporting
       - TRAEFIK_CERTIFICATE_EXPORTER_LOGGINGLEVEL=INFO                          # Logging level 
-      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_INCLUDE_DOMAINS=                # comma separated list of domain names to only export
-      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_EXCLUDE_DOMAINS=               # comma separated list of domain names to exclude from exporting
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_INCLUDE=                # comma separated list of domain names to only export
+      ## FIXME: when ..._DOMAINS_INCLUDE is set, ..._DOMAINS_EXCLUDE **must also** be set to a non-empty value
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_EXCLUDE=                # comma separated list of domain names to exclude from exporting
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Only needed if you are going to be restarting containers
       - ./data/config:/config:rw                      # Only needed if you are going to set a config file to load
