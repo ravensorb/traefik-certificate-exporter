@@ -97,3 +97,13 @@
 {"epic": "E004", "event": "actual", "from": null, "key": "S01", "node": "sprint", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": null, "ts": "2026-08-30T22:58:20Z"}
 {"epic": "E004", "event": "status", "from": "in-progress", "key": "E004", "node": "epic", "session": "l3io-pm-20260830T202636Z-22345", "sprint": null, "to": "done", "ts": "2026-08-30T22:59:06Z"}
 {"epic": "E004", "event": "actual", "from": null, "key": "E004", "node": "epic", "session": "l3io-pm-20260830T202636Z-22345", "sprint": null, "to": null, "ts": "2026-08-30T22:59:07Z"}
+{"agent": "bmad-agent-dev", "event": "dispatch_open", "session": "l3io-pm-20260830T202636Z-22345", "story": "E005-S01-001", "ts": "2026-08-30T23:05:48Z"}
+{"epic": "E005", "event": "status", "from": "backlog", "key": "E005-S01-001", "node": "story", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": "in-progress", "ts": "2026-08-30T23:05:49Z"}
+{"epic": "E005", "event": "actual", "from": null, "key": "E005-S01-001", "node": "story", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": null, "ts": "2026-08-30T23:05:50Z"}
+{"epic": "E005", "event": "status", "from": "in-progress", "key": "E005-S01-001", "node": "story", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": "done", "ts": "2026-08-30T23:05:51Z"}
+{"agent": "bmad-agent-dev", "event": "dispatch_close", "session": "l3io-pm-20260830T202636Z-22345", "story": "E005-S01-001", "ts": "2026-08-30T23:05:52Z"}
+{"epic": "E005", "event": "status", "from": "backlog", "key": "S01", "node": "sprint", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": "done", "ts": "2026-08-30T23:05:53Z"}
+{"epic": "E005", "event": "actual", "from": null, "key": "S01", "node": "sprint", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": null, "ts": "2026-08-30T23:05:55Z"}
+{"epic": "E005", "event": "status", "from": "in-progress", "key": "E005", "node": "epic", "session": "l3io-pm-20260830T202636Z-22345", "sprint": null, "to": "done", "ts": "2026-08-30T23:06:17Z"}
+{"epic": "E005", "event": "actual", "from": null, "key": "E005", "node": "epic", "session": "l3io-pm-20260830T202636Z-22345", "sprint": null, "to": null, "ts": "2026-08-30T23:06:18Z"}
+{"epic": "E005", "event": "actual", "from": null, "key": "E005", "node": "epic", "session": "l3io-pm-20260830T202636Z-22345", "sprint": null, "to": null, "ts": "2026-08-30T23:06:30Z"}

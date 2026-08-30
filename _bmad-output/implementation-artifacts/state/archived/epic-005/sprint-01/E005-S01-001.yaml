@@ -2,7 +2,7 @@ key: 'E005-S01-001'
 epic: 'E005'
 sprint: 'S01'
 title: 'Support a Configurable Post-Export Command'
-status: backlog
+status: done
 classification: standard
 depends_on: []
 estimate:
@@ -23,4 +23,16 @@ estimate:
     output: 9
     cache_write: 53
     cache_read: 88
-updated_at: '2026-08-30T20:22:03Z'
+updated_at: '2026-08-30T23:05:51Z'
+completion_evidence:
+  test_runs:
+  - command: poetry run pytest
+    exit_code: 0
+  tests_passing: true
+actual:
+  elapsed_hours: 1.8
+  man_hours: 5
+  hitl_hours: 0.25
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-08-30T23:05:50Z'

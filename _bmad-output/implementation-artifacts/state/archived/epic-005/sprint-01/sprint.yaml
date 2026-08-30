@@ -1,7 +1,7 @@
 key: 'S01'
 epic: 'E005'
 title: 'Sprint 01 — Extended Integration Capability'
-status: backlog
+status: done
 estimate:
   man_hours_low: 8.25
   man_hours_high: 9.38
@@ -25,4 +25,11 @@ estimate:
   cost_high: 0.91
   model: claude-opus-5
   confidence: medium
-updated_at: '2026-08-30T20:22:12Z'
+updated_at: '2026-08-30T23:05:53Z'
+actual:
+  elapsed_hours: 2
+  man_hours: 5.5
+  hitl_hours: 0.3
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-08-30T23:05:54Z'
