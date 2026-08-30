@@ -9,6 +9,9 @@ scope:
       - 0.15
       - 0.4
       - 0.48
+      - 0.8
+      - 1.2
+      - 0.8
     man_hours:
       samples:
       - 0.3333
@@ -16,6 +19,9 @@ scope:
       - 0.1667
       - 0.4
       - 0.4
+      - 0.8
+      - 1.0667
+      - 0.8
     hitl_hours:
       samples:
       - 0.5
@@ -23,6 +29,9 @@ scope:
       - 0.25
       - 0.4
       - 0.4
+      - 0.8
+      - 0.8
+      - 0.6
   standard:
     elapsed_hours:
       samples:
@@ -64,6 +73,7 @@ closure:
       - 0.3053
       - 0.458
       - 0.4598
+      - 0.3053
     hitl_hours:
       samples:
       - 0.625
@@ -71,12 +81,14 @@ closure:
       - 0.4167
       - 0.4167
       - 0.6667
+      - 0.3704
     man_hours:
       samples:
       - 0.4234
       - 0.1523
       - 0.5076
       - 0.3802
+      - 0.2538
   epic:
     elapsed_hours:
       samples:
@@ -85,16 +97,19 @@ closure:
       - 0.2581
       - 0.2581
       - 0.1942
+      - 0.5161
     hitl_hours:
       samples:
       - 0.5128
       - 0.241
       - 0.3571
       - 0.3571
+      - 0.3226
     man_hours:
       samples:
       - 0.216
       - 0.216
+      - 0.432
 fix:
   simple:
     clean:

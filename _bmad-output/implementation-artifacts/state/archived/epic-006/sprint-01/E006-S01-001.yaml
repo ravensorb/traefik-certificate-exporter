@@ -2,7 +2,7 @@ key: 'E006-S01-001'
 epic: 'E006'
 sprint: 'S01'
 title: 'Add Security Disclosure and Contribution Governance Files'
-status: backlog
+status: done
 classification: simple
 depends_on: []
 estimate:
@@ -23,4 +23,16 @@ estimate:
     output: 4
     cache_write: 27
     cache_read: 44
-updated_at: '2026-08-30T20:22:00Z'
+updated_at: '2026-08-30T23:18:11Z'
+completion_evidence:
+  test_runs:
+  - command: pre-commit run gitleaks --files SECURITY.md CONTRIBUTING.md CODE_OF_CONDUCT.md
+    exit_code: 0
+  tests_passing: true
+actual:
+  elapsed_hours: 1
+  man_hours: 3
+  hitl_hours: 0.2
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-08-30T23:18:09Z'

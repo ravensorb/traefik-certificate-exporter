@@ -2,7 +2,7 @@ key: 'E006-S01-002'
 epic: 'E006'
 sprint: 'S01'
 title: 'Align GitHub Actions Versions and Enable Dependabot'
-status: backlog
+status: done
 classification: simple
 depends_on: []
 estimate:
@@ -23,4 +23,16 @@ estimate:
     output: 4
     cache_write: 27
     cache_read: 44
-updated_at: '2026-08-30T20:21:59Z'
+updated_at: '2026-08-30T23:18:13Z'
+completion_evidence:
+  test_runs:
+  - command: pre-commit run actionlint --files .github/workflows/*.yaml
+    exit_code: 0
+  tests_passing: true
+actual:
+  elapsed_hours: 1.5
+  man_hours: 4
+  hitl_hours: 0.2
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-08-30T23:18:10Z'

@@ -107,3 +107,22 @@
 {"epic": "E005", "event": "status", "from": "in-progress", "key": "E005", "node": "epic", "session": "l3io-pm-20260830T202636Z-22345", "sprint": null, "to": "done", "ts": "2026-08-30T23:06:17Z"}
 {"epic": "E005", "event": "actual", "from": null, "key": "E005", "node": "epic", "session": "l3io-pm-20260830T202636Z-22345", "sprint": null, "to": null, "ts": "2026-08-30T23:06:18Z"}
 {"epic": "E005", "event": "actual", "from": null, "key": "E005", "node": "epic", "session": "l3io-pm-20260830T202636Z-22345", "sprint": null, "to": null, "ts": "2026-08-30T23:06:30Z"}
+{"agent": "bmad-agent-dev", "event": "dispatch_open", "session": "l3io-pm-20260830T202636Z-22345", "story": "E006-S01-001", "ts": "2026-08-30T23:08:21Z"}
+{"epic": "E006", "event": "status", "from": "backlog", "key": "E006-S01-001", "node": "story", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": "in-progress", "ts": "2026-08-30T23:08:22Z"}
+{"agent": "bmad-agent-dev", "event": "dispatch_open", "session": "l3io-pm-20260830T202636Z-22345", "story": "E006-S01-002", "ts": "2026-08-30T23:08:23Z"}
+{"epic": "E006", "event": "status", "from": "backlog", "key": "E006-S01-002", "node": "story", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": "in-progress", "ts": "2026-08-30T23:08:23Z"}
+{"agent": "bmad-agent-dev", "event": "dispatch_open", "session": "l3io-pm-20260830T202636Z-22345", "story": "E006-S01-003", "ts": "2026-08-30T23:08:24Z"}
+{"epic": "E006", "event": "status", "from": "backlog", "key": "E006-S01-003", "node": "story", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": "in-progress", "ts": "2026-08-30T23:08:25Z"}
+{"epic": "E006", "event": "actual", "from": null, "key": "E006-S01-001", "node": "story", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": null, "ts": "2026-08-30T23:18:09Z"}
+{"epic": "E006", "event": "actual", "from": null, "key": "E006-S01-002", "node": "story", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": null, "ts": "2026-08-30T23:18:10Z"}
+{"epic": "E006", "event": "actual", "from": null, "key": "E006-S01-003", "node": "story", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": null, "ts": "2026-08-30T23:18:11Z"}
+{"epic": "E006", "event": "status", "from": "in-progress", "key": "E006-S01-001", "node": "story", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": "done", "ts": "2026-08-30T23:18:11Z"}
+{"agent": "bmad-agent-dev", "event": "dispatch_close", "session": "l3io-pm-20260830T202636Z-22345", "story": "E006-S01-001", "ts": "2026-08-30T23:18:12Z"}
+{"epic": "E006", "event": "status", "from": "in-progress", "key": "E006-S01-002", "node": "story", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": "done", "ts": "2026-08-30T23:18:13Z"}
+{"agent": "bmad-agent-dev", "event": "dispatch_close", "session": "l3io-pm-20260830T202636Z-22345", "story": "E006-S01-002", "ts": "2026-08-30T23:18:14Z"}
+{"epic": "E006", "event": "status", "from": "in-progress", "key": "E006-S01-003", "node": "story", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": "done", "ts": "2026-08-30T23:18:15Z"}
+{"agent": "bmad-agent-dev", "event": "dispatch_close", "session": "l3io-pm-20260830T202636Z-22345", "story": "E006-S01-003", "ts": "2026-08-30T23:18:16Z"}
+{"epic": "E006", "event": "status", "from": "backlog", "key": "S01", "node": "sprint", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": "done", "ts": "2026-08-30T23:18:17Z"}
+{"epic": "E006", "event": "actual", "from": null, "key": "S01", "node": "sprint", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": null, "ts": "2026-08-30T23:18:18Z"}
+{"epic": "E006", "event": "status", "from": "in-progress", "key": "E006", "node": "epic", "session": "l3io-pm-20260830T202636Z-22345", "sprint": null, "to": "done", "ts": "2026-08-30T23:19:29Z"}
+{"epic": "E006", "event": "actual", "from": null, "key": "E006", "node": "epic", "session": "l3io-pm-20260830T202636Z-22345", "sprint": null, "to": null, "ts": "2026-08-30T23:19:30Z"}
