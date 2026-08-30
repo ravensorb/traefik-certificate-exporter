@@ -70,7 +70,7 @@ are **multi-platform (GitHub + Gitea)** by design — a direct fit for this proj
 [§7 one-pipeline-three-runners rule](#7-one-pipeline-three-runners--no-act-env-var-dependency).
 Prefer a `LiquidLogicLabs` action over an official/community one where one exists and covers
 the need; otherwise fall back to the general rule (official/verified marketplace action, no
-vendor preference). Two are directly applicable to open findings in this repo:
+vendor preference). Several are directly applicable to open findings in this repo:
 
 - **[`git-action-ca-certificate-import`](https://github.com/LiquidLogicLabs/git-action-ca-certificate-import)**
   — installs custom CA certificates into the runner unconditionally (GitHub, Gitea, or `act`
@@ -81,6 +81,11 @@ vendor preference). Two are directly applicable to open findings in this repo:
   — resolves Docker build-context/Dockerfile-path differences between `act` and real GitHub
   Actions; relevant given [docker/act-build.sh](../docker/act-build.sh) already exists for local
   `act` testing.
+- **[`git-action-docker-metadata`](https://github.com/LiquidLogicLabs/git-action-docker-metadata)**
+  — a drop-in fork of `docker/metadata-action` (identical inputs/tags/flavor semantics, same
+  version numbering) with no GitHub API dependency, so it works identically across GitHub,
+  Gitea, and local `act`. Adopted in [build-container.yaml](../.github/workflows/build-container.yaml)'s
+  `Docker meta` steps for semver/major/minor/sha/beta/latest image tagging.
 
 Other `LiquidLogicLabs` actions (`git-action-release`, `git-action-release-changelog-builder`,
 `git-action-tag-validate-version`, `git-action-tag-floating-version`, `git-action-docker-test`,

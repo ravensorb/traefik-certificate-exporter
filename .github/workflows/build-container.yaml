@@ -12,7 +12,6 @@ env:
   DOCKER_REPONAME: ${{ vars.DOCKER_REPONAME || 'ravensorb' }}
   DOCKER_FILE: ${{ vars.DOCKER_FILE || 'docker/Dockerfile' }}
   DOCKER_IMAGENAME: ${{ vars.DOCKER_IMAGENAME || 'traefik-certificate-exporter' }}
-  DOCKER_IMAGE_TAG: ${{ vars.DOCKER_IMAGE_TAG || 'latest' }}
   GIT_REPO_URL: ${{ vars.GIT_REPO || 'https://github.com' }}
   GIT_REPO_OWNER: ${{ vars.GIT_REPO_OWNER || 'ravensorb' }}
   GIT_REPO_NAME: ${{ vars.GIT_REPO_NAME || 'ravensorb' }}
@@ -52,21 +51,21 @@ jobs:
 
       - name: Docker meta (docker.io)
         id: meta
-        uses: docker/metadata-action@v6
+        uses: LiquidLogicLabs/git-action-docker-metadata@v6
         with:
           # list of Docker images to use as base name for tags
           images: |
             ${{ env.DOCKER_REPONAME }}/${{ env.DOCKER_IMAGENAME }}
+          # latest=auto (the default) tags `latest` only for a real semver release tag,
+          # never for a plain branch build -- see the `beta` entry below for that case.
+          flavor: |
+            latest=auto
           tags: |
-            type=ref,event=tag
             type=semver,pattern={{version}}
-            type=edge,branch=$repo.default_branch
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
             type=sha,format=short
-            type=raw,value=${{ steps.tagName.outputs.name }}
-            type=raw,value=${{ steps.builddate.outputs.current }}
-            type=raw,value=${{ env.DOCKER_IMAGE_TAG }}
-          #   type=semver,pattern={{major}}.{{minor}}
-          #   type=semver,pattern={{major}}
+            type=raw,value=beta,enable=${{ github.ref_type != 'tag' }}
           labels: |
             # org.opencontainers.image.description=
             # org.opencontainers.image.licenses=
@@ -80,21 +79,19 @@ jobs:
 
       - name: Docker meta (custom registry)
         id: meta_custom
-        uses: docker/metadata-action@v6
+        uses: LiquidLogicLabs/git-action-docker-metadata@v6
         with:
           # list of Docker images to use as base name for tags
           images: |
             ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPONAME }}/${{ env.DOCKER_IMAGENAME }}
+          flavor: |
+            latest=auto
           tags: |
-            type=ref,event=tag
             type=semver,pattern={{version}}
-            type=edge,branch=$repo.default_branch
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
             type=sha,format=short
-            type=raw,value=${{ steps.tagName.outputs.name }}
-            type=raw,value=${{ steps.builddate.outputs.current }}
-            type=raw,value=${{ env.DOCKER_IMAGE_TAG }}
-          #   type=semver,pattern={{major}}.{{minor}}
-          #   type=semver,pattern={{major}}
+            type=raw,value=beta,enable=${{ github.ref_type != 'tag' }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
