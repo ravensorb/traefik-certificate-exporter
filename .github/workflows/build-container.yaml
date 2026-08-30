@@ -10,18 +10,19 @@ env:
   DOCKER_PUBLISH_MODE: ${{ vars.DOCKER_PUBLISH_MODE || 'push' }}
   DOCKER_REGISTRY: ${{ vars.DOCKER_REGISTRY || 'docker.io' }}
   DOCKER_REPONAME: ${{ vars.DOCKER_REPONAME || 'ravensorb' }}
-  DOCKER_FILE: ${{ vars.DOCKER_FILE || 'Dockerfile' }}
+  DOCKER_FILE: ${{ vars.DOCKER_FILE || 'docker/Dockerfile' }}
   DOCKER_IMAGENAME: ${{ vars.DOCKER_IMAGENAME }}
   DOCKER_IMAGE_TAG: ${{ vars.DOCKER_IMAGE_TAG || 'latest' }}
   GIT_REPO_URL: ${{ vars.GIT_REPO || 'https://github.com' }}
   GIT_REPO_OWNER: ${{ vars.GIT_REPO_OWNER || 'ravensorb' }}
   GIT_REPO_NAME: ${{ vars.GIT_REPO_NAME || 'ravensorb' }}
   BUILDKIT_FLAGS: ${{ vars.BUILDKIT_FLAGS || '' }}
-  GITHUB_TAG: ${{ vars.GITHUB_TAG || '' }}
+  GITHUB_TAG: ${{ vars.RELEASE_GITHUB_TAG || '' }}
+  HAS_CUSTOM_CA: ${{ secrets.CI_CA_CERTIFICATE != '' }}
 
 jobs:
   build-deploy-container:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     permissions:
       contents: read
@@ -33,7 +34,7 @@ jobs:
       - name: "Set current date as env variable"
         id: builddate  # this is used on variable path
         run: |
-          echo "current=$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
+          echo "current=$(date +'%Y%m%d%H%M')" >> "$GITHUB_OUTPUT"
 
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -44,9 +45,9 @@ jobs:
         id: tagName
         run: |
           if [ -z "$GITHUB_TAG" ]; then
-            echo "name=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+            echo "name=$(git describe --tags --abbrev=0)" >> "$GITHUB_OUTPUT"
           else
-            echo "name=$GITHUB_TAG" >> $GITHUB_OUTPUT
+            echo "name=$GITHUB_TAG" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Docker meta (docker.io)
@@ -98,11 +99,17 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      - name: Install root certificates
-        if: ${{ env.ACT }}
-        run: |
-          sudo cp /mnt/certificates/ca-ravenwolf.pfx.crt /usr/local/share/ca-certificates
-          sudo update-ca-certificates
+      # Runner-agnostic replacement for the old `if: ${{ env.ACT }}` step (which only ever
+      # worked under local `act`, via a bind-mounted file that doesn't exist on GitHub or
+      # Gitea runners). Conditioned on whether a CI_CA_CERTIFICATE secret is configured --
+      # not on which runner this is -- so it behaves identically everywhere: skipped when no
+      # secret is set (the common case for this public repo's real GitHub/Gitea runs),
+      # applied uniformly when one is (e.g. local `act` runs against a private registry).
+      - name: Install custom CA certificate
+        if: ${{ env.HAS_CUSTOM_CA == 'true' }}
+        uses: LiquidLogicLabs/git-action-ca-certificate-import@v2
+        with:
+          certificate: ${{ secrets.CI_CA_CERTIFICATE }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -111,7 +118,7 @@ jobs:
           platforms: ${{ env.DOCKER_PLATFORMS }}
           use: true
 
-      - name: Login to Docker Hub Registry 
+      - name: Login to Docker Hub Registry
         if: github.event_name != 'pull_request' && env.DOCKER_PUBLISH_MODE == 'push' && (env.DOCKER_REGISTRY == 'docker.io' || env.DOCKER_REGISTRY == '')
         uses: docker/login-action@v3
         with:
@@ -136,7 +143,7 @@ jobs:
           registry: ${{ env.DOCKER_REGISTRY }}
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
-  
+
       - name: Build and push (docker.io)
         if: github.event_name != 'pull_request' && (env.DOCKER_REGISTRY == 'docker.io' || env.DOCKER_REGISTRY == '')
         id: dockerhub_build
