@@ -1,0 +1,2 @@
+module,skill,display-name,menu-code,description,action,args,phase,preceded-by,followed-by,required,output-location,outputs
+L3io Sec,l3io-sec-redteam,L3io Sec Redteam,LSR,"Red team security analysis agent. Use when the user wants adversarial review of a sprint, epic, or full solution through five threat lenses (external attacker, malicious insider, chaos engineer, abusive legitimate user, design/architecture) with AI poisoning cross-cut and live cloud/platform best practices research.",activate,,anytime,,,false,,

@@ -1,0 +1,81 @@
+installation:
+  version: 6.11.0
+  installDate: 2026-08-30T18:53:39.264Z
+  lastUpdated: 2026-08-30T19:35:36.301Z
+modules:
+  - name: core
+    version: 6.11.0
+    installDate: 2026-08-30T18:53:38.761Z
+    lastUpdated: 2026-08-30T19:35:36.235Z
+    source: built-in
+    npmPackage: null
+    repoUrl: null
+  - name: bmm
+    version: 6.11.0
+    installDate: 2026-08-30T19:35:31.656Z
+    lastUpdated: 2026-08-30T19:35:36.238Z
+    source: built-in
+    npmPackage: null
+    repoUrl: null
+  - name: bmb
+    version: v2.2.1
+    installDate: 2026-08-30T19:35:31.843Z
+    lastUpdated: 2026-08-30T19:35:36.249Z
+    source: external
+    npmPackage: bmad-builder
+    repoUrl: https://github.com/bmad-code-org/bmad-builder
+    channel: stable
+    sha: 38df19573f493c5025c7efce331debe8498832c1
+  - name: cis
+    version: v0.3.1
+    installDate: 2026-08-30T19:35:32.244Z
+    lastUpdated: 2026-08-30T19:35:36.256Z
+    source: external
+    npmPackage: bmad-creative-intelligence-suite
+    repoUrl: https://github.com/bmad-code-org/bmad-module-creative-intelligence-suite
+    channel: stable
+    sha: 0e4ff9233a792db1a1cd00f22a482f338168cdc3
+  - name: tea
+    version: v1.23.3
+    installDate: 2026-08-30T19:35:34.677Z
+    lastUpdated: 2026-08-30T19:35:36.264Z
+    source: external
+    npmPackage: bmad-method-test-architecture-enterprise
+    repoUrl: https://github.com/bmad-code-org/bmad-method-test-architecture-enterprise
+    channel: stable
+    sha: ee292979a36d4eda5c1a6fd23ad1a5b4e7aef48c
+  - name: l3io-pm
+    version: main
+    installDate: 2026-08-30T18:53:38.879Z
+    lastUpdated: 2026-08-30T19:35:36.275Z
+    source: custom
+    npmPackage: null
+    repoUrl: https://github.com/ravensorb/bmad-extensions
+    channel: next
+  - name: l3io-sec
+    version: main
+    installDate: 2026-08-30T18:53:38.916Z
+    lastUpdated: 2026-08-30T19:35:36.283Z
+    source: custom
+    npmPackage: null
+    repoUrl: https://github.com/ravensorb/bmad-extensions
+    channel: next
+  - name: l3io-util
+    version: main
+    installDate: 2026-08-30T18:53:38.973Z
+    lastUpdated: 2026-08-30T19:35:36.292Z
+    source: custom
+    npmPackage: null
+    repoUrl: https://github.com/ravensorb/bmad-extensions
+    channel: next
+  - name: l3io-arch
+    version: main
+    installDate: 2026-08-30T18:53:38.997Z
+    lastUpdated: 2026-08-30T19:35:36.301Z
+    source: custom
+    npmPackage: null
+    repoUrl: https://github.com/ravensorb/bmad-extensions
+    channel: next
+ides:
+  - claude-code
+  - github-copilot

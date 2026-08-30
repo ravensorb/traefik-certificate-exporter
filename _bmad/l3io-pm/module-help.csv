@@ -1,0 +1,5 @@
+module,skill,display-name,menu-code,description,action,args,phase,preceded-by,followed-by,required,output-location,outputs
+L3io Pm,l3io-pm-execute,L3io Pm Execute,LPE,"Run the l3io-pm plan — full, single epic, or single sprint. Reads plan-output-meta.yaml and executes epics in phase order, dispatching sprint subagents with full context injection.",activate,,anytime,,,false,,
+L3io Pm,l3io-pm-plan,L3io Pm Plan,LPP,"Validate readiness, elaborate stories, estimate, build dependency graph, and produce an executable plan. Use /l3io-pm-plan for a full plan, /l3io-pm-plan estimate [E{nnn}|E{nnn}-S{nn}] to re-estimate only.",activate,,anytime,,,false,,
+L3io Pm,l3io-pm-help,L3io Pm Help,LPH,"Read project state and recommend the exact next l3io-pm action. Use /l3io-pm-help progress for a plan-aware progress tree — which phase, epic, sprint, and stories are in flight.",activate,,anytime,,,false,,
+L3io Pm,l3io-pm-sync,L3io Pm Sync,LPS,,activate,,anytime,,,false,,

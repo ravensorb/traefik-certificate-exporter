@@ -1,0 +1,3 @@
+module,skill,display-name,menu-code,description,action,args,phase,preceded-by,followed-by,required,output-location,outputs
+LiquidLogicLabs PM,l3io-pm-plan,Plan,LPP,"Validate readiness, elaborate stories, compute estimates, build dependency graph, and produce an executable phased parallel execution plan.",plan,[--skip-elaborate],planning,l3io-pm-help:status,l3io-pm-execute:execute,false,planning_artifacts,"plan-{date}-v{n}.yaml, plan-output-meta.yaml, elaboration-summary.md, readiness-report.md"
+LiquidLogicLabs PM,l3io-pm-plan,Estimate,APM,"Re-estimate all unstarted work using current calibration data. Optionally scope to a specific epic or sprint.",estimate,[E{nnn}|E{nnn}-S{nn}],anytime,,l3io-pm-execute:execute,false,planning_artifacts,estimate summary table

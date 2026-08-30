@@ -1,0 +1,44 @@
+# BMad Work Item Sync — Connection Configuration
+# Optionally created by /l3io-pm-sync setup (best-effort, never blocking).
+# Project-scoped. Added to .gitignore by setup — do not commit this file.
+#
+# NOTE: this file is not yet read by detect-platform.py, drift-report.py, or sync-state.py —
+# platform/owner/repo are always detected live from the git remote, and the ID mapping table
+# lives separately in _bmad/sync-state.yaml (managed by sync-state.py, never hand-edited).
+# The fields below (field_rules, status_labels) are not yet consumed by any script; they are
+# reserved for a future field-authority/label-mapping feature.
+
+version: 1           # schema version — do not edit manually
+
+# Platform: github
+platform: github
+
+# GitHub connection (used when platform: github)
+github:
+  owner: ""           # GitHub org or user (e.g. myorg)
+  repo: ""            # Repository name (e.g. my-project)
+  project_number: 0   # GitHub Projects v2 project number (for sprint iterations)
+  auth_method: mcp    # mcp | gh-cli
+
+# Field authority overrides
+# Controls which side wins when a field has changed on both sides.
+# Values: bmad | remote | ask | merge
+# These are the defaults from the skill — only override if your team's workflow differs.
+field_rules:
+  title: ask
+  description: bmad
+  acceptance_criteria: bmad
+  status: remote
+  assignee: remote
+  estimates: bmad
+  linked_items: merge
+  tags: merge
+
+# Label names used to represent BMad statuses as GitHub labels.
+# Customize if your project uses different label conventions.
+status_labels:
+  backlog: backlog
+  ready_for_dev: ready
+  in_progress: in-progress
+  review: in-review
+  # done maps to closed state — no label needed

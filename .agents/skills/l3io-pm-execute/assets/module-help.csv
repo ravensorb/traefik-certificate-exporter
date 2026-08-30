@@ -1,0 +1,2 @@
+module,skill,display-name,menu-code,description,action,args,phase,preceded-by,followed-by,required,output-location,outputs
+LiquidLogicLabs PM,l3io-pm-execute,Execute,LPE,"Run the l3io-pm plan — full run or scoped to a single epic or sprint. Dispatches sprint subagents with context injection and writes actuals to state.",execute,[E{nnn}|E{nnn}-S{nn}],execution,l3io-pm-plan:plan,l3io-pm-sync:sync,false,implementation_artifacts,"epic-{nnn}/sprint-{nn}/stories/, epic-{nnn}/sprint-{nn}/closure/, epic-{nnn}/epic-closure/"

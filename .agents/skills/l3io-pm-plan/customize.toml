@@ -1,0 +1,20 @@
+[workflow]
+activation_steps_prepend = []
+activation_steps_append  = []
+persistent_facts         = [
+  "file:{project-root}/project-context.md",
+  "file:{project-root}/docs/project-context.md",
+]
+
+# Elaboration behavior
+auto_elaborate           = false   # true: runs without user confirmation; false: prompts first
+
+# Estimation behavior
+include_estimates        = true    # false: skip step-estimate entirely (useful before calibration exists)
+
+# Plan output format
+plan_output              = "markdown"  # "markdown": write plan-{date}-v{n}.yaml; "console": print summary only
+
+# Fix loops
+max_fix_iterations          = 3    # CODE and MIXED work — each iteration is a turn multiplier
+max_fix_iterations_non_code = 3    # DOCS and CONFIG work

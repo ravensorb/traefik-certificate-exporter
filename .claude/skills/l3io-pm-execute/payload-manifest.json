@@ -1,0 +1,27 @@
+{
+  "version": "2.4.11",
+  "generated_from": "skills/_shared/",
+  "files": {
+    "scripts/write-module-config.py": "fdc0e81cda51221599907b9023a096b0570e096b7d921fb0c1db2050afa7a80f",
+    "references/config-resolution.md": "4dd6dbd91e50522af5ea68c37b290a8c398ca90d21c20ce3345bacb178e8997f",
+    "assets/module-setup.md": "6a183e230bb6e86ee8dcb4e9c4804dd9f99883de02e4fca4031f3500848a4048",
+    "steps/shared/step-00-activate.md": "776baf1e35c743dd169ef5e6804a9e66be884d34ca6af3494a138da136b1227f",
+    "steps/shared/step-00-digest.md": "219258336c59b9cc10deaecdc3c95b80108aa09d7502a1a125fd6344d681808b",
+    "steps/shared/step-01-classify-work.md": "dcd71a5e3780e24550d8c3ff98051b63f0c0a3fc75203cb1fec29f3ab9bd865f",
+    "steps/shared/step-estimate.md": "9990a89e9da513e74bff46664ece409e27f84d2e1d13486ee5f7b7771d7d5a5c",
+    "steps/execute/step-02-scope-resolve.md": "c77e195e2a3d0450b490486bb2309a37e6603854ec72dd523e0f8fec933c31f9",
+    "steps/execute/step-03-load-plan.md": "039dfc1a1a4caefaba0d63dabde6471582dd00a0944e6eabd88288bde3fc859c",
+    "steps/execute/step-04-arch-gate.md": "a3c785c99dfb2ca75b17909c1cef488985d5269a28b35b342b2eb6e64ea0fd4d",
+    "steps/execute/step-05-epic-loop.md": "a2b56b46220ee2d57e91653383985985eb29715938d0e0720135a853384fd1c6",
+    "steps/execute/step-06-epic-closure.md": "53d3f8ceff83ca0403e49d1e52a8a50926524b6e979319511d80d6a674aa1f71",
+    "steps/sprint/step-02-story-prep.md": "852a9e71a3f5d6a8155e98b2d2c47f4502c39af20b895fe378dfa6cd5a2f8a66",
+    "steps/sprint/step-03-dev-loop.md": "5a2eaa635aa961b0bd8770d52219d5ecc5616c941c43fd897a7638b17d19556a",
+    "steps/sprint/step-04-sprint-closure.md": "75445ef449d758bce08979ed8191fe08871a2e82e6c290c455d3a58250ced506",
+    "steps/closure/sprint-closure.md": "7282febc388655ace13b3d91c9f8cede169e6578f70fcf5ee76f209b3f26bbd4",
+    "steps/closure/epic-closure.md": "4dfcb835878ad81b01e5a70b5454e22bf1346f2e82dc06d0f048461876b9ef4d",
+    "scripts/pm-status.py": "9f9035e90881f2e3eeaf901b696e05acc58b6ecd74f31aeb06a23ea8a89aa8ab",
+    "references/status-files.md": "6d1bbddbaf308c40c6e3fcaa261cd0803140a00d9afa60a857f4195eb27852d0",
+    "references/metrics-contract.md": "35a6a0f2c3b4023430fc1ac2b911fcb625c499090ad9e5a46d52353d6fb20af5",
+    "references/calibration-model.md": "63b15a5c4552d6be78d90ec886ff0a1d581af9440bcff3b87b12ef1e1d01af0f"
+  }
+}

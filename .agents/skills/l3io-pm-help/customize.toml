@@ -1,0 +1,11 @@
+[workflow]
+activation_steps_prepend = []
+activation_steps_append  = []
+persistent_facts         = [
+  "file:{project-root}/project-context.md",
+  "file:{project-root}/docs/project-context.md",
+]
+
+# Fix loops
+max_fix_iterations          = 3    # CODE and MIXED work — each iteration is a turn multiplier
+max_fix_iterations_non_code = 3    # DOCS and CONFIG work

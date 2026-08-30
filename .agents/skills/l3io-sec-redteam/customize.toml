@@ -1,0 +1,16 @@
+# DO NOT EDIT -- overwritten on every update.
+#
+# Agent metadata for l3io-sec-redteam.
+# Override research_cache_ttl_days in {project-root}/_bmad/custom/config.toml
+# under [modules.l3io-sec] (or config.user.toml for a personal override).
+
+[agent]
+
+# --- Metadata (install-time roster contract) ---
+
+code        = "redteam"
+name        = ""
+title       = "Red Team Agent"
+icon        = "🔴"
+description = "Adversarial security analysis across five threat lenses with AI poisoning cross-cut and live cloud/platform best practices research."
+agent_type  = "memory"

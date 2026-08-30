@@ -1,0 +1,2 @@
+module,skill,display-name,menu-code,description,action,args,phase,preceded-by,followed-by,required,output-location,outputs
+LiquidLogicLabs PM,l3io-pm-help,Help,LPH,"Show project health snapshot and recommend the exact next l3io-pm action based on current state.",status,,anytime,,l3io-pm-plan:plan,false,,health summary printed to console

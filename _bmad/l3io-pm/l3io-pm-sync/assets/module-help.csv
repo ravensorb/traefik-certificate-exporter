@@ -1,0 +1,6 @@
+module,skill,display-name,menu-code,description,action,args,phase,preceded-by,followed-by,required,output-location,outputs
+LiquidLogicLabs PM,l3io-pm-sync,Sync Setup,LPS,"Detect the GitHub sync platform from the git remote, verify auth, verify/create sync-state.yaml.",setup,,anytime,,,false,_bmad,"sync-config.yaml (optional), sync-state.yaml"
+LiquidLogicLabs PM,l3io-pm-sync,Sync Push,LPU,"Push l3io-pm state as work items to the configured external platform.",push,,anytime,l3io-pm-sync:setup,,false,,sync report
+LiquidLogicLabs PM,l3io-pm-sync,Sync Pull,LPL,"Pull status updates from external work items back into l3io-pm state.",pull,,anytime,l3io-pm-sync:setup,,false,,sync report
+LiquidLogicLabs PM,l3io-pm-sync,Sync,LPC,"Bidirectional sync — push local changes then pull remote updates.",sync,,anytime,l3io-pm-sync:setup,,false,,sync report
+LiquidLogicLabs PM,l3io-pm-sync,Sync Status,LPT,"Show sync state, ID mapping, and local drift since last sync.",status,,anytime,l3io-pm-sync:setup,,false,,drift report printed to console
