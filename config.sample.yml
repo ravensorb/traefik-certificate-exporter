@@ -11,3 +11,4 @@ settings:
   watchforchanges: false
   runatstart: false
   watchinterval: 60
+  # pkcs12passphrase:                      # Passphrase used to encrypt the exported PKCS12 (.pfx) file (default: unencrypted)

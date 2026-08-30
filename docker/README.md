@@ -53,10 +53,10 @@ services:
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DRYRUN=false                    # Set this to show what wil le exported (files will not actually be created)
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RUNATSTART=true                 # Set this to run the export immediately on startup
       - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESOLVERINPATHNAME=true           # Include the resolver name in the path when exporting
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_PKCS12PASSPHRASE=              # Passphrase used to encrypt the exported PKCS12 (.pfx) file (default: unencrypted)
       - TRAEFIK_CERTIFICATE_EXPORTER_LOGGINGLEVEL=INFO                          # Logging level 
-      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_INCLUDE=                # comma separated list of domain names to only export
-      ## FIXME: when ..._DOMAINS_INCLUDE is set, ..._DOMAINS_EXCLUDE **must also** be set to a non-empty value
-      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_EXCLUDE=                # comma separated list of domain names to exclude from exporting
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_INCLUDE=                # comma separated list of domain names to only export (mutually exclusive with DOMAINS_EXCLUDE)
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_EXCLUDE=                # comma separated list of domain names to exclude from exporting (mutually exclusive with DOMAINS_INCLUDE)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Only needed if you are going to be restarting containers
       - ./data/config:/config:rw                      # Only needed if you are going to set a config file to load

@@ -17,9 +17,8 @@ See [docker/README.md](../docker/README.md) for `docker run` / `docker-compose` 
 pip install traefik-certificate-exporter
 ```
 
-> Until PRD backlog item #3 is fixed, a bare `pip install` may not pull in `cryptography`
-> transitively on every platform/resolver — verify `python -c "import cryptography"` works
-> after install, or install the Docker image instead until that's fixed.
+`cryptography` is a declared dependency (PRD backlog item #3, fixed), so a bare `pip
+install` pulls it in on any platform/resolver.
 
 ## Configuration
 
@@ -30,18 +29,18 @@ deliberately outrank the config file — this is a Docker-first tool, and env va
 standard vehicle for per-deployment overrides of a static/mounted config file. See
 [config.sample.yml](../config.sample.yml) for a starting file.
 
-**Known gap:** if you set `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_INCLUDE` via env
-var or config file, also set `..._DOMAINS_EXCLUDE` (even to empty) — the CLI enforces
-mutual exclusivity via `argparse`, but the env-var/config-file path does not (documented as
-a `FIXME` in [docker/README.md](../docker/README.md); tracked as PRD backlog item #6).
+`..._DOMAINS_INCLUDE` and `..._DOMAINS_EXCLUDE` are mutually exclusive on every surface
+(CLI, env var, config file) — setting both raises a clear error and exits (PRD backlog
+item #6, fixed). You no longer need to set the other one to a dummy value to avoid a
+crash.
 
 ## Runbook: certificate not exported
 
 1. Check the container/process is actually seeing file events: run with `-ll DEBUG` and
    confirm `Watchdog received modified event` appears when Traefik renews.
-2. Confirm `settings.dataPath` resolves to a real, mounted path — **note:** a misconfigured
-   or unmounted data path does not currently fail loudly (PRD backlog item #2 / review
-   finding #2); check the logged `Data Path: ...` line manually rather than trusting an error.
+2. Confirm `settings.dataPath` resolves to a real, mounted path — a misconfigured or
+   unmounted data path now fails loudly with a non-zero exit (PRD backlog item #2 / review
+   finding #2, fixed).
 3. Confirm the domain isn't filtered out by an include/exclude list (`Skipping domain: ...`
    at INFO level).
 4. Confirm the ACME JSON has a non-empty private key and cert for that domain (`Unable to

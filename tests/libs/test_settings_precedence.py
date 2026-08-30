@@ -55,3 +55,17 @@ def test_cli_arg_overrides_everything(tmp_path, monkeypatch):
     )
 
     assert manager.settings.dataPath == "/from-cli"
+
+
+def test_pkcs12_passphrase_cli_flag_populates_settings(tmp_path, monkeypatch):
+    monkeypatch.delenv(
+        "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_PKCS12PASSPHRASE", raising=False
+    )
+    manager = SettingsManager()
+
+    manager.loadFromFile(
+        fileName=str(tmp_path / "does-not-exist.yaml"),
+        cmdLineArgs=_namespace(**{"settings.pkcs12passphrase": "from-cli-flag"}),
+    )
+
+    assert manager.settings.pkcs12Passphrase == "from-cli-flag"

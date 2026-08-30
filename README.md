@@ -20,7 +20,7 @@ pip install traefik-certificate-exporter
 
 ```bash
 usage: traefik-certificate-exporter [-h] [-c CONFIGFILE] [-d SETTINGS.DATAPATH] [-w] [-fs SETTINGS.FILESPEC] [-o SETTINGS.OUTPUTPATH] [--traefik-resolver-id SETTINGS.TRAEFIKRESOLVERID] [--flat] [--restart-container]
-                                    [--dry-run] [-r] [--include-resolvername-in-outputpath] [-ll {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [-id [SETTINGS.DOMAINS.INCLUDE ...] | -xd [SETTINGS.DOMAINS.EXCLUDE ...]]
+                                    [--dry-run] [-r] [--include-resolvername-in-outputpath] [--pkcs12-passphrase SETTINGS.PKCS12PASSPHRASE] [-ll {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [-id [SETTINGS.DOMAINS.INCLUDE ...] | -xd [SETTINGS.DOMAINS.EXCLUDE ...]]
 
 Extract traefik letsencrypt certificates.
 
@@ -45,6 +45,8 @@ options:
   -r, --run-at-start    Runs Export immediately on start (used with watch-for-changes).
   --include-resolvername-in-outputpath
                         Added the resolvername in the path used to export the certificates (ignored if flat is specified).
+  --pkcs12-passphrase SETTINGS.PKCS12PASSPHRASE
+                        Passphrase used to encrypt the exported PKCS12 (.pfx) file (default: unencrypted).
   -ll {DEBUG,INFO,WARNING,ERROR,CRITICAL}, --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Set the logging level (default: INFO)
   -id [SETTINGS.DOMAINS.INCLUDE ...], --include-domains [SETTINGS.DOMAINS.INCLUDE ...]

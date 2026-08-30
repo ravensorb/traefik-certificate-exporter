@@ -102,6 +102,13 @@ globalArgParser.add_argument(
     default=None,
     help="Added the resolvername in the path used to export the certificates (ignored if flat is specified).",
 )
+globalArgParser.add_argument(
+    "--pkcs12-passphrase",
+    dest="settings.pkcs12passphrase",
+    default=None,
+    type=str,
+    help="Passphrase used to encrypt the exported PKCS12 (.pfx) file (default: unencrypted).",
+)
 
 globalArgParser.add_argument(
     "-ll",

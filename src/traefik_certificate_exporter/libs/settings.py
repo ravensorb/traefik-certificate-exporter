@@ -6,6 +6,7 @@
 import json
 import os
 import re
+import sys
 from pathlib import Path
 
 import confuse
@@ -40,6 +41,23 @@ def _redact_secrets(value):
     if isinstance(value, list):
         return [_redact_secrets(item) for item in value]
     return value
+
+
+def _parse_domain_list(value) -> list:
+    """Normalize a domains.include/exclude value into a list of domain strings.
+
+    A config file/CLI source yields a real list already. confuse does support env-var
+    arrays natively via indexed keys (`..._INCLUDE_0`, `..._INCLUDE_1`, ...), but this
+    project's documented, already-in-use convention (docker/README.md) is a single
+    comma-separated env var -- confuse never parses that shape into a list on its own, so
+    it's split by hand here to keep that convention working, not because confuse can't
+    represent lists at all.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [v.strip() for v in value.split(",") if v.strip()]
+    return [str(v).strip() for v in value if str(v).strip()]
 
 
 #######################################################################
@@ -178,6 +196,26 @@ class SettingsManager(ObjectBase):
 
         self.__logger.debug("Generating Active Configuration")
 
+        # Queried as two independent leaf keys, not `["domains"].get(dict)` -- confuse
+        # only merges a nested dict across sources when every source defines the same
+        # shape at that path. A source that sets only "domains.include" (env var or a
+        # config file overriding one key) would otherwise make "domains.exclude" vanish
+        # entirely instead of falling back to the packaged default's `[]` (GitHub #5).
+        includeDomains = _parse_domain_list(
+            self._config["settings"]["domains"]["include"].get()
+        )
+        excludeDomains = _parse_domain_list(
+            self._config["settings"]["domains"]["exclude"].get()
+        )
+
+        if includeDomains and excludeDomains:
+            self.__logger.error(
+                "settings.domains.include and settings.domains.exclude are mutually "
+                "exclusive -- set only one, via any combination of CLI, config file, "
+                "or environment variable. Exiting..."
+            )
+            sys.exit(1)
+
         self.settings = Settings(
             dataPath=self._config["settings"]["datapath"].as_str(),  # type: ignore
             fileSpec=self._config["settings"]["filespec"].as_str(),  # type: ignore
@@ -189,7 +227,7 @@ class SettingsManager(ObjectBase):
             ),  # type: ignore
             dryRun=self._config["settings"]["dryrun"].get(bool),  # type: ignore
             restartContainers=self._config["settings"]["restartcontainers"].get(bool),  # type: ignore
-            domains=self._config["settings"]["domains"].get(confuse.Optional(dict)),  # type: ignore
+            domains={"include": includeDomains, "exclude": excludeDomains},
             watchForChanges=self._config["settings"]["watchforchanges"].get(bool),  # type: ignore
             runAtStart=self._config["settings"]["runatstart"].get(bool),  # type: ignore
             watchInterval=self._config["settings"]["watchinterval"].get(int),  # type: ignore
