@@ -1,0 +1,39 @@
+key: 'E002-S01-005'
+epic: 'E002'
+sprint: 'S01'
+title: 'Run CI Identically Across GitHub, Gitea, and Local Act'
+status: done
+classification: standard
+depends_on: ['E002-S01-004']
+estimate:
+  man_hours: 7.5
+  hitl_hours: 0.44
+  elapsed_hours: 2.5
+  cost: 0.73
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  tokens_k:
+    total: 176
+    input: 26
+    output: 9
+    cache_write: 53
+    cache_read: 88
+updated_at: '2026-08-30T22:09:09Z'
+completion_evidence:
+  test_runs:
+  - command: pre-commit run actionlint --all-files
+    exit_code: 0
+  tests_passing: true
+  fix_iterations: 0
+actual:
+  elapsed_hours: 0.4
+  man_hours: 1.5
+  hitl_hours: 0.1
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-08-30T22:09:09Z'

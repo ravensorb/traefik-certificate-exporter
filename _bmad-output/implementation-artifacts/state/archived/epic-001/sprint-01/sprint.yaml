@@ -1,0 +1,48 @@
+key: 'S01'
+epic: 'E001'
+title: 'Sprint 01 — Trustworthy Certificate Export Core'
+status: done
+estimate:
+  man_hours_low: 16.5
+  man_hours_high: 18.75
+  hitl_hours_low: 1.03
+  hitl_hours_high: 1.17
+  elapsed_hours_low: 5.5
+  elapsed_hours_high: 6.25
+  tokens_k_min: 387
+  tokens_k_max: 440
+  closure_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0
+    hitl_hours: 0
+    elapsed_hours: 0
+    tokens_k: 0
+  cost_low: 1.59
+  cost_high: 1.81
+  model: claude-opus-5
+  confidence: medium
+updated_at: '2026-08-30T20:49:44Z'
+actual:
+  elapsed_hours: 2.6
+  man_hours: 9.5
+  hitl_hours: 0.7
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-08-30T20:49:04Z'
+orchestration:
+  elapsed_hours: 0.3
+  man_hours: 0
+  hitl_hours: 0.1
+  tokens_k: N/A
+  cost: N/A
+orchestration_sampled_at: '2026-08-30T20:49:05Z'
+closed:
+  date: '2026-08-30'
+retrospective:
+  summary: 'All 3 stories done: secret redaction, null-path fail-fast, and a new pytest suite. Surfaced 2 pre-existing defects beyond stories'' listed scope (missing return + append/extend nesting in ACME export -- both scoped to the optional Docker restart-on-label feature only, never affecting cert export to disk). A separate config-precedence change was retracted after the maintainer confirmed the original CLI>env>file>default order was correct and already working.'
+  velocity: '3'
+  carry_over: '0'

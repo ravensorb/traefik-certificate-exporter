@@ -1,0 +1,39 @@
+key: 'E001-S01-001'
+epic: 'E001'
+sprint: 'S01'
+title: 'Redact Secrets from Debug Logs'
+status: done
+classification: simple
+depends_on: []
+estimate:
+  man_hours: 3.75
+  hitl_hours: 0.25
+  elapsed_hours: 1.25
+  cost: 0.36
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  tokens_k:
+    total: 88
+    input: 13
+    output: 4
+    cache_write: 27
+    cache_read: 44
+updated_at: '2026-08-30T20:34:43Z'
+completion_evidence:
+  test_runs:
+  - command: poetry run pytest tests/libs/test_settings.py
+    exit_code: 0
+  tests_passing: true
+  fix_iterations: 0
+actual:
+  elapsed_hours: 0.3
+  man_hours: 1
+  hitl_hours: 0.1
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-08-30T20:34:42Z'

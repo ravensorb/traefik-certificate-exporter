@@ -1,0 +1,48 @@
+key: 'E002'
+title: 'Epic 2 — Reliable Installation, Build & Release Pipeline'
+goal: 'Users can install this tool via pip or Docker and get a working, consistent result every time, and maintainers can trust that tagging a release actually builds and publishes it.'
+status: done
+depends_on: []
+estimate:
+  man_hours_low: 43.62
+  man_hours_high: 49.57
+  hitl_hours_low: 2.6
+  hitl_hours_high: 2.95
+  elapsed_hours_low: 14.54
+  elapsed_hours_high: 16.53
+  tokens_k_min: 1024
+  tokens_k_max: 1163
+  closure_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0
+    hitl_hours: 0
+    elapsed_hours: 0
+    tokens_k: 0
+  cost_low: 4.22
+  cost_high: 4.79
+  model: claude-opus-5
+  confidence: medium
+updated_at: '2026-08-30T22:19:13Z'
+actual:
+  elapsed_hours: 5
+  man_hours: 13.5
+  hitl_hours: 1.2
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-08-30T22:18:45Z'
+orchestration:
+  elapsed_hours: 0.2
+  man_hours: 0
+  hitl_hours: 0.1
+  tokens_k: N/A
+  cost: N/A
+orchestration_sampled_at: '2026-08-30T22:18:46Z'
+closed:
+  date: '2026-08-30'
+retrospective:
+  summary: '5/5 stories done in one sprint, no carry-over. Real docker build+run verification (not just diff review) caught and fixed two real defects: a dead base-image tag and a confuse/Python 3.14 incompatibility.'
+  learnings: Real build+run verification catches defects static Dockerfile review cannot (dead base image tags, runtime library incompatibilities from base-image upgrades); a venv's console-script shebangs bake in the build-time path, so multi-stage Docker builds must create the venv at its final destination path; never run pre-commit --all-files with mutating hooks (ruff-check/ruff-format) on an existing repo.

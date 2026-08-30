@@ -1,0 +1,39 @@
+key: 'E001-S01-003'
+epic: 'E001'
+sprint: 'S01'
+title: 'Automated Regression Tests for Certificate Export Core'
+status: done
+classification: standard
+depends_on: []
+estimate:
+  man_hours: 7.5
+  hitl_hours: 0.44
+  elapsed_hours: 2.5
+  cost: 0.73
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  tokens_k:
+    total: 176
+    input: 26
+    output: 9
+    cache_write: 53
+    cache_read: 88
+updated_at: '2026-08-30T20:45:54Z'
+completion_evidence:
+  test_runs:
+  - command: poetry run pytest
+    exit_code: 0
+  tests_passing: true
+  fix_iterations: 0
+actual:
+  elapsed_hours: 1.5
+  man_hours: 6
+  hitl_hours: 0.3
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-08-30T20:45:53Z'

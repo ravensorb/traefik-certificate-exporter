@@ -1,0 +1,26 @@
+key: 'E005-S01-001'
+epic: 'E005'
+sprint: 'S01'
+title: 'Support a Configurable Post-Export Command'
+status: backlog
+classification: standard
+depends_on: []
+estimate:
+  man_hours: 7.5
+  hitl_hours: 0.44
+  elapsed_hours: 2.5
+  cost: 0.73
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  tokens_k:
+    total: 176
+    input: 26
+    output: 9
+    cache_write: 53
+    cache_read: 88
+updated_at: '2026-08-30T20:22:03Z'

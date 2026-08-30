@@ -1,0 +1,26 @@
+key: 'E004-S01-001'
+epic: 'E004'
+sprint: 'S01'
+title: 'Seed a Working Config on First Container Boot'
+status: backlog
+classification: simple
+depends_on: []
+estimate:
+  man_hours: 3.75
+  hitl_hours: 0.25
+  elapsed_hours: 1.25
+  cost: 0.36
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  tokens_k:
+    total: 88
+    input: 13
+    output: 4
+    cache_write: 27
+    cache_read: 44
+updated_at: '2026-08-30T20:21:56Z'

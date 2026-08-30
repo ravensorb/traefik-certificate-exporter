@@ -1,0 +1,48 @@
+key: 'E001'
+title: 'Epic 1 — Trustworthy Certificate Export Core'
+goal: 'Users can trust that every certificate this tool exports is correct, that a misconfiguration fails loudly instead of silently, and that secrets are never exposed in logs — and future changes cannot silently regress any of this because the whole export surface is now covered by automated tests.'
+status: done
+depends_on: []
+estimate:
+  man_hours_low: 19.39
+  man_hours_high: 22.03
+  hitl_hours_low: 1.21
+  hitl_hours_high: 1.38
+  elapsed_hours_low: 6.46
+  elapsed_hours_high: 7.34
+  tokens_k_min: 455
+  tokens_k_max: 517
+  closure_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0
+    hitl_hours: 0
+    elapsed_hours: 0
+    tokens_k: 0
+  cost_low: 1.88
+  cost_high: 2.14
+  model: claude-opus-5
+  confidence: medium
+updated_at: '2026-08-30T20:51:44Z'
+actual:
+  elapsed_hours: 3.1
+  man_hours: 10.5
+  hitl_hours: 0.9
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-08-30T20:51:21Z'
+orchestration:
+  elapsed_hours: 0.2
+  man_hours: 0
+  hitl_hours: 0.1
+  tokens_k: N/A
+  cost: N/A
+orchestration_sampled_at: '2026-08-30T20:51:22Z'
+closed:
+  date: '2026-08-30'
+retrospective:
+  summary: "3/3 stories done in one sprint, no carry-over. Writing the first real tests surfaced 2 pre-existing defects (both scoped to the optional Docker restart feature, never affecting cert export to disk) -- fixed and regression-tested. A separate config-precedence change was retracted: it was based on the agent's own undocumented assumption, not a confirmed requirement; the maintainer confirmed the original CLI>env>file>default order was correct and already working in production."
+  learnings: Module-level singletons parsing sys.argv at import time are untestable from any host but the console script; confuse precedence is later-source-wins and the confirmed correct order here is CLI>env>file>default (env vars outrank the config file for this Docker-first tool); before 'fixing' code to match documentation, verify the documentation wasn't itself written during the same work and never independently confirmed.

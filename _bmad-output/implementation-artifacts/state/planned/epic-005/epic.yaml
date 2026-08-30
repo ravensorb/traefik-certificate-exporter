@@ -1,0 +1,29 @@
+key: 'E005'
+title: 'Epic 5 — Extended Integration Capability (Post-Export Hook)'
+goal: 'Users who need to hand an exported certificate to another service — with different ownership, permissions, or location — get a supported extension point instead of having to run a separate sidecar/cron container to bridge the gap.'
+status: backlog
+depends_on: []
+estimate:
+  man_hours_low: 9.7
+  man_hours_high: 11.02
+  hitl_hours_low: 0.57
+  hitl_hours_high: 0.64
+  elapsed_hours_low: 3.23
+  elapsed_hours_high: 3.67
+  tokens_k_min: 228
+  tokens_k_max: 259
+  closure_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0
+    hitl_hours: 0
+    elapsed_hours: 0
+    tokens_k: 0
+  cost_low: 0.93
+  cost_high: 1.07
+  model: claude-opus-5
+  confidence: medium
+updated_at: '2026-08-30T20:22:12Z'

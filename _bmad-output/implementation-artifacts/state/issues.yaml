@@ -1,0 +1,65 @@
+backlog:
+- key: BL-E001-001
+  epic: '001'
+  sprint: S01
+  title: 'Package import crashed under pytest: cli_args.py parsed real sys.argv at import time (parse_args -> parse_known_args fix applied in E001-S01-001)'
+  source: dev-loop (E001-S01-001)
+  severity: Medium
+  status: backlog
+  description: "Discovered while writing the redaction test: importing traefik_certificate_exporter (via __init__.py -> app.py -> cli_args.py) called argparse.parse_args() against the host process's real argv, so any test runner or embedding context crashed on unrecognized flags. Fixed by switching to parse_known_args(); recording here since this affects all of Epic 1's test-writing work, not just this story."
+- key: BL-E001-002
+  epic: '001'
+  sprint: S01
+  title: AcmeCertificateExporter.__exportCertificate never returned its names list (fixed in E001-S01-003)
+  source: dev-loop (E001-S01-003)
+  severity: Medium
+  status: backlog
+  description: 'Discovered writing ACME parsing regression tests: the private per-certificate export method built a names list but had no return statement, so exportCertificatesForFile always got None back for every wrapped/unwrapped ACME shape. Verified against git HEAD (unchanged since tag v0.1.2.0) -- this is a real, long-standing gap, not an artifact of this session''s edits. Scope is narrower than first reported: certificate export to disk (writing .pem/.pfx/.key files) happens as a side effect inside __exportCertificate BEFORE this return statement, so it was never affected -- confirmed working correctly, consistent with the maintainer''s report. The only consumer of the missing return value is DockerManager.restartLabeledContainers via exportCertificates()''s aggregated domain list -- so this bug is only observable when settings.restartContainers/--restart-container is enabled. Maintainer confirmed restart-on-label is used sometimes (not often) -- so this was a real, if infrequent, silent failure of that feature, not a purely theoretical gap. Fixed by adding the missing return; severity kept at Medium to reflect the actual (optional-feature-only, occasionally-exercised) blast radius.'
+- key: BL-E001-003
+  epic: '001'
+  sprint: S01
+  title: Multi-resolver ACME export used list.append instead of list.extend, nesting domain lists (fixed in E001-S01-003)
+  source: dev-loop (E001-S01-003)
+  severity: Medium
+  status: backlog
+  description: "exportCertificatesForFile appended each resolver's whole domain list into the outer names list instead of extending it, producing a nested list. Same scope note as BL-E001-002: certificate export to disk is unaffected; this only corrupts the domain list DockerManager.restartLabeledContainers receives, so it is only observable with the optional restart-on-label feature enabled and more than one Traefik certificate resolver configured. Maintainer confirmed restart-on-label is used sometimes -- so this combined with BL-E001-002 to silently drop restarts on those occasions. Fixed alongside the missing-return bug."
+- key: BL-E001-004
+  epic: '001'
+  sprint: S01
+  title: 'RETRACTED: config precedence "fix" was based on the agent''s own undocumented assumption, not a confirmed defect -- reverted'
+  source: dev-loop (E001-S01-003)
+  severity: Low
+  status: resolved
+  description: The agent changed SettingsManager.loadFromFile so a config file would outrank an env var, believing this matched a documented precedence -- but that documentation (docs/guidelines.md section 5) was itself written by the agent earlier in the same session, never confirmed against the maintainer's actual intent. The maintainer confirmed the original behavior (CLI > env var > config file > packaged default) was correct and already working in production -- this is the standard pattern for a Docker-first tool, where env vars are the vehicle for per-deployment overrides of a static/mounted config file. The code change was reverted; docs/guidelines.md, docs/developer.md, docs/operational.md, the architecture spine, the PRD, and epics.md were all corrected to state the right precedence. Recorded as a lesson, not a shipped defect.
+- key: BL-E001-005
+  epic: '001'
+  sprint: S01
+  title: Secret-redaction regex is pattern-based and could miss an oddly-named future secret field
+  source: sprint-closure adversarial review (E001-S01)
+  severity: Low
+  status: backlog
+  description: The redaction pattern (secret|password|passphrase|token|api[_-]?key) covers the current and documented conventions but is not exhaustive; a future field named e.g. 'credential' or 'bearer' would not be caught. Consider expanding the pattern list if new secret-shaped settings are added that don't match it.
+- key: BL-E001-006
+  epic: '001'
+  sprint: S01
+  title: parse_known_args() silently ignores unrecognized CLI args in production, not just under pytest
+  source: sprint-closure adversarial review (E001-S01)
+  severity: Low
+  status: backlog
+  description: The fix for the import-time argv-parsing crash (parse_args -> parse_known_args) is necessary for testability but as a side effect means a genuine CLI typo (e.g. --dtaa-path) is now silently ignored in the real console-script entry point too, rather than erroring. A more complete fix would move argument parsing out of module-import time and into main() specifically, so production invocations can still hard-fail on unrecognized flags while imports (tests, embedding) remain safe -- but that is a larger architectural change than this story's scope (a testability blocker fix) warranted.
+- key: BL-E002-001
+  epic: '002'
+  sprint: S01
+  title: confuse 2.0.1 crashed under Python 3.14 (pkgutil.get_loader removed) -- discovered upgrading the base image, fixed by updating to confuse 2.2.1 (already allowed by the existing ^2.0.1 constraint)
+  source: dev-loop (E002-S01-002/003)
+  severity: High
+  status: backlog
+  description: "Verified live: building the reworked Docker image against the newly-upgraded Alpine 3.24 base (which ships Python 3.14) crashed at startup with AttributeError: module pkgutil has no attribute get_loader, inside confuse.Configuration.__init__ -> util.find_package_path. confuse's own changelog confirms 2.1.0 replaced pkgutil.get_loader with importlib.util.find_spec specifically for Python 3.13/3.14 compatibility. Fixed via poetry update confuse (2.0.1 -> 2.2.1, already within the existing ^2.0.1 constraint, no pyproject.toml change needed). Verified end-to-end: built image now starts, loads config, and enters its normal watch loop without crashing."
+- key: BL-E002-002
+  epic: '002'
+  sprint: S01
+  title: "Agent process note: pre-commit run --all-files caused 192-file unintended reformat; recovered by reverting out-of-scope files and reconstructing .pre-commit-config.yaml's ruff/gitleaks/actionlint hooks from pre-commit's local cache + session memory"
+  source: dev-loop (E002-S01-004, process incident)
+  severity: Low
+  status: backlog
+  description: "While verifying Epic 2 changes, running 'pre-commit run --all-files' applied ruff-check --fix and ruff-format repo-wide, touching ~200 unrelated tracked files including installed BMad skill scripts under .agents/. Reverted via git checkout to the 12 files actually in scope for Epics 1-2. This also reverted uncommitted-but-legitimate earlier work in .pre-commit-config.yaml (the ruff/gitleaks/actionlint hook wiring), which had to be reconstructed from pre-commit's local cache directory (~/.cache/pre-commit/repo*, each has a git remote identifying which tool) plus prior session context. Also discovered poetry lock --check no longer exists in Poetry 2.0+; replaced with poetry check --lock. Lesson recorded in agent memory: never run pre-commit --all-files with mutating hooks (ruff-check/ruff-format) on an existing repo; scope with --files to only the touched paths."
