@@ -153,6 +153,3 @@ group.add_argument(
 # script entry point only ever sees its own argv in production, so behavior there is
 # unchanged.
 globalArgs, _ = globalArgParser.parse_known_args()
-
-# import jsonpickle
-# print(jsonpickle.dumps(globalArgs))

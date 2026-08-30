@@ -37,7 +37,7 @@ jobs:
           echo "current=$(date +'%Y%m%d%H%M')" >> "$GITHUB_OUTPUT"
 
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-tags: true
 
@@ -52,7 +52,7 @@ jobs:
 
       - name: Docker meta (docker.io)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           # list of Docker images to use as base name for tags
           images: |
@@ -80,7 +80,7 @@ jobs:
 
       - name: Docker meta (custom registry)
         id: meta_custom
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           # list of Docker images to use as base name for tags
           images: |
@@ -97,7 +97,7 @@ jobs:
           #   type=semver,pattern={{major}}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       # Runner-agnostic replacement for the old `if: ${{ env.ACT }}` step (which only ever
       # worked under local `act`, via a bind-mounted file that doesn't exist on GitHub or
@@ -107,12 +107,12 @@ jobs:
       # applied uniformly when one is (e.g. local `act` runs against a private registry).
       - name: Install custom CA certificate
         if: ${{ env.HAS_CUSTOM_CA == 'true' }}
-        uses: LiquidLogicLabs/git-action-ca-certificate-import@v2
+        uses: LiquidLogicLabs/git-action-ca-certificate-import@v3
         with:
           certificate: ${{ secrets.CI_CA_CERTIFICATE }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
         with:
           buildkitd-flags: ${{ env.BUILDKIT_FLAGS }}
           platforms: ${{ env.DOCKER_PLATFORMS }}
@@ -120,7 +120,7 @@ jobs:
 
       - name: Login to Docker Hub Registry
         if: github.event_name != 'pull_request' && env.DOCKER_PUBLISH_MODE == 'push' && (env.DOCKER_REGISTRY == 'docker.io' || env.DOCKER_REGISTRY == '')
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           logout: false
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -128,7 +128,7 @@ jobs:
 
       - name: Login to Github Registry
         if: github.event_name != 'pull_request' && env.DOCKER_PUBLISH_MODE == 'push' && env.DOCKER_REGISTRY == 'ghcr.io'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           logout: false
           registry: ghcr.io
@@ -137,7 +137,7 @@ jobs:
 
       - name: Login to Custom Registry
         if: github.event_name != 'pull_request' && env.DOCKER_PUBLISH_MODE == 'push' && (env.DOCKER_REGISTRY != 'docker.io' && env.DOCKER_REGISTRY != 'ghcr.io' && env.DOCKER_REGISTRY != '')
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           logout: false
           registry: ${{ env.DOCKER_REGISTRY }}
@@ -147,7 +147,7 @@ jobs:
       - name: Build and push (docker.io)
         if: github.event_name != 'pull_request' && (env.DOCKER_REGISTRY == 'docker.io' || env.DOCKER_REGISTRY == '')
         id: dockerhub_build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           # builder: act-builder
           context: .
@@ -165,7 +165,7 @@ jobs:
       - name: Build and push (ghcr and custom registry)
         if: github.event_name != 'pull_request' && (env.DOCKER_REGISTRY != 'docker.io' && env.DOCKER_REGISTRY != '')
         id: dockercustom_build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           # builder: act-builder
           context: .

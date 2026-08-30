@@ -145,15 +145,6 @@ class AcmeCertificateExporter:
                             cert,
                             self.__settings.pkcs12Passphrase,
                         )
-
-                        # if sans:
-                        #     for name in sans:
-                        #         with (directory / (str(name) + '.key')).open('w') as f:
-                        #             f.write(privatekey)
-                        #         with (directory / (str(name) + '.crt')).open('w') as f:
-                        #             f.write(fullchain)
-                        #         with (directory / (str(name) + '.chain.pem')).open('w') as f:
-                        #             f.write(chain)
                     else:
                         directory = directory / name
                         if not directory.exists():
@@ -271,42 +262,6 @@ class AcmeCertificateExporter:
 
 
 class PemToPfxConverter:
-    def __init__(self, cert_file, key_file, passphrase=None):
-        self.cert_file = cert_file
-        self.key_file = key_file
-        self.passphrase = passphrase
-
-    def load(self):
-        self.cert = self.read_certificate(self.cert_file)
-        self.key = self.read_private_key(self.key_file, passphrase=self.passphrase)
-
-    def export(self, filename):
-        self.export_to_pkcs12(
-            filename, self.key, self.cert_bytes, passphrase=self.passphrase
-        )  # type: ignore
-
-    def dump(self):
-        cert = crypto.load_certificate(crypto.FILETYPE_PEM, self.cert_bytes)  # type: ignore
-
-        print(
-            f"CERTIFICATE DATA\n    Serial: 0x{cert.get_serial_number():X}\n    Issuer: {cert.get_issuer()}\n    Subject: {cert.get_subject()}\n    Not before: {cert.get_notBefore()}\n    Not after: {cert.get_notAfter()}"
-        )
-
-    @staticmethod
-    def read_certificate(cert_file: str | Path) -> x509.Certificate | None:
-        pem_cert_bytes = Path(cert_file).read_bytes()
-        return x509.load_pem_x509_certificate(pem_cert_bytes)
-
-    @staticmethod
-    def read_private_key(
-        key_file: str | Path, passphrase: str | bytes | None = None
-    ) -> PrivateKeyTypes | None:
-        pem_key_bytes = Path(key_file).read_bytes()
-        if isinstance(passphrase, str):
-            passphrase = passphrase.encode("utf-8")
-
-        return serialization.load_pem_private_key(pem_key_bytes, password=passphrase)
-
     @staticmethod
     def export_to_pkcs12(
         filename,

@@ -5,14 +5,13 @@ import logging
 import logging.config
 import logging.handlers
 import os
+import traceback
 from pathlib import Path
 
 import coloredlogs
 import importlib_resources
-import yaml
-import traceback
-
 import logging_tree
+import yaml
 
 ###################################################################################################
 
@@ -72,16 +71,12 @@ def setup_logging(
                 config = yaml.safe_load(f.read())
                 logging.config.dictConfig(config)
                 logging.getLogger().setLevel(default_level)
-                #coloredlogs.install()
-            except Exception as e:
+            except Exception:
                 print("Error in Logging Configuration. Using default configs")
-                traceback.print_exc() 
-                #print(f"\tType: {type(e).__name__}\n\tMessage: {e}\n\tTrace: {e.__traceback__}")
+                traceback.print_exc()
 
-                #logging.basicConfig(level=default_level)
                 coloredlogs.install(level=default_level)
     else:
-        #logging.basicConfig(level=default_level)
         coloredlogs.install(level=default_level)
         if default_level == logging.DEBUG:
             print("No logging configuration file found. Using default logging configs")
@@ -89,10 +84,8 @@ def setup_logging(
     for handler in logging.getLogger().handlers:
         if isinstance(handler, type(logging.StreamHandler())):
             handler.setLevel(logging.DEBUG)
-    #         handler.setLevel(default_level)
 
     if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
-        #print(logging.getLogger().__dict__)
         logging_tree.printout()
 
 

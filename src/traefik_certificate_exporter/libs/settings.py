@@ -165,10 +165,6 @@ class SettingsManager(ObjectBase):
         self.__logger.debug("Loading Configuration from User Source")
         self._config._add_user_source()
 
-        # if os.path.exists(self.modulePath.joinpath("config_default.yaml")):
-        #     self.__logger.debug("Loading Configuration from Default Configuration")
-        #     self._config.set_file(self.modulePath.joinpath("config_default.yaml"))
-
         # Order matters: confuse gives a later-added source higher priority. This project is
         # Docker-first, so env vars (the standard vehicle for per-deployment overrides in
         # containerized deploys) must outrank a static/mounted config file, matching
@@ -253,9 +249,6 @@ class SettingsManager(ObjectBase):
         )
         self.__logger.debug(jsonpickle.dumps(safe, unpicklable=False))
 
-        # super()._raise_on_progress("Current Settings (active):")
-        # super()._raise_on_progress(jsonpickle.dumps(self.settings, unpicklable=False))
-
     def _dump_config(self):
         self.__logger.debug("Current Config (from file)...")
         safe = _redact_secrets(
@@ -263,12 +256,8 @@ class SettingsManager(ObjectBase):
         )
         self.__logger.debug(jsonpickle.dumps(safe, unpicklable=False))
 
-        # super()._raise_on_progress("Current Config (from file):")
-        # super()._raise_on_progress(jsonpickle.dumps(self._config, unpicklable=False))
-
     def _handle_on_progress(self, message):
         self.__logger.info(message)
-        # print(message)
 
 
 #######################################################################
