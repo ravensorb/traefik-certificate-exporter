@@ -11,7 +11,7 @@ env:
   DOCKER_REGISTRY: ${{ vars.DOCKER_REGISTRY || 'docker.io' }}
   DOCKER_REPONAME: ${{ vars.DOCKER_REPONAME || 'ravensorb' }}
   DOCKER_FILE: ${{ vars.DOCKER_FILE || 'docker/Dockerfile' }}
-  DOCKER_IMAGENAME: ${{ vars.DOCKER_IMAGENAME }}
+  DOCKER_IMAGENAME: ${{ vars.DOCKER_IMAGENAME || 'traefik-certificate-exporter' }}
   DOCKER_IMAGE_TAG: ${{ vars.DOCKER_IMAGE_TAG || 'latest' }}
   GIT_REPO_URL: ${{ vars.GIT_REPO || 'https://github.com' }}
   GIT_REPO_OWNER: ${{ vars.GIT_REPO_OWNER || 'ravensorb' }}
