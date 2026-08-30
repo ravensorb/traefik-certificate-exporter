@@ -15,6 +15,7 @@ from .libs.certificate_exporter import (
 from .libs.cli_args import globalArgs
 from .libs.docker import DockerManager
 from .libs.logging_utils import globalLogger, setup_logging
+from .libs.post_export import run_post_export_command
 from .libs.settings import globalSettingsMgr
 
 ###########################################################################################################
@@ -63,6 +64,9 @@ def main():
     if settings.runAtStart:
         logger.info("Exporting certificates....")
         domainsProcessed = exporter.exportCertificates()
+        run_post_export_command(
+            settings.postExportCommand, domainsProcessed or [], settings.dryRun
+        )
         if (
             domainsProcessed
             and len(domainsProcessed) > 0

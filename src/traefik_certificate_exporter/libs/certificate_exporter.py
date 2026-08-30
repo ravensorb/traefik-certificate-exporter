@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.serialization import pkcs12
 
 from .docker import DockerManager
 from .logging_utils import globalLogger
+from .post_export import run_post_export_command
 from .settings import Settings
 
 
@@ -463,6 +464,10 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
             return
 
         domains = self.__exporter.exportCertificatesForFile(args[0].src_path)
+
+        run_post_export_command(
+            self.__settings.postExportCommand, domains or [], self.__settings.dryRun
+        )
 
         if self.__settings.restartContainers:
             self.__dockerManager.restartLabeledContainers(domains)

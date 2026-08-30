@@ -77,6 +77,7 @@ class Settings:
     runAtStart: bool
     watchInterval: int
     pkcs12Passphrase: str | None
+    postExportCommand: str | None
 
     def __init__(
         self,
@@ -93,6 +94,7 @@ class Settings:
         runAtStart: bool,
         watchInterval: int,
         pkcs12Passphrase: str | None,
+        postExportCommand: str | None = None,
     ) -> None:
         """
         Initialize the class with the provided parameters.
@@ -111,6 +113,8 @@ class Settings:
             runAtStart (bool): Flag indicating if it should run at start.
             watchInterval (int): The interval to watch for changes.
             pkcs12Passphrase (str | None): Passphrase for PKCS12, if needed.
+            postExportCommand (str | None): Shell-like command line run after a
+                successful export pass, or None to disable (default).
 
         Returns:
             None
@@ -130,6 +134,7 @@ class Settings:
         self.runAtStart = runAtStart
         self.watchInterval = watchInterval
         self.pkcs12Passphrase = pkcs12Passphrase
+        self.postExportCommand = postExportCommand
 
 
 #######################################################################
@@ -232,6 +237,9 @@ class SettingsManager(ObjectBase):
             runAtStart=self._config["settings"]["runatstart"].get(bool),  # type: ignore
             watchInterval=self._config["settings"]["watchinterval"].get(int),  # type: ignore
             pkcs12Passphrase=self._config["settings"]["pkcs12passphrase"].get(
+                confuse.Optional(str)
+            ),  # type: ignore
+            postExportCommand=self._config["settings"]["postexportcommand"].get(
                 confuse.Optional(str)
             ),  # type: ignore
         )

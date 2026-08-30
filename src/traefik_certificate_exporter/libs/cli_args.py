@@ -109,6 +109,17 @@ globalArgParser.add_argument(
     type=str,
     help="Passphrase used to encrypt the exported PKCS12 (.pfx) file (default: unencrypted).",
 )
+globalArgParser.add_argument(
+    "--post-export-command",
+    dest="settings.postexportcommand",
+    default=None,
+    type=str,
+    help="Shell-like command line to run after a successful export pass (no shell "
+    "involved -- parsed with shlex, run via subprocess with a fixed 30s timeout). The "
+    "just-exported domain names are exposed to it as a comma-separated "
+    "TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS environment variable. Skipped "
+    "entirely when --dry-run is set.",
+)
 
 globalArgParser.add_argument(
     "-ll",
