@@ -7,7 +7,8 @@ formatters:
     format: "%(asctime)s [%(levelname)8s] : %(message)s"
     datefmt: "%Y-%m-%d %H:%M:%S"
   standard_detailed_formatter:
-    format: "%(asctime)s|%(levelname)8s|%(name)s|%(message)s"
+    class: pythonjsonlogger.json.JsonFormatter
+    format: "%(asctime)s %(levelname)s %(name)s %(message)s"
     datefmt: "%Y-%m-%d %H:%M:%S"
 
   extended_formatter:
@@ -15,7 +16,8 @@ formatters:
     format: "%(asctime)s [%(levelname)8s] %(name)s.%(funcName)s(%(lineno)s) : %(message)s"
     datefmt: "%Y-%m-%d %H:%M:%S"
   extended_detailed_formatter:
-    format: "%(asctime)s|%(name)s|%(levelname)s|<PID %(process)d:%(processName)s>|%(name)s.%(funcName)s(%(lineno)s)|%(message)s"
+    class: pythonjsonlogger.json.JsonFormatter
+    format: "%(asctime)s %(name)s %(levelname)s %(process)d %(processName)s %(funcName)s %(lineno)s %(message)s"
     datefmt: "%Y-%m-%d %H:%M:%S"
 
 handlers:

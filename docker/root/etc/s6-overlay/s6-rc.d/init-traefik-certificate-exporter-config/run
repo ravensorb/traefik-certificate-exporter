@@ -4,5 +4,5 @@
 if [ ! -f /config/config.yaml ]; then
     # write_info "Creating default config.yaml"
     echo "Setting up sample config.yaml"
-    cp -u /defaults/config/config.yaml.sample /config/config.yaml.sample
+    cp -u /defaults/config/config.yaml.sample /config/config.yaml
 fi

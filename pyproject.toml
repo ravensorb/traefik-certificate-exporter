@@ -23,6 +23,7 @@ coloredlogs = "^15.0.1"
 logging-tree = "^1.9"
 expandvars = "^0.12.0"
 cryptography = "^50.0.1"
+python-json-logger = "^4.2.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.2.1"
