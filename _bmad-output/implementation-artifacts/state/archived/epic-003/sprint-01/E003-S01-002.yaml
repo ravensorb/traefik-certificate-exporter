@@ -2,7 +2,7 @@ key: 'E003-S01-002'
 epic: 'E003'
 sprint: 'S01'
 title: 'Add and Document a PKCS12 Passphrase Setting'
-status: backlog
+status: done
 classification: simple
 depends_on: []
 estimate:
@@ -23,4 +23,16 @@ estimate:
     output: 4
     cache_write: 27
     cache_read: 44
-updated_at: '2026-08-30T20:22:04Z'
+updated_at: '2026-08-30T22:41:27Z'
+completion_evidence:
+  test_runs:
+  - command: poetry run pytest
+    exit_code: 0
+  tests_passing: true
+actual:
+  elapsed_hours: 0.5
+  man_hours: 1.5
+  hitl_hours: 0.1
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-08-30T22:41:14Z'

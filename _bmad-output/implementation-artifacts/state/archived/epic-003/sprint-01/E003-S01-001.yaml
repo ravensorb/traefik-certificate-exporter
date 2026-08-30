@@ -2,7 +2,7 @@ key: 'E003-S01-001'
 epic: 'E003'
 sprint: 'S01'
 title: 'Fix Domain Include/Exclude Across All Config Surfaces'
-status: backlog
+status: done
 classification: standard
 depends_on: []
 estimate:
@@ -23,4 +23,16 @@ estimate:
     output: 9
     cache_write: 53
     cache_read: 88
-updated_at: '2026-08-30T20:22:05Z'
+updated_at: '2026-08-30T22:41:24Z'
+completion_evidence:
+  test_runs:
+  - command: poetry run pytest
+    exit_code: 0
+  tests_passing: true
+actual:
+  elapsed_hours: 1.2
+  man_hours: 4.2
+  hitl_hours: 0.2
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-08-30T22:41:13Z'
