@@ -14,6 +14,5 @@ jobs:
     secrets: inherit
 
   build-container:
-    needs: build-package
     uses: ./.github/workflows/build-container.yaml
     secrets: inherit
