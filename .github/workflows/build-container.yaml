@@ -49,15 +49,18 @@ jobs:
             echo "name=$GITHUB_TAG" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Docker meta (docker.io)
+      - name: Docker meta
         id: meta
         uses: LiquidLogicLabs/git-action-docker-metadata@v6
         with:
-          # list of Docker images to use as base name for tags
+          # Only one of these is ever active -- mirrors the mutually-exclusive docker.io
+          # vs custom-registry "Build and push" steps below, so one metadata computation
+          # covers whichever registry is actually configured.
           images: |
-            ${{ env.DOCKER_REPONAME }}/${{ env.DOCKER_IMAGENAME }}
+            name=${{ env.DOCKER_REPONAME }}/${{ env.DOCKER_IMAGENAME }},enable=${{ env.DOCKER_REGISTRY == 'docker.io' || env.DOCKER_REGISTRY == '' }}
+            name=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPONAME }}/${{ env.DOCKER_IMAGENAME }},enable=${{ env.DOCKER_REGISTRY != 'docker.io' && env.DOCKER_REGISTRY != '' }}
           # latest=auto (the default) tags `latest` only for a real semver release tag,
-          # never for a plain branch build -- see the `beta` entry below for that case.
+          # never for a plain branch build -- see the `dev` entry below for that case.
           flavor: |
             latest=auto
           tags: |
@@ -65,7 +68,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
             type=sha,format=short
-            type=raw,value=beta,enable=${{ github.ref_type != 'tag' }}
+            type=raw,value=dev,enable=${{ github.ref_type != 'tag' }}
           labels: |
             # org.opencontainers.image.description=
             # org.opencontainers.image.licenses=
@@ -76,22 +79,6 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             # org.opencontainers.image.created=${{ steps.builddate.outputs.current }}
             org.opencontainers.image.authors=${{ env.GIT_REPO_OWNER }}
-
-      - name: Docker meta (custom registry)
-        id: meta_custom
-        uses: LiquidLogicLabs/git-action-docker-metadata@v6
-        with:
-          # list of Docker images to use as base name for tags
-          images: |
-            ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPONAME }}/${{ env.DOCKER_IMAGENAME }}
-          flavor: |
-            latest=auto
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
-            type=sha,format=short
-            type=raw,value=beta,enable=${{ github.ref_type != 'tag' }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -141,9 +128,9 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Build and push (docker.io)
-        if: github.event_name != 'pull_request' && (env.DOCKER_REGISTRY == 'docker.io' || env.DOCKER_REGISTRY == '')
-        id: dockerhub_build
+      - name: Build and push
+        if: github.event_name != 'pull_request'
+        id: build
         uses: docker/build-push-action@v7
         with:
           # builder: act-builder
@@ -153,24 +140,6 @@ jobs:
           push: ${{ env.DOCKER_PUBLISH_MODE == 'push' }}
           load: ${{ env.DOCKER_PUBLISH_MODE != 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # cache-from: type=registry,ref=harbor.ravenwolf.org/my-image:buildcache
-          # cache-to: type=registry,ref=harbor.ravenwolf.org/my-image:buildcache,mode=max
-          build-args: |
-            DEBIAN_FRONTEND: noninteractive
-
-      - name: Build and push (ghcr and custom registry)
-        if: github.event_name != 'pull_request' && (env.DOCKER_REGISTRY != 'docker.io' && env.DOCKER_REGISTRY != '')
-        id: dockercustom_build
-        uses: docker/build-push-action@v7
-        with:
-          # builder: act-builder
-          context: .
-          file: ${{ env.DOCKER_FILE }}
-          platforms: ${{ env.DOCKER_PLATFORMS }}
-          push: ${{ env.DOCKER_PUBLISH_MODE == 'push' }}
-          load: ${{ env.DOCKER_PUBLISH_MODE != 'push' }}
-          tags: ${{ steps.meta_custom.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # cache-from: type=registry,ref=harbor.ravenwolf.org/my-image:buildcache
           # cache-to: type=registry,ref=harbor.ravenwolf.org/my-image:buildcache,mode=max
