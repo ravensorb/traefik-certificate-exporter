@@ -63,12 +63,15 @@ jobs:
           # never for a plain branch build -- see the `dev` entry below for that case.
           flavor: |
             latest=auto
+          # A tag-triggered (release) build gets only version/major.minor/major/latest --
+          # no sha tag mixed in. A branch build gets exactly `dev` (floating) and
+          # `dev-<short sha>` (unique per build) -- never a version tag.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
-            type=sha,format=short
             type=raw,value=dev,enable=${{ github.ref_type != 'tag' }}
+            type=sha,format=short,prefix=dev-,enable=${{ github.ref_type != 'tag' }}
           labels: |
             # org.opencontainers.image.description=
             # org.opencontainers.image.licenses=
