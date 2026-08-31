@@ -13,8 +13,8 @@ env:
   DOCKER_FILE: ${{ vars.DOCKER_FILE || 'docker/Dockerfile' }}
   DOCKER_IMAGENAME: ${{ vars.DOCKER_IMAGENAME || 'traefik-certificate-exporter' }}
   GIT_REPO_URL: ${{ vars.GIT_REPO || 'https://github.com' }}
-  GIT_REPO_OWNER: ${{ vars.GIT_REPO_OWNER || 'ravensorb' }}
-  GIT_REPO_NAME: ${{ vars.GIT_REPO_NAME || 'ravensorb' }}
+  GIT_REPO_OWNER: ${{ vars.GIT_REPO_OWNER || github.repository_owner }}
+  GIT_REPO_NAME: ${{ vars.GIT_REPO_NAME || github.event.repository.name }}
   BUILDKIT_FLAGS: ${{ vars.BUILDKIT_FLAGS || '' }}
   GITHUB_TAG: ${{ vars.RELEASE_GITHUB_TAG || '' }}
   HAS_CUSTOM_CA: ${{ secrets.CI_CA_CERTIFICATE != '' }}
@@ -77,7 +77,7 @@ jobs:
             # org.opencontainers.image.licenses=
             # org.opencontainers.image.title=
             org.opencontainers.image.url=https://${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPONAME }}/${{ env.DOCKER_IMAGENAME }}
-            org.opencontainers.image.source=https://${{ env.GIT_REPO_URL }}/${{ env.GIT_REPO_OWNER }}/${{ env.GIT_REPO_NAME }}
+            org.opencontainers.image.source=${{ env.GIT_REPO_URL }}/${{ env.GIT_REPO_OWNER }}/${{ env.GIT_REPO_NAME }}
             org.opencontainers.image.version=${{ steps.tagName.outputs.name }}
             org.opencontainers.image.revision=${{ github.sha }}
             # org.opencontainers.image.created=${{ steps.builddate.outputs.current }}

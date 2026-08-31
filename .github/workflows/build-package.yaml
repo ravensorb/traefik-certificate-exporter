@@ -9,7 +9,11 @@ permissions:
     contents: write
 
 env:
-    PACKAGE_REPO: ${{ vars.PACKAGE_REPO || 'testpypi' }}
+    # cadifyai/poetry-publish's PUBLISH_REGISTRY expects a full upload-endpoint URL,
+    # not a registry keyword -- default to TestPyPI (safer than the real PyPI index
+    # while this pipeline is unverified end-to-end); override via the PACKAGE_REPO
+    # repo variable once ready to publish for real.
+    PACKAGE_REPO: ${{ vars.PACKAGE_REPO || 'https://test.pypi.org/legacy/' }}
     GITHUB_TAG: ${{ vars.RELEASE_GITHUB_TAG || '' }}
     PYTHON_VERSION: ${{ vars.PYTHON_VERSION || '3.11' }}
 
@@ -43,6 +47,9 @@ jobs:
         with:
           ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
+          # Package lives under src/, not the repo root -- poetry-publish's version-bump
+          # step needs the exact directory containing __init__.py.
+          PACKAGE_DIRECTORY: ./src/traefik_certificate_exporter/
           PUBLISH_REGISTRY: ${{ env.PACKAGE_REPO }}
           PUBLISH_REGISTRY_USERNAME: ${{ secrets.PYPI_USERNAME }}
           PUBLISH_REGISTRY_PASSWORD: ${{ secrets.PYPI_TOKEN }}
