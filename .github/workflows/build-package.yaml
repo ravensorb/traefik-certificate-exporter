@@ -19,6 +19,11 @@ jobs:
     steps:
       - name: Checkout Repository # You must checkout your repository first.
         uses: actions/checkout@v7
+        with:
+          # cadifyai/poetry-publish does its own internal checkout (with its own
+          # token) further down; leaving credentials persisted here causes a
+          # duplicate Authorization header on its git operations (HTTP 400).
+          persist-credentials: false
 
       - name: Set up Python
         id: setup-python
