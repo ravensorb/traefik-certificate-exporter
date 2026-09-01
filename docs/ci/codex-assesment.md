@@ -401,7 +401,9 @@ should move. It does not perform the mutation.
 This keeps one decider and two executors, and adds no third-party action outside the
 existing policy.
 
-**2. Forge package publication always happens — it is not optional.**
+**2. Forge package publication always happens where the forge has a Python index.**
+
+Refined 2026-09-01 after the GitHub Packages constraint surfaced (see below).
 
 The owning forge's native package registry is published on every release, in the same way
 the owning forge's image registry is. It is not behind an enablement toggle.
@@ -414,6 +416,29 @@ This supersedes the "forge package publication removed" line earlier in this doc
 restores the behaviour the surviving fragment at line 21 describes, and matches what the
 elaborated Epic 8 stories already assume. It also matters for Epic 9: without forge package
 publication, "Gitea portability" would mean images and releases only.
+
+**2a. The forge Python package destination exists only on Gitea.**
+
+GitHub Packages has no Python registry. GitHub's own documentation lists the supported
+registries as "npm, RubyGems, Apache Maven, Gradle, Docker, and NuGet" — there is no PyPI
+index among them. Gitea, by contrast, ships a PyPI-compatible package registry.
+
+So "always on" cannot mean "on every forge". The resolution keeps the no-toggle property
+while respecting the host:
+
+- The forge package endpoint is **derived from forge kind**, exactly as the other forge
+  coordinates are. It is not a repository variable and there is no
+  `PUBLISH_PACKAGE_FORGE`.
+- On **Gitea**: the destination always exists and is always published. Its credential is
+  required unconditionally — a missing one fails planning rather than silently
+  downgrading the destination to "disabled".
+- On **GitHub.com**: the destination does not exist. This is a *derived host fact*
+  recorded in the plan — **not** a disabled destination and **not** a planning failure.
+  The forge Release assets carry the distribution on that host.
+
+The distinction matters for reconciliation: "absent because this host has no Python index"
+and "absent because a publish failed" must not be represented the same way, or recovery
+cannot tell a correct state from a broken one.
 
 **3. The publication race — narrowed by the release model, not by a workflow lock.**
 
