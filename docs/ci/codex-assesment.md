@@ -417,6 +417,29 @@ restores the behaviour the surviving fragment at line 21 describes, and matches 
 elaborated Epic 8 stories already assume. It also matters for Epic 9: without forge package
 publication, "Gitea portability" would mean images and releases only.
 
+**2b. The forge IMAGE registry is always on too — `PUBLISH_IMAGE_FORGE` is removed.**
+
+Confirmed 2026-09-01. The rule is simply: **the owning forge is never optional.** Toggles
+exist for external destinations only.
+
+| Destination | Enablement |
+|---|---|
+| Forge image — GHCR on GitHub, local registry on Gitea | **always**, no toggle |
+| Forge package — Gitea's PyPI index | **always where the forge has one** (see 2a) |
+| Docker Hub | `PUBLISH_IMAGE_DOCKERHUB` |
+| TestPyPI (development) | `PUBLISH_PACKAGE_TESTPYPI` |
+| PyPI (stable) | `PUBLISH_PACKAGE_PYPI` |
+
+Publishing to the forge that owns the repository is where the artifacts belong, so it is not
+a choice. A missing forge credential fails planning rather than silently downgrading the
+destination to "disabled". `ARCHITECTURE-SPINE.md` is amended accordingly: CI-AR20 loses
+`PUBLISH_IMAGE_FORGE`, CI-AR21 replaces "forge package publication is intentionally out of
+scope", and a new CI-AR21a states the rule.
+
+Note the asymmetry between the two forge destinations, which is a host fact rather than a
+policy choice: the forge *image* registry exists on both GitHub and Gitea, so it is always
+on everywhere; the forge *package* registry exists only on Gitea.
+
 **2a. The forge Python package destination exists only on Gitea.**
 
 GitHub Packages has no Python registry. GitHub's own documentation lists the supported

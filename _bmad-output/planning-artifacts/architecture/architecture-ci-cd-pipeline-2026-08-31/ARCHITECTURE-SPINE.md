@@ -111,12 +111,25 @@ The `CI-AR` identifiers are stable traceability keys. Stories and tests refer to
 
 - **CI-AR19 — Strict toggles.** Publication variables accept only case-normalized `true` or
   `false`; absent means false; any other value fails planning. Shell truthiness is forbidden.
-- **CI-AR20 — Image destinations.** `PUBLISH_IMAGE_DOCKERHUB` independently enables Docker
-  Hub. `PUBLISH_IMAGE_FORGE` enables the current owner's registry: GHCR on GitHub or the local
-  Gitea registry on Gitea. There are no separate GHCR and Gitea booleans.
-- **CI-AR21 — Package channels.** Development releases may publish only to TestPyPI under
-  `PUBLISH_PACKAGE_TESTPYPI`. Stable releases may publish only to PyPI under
-  `PUBLISH_PACKAGE_PYPI`. Forge package publication is intentionally out of scope.
+- **CI-AR20 — Image destinations.** *(amended 2026-09-01.)* The owning forge's registry —
+  GHCR on GitHub, the local registry on Gitea — is **always** a destination and has no
+  toggle; `PUBLISH_IMAGE_FORGE` is removed. `PUBLISH_IMAGE_DOCKERHUB` independently enables
+  Docker Hub. There are no separate GHCR and Gitea booleans.
+- **CI-AR21 — Package channels.** *(amended 2026-09-01. The original read "Forge package
+  publication is intentionally out of scope"; that is superseded.)* The owning forge's
+  package registry is **always** a destination where the forge provides a Python index, and
+  has no toggle. In practice that means Gitea: GitHub Packages has no PyPI registry (its
+  registries are npm, RubyGems, Maven, Gradle, Docker and NuGet), so on GitHub.com the
+  destination does not exist. That absence is a *derived host fact* recorded in the plan —
+  not a disabled destination and not a planning failure — and the forge Release assets carry
+  the distribution there. Reconciliation must represent "this host has no Python index"
+  distinctly from "a publish failed", or recovery cannot tell a correct state from a broken
+  one. External channels stay optional: development to TestPyPI under
+  `PUBLISH_PACKAGE_TESTPYPI`, stable to PyPI under `PUBLISH_PACKAGE_PYPI`.
+- **CI-AR21a — The owning forge is never optional.** *(added 2026-09-01.)* Toggles exist for
+  external destinations only. Publishing to the forge that owns the repository is where the
+  artifacts belong, so it is not a choice; a missing forge credential fails planning rather
+  than silently downgrading the destination to "disabled".
 - **CI-AR22 — Publication plan.** Before publishing, the workflow emits schema-validated
   `publication-plan-v1.json` with channel, version, source SHA, enabled targets, non-secret
   coordinates, immutable tags, aliases, credential modes, and run correlation.
@@ -182,7 +195,7 @@ own destination planning, preflight, authentication, and mutation.
 | Variable | Meaning | Default |
 |---|---|---|
 | `PUBLISH_IMAGE_DOCKERHUB` | Publish image to Docker Hub | `false` |
-| `PUBLISH_IMAGE_FORGE` | Publish image to active forge registry | `false` |
+| *(none)* | Forge image and forge package are always on — see CI-AR20/21a | n/a |
 | `PUBLISH_PACKAGE_TESTPYPI` | Publish development package to TestPyPI | `false` |
 | `PUBLISH_PACKAGE_PYPI` | Publish stable package to PyPI | `false` |
 | `FORGE_REGISTRY` | Gitea registry override only when host derivation is unsafe | derived |
