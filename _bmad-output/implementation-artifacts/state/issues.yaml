@@ -63,3 +63,51 @@ backlog:
   severity: Low
   status: backlog
   description: "While verifying Epic 2 changes, running 'pre-commit run --all-files' applied ruff-check --fix and ruff-format repo-wide, touching ~200 unrelated tracked files including installed BMad skill scripts under .agents/. Reverted via git checkout to the 12 files actually in scope for Epics 1-2. This also reverted uncommitted-but-legitimate earlier work in .pre-commit-config.yaml (the ruff/gitleaks/actionlint hook wiring), which had to be reconstructed from pre-commit's local cache directory (~/.cache/pre-commit/repo*, each has a git remote identifying which tool) plus prior session context. Also discovered poetry lock --check no longer exists in Poetry 2.0+; replaced with poetry check --lock. Lesson recorded in agent memory: never run pre-commit --all-files with mutating hooks (ruff-check/ruff-format) on an existing repo; scope with --files to only the touched paths."
+- key: BL-E007-001
+  epic: '007'
+  sprint: ''
+  title: Publishers must promote verified-dist-v1 rather than rebuild, and nothing consumes it yet
+  source: post-restore audit (E007)
+  severity: High
+  status: backlog
+  description: "ARCHITECTURE-SPINE.md requires publishers to promote the verified artifact and never rebuild the Python package. verify-build.yaml does its half correctly: it revalidates SHA256SUMS and the manifest, builds via docker buildx bake from the manifest's own values, uploads verified-dist-v1 and exposes dist-artifact-name, build-manifest-sha256, package-version and source-sha as workflow_call outputs. The legacy publishers that violated this (build-container.yaml rebuilding from context '.', build-package.yaml running poetry build from source) are now deleted, so nothing violates it today -- but nothing consumes the artifact either. E007's provenance chain terminates inside the verifier. Closed by E008-S01-002 and S01-004, whose stories already forbid rebuilding and specify consuming the artifact."
+- key: BL-E007-002
+  epic: '007'
+  sprint: ''
+  title: Local Act execution is still unproven, and running it destroyed the repository once
+  source: post-restore audit (E007)
+  severity: Medium
+  status: backlog
+  description: "The local verifier path has never completed successfully. The one attempt on 2026-09-01 destroyed the working tree and all local commits: ~/.actrc sets --bind so act mounts the real repository as the container workspace, and verify-build.yaml's actions/checkout deletes the workspace contents before discovering it cannot fetch the pinned ref. docker/act-build.sh now runs act inside a disposable clone with --no-hardlinks, refuses to proceed unless the clone resolves elsewhere, and is pinned by test_local_wrapper_never_runs_act_against_the_working_tree. That makes the path SAFE but still UNPROVEN -- no successful run exists. Closing this needs an actual green run whose result is retained. Note the clone verifies HEAD, not the dirty working tree, which is what CI verifies anyway."
+- key: BL-E007-003
+  epic: '007'
+  sprint: ''
+  title: No evidence artifact carries run correlation identity
+  source: post-restore audit (E007)
+  severity: Medium
+  status: backlog
+  description: 'build-manifest-v1 and release-receipt-v1 record source_sha and image_plan.fingerprint -- what was built -- but never which execution built it, so a promoted artifact set cannot be traced to its pipeline run. The tension is real: the canonical manifest must stay byte-deterministic, and a run id would break that. The elaborated E008 stories resolve it by putting correlation in publication-plan-v1 and release-receipt-v1 only, leaving build-manifest.json deterministic. Tracked here because both schemas need extending and neither has been.'
+- key: BL-E007-004
+  epic: '007'
+  sprint: ''
+  title: Bake exposes ATTESTATIONS but the verifier enables no SBOM or provenance attestation
+  source: post-restore audit (E007)
+  severity: Low
+  status: backlog
+  description: docker-bake.hcl defaults ATTESTATIONS to [] and verify-build.yaml neither enables type=sbom/type=provenance nor scans the built image, in an epic whose subject is reproducible build and verification. The Docker standards overlay is a stub, so this is provisional guidance rather than a hard rule. Decide explicitly -- enable attestations on the verified build, or record in ADR-0008 why they are deferred to the publication epic.
+- key: BL-E000-001
+  epic: '000'
+  sprint: ''
+  title: pre-commit --all-files silently skips untracked files, and this has now caused a false green twice
+  source: post-restore audit
+  severity: Medium
+  status: backlog
+  description: 'pre-commit --all-files enumerates git ls-files, so any gate reports green over a set that excludes untracked work. This first appeared when the whole E007 delivery was untracked and every gate skipped it. It recurred on 2026-09-01 against a brand-new mypy gate: the gate passed a deliberately planted type error because src/publication_contract/ had not been staged. Both times the gate looked green while checking nothing. There is no mechanical guard for this -- the practical rule is to stage before trusting an --all-files result, and to prove any new gate with a planted violation rather than a green run. Worth considering a repo-level check that fails when tracked-vs-untracked coverage diverges.'
+- key: BL-E008-001
+  epic: '008'
+  sprint: ''
+  title: 'No workflow reacts to push: main and v* tags are unverified until E008-S8.1 lands dev.yaml'
+  source: legacy cutover
+  severity: High
+  status: backlog
+  description: Deleting build.yaml with the rest of the legacy publish path removed the only push-triggered workflow. ci.yaml is pull_request-only, so pushes to main and v* tags now run nothing. This is the same exposure the deleted test.yaml left behind, reintroduced deliberately as part of the cutover rather than by accident, because the workflow doing the verifying could not succeed. It closes when E008-S01-001 adds .github/workflows/dev.yaml and the stable-release orchestrator lands, both calling verify-build.yaml as thin adapters. test_any_push_triggered_workflow_verifies_before_it_ships was reshaped to assert the conditional invariant -- any push-triggered workflow must reach the verifier before anything that ships -- so it passes vacuously now and bites the moment a push workflow reappears. Do NOT close this by weakening that test; close it by landing dev.yaml.
