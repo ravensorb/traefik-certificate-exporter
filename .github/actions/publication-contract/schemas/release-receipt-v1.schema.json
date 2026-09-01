@@ -1,0 +1,401 @@
+{
+  "$id": "https://github.com/ravensorb/traefik-certificate-exporter/schemas/release-receipt-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "complete"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "failures": {
+            "maxItems": 0
+          },
+          "forge_release": {
+            "properties": {
+              "assets": {
+                "minItems": 1
+              },
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "const": "published"
+              },
+              "url": {
+                "format": "uri",
+                "pattern": "^https://",
+                "type": "string"
+              }
+            }
+          },
+          "package": {
+            "properties": {
+              "artifacts": {
+                "items": {
+                  "properties": {
+                    "remote_sha256": {
+                      "$ref": "#/$defs/hash"
+                    },
+                    "status": {
+                      "const": "published"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "oci": {
+            "properties": {
+              "images": {
+                "minItems": 1
+              }
+            }
+          },
+          "reconciliation": {
+            "properties": {
+              "git_aliases": {
+                "minItems": 1,
+                "items": {
+                  "properties": {
+                    "status": {
+                      "const": "matched"
+                    }
+                  }
+                }
+              },
+              "oci_aliases": {
+                "minItems": 1,
+                "items": {
+                  "properties": {
+                    "status": {
+                      "const": "matched"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "failures": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "destination": {
+            "enum": [
+              "forge-release",
+              "oci",
+              "package",
+              "reconciliation"
+            ]
+          },
+          "reason": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "forge_release": {
+      "additionalProperties": false,
+      "properties": {
+        "assets": {
+          "items": {
+            "$ref": "#/$defs/remoteArtifact"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/mutationStatus"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "format": "uri",
+              "pattern": "^https://",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "url",
+        "status",
+        "assets"
+      ],
+      "type": "object"
+    },
+    "oci": {
+      "additionalProperties": false,
+      "properties": {
+        "images": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "$ref": "#/$defs/digest"
+              },
+              "platforms": {
+                "items": {
+                  "pattern": "^linux/[a-z0-9_]+(?:/v[0-9]+)?$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "registry": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "repository": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "registry",
+              "repository",
+              "digest",
+              "platforms"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "images"
+      ],
+      "type": "object"
+    },
+    "package": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/remoteArtifact"
+          },
+          "minItems": 2,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "endpoint": {
+          "format": "uri",
+          "pattern": "^https://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint",
+        "artifacts"
+      ],
+      "type": "object"
+    },
+    "package_version": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "reconciliation": {
+      "additionalProperties": false,
+      "properties": {
+        "git_aliases": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "actual_sha": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/sourceSha"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "alias": {
+                "$ref": "#/$defs/safeName"
+              },
+              "expected_sha": {
+                "$ref": "#/$defs/sourceSha"
+              },
+              "status": {
+                "$ref": "#/$defs/reconciliationStatus"
+              }
+            },
+            "required": [
+              "alias",
+              "expected_sha",
+              "actual_sha",
+              "status"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "oci_aliases": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "actual_digest": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/digest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "alias": {
+                "$ref": "#/$defs/safeName"
+              },
+              "expected_digest": {
+                "$ref": "#/$defs/digest"
+              },
+              "status": {
+                "$ref": "#/$defs/reconciliationStatus"
+              }
+            },
+            "required": [
+              "alias",
+              "expected_digest",
+              "actual_digest",
+              "status"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "oci_aliases",
+        "git_aliases"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "release-receipt-v1"
+    },
+    "source_sha": {
+      "$ref": "#/$defs/sourceSha"
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "incomplete"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "status",
+    "package_version",
+    "source_sha",
+    "package",
+    "oci",
+    "forge_release",
+    "reconciliation",
+    "failures"
+  ],
+  "title": "Release receipt v1",
+  "type": "object",
+  "$defs": {
+    "digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "mutationStatus": {
+      "enum": [
+        "failed",
+        "pending",
+        "published"
+      ]
+    },
+    "reconciliationStatus": {
+      "enum": [
+        "failed",
+        "matched",
+        "pending"
+      ]
+    },
+    "remoteArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "$ref": "#/$defs/safeName"
+        },
+        "remote_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/hash"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "status": {
+          "$ref": "#/$defs/mutationStatus"
+        }
+      },
+      "required": [
+        "filename",
+        "sha256",
+        "remote_sha256",
+        "status"
+      ],
+      "type": "object"
+    },
+    "safeName": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$",
+      "type": "string"
+    },
+    "sourceSha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    }
+  }
+}

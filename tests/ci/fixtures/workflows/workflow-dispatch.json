@@ -1,0 +1,10 @@
+{
+  "event_name": "workflow_dispatch",
+  "inputs": {
+    "channel": "ci",
+    "package-version": "0.1.3",
+    "source-sha": "fedcba9876543210fedcba9876543210fedcba98"
+  },
+  "ref": "refs/heads/main",
+  "sha": "fedcba9876543210fedcba9876543210fedcba98"
+}

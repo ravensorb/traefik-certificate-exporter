@@ -1,0 +1,30 @@
+{
+  "schema_version": "build-manifest-v1",
+  "package_version": "1.2.3",
+  "source_sha": "dddddddddddddddddddddddddddddddddddddddd",
+  "distributions": {
+    "wheel": {
+      "filename": "package-1.2.3-py3-none-any.whl",
+      "sha256": "ABC123"
+    },
+    "sdist": {
+      "filename": "package-1.2.3.tar.gz",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  "image_plan": {
+    "context": ".",
+    "dockerfile": "docker/Dockerfile",
+    "target": "runtime",
+    "base_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "build_args": {},
+    "labels": {
+      "org.opencontainers.image.title": "package",
+      "org.opencontainers.image.description": "fixture",
+      "org.opencontainers.image.source": "https://example.invalid/package",
+      "org.opencontainers.image.version": "1.2.3",
+      "org.opencontainers.image.revision": "dddddddddddddddddddddddddddddddddddddddd"
+    },
+    "fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  }
+}

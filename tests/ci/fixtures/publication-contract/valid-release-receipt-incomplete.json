@@ -1,0 +1,56 @@
+{
+  "schema_version": "release-receipt-v1",
+  "status": "incomplete",
+  "package_version": "1.2.3",
+  "source_sha": "dddddddddddddddddddddddddddddddddddddddd",
+  "package": {
+    "endpoint": "https://upload.pypi.org/legacy/",
+    "artifacts": [
+      {
+        "filename": "traefik_certificate_exporter-1.2.3-py3-none-any.whl",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "remote_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "status": "published"
+      },
+      {
+        "filename": "traefik_certificate_exporter-1.2.3.tar.gz",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "remote_sha256": null,
+        "status": "failed"
+      }
+    ]
+  },
+  "oci": {
+    "images": []
+  },
+  "forge_release": {
+    "id": null,
+    "url": null,
+    "status": "pending",
+    "assets": []
+  },
+  "reconciliation": {
+    "oci_aliases": [
+      {
+        "alias": "latest",
+        "expected_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "actual_digest": null,
+        "status": "pending"
+      }
+    ],
+    "git_aliases": [
+      {
+        "alias": "v1",
+        "expected_sha": "dddddddddddddddddddddddddddddddddddddddd",
+        "actual_sha": null,
+        "status": "pending"
+      }
+    ]
+  },
+  "failures": [
+    {
+      "destination": "package",
+      "reason": "sdist upload rejected"
+    }
+  ]
+}

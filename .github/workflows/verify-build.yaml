@@ -1,0 +1,610 @@
+name: Verify build
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Verification channel (ci, dev, or stable)
+        required: true
+        type: string
+      package-version:
+        description: Normalized PEP 440 package version
+        required: true
+        type: string
+      source-sha:
+        description: Full lowercase 40-character Git source SHA
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      channel:
+        description: Verification channel (ci, dev, or stable)
+        required: true
+        type: string
+      package-version:
+        description: Normalized PEP 440 package version
+        required: true
+        type: string
+      source-sha:
+        description: Full lowercase 40-character Git source SHA
+        required: true
+        type: string
+    outputs:
+      dist-artifact-name:
+        description: Canonical verified distribution artifact name
+        value: ${{ jobs.distribution.outputs.dist-artifact-name }}
+      build-manifest-sha256:
+        description: SHA-256 of the validated canonical build manifest
+        value: ${{ jobs.distribution.outputs.build-manifest-sha256 }}
+      package-version:
+        description: Validated package version embedded in every artifact
+        value: ${{ jobs.distribution.outputs.package-version }}
+      source-sha:
+        description: Validated full source commit SHA
+        value: ${{ jobs.distribution.outputs.source-sha }}
+
+permissions:
+  contents: read
+
+jobs:
+  source-integrity:
+    name: Source identity
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact source with full tag history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ inputs.source-sha }}
+
+      - name: Validate immutable verifier inputs
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          SOURCE_SHA: ${{ inputs.source-sha }}
+        run: |
+          set -euo pipefail
+          case "$CHANNEL" in
+            ci|dev|stable) ;;
+            *) echo "channel: must be ci, dev, or stable" >&2; exit 2 ;;
+          esac
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "source-sha: must be a full lowercase 40-character Git SHA" >&2
+            exit 2
+          fi
+          actual_sha="$(git rev-parse HEAD)"
+          if [[ "$actual_sha" != "$SOURCE_SHA" ]]; then
+            echo "source-sha: checked-out HEAD $actual_sha does not match $SOURCE_SHA" >&2
+            exit 2
+          fi
+          git describe --tags --always >/dev/null
+
+  poetry-lock:
+    name: Poetry lock
+    needs: source-integrity
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ inputs.source-sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Install pinned Poetry
+        run: pipx install poetry==2.4.2
+      - name: Check manifest and lock
+        run: poetry check --lock
+
+  ruff-check:
+    name: Ruff check
+    needs: source-integrity
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ inputs.source-sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pipx install poetry==2.4.2
+      - run: poetry install
+      - name: Run configured Ruff check
+        run: poetry run pre-commit run ruff-check --all-files
+
+  ruff-format:
+    name: Ruff format
+    needs: source-integrity
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ inputs.source-sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pipx install poetry==2.4.2
+      - run: poetry install
+      - name: Run configured Ruff format verification
+        run: poetry run pre-commit run ruff-format --all-files
+
+  gitleaks:
+    name: Gitleaks
+    needs: source-integrity
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ inputs.source-sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pipx install poetry==2.4.2
+      - run: poetry install
+      - name: Scan tracked content for credentials
+        run: poetry run pre-commit run gitleaks --all-files
+
+  actionlint:
+    name: actionlint
+    needs: source-integrity
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ inputs.source-sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pipx install poetry==2.4.2
+      - run: poetry install
+      - name: Validate all Actions workflows
+        run: poetry run pre-commit run actionlint --all-files
+      - name: Enforce workflow governance policy
+        run: poetry run pre-commit run workflow-policy --all-files
+
+  file-hygiene:
+    name: File hygiene
+    needs: source-integrity
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ inputs.source-sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pipx install poetry==2.4.2
+      - run: poetry install
+      - name: Check TOML
+        run: poetry run pre-commit run check-toml --all-files
+      - name: Check YAML
+        run: poetry run pre-commit run check-yaml --all-files
+      - name: Check line endings
+        run: poetry run pre-commit run mixed-line-ending --all-files
+
+  pytest:
+    name: pytest (Python ${{ matrix.python }})
+    needs: source-integrity
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: true
+      matrix:
+        python:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ inputs.source-sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install pinned Poetry
+        run: pipx install poetry==2.4.2
+      - name: Install locked dependencies
+        run: poetry install
+      - name: Run complete test suite
+        run: poetry run pytest
+
+  distribution:
+    name: Build, smoke test, and upload evidence
+    needs:
+      - poetry-lock
+      - ruff-check
+      - ruff-format
+      - gitleaks
+      - actionlint
+      - file-hygiene
+      - pytest
+    runs-on: ubuntu-24.04
+    outputs:
+      dist-artifact-name: ${{ steps.artifact-layout.outputs.artifact-name }}
+      build-manifest-sha256: ${{ steps.final-manifest.outputs.file-sha256 }}
+      package-version: ${{ steps.final-manifest.outputs.package-version }}
+      source-sha: ${{ steps.final-manifest.outputs.source-sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ inputs.source-sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Install pinned Poetry
+        run: pipx install poetry==2.4.2
+      - name: Install locked build dependencies without the application
+        run: poetry install --no-root --no-directory
+      - name: Apply and validate package version in disposable checkout
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          PACKAGE_VERSION: ${{ inputs.package-version }}
+        run: |
+          set -euo pipefail
+          case "$CHANNEL" in
+            ci|stable)
+              committed_version="$(poetry version --short)"
+              if [[ "$PACKAGE_VERSION" != "$committed_version" ]]; then
+                echo "package-version: expected committed Poetry version $committed_version" >&2
+                exit 2
+              fi
+              git diff --exit-code
+              git diff --cached --exit-code
+              test -z "$(git ls-files --others --exclude-standard)"
+              ;;
+            dev)
+              poetry run python - <<'PY'
+          import os
+          from packaging.version import InvalidVersion, Version
+
+          supplied = os.environ["PACKAGE_VERSION"]
+          try:
+              parsed = Version(supplied)
+          except InvalidVersion as error:
+              raise SystemExit(f"package-version: invalid PEP 440 version: {error}")
+          if parsed.dev is None or parsed.local is not None or str(parsed) != supplied:
+              raise SystemExit(
+                  "package-version: dev channel requires a normalized public PEP 440 development version"
+              )
+          PY
+              poetry version "$PACKAGE_VERSION"
+              applied_version="$(poetry version --short)"
+              if [[ "$applied_version" != "$PACKAGE_VERSION" ]]; then
+                echo "package-version: Poetry applied $applied_version, expected $PACKAGE_VERSION" >&2
+                exit 2
+              fi
+              git diff --cached --exit-code
+              test "$(git diff --name-only)" = "pyproject.toml"
+              test -z "$(git ls-files --others --exclude-standard)"
+              ;;
+            *)
+              echo "channel: must be ci, dev, or stable" >&2
+              exit 2
+              ;;
+          esac
+      - name: Require a fresh distribution workspace
+        run: |
+          set -euo pipefail
+          test ! -e dist
+          test ! -e evidence
+          test ! -e verified-dist-v1
+          mkdir evidence
+      - name: Build wheel and sdist
+        run: poetry build
+      - name: Create and validate build manifest
+        id: manifest
+        uses: ./.github/actions/publication-contract
+        with:
+          operation: build-manifest
+          artifact-directory: dist
+          output-file: evidence/build-manifest.json
+          package-version: ${{ inputs.package-version }}
+          source-sha: ${{ inputs.source-sha }}
+          image-context: .
+          dockerfile: docker/Dockerfile
+          target: runtime
+          base-digest: sha256:e17494fc7ec17c64f1b502d52705aa99d7a1cd8ccf59bb7b36003db89d97d2c6
+          build-args-json: >-
+            {"POETRY_VERSION":"2.4.2","REVISION":"${{ inputs.source-sha }}","VERSION":"${{ inputs.package-version }}"}
+          labels-json: >-
+            {"org.opencontainers.image.description":"Export certificates from Traefik's ACME store","org.opencontainers.image.revision":"${{ inputs.source-sha }}","org.opencontainers.image.source":"https://github.com/${{ github.repository }}","org.opencontainers.image.title":"traefik-certificate-exporter","org.opencontainers.image.version":"${{ inputs.package-version }}"}
+      - name: Create deterministic distribution checksums
+        id: checksums
+        uses: ./.github/actions/publication-contract
+        with:
+          operation: checksums
+          artifact-directory: dist
+          output-file: evidence/SHA256SUMS
+      - name: Validate wheel and sdist metadata
+        env:
+          SDIST: dist/${{ steps.manifest.outputs.sdist-filename }}
+          WHEEL: dist/${{ steps.manifest.outputs.wheel-filename }}
+        run: poetry run twine check -- "$WHEEL" "$SDIST"
+      - name: Smoke test wheel in a clean locked runtime environment
+        env:
+          EXPECTED_VERSION: ${{ inputs.package-version }}
+          WHEEL: dist/${{ steps.manifest.outputs.wheel-filename }}
+        run: |
+          set -euo pipefail
+          python -m venv .artifact-smoke/wheel
+          POETRY_KEYRING_ENABLED=false \
+          VIRTUAL_ENV="$PWD/.artifact-smoke/wheel" \
+            PATH="$PWD/.artifact-smoke/wheel/bin:$PATH" \
+            poetry install --only main --no-root --no-directory
+          .artifact-smoke/wheel/bin/python -m pip install \
+            --no-deps --no-index -- "$WHEEL"
+          .artifact-smoke/wheel/bin/python - "$WHEEL" "$EXPECTED_VERSION" <<'PY'
+          import email
+          import importlib.metadata
+          import importlib.resources
+          import sys
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheel = Path(sys.argv[1])
+          expected_version = sys.argv[2]
+          with ZipFile(wheel) as archive:
+              metadata_files = [
+                  name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
+              ]
+              if len(metadata_files) != 1:
+                  raise SystemExit("wheel must contain exactly one METADATA file")
+              wheel_version = email.message_from_bytes(
+                  archive.read(metadata_files[0])
+              )["Version"]
+
+          installed_version = importlib.metadata.version(
+              "traefik-certificate-exporter"
+          )
+          if installed_version != wheel_version or installed_version != expected_version:
+              raise SystemExit(
+                  f"wheel version mismatch: installed={installed_version!r}, "
+                  f"metadata={wheel_version!r}, expected={expected_version!r}"
+              )
+
+          import traefik_certificate_exporter.app  # noqa: F401
+
+          package = importlib.resources.files("traefik_certificate_exporter")
+          for resource_name in ("config_default.yaml", "logging.yaml"):
+              resource = package.joinpath(resource_name)
+              if not resource.is_file() or not resource.read_bytes():
+                  raise SystemExit(f"missing or empty packaged resource: {resource_name}")
+          PY
+          .artifact-smoke/wheel/bin/traefik-certificate-exporter --help >/dev/null
+      - name: Smoke test sdist in a separate clean locked environment
+        env:
+          EXPECTED_VERSION: ${{ inputs.package-version }}
+          SDIST: dist/${{ steps.manifest.outputs.sdist-filename }}
+        run: |
+          set -euo pipefail
+          python -m venv .artifact-smoke/sdist
+          POETRY_KEYRING_ENABLED=false \
+          VIRTUAL_ENV="$PWD/.artifact-smoke/sdist" \
+            PATH="$PWD/.artifact-smoke/sdist/bin:$PATH" \
+            poetry install --only main,artifact-build --no-root --no-directory
+          .artifact-smoke/sdist/bin/python -m pip install \
+            --no-build-isolation --no-deps --no-index -- "$SDIST"
+          .artifact-smoke/sdist/bin/python - "$EXPECTED_VERSION" <<'PY'
+          import importlib.metadata
+          import importlib.resources
+          import sys
+
+          expected_version = sys.argv[1]
+          installed_version = importlib.metadata.version(
+              "traefik-certificate-exporter"
+          )
+          if installed_version != expected_version:
+              raise SystemExit(
+                  f"sdist version mismatch: installed={installed_version!r}, "
+                  f"expected={expected_version!r}"
+              )
+
+          import traefik_certificate_exporter.app  # noqa: F401
+
+          package = importlib.resources.files("traefik_certificate_exporter")
+          for resource_name in ("config_default.yaml", "logging.yaml"):
+              resource = package.joinpath(resource_name)
+              if not resource.is_file() or not resource.read_bytes():
+                  raise SystemExit(f"missing or empty packaged resource: {resource_name}")
+          PY
+          .artifact-smoke/sdist/bin/traefik-certificate-exporter --help >/dev/null
+      - name: Recheck distribution checksums before Docker
+        uses: ./.github/actions/publication-contract
+        with:
+          operation: verify-checksums
+          artifact-directory: dist
+          input-file: evidence/SHA256SUMS
+      - name: Revalidate build manifest before Docker
+        id: docker-manifest
+        uses: ./.github/actions/publication-contract
+        with:
+          operation: validate
+          contract: build-manifest
+          input-file: evidence/build-manifest.json
+          artifact-directory: dist
+      - name: Confirm generated evidence is unchanged before Docker
+        env:
+          CURRENT_MANIFEST_SHA256: ${{ steps.docker-manifest.outputs.file-sha256 }}
+          ORIGINAL_CHECKSUMS_SHA256: ${{ steps.checksums.outputs.file-sha256 }}
+          ORIGINAL_MANIFEST_SHA256: ${{ steps.manifest.outputs.file-sha256 }}
+        run: |
+          set -euo pipefail
+          checksums_sha256="$(sha256sum evidence/SHA256SUMS)"
+          checksums_sha256="${checksums_sha256%% *}"
+          test "$checksums_sha256" = "$ORIGINAL_CHECKSUMS_SHA256"
+          test "$CURRENT_MANIFEST_SHA256" = "$ORIGINAL_MANIFEST_SHA256"
+      - name: Export the revalidated manifest image plan
+        env:
+          BUILD_MANIFEST: evidence/build-manifest.json
+        run: |
+          poetry run python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(Path(os.environ["BUILD_MANIFEST"]).read_text())
+          build_args = manifest["image_plan"]["build_args"]
+          values = {
+              "LABELS_JSON": json.dumps(
+                  manifest["image_plan"]["labels"], separators=(",", ":"), sort_keys=True
+              ),
+              "REVISION": manifest["source_sha"],
+              "VERSION": manifest["package_version"],
+              "WHEEL_PATH": build_args["WHEEL_PATH"],
+              "WHEEL_SHA256": build_args["WHEEL_SHA256"],
+          }
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as stream:
+              for name, value in values.items():
+                  if "\n" in value or "\r" in value:
+                      raise SystemExit(f"manifest value for {name} contains a newline")
+                  stream.write(f"{name}={value}\n")
+          PY
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Build image from the verified wheel
+        run: |
+          set -euo pipefail
+          docker buildx bake --file docker-bake.hcl image --load \
+            --set image.tags=traefik-certificate-exporter:verify
+      - name: Test s6 container startup and exporter service
+        uses: LiquidLogicLabs/git-action-docker-test@v2
+        with:
+          image: traefik-certificate-exporter:verify
+          required-services: svc-traefik-certificate-exporter
+      - name: Smoke test installed image contract
+        env:
+          EXPECTED_REVISION: ${{ steps.docker-manifest.outputs.source-sha }}
+          EXPECTED_VERSION: ${{ steps.docker-manifest.outputs.package-version }}
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /usr/local/bin/traefik-certificate-exporter \
+            traefik-certificate-exporter:verify --help >/dev/null
+          docker run --rm -i --entrypoint /app/.venv/bin/python \
+            traefik-certificate-exporter:verify - "$EXPECTED_VERSION" <<'PY'
+          import importlib.metadata
+          import importlib.resources
+          import sys
+
+          expected_version = sys.argv[1]
+          installed_version = importlib.metadata.version(
+              "traefik-certificate-exporter"
+          )
+          if installed_version != expected_version:
+              raise SystemExit(
+                  f"image version mismatch: installed={installed_version!r}, "
+                  f"expected={expected_version!r}"
+              )
+          package = importlib.resources.files("traefik_certificate_exporter")
+          for resource_name in ("config_default.yaml", "logging.yaml"):
+              resource = package.joinpath(resource_name)
+              if not resource.is_file() or not resource.read_bytes():
+                  raise SystemExit(f"missing or empty packaged resource: {resource_name}")
+          PY
+          version_label="$(docker image inspect --format \
+            '{{ index .Config.Labels "org.opencontainers.image.version" }}' \
+            traefik-certificate-exporter:verify)"
+          revision_label="$(docker image inspect --format \
+            '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+            traefik-certificate-exporter:verify)"
+          test "$version_label" = "$EXPECTED_VERSION"
+          test "$revision_label" = "$EXPECTED_REVISION"
+      - name: Stage the canonical root-level artifact set
+        id: artifact-layout
+        env:
+          SDIST_FILENAME: ${{ steps.docker-manifest.outputs.sdist-filename }}
+          WHEEL_FILENAME: ${{ steps.docker-manifest.outputs.wheel-filename }}
+        run: |
+          set -euo pipefail
+          mkdir verified-dist-v1
+          cp -- "dist/$WHEEL_FILENAME" "verified-dist-v1/$WHEEL_FILENAME"
+          cp -- "dist/$SDIST_FILENAME" "verified-dist-v1/$SDIST_FILENAME"
+          cp -- evidence/SHA256SUMS verified-dist-v1/SHA256SUMS
+          cp -- evidence/build-manifest.json verified-dist-v1/build-manifest.json
+          echo "artifact-name=verified-dist-v1" >> "$GITHUB_OUTPUT"
+      - name: Recheck final artifact checksums
+        uses: ./.github/actions/publication-contract
+        with:
+          operation: verify-checksums
+          artifact-directory: verified-dist-v1
+          input-file: verified-dist-v1/SHA256SUMS
+      - name: Revalidate final artifact manifest
+        id: final-manifest
+        uses: ./.github/actions/publication-contract
+        with:
+          operation: validate
+          contract: build-manifest
+          input-file: verified-dist-v1/build-manifest.json
+          artifact-directory: verified-dist-v1
+      - name: Confirm final evidence is the generated evidence
+        env:
+          FINAL_MANIFEST_SHA256: ${{ steps.final-manifest.outputs.file-sha256 }}
+          ORIGINAL_CHECKSUMS_SHA256: ${{ steps.checksums.outputs.file-sha256 }}
+          ORIGINAL_MANIFEST_SHA256: ${{ steps.manifest.outputs.file-sha256 }}
+        run: |
+          set -euo pipefail
+          checksums_sha256="$(sha256sum verified-dist-v1/SHA256SUMS)"
+          checksums_sha256="${checksums_sha256%% *}"
+          test "$checksums_sha256" = "$ORIGINAL_CHECKSUMS_SHA256"
+          test "$FINAL_MANIFEST_SHA256" = "$ORIGINAL_MANIFEST_SHA256"
+      - name: Validate canonical final artifact layout
+        env:
+          BUILD_MANIFEST: verified-dist-v1/build-manifest.json
+        run: |
+          poetry run python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("verified-dist-v1")
+          manifest = json.loads(Path(os.environ["BUILD_MANIFEST"]).read_text())
+          expected = {
+              "SHA256SUMS",
+              "build-manifest.json",
+              manifest["distributions"]["wheel"]["filename"],
+              manifest["distributions"]["sdist"]["filename"],
+          }
+          actual = {str(path.relative_to(root)) for path in root.rglob("*")}
+          if actual != expected:
+              raise SystemExit(
+                  f"non-canonical artifact layout: expected={sorted(expected)!r}, "
+                  f"actual={sorted(actual)!r}"
+              )
+          for name in expected:
+              path = root / name
+              if path.is_symlink() or not path.is_file():
+                  raise SystemExit(f"artifact entry must be a regular file: {name}")
+          PY
+      - name: Upload verified promotable distribution set
+        # v4 remains the GitHub/Gitea conformance baseline paired with
+        # actions/download-artifact@v4 until both-forge validation approves a new pair.
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-dist-v1
+          if-no-files-found: error
+          path: verified-dist-v1/
+          retention-days: 30

@@ -1,0 +1,116 @@
+{
+  "$id": "https://github.com/ravensorb/traefik-certificate-exporter/schemas/publication-plan-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "enum": [
+        "ci",
+        "dev",
+        "stable"
+      ]
+    },
+    "credential_mode": {
+      "enum": [
+        "none",
+        "oidc",
+        "token"
+      ]
+    },
+    "destinations": {
+      "items": {
+        "enum": [
+          "forge-release",
+          "oci",
+          "package"
+        ]
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "forge_kind": {
+      "enum": [
+        "gitea",
+        "github"
+      ]
+    },
+    "package_endpoint": {
+      "format": "uri",
+      "pattern": "^https://",
+      "type": "string"
+    },
+    "package_version": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "registry": {
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?$",
+      "type": "string"
+    },
+    "repository": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "publication-plan-v1"
+    },
+    "source_sha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "tags": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "$ref": "#/$defs/tagSet"
+        },
+        "immutable": {
+          "$ref": "#/$defs/nonEmptyTagSet"
+        }
+      },
+      "required": [
+        "immutable",
+        "aliases"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "forge_kind",
+    "registry",
+    "repository",
+    "package_endpoint",
+    "credential_mode",
+    "channel",
+    "package_version",
+    "source_sha",
+    "destinations",
+    "tags"
+  ],
+  "title": "Publication plan v1",
+  "type": "object",
+  "$defs": {
+    "nonEmptyTagSet": {
+      "items": {
+        "$ref": "#/$defs/tag"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "tag": {
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "type": "string"
+    },
+    "tagSet": {
+      "items": {
+        "$ref": "#/$defs/tag"
+      },
+      "type": "array",
+      "uniqueItems": true
+    }
+  }
+}

@@ -3,80 +3,74 @@
 set -euo pipefail
 
 # --------------------------------------------------------------------------------------
-# Runs act against a DISPOSABLE CLONE, never against this working tree.
+# Runs the governed verifier locally, in a DISPOSABLE CLONE -- never against this tree.
 #
-# On 2026-09-01 running act directly against the repository destroyed it. The mechanism:
-# `~/.actrc` sets `--bind`, so act mounts the host directory as the container's
-# /github/workspace instead of copying it; a workflow's `actions/checkout` step then logged
+# On 2026-09-01 running act directly against the repository destroyed it, losing every
+# unpublished commit. `~/.actrc` sets `--bind`, so act mounts the host directory as the
+# container's /github/workspace instead of copying it; verify-build.yaml's first job runs
+# `actions/checkout` with a `ref:`, which logged
 #
 #     Deleting the contents of '<repo>'
 #     git init '<repo>'
 #
-# and only afterwards discovered it could not fetch the requested ref. The destructive half
-# had already run, against the real .git -- taking every local commit with it, because
-# commits live inside the directory that was deleted.
+# and only then failed to fetch the ref, because that commit existed only locally. The
+# destructive half had already run against the real .git. Committing often was no
+# protection: the commits lived inside the directory that was deleted.
 #
-# Cloning first makes that harmless: act may do whatever it likes to the throwaway copy.
-# `--no-hardlinks` is load-bearing -- without it the clone's objects are hardlinked back
-# into this repository's object store, and a destructive checkout could still reach them.
+# Cloning first makes that harmless. `--no-hardlinks` is load-bearing -- without it the
+# clone's objects are hardlinked into this repository's object store, so a destructive
+# checkout could still reach them.
 #
-# Consequence worth knowing: this verifies the last COMMIT, not your dirty working tree,
-# because that is what a clone carries. That matches what CI would verify, and the script
-# warns when the two differ.
+# It also fixes a second defect the incident exposed: because checkout resolves the SHA
+# from `origin`, this only ever verified what the remote already had. A local clone
+# carries local commits, so the ref resolves without a push.
+#
+# Consequence: this verifies HEAD, not the dirty working tree -- which is what CI would
+# verify anyway. The script warns when the two differ.
+#
+# No credentials are passed. verify-build.yaml is the secret-free verifier (ADR-0007);
+# a local run that injected secrets would not be exercising the same contract.
 # --------------------------------------------------------------------------------------
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-if ! git diff --quiet HEAD 2>/dev/null || [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+if [ -n "$(git status --porcelain)" ]; then
     echo "WARNING: uncommitted changes will NOT be verified -- this runs against HEAD." >&2
-    echo "         Commit them first if you want them covered." >&2
 fi
 
 WORKTREE="$(mktemp -d -t act-verify-XXXXXXXX)"
-cleanup() { rm -rf "$WORKTREE"; }
-trap cleanup EXIT
-
+trap 'rm -rf "$WORKTREE"' EXIT
 git clone --quiet --local --no-hardlinks "$REPO_ROOT" "$WORKTREE"
 
-# Refuse to continue unless we are demonstrably somewhere else. A clone that silently
-# resolved back to the real repository would reintroduce the exact failure above.
+# Refuse to continue unless we are demonstrably elsewhere: a clone that resolved back to
+# the real repository would reintroduce the failure this script exists to prevent.
 CLONE_ROOT="$(cd "$WORKTREE" && git rev-parse --show-toplevel)"
 if [ "$CLONE_ROOT" = "$REPO_ROOT" ]; then
     echo "refusing to run: the disposable clone resolved to the real repository" >&2
     exit 1
 fi
 
-# Carry across the local-only inputs a clone cannot contain (gitignored by design).
-for extra in .pipeline.env.traefik-certificate-exporter .pipeline.secrets.traefik-certificate-exporter; do
-    [ -f "$REPO_ROOT/$extra" ] && cp "$REPO_ROOT/$extra" "$WORKTREE/$extra"
-done
-
 cd "$CLONE_ROOT"
 
-EVENT_NAME=${1:-push}
-GITHUB_TAG="$(git describe --tags --abbrev=0)"
 SOURCE_SHA="$(git rev-parse HEAD)"
+PACKAGE_VERSION="$(poetry version --short)"
 
 echo "--------------------------------------------------------------------------------------"
-echo "Running workflows locally in a disposable clone"
-echo "Clone:   $CLONE_ROOT"
-echo "Source:  $SOURCE_SHA"
-echo "Version: $GITHUB_TAG"
-echo "Event:   $EVENT_NAME"
+echo "Running the governed verifier locally, in a disposable clone"
+echo "Clone:  $CLONE_ROOT"
+echo "Source: $SOURCE_SHA"
+echo "Package version: $PACKAGE_VERSION"
 echo "--------------------------------------------------------------------------------------"
 
-LOG="$REPO_ROOT/act-build-traefik-certificate-exporter.log"
-
-# -P ubuntu-24.04=... is required: act ships no default image mapping for that runner label
-# (only ubuntu-latest/-22.04/-20.04 are pre-mapped), so `runs-on: ubuntu-24.04` jobs are
-# silently skipped ("Skipping unsupported platform") without it.
-ACT_ARGS=(
-    --env GITHUB_TAG="${GITHUB_TAG#v}"
-    -P ubuntu-24.04=catthehacker/ubuntu:act-latest
-    -a "${EVENT_NAME}"
-)
-[ -f "$CLONE_ROOT/.pipeline.env.traefik-certificate-exporter" ] && \
-    ACT_ARGS+=(--env-file "$CLONE_ROOT/.pipeline.env.traefik-certificate-exporter")
-
-act "${ACT_ARGS[@]}" | tee "$LOG"
+# -P ubuntu-24.04=... is required: act ships no default image mapping for that runner
+# label (only older ubuntu-latest/-22.04/-20.04 are pre-mapped), so verify-build.yaml's
+# `runs-on: ubuntu-24.04` jobs are silently skipped ("Skipping unsupported platform")
+# without it.
+act workflow_dispatch \
+    -W .github/workflows/verify-build.yaml \
+    --input channel=ci \
+    --input package-version="$PACKAGE_VERSION" \
+    --input source-sha="$SOURCE_SHA" \
+    -P ubuntu-24.04=catthehacker/ubuntu:act-latest \
+    | tee "$REPO_ROOT/act-build-traefik-certificate-exporter.log"

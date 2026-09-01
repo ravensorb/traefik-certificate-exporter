@@ -10,7 +10,7 @@ keywords = ['traefik', 'letsencrypt']
 packages = [{include = "traefik_certificate_exporter", from = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = ">=3.10,<3.15"
 watchdog = "^2.1.9"
 docker = "^6.0.0"
 requests = "^2.28.1"
@@ -30,6 +30,12 @@ pre-commit = "^3.2.1"
 scriv = {extras = ["toml"], version = "^1.2.1"}
 pytest = "^9.1.1"
 poetry = "^2.4.2"
+twine = "^7.0.0"
+jsonschema = "^4.25.1"
+packaging = "^26.3"
+
+[tool.poetry.group.artifact-build.dependencies]
+poetry-core = "2.4.0"
 
 [tool.poetry.scripts]
 traefik-certificate-exporter = "traefik_certificate_exporter.app:main"
@@ -38,26 +44,5 @@ traefik-certificate-exporter = "traefik_certificate_exporter.app:main"
 testpaths = ["tests"]
 
 [build-system]
-requires = ["poetry-core", "poetry-dynamic-versioning"]
-build-backend = "poetry_dynamic_versioning.backend"
-
-[tool.poetry-dynamic-versioning]
-enable = false
-vcs = "git"
-# style = "pep440"
-# format = "{base}.{distance}-{commit}"
-format-jinja = """
-    {%- if distance == 0 -%}
-        {{ serialize_pep440(base, stage, revision) }}
-    {%- elif revision is not none -%}
-        {{ serialize_pep440(base, stage, revision, dev=distance) }}
-    {%- else -%}
-        {{ serialize_pep440(bump_version(base), stage, revision, dev=distance) }}
-    {%- endif -%}
-"""
-bump = false
-
-[tool.poetry-dynamic-versioning.substitution]
-folders = [
-  { path = "src" }
-]
+requires = ["poetry-core==2.4.0"]
+build-backend = "poetry.core.masonry.api"

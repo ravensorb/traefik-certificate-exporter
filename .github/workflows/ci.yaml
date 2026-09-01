@@ -1,0 +1,69 @@
+name: Pull request verification
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Resolve immutable verification inputs
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      package-version: ${{ steps.source.outputs.package-version }}
+      source-sha: ${{ steps.source.outputs.source-sha }}
+    steps:
+      - name: Checkout exact pull request source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Resolve committed Poetry version and source SHA
+        id: source
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "event source SHA must be a full lowercase Git SHA" >&2
+            exit 2
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
+            echo "checked-out source does not match the pull request head SHA" >&2
+            exit 2
+          fi
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          metadata = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          version = metadata["tool"]["poetry"]["version"]
+          if not isinstance(version, str) or not version or "\n" in version or "\r" in version:
+              raise SystemExit("tool.poetry.version must be a non-empty single-line string")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as stream:
+              stream.write(f"package-version={version}\n")
+              stream.write(f"source-sha={os.environ['SOURCE_SHA']}\n")
+          PY
+
+  verify:
+    name: Run governed verifier
+    needs: plan
+    permissions:
+      contents: read
+    uses: ./.github/workflows/verify-build.yaml
+    with:
+      channel: ci
+      package-version: ${{ needs.plan.outputs.package-version }}
+      source-sha: ${{ needs.plan.outputs.source-sha }}
