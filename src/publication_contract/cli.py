@@ -21,6 +21,12 @@ from .contract import (
 
 
 def emit_outputs(outputs: Mapping[str, str]) -> None:
+    # A newline in a value terminates the `key=value` line early and lets the remainder
+    # parse as further keys -- the injection GitHub's heredoc delimiter syntax exists to
+    # prevent. The invariant belongs in the writer every caller goes through.
+    for key, value in outputs.items():
+        if "\n" in value or "\r" in value:
+            raise SystemExit(f"output {key!r} contains a newline and cannot be emitted")
     output_path = os.environ.get("GITHUB_OUTPUT")
     if output_path:
         with Path(output_path).open("a", encoding="utf-8", newline="\n") as stream:

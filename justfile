@@ -5,8 +5,16 @@ install:
     poetry install
 
 # Validate the lock file and run every configured pre-commit check.
+# Non-mutating. Never rewrites the working tree -- `just check` is the release
+# transaction's gate and it aborts if the tree moves. Use `just fix` to apply autofixes.
 lint:
     poetry check --lock
+    SKIP=ruff-check,ruff-format poetry run pre-commit run --all-files
+    poetry run pre-commit run --hook-stage manual --all-files ruff-check-nofix
+    poetry run pre-commit run --hook-stage manual --all-files ruff-format-check
+
+# Apply the autofixes `just lint` only reports. Rewrites files.
+fix:
     poetry run pre-commit run --all-files
 
 # Run the project test suite.
@@ -22,11 +30,11 @@ test-local:
 
 # Validate and report a semantic release without changing local or remote state.
 release-dry-run bump:
-    poetry run python scripts/release_version.py {{bump}} --dry-run
+    poetry run python scripts/release_version.py {{ bump }} --dry-run
 
 # Prepare a release commit and annotated tag, then publish both atomically.
 release bump:
-    poetry run python scripts/release_version.py {{bump}} --push
+    poetry run python scripts/release_version.py {{ bump }} --push
 
 # Revalidate and atomically publish an existing local release commit and tag.
 release-resume:

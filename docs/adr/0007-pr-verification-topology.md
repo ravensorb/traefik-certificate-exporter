@@ -133,6 +133,28 @@ The verifier is reachable without an adapter — `workflow_dispatch` takes the s
 `--secret` and no `--env-file`, asserted at `tests/ci/test_workflow_contracts.py:159-174`. That
 property is what keeps the adapters thin: there is nothing an adapter could usefully add.
 
+## Status note (2026-09-01)
+
+Two things in this ADR describe a repository that no longer exists, and are retained rather
+than rewritten so the reasoning stays readable:
+
+- **The publisher workflows named below are gone.** `build.yaml`, `build-package.yaml`,
+  `build-container.yaml` and `release.yaml` were deleted. `release.yaml` went first, under
+  ADR-0006, because release-please competed with the guarded transaction for version
+  identity and had never worked here. The other three followed:
+  `build-container.yaml` could not satisfy the wheel contract ADR-0008 introduced, and
+  `build-package.yaml` became unreachable once nothing emitted `release: published`.
+  `.github/workflows/` now contains only `ci.yaml` and `verify-build.yaml`.
+- **The tier-two split therefore currently covers the same set as tier one**, because every
+  remaining workflow is a verifier. The two tiers are still named separately because Epic 8
+  reintroduces real publishers (`dev.yaml`, `release.yaml`) that must sit outside tier two.
+  Note also that `build-package.yaml` had already been corrected to `contents: read` before
+  deletion, so the `contents: write` claim below was stale even while the file existed.
+
+The line-numbered citations below are to files that have been deleted. They are left in
+place as a record of what was true when the decision was taken.
+
+
 ## Consequences
 
 - Positive: a fork pull request can run the complete verification graph, because there is nothing in

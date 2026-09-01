@@ -5,7 +5,9 @@
 - Python compatible with the `^3.10` constraint in `pyproject.toml`.
 - No repository interpreter pin exists; Poetry uses the active compatible Python interpreter.
 - Poetry 2.4.2 (the tested baseline) or a compatible release to create the project environment.
-- `just` 1.58.0 (the tested baseline) for the optional local command facade.
+- `just` 1.58.0 (the tested baseline). **Required for the release transaction**, not
+  optional: ADR-0006 makes `just check` the authoritative gate, so
+  `scripts/release_version.py` invokes it directly and aborts without it.
 - Docker with Buildx for the `image` recipe.
 - `act` plus Docker with Buildx for the optional local verifier run.
 
@@ -17,6 +19,52 @@ poetry install
 ```
 
 No generated requirements file or separately maintained dependency list is used.
+
+
+## Verification topology
+
+A pull request runs one thin adapter over one reusable verifier. Eight gate jobs fan out
+from a single source-identity check, and every one must pass before the distribution job
+builds the promotable artifact set. The adapter holds no credentials and the verifier is
+mechanically forbidden from publishing (ADR-0007).
+
+```mermaid
+flowchart TD
+    PR["pull_request -> main"] --> PLAN["ci.yaml : plan<br/>resolve version + source SHA"]
+    PLAN --> VERIFY["verify-build.yaml<br/>workflow_call"]
+    VERIFY --> SRC["source-integrity<br/>SHA matches checkout"]
+
+    SRC --> LOCK["poetry-lock"]
+    SRC --> RUFFC["ruff-check"]
+    SRC --> RUFFF["ruff-format"]
+    SRC --> MYPY["mypy"]
+    SRC --> LEAKS["gitleaks"]
+    SRC --> ACTION["actionlint +<br/>workflow policy"]
+    SRC --> HYG["file-hygiene"]
+    SRC --> PYTEST["pytest<br/>3.10 - 3.14 matrix"]
+
+    LOCK --> DIST
+    RUFFC --> DIST
+    RUFFF --> DIST
+    MYPY --> DIST
+    LEAKS --> DIST
+    ACTION --> DIST
+    HYG --> DIST
+    PYTEST --> DIST
+
+    DIST["distribution<br/>wheel + sdist, SHA256SUMS,<br/>build-manifest.json, image build,<br/>smoke tests"] --> ART["verified-dist-v1<br/>uploaded artifact"]
+
+    ART -.->|"promoted, never rebuilt"| PUB(["publication<br/>(Epic 8, not yet built)"])
+
+    style PUB stroke-dasharray: 5 5
+```
+
+The dashed edge is the promotion boundary. The verifier produces exactly one artifact set
+and publishers must consume it; rebuilding the distribution downstream is forbidden by the
+architecture spine. Nothing consumes it yet — that is Epic 8.
+
+Every gate job above blocks `distribution`, asserted by
+`test_every_gate_job_blocks_the_distribution_job`.
 
 ## Local command facade
 

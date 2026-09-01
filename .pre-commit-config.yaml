@@ -24,6 +24,17 @@ repos:
         entry: poetry check --lock
         always_run: true
         pass_filenames: false
+      - id: justfile-fmt
+        name: Check justfile formatting
+        language: system
+        # Non-mutating: --check reports drift and exits non-zero, it never rewrites.
+        # Local-only by necessity, and that is a real coverage limit: CI installs no
+        # `just`, so no workflow runs this. It catches the drift that actually happened --
+        # one story formatting the shared justfile and a later one unformatting it -- at
+        # commit time.
+        entry: just --fmt --check --unstable
+        files: ^justfile$
+        pass_filenames: false
       - id: workflow-policy
         name: Check governed workflow contracts and action policy
         language: system

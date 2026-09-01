@@ -45,8 +45,9 @@ REVISION="$(git rev-parse HEAD)" \
 docker buildx bake image
 ```
 
-`docker-bake.hcl` also accepts `LABELS` (map), `TAGS`, `PLATFORMS`, `OUTPUTS`, and
-`ATTESTATIONS` (lists) as explicit environment overrides. Use CSV for simple list values or append
+`docker-bake.hcl` also accepts `TAGS`, `PLATFORMS`, `OUTPUTS`, and
+`ATTESTATIONS` (lists) as explicit environment overrides. Labels are the exception: they
+are a map, so there is no CSV form and `LABELS_JSON` is the only spelling. Use CSV for simple list values or append
 `_JSON` to the variable name for JSON values, such as `PLATFORMS_JSON='["linux/amd64",
 "linux/arm64"]'`. Its local defaults select the native platform, load the image into Docker, apply
 the local tag, and emit no attestations. CI can override those values without copying the Docker

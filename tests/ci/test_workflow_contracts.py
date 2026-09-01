@@ -473,6 +473,7 @@ def test_verifier_supports_call_and_direct_dispatch_with_the_same_graph() -> Non
         "source-integrity",
         "poetry-lock",
         "ruff-check",
+        "mypy",
         "ruff-format",
         "gitleaks",
         "actionlint",
@@ -555,3 +556,26 @@ def test_dependency_maintenance_covers_actions_python_and_docker() -> None:
 def test_dispatch_fixture_uses_the_committed_poetry_version() -> None:
     event = _load_fixture("workflow-dispatch.json")
     assert event["inputs"]["package-version"] == committed_versions.package_version()
+
+
+def test_every_gate_job_blocks_the_distribution_job() -> None:
+    """A gate that does not block the build is decorative.
+
+    Scope is derived: any job fanning out from `source-integrity` is a gate, so a gate
+    added later is covered without editing this test. Written after adding the `mypy` job
+    and forgetting to add it to `distribution.needs` -- it ran, it could fail, and nothing
+    downstream cared.
+    """
+    jobs = _jobs(_load_workflow(VERIFY_WORKFLOW))
+    gates = {
+        name
+        for name, job in jobs.items()
+        if job.get("needs") == "source-integrity"
+        or job.get("needs") == ["source-integrity"]
+    }
+    assert gates, "no gate jobs found; this test has drifted from the workflow"
+
+    blocking = set(jobs["distribution"].get("needs") or [])
+    assert gates <= blocking, (
+        f"gate jobs that do not block distribution: {sorted(gates - blocking)}"
+    )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -602,9 +603,15 @@ def test_justfile_release_recipes_are_thin_delegates() -> None:
     justfile = (Path(__file__).parents[1] / "justfile").read_text(encoding="utf-8")
 
     assert "release-dry-run bump:" in justfile
-    assert "python scripts/release_version.py {{bump}} --dry-run" in justfile
+    assert re.search(
+        r"poetry run python scripts/release_version\.py \{\{\s*bump\s*\}\} --dry-run",
+        justfile,
+    )
     assert "release bump:" in justfile
-    assert "python scripts/release_version.py {{bump}} --push" in justfile
+    assert re.search(
+        r"poetry run python scripts/release_version\.py \{\{\s*bump\s*\}\} --push",
+        justfile,
+    )
     assert "release-resume:" in justfile
     assert "python scripts/release_version.py --resume-push" in justfile
 

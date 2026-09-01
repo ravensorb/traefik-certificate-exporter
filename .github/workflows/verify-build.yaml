@@ -121,6 +121,26 @@ jobs:
       - name: Run configured Ruff check
         run: poetry run pre-commit run ruff-check --all-files
 
+  mypy:
+    name: mypy
+    needs: source-integrity
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ inputs.source-sha }}
+      - uses: ./.github/actions/setup-poetry-python
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          dependencies: all
+      # The pre-commit hook is the authority; this job runs it so local and CI cannot
+      # diverge. [tool.mypy] in pyproject.toml holds the settings both share.
+      - name: Check annotations with mypy
+        run: poetry run pre-commit run mypy --all-files
+
   ruff-format:
     name: Ruff format
     needs: source-integrity
@@ -232,6 +252,7 @@ jobs:
       - poetry-lock
       - ruff-check
       - ruff-format
+      - mypy
       - gitleaks
       - actionlint
       - file-hygiene

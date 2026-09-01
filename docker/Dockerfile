@@ -7,7 +7,13 @@ FROM ${BASE_IMAGE} AS builder
 
 ARG POETRY_VERSION
 
+# The POETRY_VERSION contract is asserted as its own statement, ahead of the install.
+# Chained after the package install the `||` bound to the entire preceding `&&` chain, so
+# a failed `apk add` reported "POETRY_VERSION is required" -- the wrong diagnostic for the
+# wrong fault. Kept out of the RUN body: a comment inside a line continuation is fragile.
 RUN \
+ test -n "${POETRY_VERSION}" || \
+    { echo >&2 "build contract: POETRY_VERSION is required"; exit 1; }; \
  echo "**** install build packages ****" && \
  apk add --no-cache \
     python3 \
@@ -17,8 +23,6 @@ RUN \
     libffi-dev \
     openssl-dev \
     cargo && \
- test -n "${POETRY_VERSION}" || \
-    { echo >&2 "build contract: POETRY_VERSION is required"; exit 1; } && \
  python3 -m pip install --break-system-packages --no-cache-dir \
     "poetry==${POETRY_VERSION}"
 
