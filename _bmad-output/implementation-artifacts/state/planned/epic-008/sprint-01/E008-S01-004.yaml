@@ -6,22 +6,22 @@ status: backlog
 classification: complex
 depends_on: ['E008-S01-003']
 estimate:
-  man_hours: 15.0
-  hitl_hours: 0.81
-  elapsed_hours: 5.0
+  man_hours: 16.87
+  hitl_hours: 0.0
+  elapsed_hours: 0.55
+  cost: 1.45
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.1248
+    hitl_hours: 0.0
+    elapsed_hours: 0.1096
+    tokens_k: 1.0
+  confidence: medium
   tokens_k:
     total: 350
     input: 52
     output: 18
     cache_write: 105
     cache_read: 175
-  cost: 1.45
-  model: claude-opus-5
-  fix_factor: 1.25
-  scope_ratios:
-    man_hours: 1.0
-    hitl_hours: 1.0
-    elapsed_hours: 1.0
-    tokens_k: 1.0
-  confidence: high
-updated_at: '2026-09-01T19:56:54Z'
+updated_at: '2026-09-01T22:44:20Z'

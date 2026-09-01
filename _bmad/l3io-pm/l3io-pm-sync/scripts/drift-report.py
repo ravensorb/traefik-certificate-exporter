@@ -39,7 +39,6 @@ from pathlib import Path
 
 import yaml
 
-
 # BMad central config is resolved by core's resolver over four TOML layers — see
 # references/config-resolution.md. There is no _bmad/config.yaml; reading one silently
 # yielded {} and pinned every path to the default.
@@ -85,13 +84,18 @@ def resolve_config(project_root: Path) -> dict:
             if proc.stderr:
                 sys.stderr.write(proc.stderr)
         except (subprocess.CalledProcessError, json.JSONDecodeError) as error:
-            sys.stderr.write(f"warning: config resolution failed ({error}); using defaults\n")
+            sys.stderr.write(
+                f"warning: config resolution failed ({error}); using defaults\n"
+            )
 
     core = cfg.get("core") or {}
     pm = (cfg.get("modules") or {}).get("l3io-pm") or {}
 
     output_folder = core.get("output_folder") or str(project_root / "_bmad-output")
-    impl = pm.get("implementation_artifacts") or f"{output_folder}/implementation-artifacts"
+    impl = (
+        pm.get("implementation_artifacts")
+        or f"{output_folder}/implementation-artifacts"
+    )
     return {"implementation_artifacts": impl}
 
 
@@ -125,22 +129,24 @@ def extract_story_fields(story_path: Path, status: str, story_node: dict) -> dic
             title = title_match.group(1).strip()
 
         # Extract description: between H1 and ## Acceptance Criteria
-        ac_match = re.search(r"^##\s+Acceptance Criteria", content, re.MULTILINE | re.IGNORECASE)
+        ac_match = re.search(
+            r"^##\s+Acceptance Criteria", content, re.MULTILINE | re.IGNORECASE
+        )
         h1_match = re.search(r"^#\s+.+$", content, re.MULTILINE)
         if h1_match and ac_match:
             start = h1_match.end()
             end = ac_match.start()
             description = content[start:end].strip()
         elif h1_match:
-            description = content[h1_match.end():].strip()
+            description = content[h1_match.end() :].strip()
 
         # Extract AC section
         if ac_match:
-            ac_content = content[ac_match.end():]
+            ac_content = content[ac_match.end() :]
             # Stop at next H2
             next_h2 = re.search(r"^##\s+", ac_content, re.MULTILINE)
             if next_h2:
-                ac = ac_content[:next_h2.start()].strip()
+                ac = ac_content[: next_h2.start()].strip()
             else:
                 ac = ac_content.strip()
 
@@ -180,7 +186,9 @@ def _relative_or_absolute(path: Path, project_root: Path) -> str:
         return str(path)
 
 
-def collect_bmad_entities(project_root: Path, impl_artifacts: str) -> tuple[list[dict], bool]:
+def collect_bmad_entities(
+    project_root: Path, impl_artifacts: str
+) -> tuple[list[dict], bool]:
     """Walk the sharded state tree and collect every epic, sprint, story, and backlog
     entity. See skills/_shared/status-files.md for the layout this mirrors.
 
@@ -209,16 +217,18 @@ def collect_bmad_entities(project_root: Path, impl_artifacts: str) -> tuple[list
             epic_num = epic_dir.name.split("-", 1)[1]
             epic_key = f"E{epic_num}"
 
-            entities.append({
-                "bmad_key": epic_key,
-                "bmad_type": "epic",
-                "bmad_path": None,
-                "fields": {
-                    "title": (epic_node.get("title") or "").strip().lower(),
-                    "status": epic_node.get("status", ""),
-                    "goal": (epic_node.get("goal") or "").strip(),
-                },
-            })
+            entities.append(
+                {
+                    "bmad_key": epic_key,
+                    "bmad_type": "epic",
+                    "bmad_path": None,
+                    "fields": {
+                        "title": (epic_node.get("title") or "").strip().lower(),
+                        "status": epic_node.get("status", ""),
+                        "goal": (epic_node.get("goal") or "").strip(),
+                    },
+                }
+            )
 
             for sprint_dir in sorted(p for p in epic_dir.iterdir() if p.is_dir()):
                 if not sprint_dir.name.startswith("sprint-"):
@@ -227,20 +237,23 @@ def collect_bmad_entities(project_root: Path, impl_artifacts: str) -> tuple[list
                 sprint_num = sprint_dir.name.split("-", 1)[1]
                 sprint_key = f"S{sprint_num}"
 
-                entities.append({
-                    "bmad_key": f"{epic_key}-{sprint_key}",
-                    "bmad_type": "sprint",
-                    "bmad_path": None,
-                    "fields": {
-                        "title": (sprint_node.get("title") or "").strip().lower(),
-                        "status": sprint_node.get("status", ""),
-                    },
-                })
+                entities.append(
+                    {
+                        "bmad_key": f"{epic_key}-{sprint_key}",
+                        "bmad_type": "sprint",
+                        "bmad_path": None,
+                        "fields": {
+                            "title": (sprint_node.get("title") or "").strip().lower(),
+                            "status": sprint_node.get("status", ""),
+                        },
+                    }
+                )
 
                 # Every *.yaml file in the sprint directory except sprint.yaml is a
                 # story node — the directory listing IS the `stories:` list.
                 story_files = sorted(
-                    p for p in sprint_dir.iterdir()
+                    p
+                    for p in sprint_dir.iterdir()
                     if p.is_file() and p.suffix == ".yaml" and p.name != "sprint.yaml"
                 )
                 for story_path in story_files:
@@ -260,13 +273,17 @@ def collect_bmad_entities(project_root: Path, impl_artifacts: str) -> tuple[list
                     fields = extract_story_fields(
                         story_md_path, story_node.get("status", ""), story_node
                     )
-                    entities.append({
-                        "bmad_key": story_key,
-                        "bmad_type": "story",
-                        "bmad_path": _relative_or_absolute(story_md_path, project_root),
-                        "fields": fields,
-                        "file_exists": story_md_path.exists(),
-                    })
+                    entities.append(
+                        {
+                            "bmad_key": story_key,
+                            "bmad_type": "story",
+                            "bmad_path": _relative_or_absolute(
+                                story_md_path, project_root
+                            ),
+                            "fields": fields,
+                            "file_exists": story_md_path.exists(),
+                        }
+                    )
 
     # Deferred backlog items — a single flat file, independent of the per-epic status
     # folders (state/issues.yaml; see status-files.md's "one exception: append-issue").
@@ -274,15 +291,17 @@ def collect_bmad_entities(project_root: Path, impl_artifacts: str) -> tuple[list
     for item in issues_data.get("backlog", []):
         key = item.get("key", "")
         if key:
-            entities.append({
-                "bmad_key": key,
-                "bmad_type": "backlog",
-                "bmad_path": None,
-                "fields": {
-                    "title": (item.get("title") or "").strip().lower(),
-                    "status": "backlog",
-                },
-            })
+            entities.append(
+                {
+                    "bmad_key": key,
+                    "bmad_type": "backlog",
+                    "bmad_path": None,
+                    "fields": {
+                        "title": (item.get("title") or "").strip().lower(),
+                        "status": "backlog",
+                    },
+                }
+            )
 
     return entities, True
 
@@ -340,39 +359,45 @@ def main() -> int:
         current_hash = compute_hash(entity["fields"])
 
         if key not in mapped_keys:
-            unmapped_local.append({
-                "bmad_key": key,
-                "bmad_type": entity["bmad_type"],
-                "bmad_path": entity.get("bmad_path"),
-                "current_hash": current_hash,
-            })
+            unmapped_local.append(
+                {
+                    "bmad_key": key,
+                    "bmad_type": entity["bmad_type"],
+                    "bmad_path": entity.get("bmad_path"),
+                    "current_hash": current_hash,
+                }
+            )
         else:
             mapping = mapped_keys[key]
             last_hash = mapping.get("last_synced_hash", "")
             if current_hash != last_hash:
-                changed_local.append({
-                    "bmad_key": key,
-                    "bmad_type": entity["bmad_type"],
-                    "bmad_path": entity.get("bmad_path"),
-                    "remote_id": mapping.get("remote_id"),
-                    "remote_url": mapping.get("remote_url"),
-                    "current_hash": current_hash,
-                    "last_synced_hash": last_hash,
-                    "last_synced_at": mapping.get("last_synced_at"),
-                })
+                changed_local.append(
+                    {
+                        "bmad_key": key,
+                        "bmad_type": entity["bmad_type"],
+                        "bmad_path": entity.get("bmad_path"),
+                        "remote_id": mapping.get("remote_id"),
+                        "remote_url": mapping.get("remote_url"),
+                        "current_hash": current_hash,
+                        "last_synced_hash": last_hash,
+                        "last_synced_at": mapping.get("last_synced_at"),
+                    }
+                )
 
     # Check for sync-state entries with no corresponding BMad entity
     for mapping in mappings:
         key = mapping["bmad_key"]
         if key not in entity_keys:
-            missing_local.append({
-                "bmad_key": key,
-                "bmad_type": mapping.get("bmad_type"),
-                "bmad_path": mapping.get("bmad_path"),
-                "remote_id": mapping.get("remote_id"),
-                "remote_url": mapping.get("remote_url"),
-                "last_synced_at": mapping.get("last_synced_at"),
-            })
+            missing_local.append(
+                {
+                    "bmad_key": key,
+                    "bmad_type": mapping.get("bmad_type"),
+                    "bmad_path": mapping.get("bmad_path"),
+                    "remote_id": mapping.get("remote_id"),
+                    "remote_url": mapping.get("remote_url"),
+                    "last_synced_at": mapping.get("last_synced_at"),
+                }
+            )
 
     report = {
         "implementation_artifacts": impl_artifacts,

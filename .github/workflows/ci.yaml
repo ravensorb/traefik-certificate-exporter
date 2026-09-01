@@ -1,0 +1,80 @@
+name: Pull request verification
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # Same interpreter pin the verifier's non-matrix jobs use.
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  plan:
+    name: Resolve immutable verification inputs
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      package-version: ${{ steps.source.outputs.package-version }}
+      source-sha: ${{ steps.source.outputs.source-sha }}
+    steps:
+      - name: Checkout exact pull request source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up pinned Python and Poetry
+        id: setup
+        uses: ./.github/actions/setup-poetry-python
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          poetry: "false"
+          dependencies: none
+
+      - name: Resolve committed package version and source SHA
+        id: source
+        env:
+          # scripts/committed_versions.py is the single implementation of the committed
+          # version authority, shared with build.yaml's plan job. This job never
+          # re-reads pyproject.toml itself.
+          COMMITTED_VERSION: ${{ steps.setup.outputs.package-version }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "event source SHA must be a full lowercase Git SHA" >&2
+            exit 2
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
+            echo "checked-out source does not match the pull request head SHA" >&2
+            exit 2
+          fi
+          if [[ -z "$COMMITTED_VERSION" ]]; then
+            echo "committed package version resolved empty" >&2
+            exit 2
+          fi
+          {
+            echo "package-version=$COMMITTED_VERSION"
+            echo "source-sha=$SOURCE_SHA"
+          } >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Run governed verifier
+    needs: plan
+    permissions:
+      contents: read
+    uses: ./.github/workflows/verify-build.yaml
+    with:
+      channel: ci
+      package-version: ${{ needs.plan.outputs.package-version }}
+      source-sha: ${{ needs.plan.outputs.source-sha }}

@@ -137,16 +137,17 @@ Exit codes: 0 = success/verified, 2 = usage error, 3 = node not found,
 4 = verification failure (missing/invalid field), 5 = epic locked. Errors go
 to stderr; machine output (verify summaries) goes to stdout.
 """
+
 from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import io
 import json
 import os
 import re
 import sys
-import hashlib
 import tempfile
 from datetime import datetime, timezone
 
@@ -159,7 +160,9 @@ except ModuleNotFoundError:  # pragma: no cover - environment guard
     )
     sys.exit(2)
 
-PM_STATUS_VERSION = "2.4.11"  # keep in sync with the top-of-file `# pm-status-version:` marker
+PM_STATUS_VERSION = (
+    "2.4.11"  # keep in sync with the top-of-file `# pm-status-version:` marker
+)
 
 VALID_STORY_STATUS = {"backlog", "ready-for-dev", "in-progress", "review", "done"}
 VALID_SPRINT_STATUS = {"backlog", "in-progress", "done"}
@@ -225,7 +228,9 @@ def _flock_write_or_plain(use_flock: bool, y: YAML, data, path: str) -> None:
         import fcntl
     except ImportError:
         # Windows or environments without fcntl — fall back to plain write with a warning
-        sys.stderr.write("pm-status.py: fcntl unavailable — writing without flock (non-POSIX)\n")
+        sys.stderr.write(
+            "pm-status.py: fcntl unavailable — writing without flock (non-POSIX)\n"
+        )
         _atomic_dump(y, data, path)
         return
     lock_path = path + ".lock"
@@ -327,15 +332,21 @@ def check_backrefs(node, epic_key: str, sprint_key: str = None) -> list:
         return ["node is empty"]
     got_epic = str(node.get("epic", "")).strip()
     if not got_epic:
-        problems.append(f"epic back-reference absent (expected {str(epic_key).strip()!r})")
+        problems.append(
+            f"epic back-reference absent (expected {str(epic_key).strip()!r})"
+        )
     elif got_epic != str(epic_key).strip():
         problems.append(f"epic back-reference {got_epic!r} != path epic {epic_key!r}")
     if sprint_key is not None:
         got_sprint = str(node.get("sprint", "")).strip()
         if not got_sprint:
-            problems.append(f"sprint back-reference absent (expected {str(sprint_key).strip()!r})")
+            problems.append(
+                f"sprint back-reference absent (expected {str(sprint_key).strip()!r})"
+            )
         elif got_sprint != str(sprint_key).strip():
-            problems.append(f"sprint back-reference {got_sprint!r} != path sprint {sprint_key!r}")
+            problems.append(
+                f"sprint back-reference {got_sprint!r} != path sprint {sprint_key!r}"
+            )
     return problems
 
 
@@ -377,7 +388,9 @@ def _load_checked(state_root: str, args, kind: str):
     else:
         problems = []
     if problems:
-        sys.stderr.write(f"pm-status.py: back-reference mismatch for {label}: {'; '.join(problems)}\n")
+        sys.stderr.write(
+            f"pm-status.py: back-reference mismatch for {label}: {'; '.join(problems)}\n"
+        )
         sys.exit(4)
     return y, node, path, label
 
@@ -439,9 +452,19 @@ def _event_keys(kind: str, args) -> dict:
     """Node-identifying fields for an event payload, by node kind."""
     if kind == "story":
         epic_key, sprint_key, _ = parse_story_key(args.story)
-        return {"node": "story", "key": args.story, "epic": epic_key, "sprint": sprint_key}
+        return {
+            "node": "story",
+            "key": args.story,
+            "epic": epic_key,
+            "sprint": sprint_key,
+        }
     if kind == "sprint":
-        return {"node": "sprint", "key": args.sprint, "epic": args.epic, "sprint": args.sprint}
+        return {
+            "node": "sprint",
+            "key": args.sprint,
+            "epic": args.epic,
+            "sprint": args.sprint,
+        }
     return {"node": "epic", "key": args.epic, "epic": args.epic, "sprint": None}
 
 
@@ -524,10 +547,12 @@ def cmd_dispatch(args) -> int:
     every other metric — these events remove the judgement about where one
     bucket ends and the next begins, not the reading.
     """
-    payload = {"ts": _now_iso(),
-               "event": "dispatch_open" if args.event == "open" else "dispatch_close",
-               "agent": args.agent,
-               "session": getattr(args, "session_id", None)}
+    payload = {
+        "ts": _now_iso(),
+        "event": "dispatch_open" if args.event == "open" else "dispatch_close",
+        "agent": args.agent,
+        "session": getattr(args, "session_id", None),
+    }
     for k in ("epic", "sprint", "story"):
         v = getattr(args, k, None)
         if v:
@@ -592,9 +617,16 @@ def open_dispatches(state_root: str, threshold_minutes: float, now=None) -> list
         age = (now - opened).total_seconds() / 60.0
         if age < threshold_minutes:
             continue
-        out.append({"agent": rec.get("agent"), "epic": rec.get("epic"),
-                    "sprint": rec.get("sprint"), "story": rec.get("story"),
-                    "opened_at": rec.get("ts"), "age_minutes": round(age, 1)})
+        out.append(
+            {
+                "agent": rec.get("agent"),
+                "epic": rec.get("epic"),
+                "sprint": rec.get("sprint"),
+                "story": rec.get("story"),
+                "opened_at": rec.get("ts"),
+                "age_minutes": round(age, 1),
+            }
+        )
     return sorted(out, key=lambda r: r["opened_at"])
 
 
@@ -628,8 +660,17 @@ def compute_flags(level: str, key: str, status: str, dwell, exact: bool) -> list
     threshold = STUCK_THRESHOLDS.get((level, str(status)))
     if threshold is None or dwell < threshold:
         return []
-    return [{"kind": "stuck", "level": level, "key": key, "status": str(status),
-             "dwell_hours": round(dwell, 2), "threshold": threshold, "exact": exact}]
+    return [
+        {
+            "kind": "stuck",
+            "level": level,
+            "key": key,
+            "status": str(status),
+            "dwell_hours": round(dwell, 2),
+            "threshold": threshold,
+            "exact": exact,
+        }
+    ]
 
 
 def _epic_path_or_die(args) -> str:
@@ -648,8 +689,11 @@ def list_sprint_dirs(state_root: str, epic_key: str) -> list:
     d = find_epic_dir(state_root, epic_key)
     if d is None:
         return []
-    return sorted(os.path.join(d, n) for n in os.listdir(d)
-                  if n.startswith("sprint-") and os.path.isdir(os.path.join(d, n)))
+    return sorted(
+        os.path.join(d, n)
+        for n in os.listdir(d)
+        if n.startswith("sprint-") and os.path.isdir(os.path.join(d, n))
+    )
 
 
 def _sprint_key_from_dir(sprint_dir_path: str) -> str:
@@ -668,8 +712,8 @@ def _sprint_key_from_dir(sprint_dir_path: str) -> str:
 # are sharded per story precisely to avoid contention.
 # --------------------------------------------------------------------------- #
 CALIBRATION_SCHEMA_VERSION = 2
-MIN_SAMPLES = 3          # a component below this is recorded but not applied
-DECAY = 0.8              # exponential decay, applied oldest-first
+MIN_SAMPLES = 3  # a component below this is recorded but not applied
+DECAY = 0.8  # exponential decay, applied oldest-first
 COLD_START_SCOPE_RATIO = 1.0
 COLD_START_FIX_FACTOR = 1.25
 CLASSIFICATIONS = ("simple", "standard", "complex")
@@ -682,6 +726,7 @@ def calibration_path(state_root: str) -> str:
 
 def new_calibration(granularity: str = "story"):
     from ruamel.yaml.comments import CommentedMap
+
     cal = CommentedMap()
     cal["version"] = CALIBRATION_SCHEMA_VERSION
     cal["granularity"] = granularity
@@ -701,10 +746,15 @@ def load_calibration(state_root: str):
     y, data = _load(p)
     if data is None:
         return _yaml(), new_calibration()
-    for key, default in (("scope", CLASSIFICATIONS), ("fix", CLASSIFICATIONS),
-                         ("closure", CLOSURE_LEVELS), ("orchestration", CLOSURE_LEVELS)):
+    for key, default in (
+        ("scope", CLASSIFICATIONS),
+        ("fix", CLASSIFICATIONS),
+        ("closure", CLOSURE_LEVELS),
+        ("orchestration", CLOSURE_LEVELS),
+    ):
         if key not in data or data[key] is None:
             from ruamel.yaml.comments import CommentedMap
+
             data[key] = CommentedMap((k, CommentedMap()) for k in default)
     if "granularity" not in data:
         data["granularity"] = "story"
@@ -731,7 +781,7 @@ def _file_lock(lock_path: str, depth_state: dict):
     `_ADR_LOCK`) with at least a `"depth"` key; each family gets its own dict so
     a calibration hold and an ADR-register hold never share depth counting.
     """
-    if depth_state["depth"] > 0:               # already held by this process
+    if depth_state["depth"] > 0:  # already held by this process
         depth_state["depth"] += 1
         try:
             yield
@@ -741,8 +791,10 @@ def _file_lock(lock_path: str, depth_state: dict):
     try:
         import fcntl
     except ImportError:  # pragma: no cover - non-POSIX
-        sys.stderr.write(f"pm-status.py: fcntl unavailable — {lock_path} is not "
-                         f"lock-protected (non-POSIX)\n")
+        sys.stderr.write(
+            f"pm-status.py: fcntl unavailable — {lock_path} is not "
+            f"lock-protected (non-POSIX)\n"
+        )
         yield
         return
     os.makedirs(os.path.dirname(os.path.abspath(lock_path)) or ".", exist_ok=True)
@@ -841,6 +893,7 @@ def migrate_calibration(y, cal, state_root: str):
     backup = p + ".v1"
     if os.path.exists(p) and not os.path.exists(backup):
         import shutil
+
         shutil.copy2(p, backup)
     blended = cal.get("ratio")
     fresh = new_calibration(cal.get("granularity", "story"))
@@ -849,6 +902,7 @@ def migrate_calibration(y, cal, state_root: str):
     # blended number would import exactly the bias the split removes.
     if isinstance(blended, (int, float)):
         from ruamel.yaml.comments import CommentedMap
+
         for c in CLASSIFICATIONS:
             entry = CommentedMap()
             entry["samples"] = [float(blended)]
@@ -929,6 +983,7 @@ def migrate_calibration_metrics(y, cal, state_root: str) -> list:
     backup = p + ".pre-metrics"
     if os.path.exists(p) and not os.path.exists(backup):
         import shutil
+
         shutil.copy2(p, backup)
         log.append(f"backup {os.path.basename(backup)}")
 
@@ -939,29 +994,39 @@ def migrate_calibration_metrics(y, cal, state_root: str) -> list:
                 continue
             if "cost" in metrics:
                 del metrics["cost"]
-                log.append(f"DROP {component}.{bucket}.cost (derived from tokens x rates "
-                           f"since Task 10 — never independently calibrated again)")
+                log.append(
+                    f"DROP {component}.{bucket}.cost (derived from tokens x rates "
+                    f"since Task 10 — never independently calibrated again)"
+                )
             if "time_hours" in metrics:
                 metrics["elapsed_hours"] = metrics.pop("time_hours")
                 log.append(f"RENAME {component}.{bucket}.time_hours -> elapsed_hours")
             if "man_hours" in metrics:
                 from ruamel.yaml.comments import CommentedMap
-                dest = (cal.setdefault("legacy", CommentedMap())
-                           .setdefault(component, CommentedMap())
-                           .setdefault(bucket, CommentedMap()))
+
+                dest = (
+                    cal.setdefault("legacy", CommentedMap())
+                    .setdefault(component, CommentedMap())
+                    .setdefault(bucket, CommentedMap())
+                )
                 dest["man_hours"] = metrics.pop("man_hours")
-                log.append(f"QUARANTINE {component}.{bucket}.man_hours (definition changed: "
-                           f"human attention -> counterfactual developer effort — old "
-                           f"samples are incomparable, preserved under legacy.{component}.{bucket})")
+                log.append(
+                    f"QUARANTINE {component}.{bucket}.man_hours (definition changed: "
+                    f"human attention -> counterfactual developer effort — old "
+                    f"samples are incomparable, preserved under legacy.{component}.{bucket})"
+                )
             samples = list((metrics.get("tokens_k") or {}).get("samples") or [])
             if samples:
                 r = weighted_ratio(samples)
-                if r is not None and not (TOKENS_SANITY_RANGE[0] <= r <= TOKENS_SANITY_RANGE[1]):
+                if r is not None and not (
+                    TOKENS_SANITY_RANGE[0] <= r <= TOKENS_SANITY_RANGE[1]
+                ):
                     log.append(
                         f"FLAG {component}.{bucket}.tokens_k ratio={r:.2f} outside "
                         f"{TOKENS_SANITY_RANGE} — carried forward as-is, but review "
                         f"before trusting (possible orchestration overhead swept "
-                        f"into story samples under the old rules)")
+                        f"into story samples under the old rules)"
+                    )
 
     for component in ("scope", "closure"):
         _reshape(component)
@@ -970,12 +1035,15 @@ def migrate_calibration_metrics(y, cal, state_root: str) -> list:
     fix_had_content = any(bool(v) for v in fix.values())
     if fix_had_content:
         from ruamel.yaml.comments import CommentedMap
+
         cal.setdefault("legacy", CommentedMap())["fix"] = fix
         cal["fix"] = CommentedMap((c, CommentedMap()) for c in CLASSIFICATIONS)
-        log.append("QUARANTINE fix (wholesale — every cohort is measured in "
-                   "mean_man_hours, the same definition change as scope/closure "
-                   "man_hours; fix has no per-metric split to act on selectively, "
-                   "preserved under legacy.fix)")
+        log.append(
+            "QUARANTINE fix (wholesale — every cohort is measured in "
+            "mean_man_hours, the same definition change as scope/closure "
+            "man_hours; fix has no per-metric split to act on selectively, "
+            "preserved under legacy.fix)"
+        )
 
     # token_mix seeding stays tied to "did this pass actually find and move
     # legacy content" (log non-empty), NOT to the marker gate above: seeding
@@ -987,6 +1055,7 @@ def migrate_calibration_metrics(y, cal, state_root: str) -> list:
     # nothing to observe yet.
     if log and "token_mix" not in cal:
         from ruamel.yaml.comments import CommentedMap
+
         cal["token_mix"] = CommentedMap((("samples", []),))
         log.append("SEED token_mix (empty — new component, nothing to migrate from)")
 
@@ -1025,6 +1094,7 @@ def migrate_calibration_token_basis(y, cal, state_root: str) -> list:
     backup = p + ".pre-token-basis"
     if os.path.exists(p) and not os.path.exists(backup):
         import shutil
+
         shutil.copy2(p, backup)
         log.append(f"backup {os.path.basename(backup)}")
 
@@ -1037,9 +1107,11 @@ def migrate_calibration_token_basis(y, cal, state_root: str) -> list:
         n = len(entry.get("samples") or [])
         if n:
             entry["samples"] = []
-            log.append(f"PURGE scope.{bucket}.tokens_k ({n} sample(s) measured against a "
-                       f"cache-inclusive actual over a fresh-token band — unrecoverable, "
-                       f"the stored form is a bare ratio; the bucket refills on the next closes)")
+            log.append(
+                f"PURGE scope.{bucket}.tokens_k ({n} sample(s) measured against a "
+                f"cache-inclusive actual over a fresh-token band — unrecoverable, "
+                f"the stored form is a bare ratio; the bucket refills on the next closes)"
+            )
 
     cal[TOKEN_BASIS_MARKER] = _now_iso()
     return log
@@ -1077,8 +1149,11 @@ def active_closure_ratio(cal, level: str, metric: str):
     Excluded from the average AND from the count: three zeros plus one real
     sample is one sample, not four, and must stay inactive.
     """
-    s = [v for v in _component_samples(cal, "closure", level, metric)
-         if _is_number(v) and abs(float(v)) > 1e-9]
+    s = [
+        v
+        for v in _component_samples(cal, "closure", level, metric)
+        if _is_number(v) and abs(float(v)) > 1e-9
+    ]
     return weighted_ratio(s) if len(s) >= MIN_SAMPLES else None
 
 
@@ -1109,7 +1184,10 @@ def active_fix_factor(cal, classification: str):
     """Needs BOTH cohorts at threshold — one cohort alone cannot form a ratio."""
     entry = (cal.get("fix") or {}).get(classification) or {}
     clean, rework = entry.get("clean") or {}, entry.get("reworked") or {}
-    if int(clean.get("samples", 0)) < MIN_SAMPLES or int(rework.get("samples", 0)) < MIN_SAMPLES:
+    if (
+        int(clean.get("samples", 0)) < MIN_SAMPLES
+        or int(rework.get("samples", 0)) < MIN_SAMPLES
+    ):
         return None
     cm, rm = clean.get("mean_man_hours"), rework.get("mean_man_hours")
     if not _is_number(cm) or not _is_number(rm) or float(cm) == 0:
@@ -1207,9 +1285,8 @@ BOOL_NODE_FIELDS = {"completion_evidence.tests_passing"}
 # stories later by accident. add-test-run records the command and exit code instead,
 # and derives the boolean from that recorded set.
 DERIVED_NODE_FIELDS = {
-    "completion_evidence.tests_passing":
-        "derived from completion_evidence.test_runs — record what you ran with "
-        "`add-test-run --command CMD --exit-code N` instead of asserting the result",
+    "completion_evidence.tests_passing": "derived from completion_evidence.test_runs — record what you ran with "
+    "`add-test-run --command CMD --exit-code N` instead of asserting the result",
 }
 
 
@@ -1308,9 +1385,9 @@ def derive_story_sample(node):
                 e_fresh = fresh_tokens(e_tk)
                 e_num = e_fresh if e_fresh > 0 else e_num
             if a_num is not None and a_num <= 0:
-                a_num = None      # no fresh tokens recorded -> no scope signal
+                a_num = None  # no fresh tokens recorded -> no scope signal
         if e_num is None or a_num is None:
-            continue          # missing, N/A, or non-numeric — never coerced to zero
+            continue  # missing, N/A, or non-numeric — never coerced to zero
         if e_num == 0:
             continue
         applied = _applied_scope_ratio(est, metric) if has_factors else 1.0
@@ -1327,13 +1404,16 @@ def derive_story_sample(node):
         "provenance": provenance,
         "fix_iterations": iters,
         "scope_ratios": ratios,
-        "actual_man_hours": float(act["man_hours"]) if _is_number(act.get("man_hours")) else None,
+        "actual_man_hours": float(act["man_hours"])
+        if _is_number(act.get("man_hours"))
+        else None,
     }
 
 
 def _bump_cohort(entry, cohort: str, man_hours):
     """Running mean over a cohort, so a full sample history is not needed."""
     from ruamel.yaml.comments import CommentedMap
+
     c = entry.get(cohort)
     if c is None:
         c = CommentedMap()
@@ -1393,6 +1473,7 @@ def record_story_sample(state_root: str, node, node_path: str = None, y=None) ->
     if sample is None:
         return "no sample (missing estimate or actual)"
     from ruamel.yaml.comments import CommentedMap
+
     with calibration_lock(state_root):
         y_cal, cal = load_calibration(state_root)
         if cal.get("version") != CALIBRATION_SCHEMA_VERSION:
@@ -1421,18 +1502,27 @@ def record_story_sample(state_root: str, node, node_path: str = None, y=None) ->
                 mix_bucket = cal.setdefault("token_mix", CommentedMap())
                 mix_bucket.setdefault("samples", [])
                 mix_bucket["samples"].append(
-                    {c: round((_num_or_none(tk.get(c)) or 0.0) / total, 4) for c in TOKEN_CLASSES})
+                    {
+                        c: round((_num_or_none(tk.get(c)) or 0.0) / total, 4)
+                        for c in TOKEN_CLASSES
+                    }
+                )
 
         fix_entry = cal["fix"].setdefault(cls, CommentedMap())
         iters = sample["fix_iterations"]
         if iters is not None:
-            _bump_cohort(fix_entry, "clean" if iters == 0 else "reworked",
-                         sample["actual_man_hours"])
+            _bump_cohort(
+                fix_entry,
+                "clean" if iters == 0 else "reworked",
+                sample["actual_man_hours"],
+            )
 
         save_calibration(y_cal, cal, state_root)
     _mark_sampled(node, node_path, y)
-    return (f"scope+{len(sample['scope_ratios'])} metrics, "
-            f"provenance={sample['provenance']}, class={cls}")
+    return (
+        f"scope+{len(sample['scope_ratios'])} metrics, "
+        f"provenance={sample['provenance']}, class={cls}"
+    )
 
 
 def _mid(est, low_key: str, high_key: str):
@@ -1444,10 +1534,10 @@ def _mid(est, low_key: str, high_key: str):
 
 
 CLOSURE_RANGE_KEYS = {
-    "man_hours":     ("man_hours_low", "man_hours_high"),
-    "hitl_hours":    ("hitl_hours_low", "hitl_hours_high"),
+    "man_hours": ("man_hours_low", "man_hours_high"),
+    "hitl_hours": ("hitl_hours_low", "hitl_hours_high"),
     "elapsed_hours": ("elapsed_hours_low", "elapsed_hours_high"),
-    "tokens_k":      ("tokens_k_min", "tokens_k_max"),
+    "tokens_k": ("tokens_k_min", "tokens_k_max"),
 }
 # No "cost" row: cost is derived from the rolled-up tokens_k range (see
 # cmd_estimate_rollup) rather than banded and calibrated on its own — the
@@ -1470,11 +1560,17 @@ WALL_CLOCK_METRICS = ("elapsed_hours",)
 def _closure_nodes(state_root: str, level: str, epic_key: str, sprint_key=None):
     """(parent path, child paths) for a closure sample at `level`."""
     if level == "sprint":
-        return (sprint_file(state_root, epic_key, sprint_key),
-                list_story_files(state_root, epic_key, sprint_key))
-    return (epic_file(state_root, epic_key),
-            [sprint_file(state_root, epic_key, _sprint_key_from_dir(d))
-             for d in list_sprint_dirs(state_root, epic_key)])
+        return (
+            sprint_file(state_root, epic_key, sprint_key),
+            list_story_files(state_root, epic_key, sprint_key),
+        )
+    return (
+        epic_file(state_root, epic_key),
+        [
+            sprint_file(state_root, epic_key, _sprint_key_from_dir(d))
+            for d in list_sprint_dirs(state_root, epic_key)
+        ],
+    )
 
 
 def _skip_summary(skipped: dict) -> str:
@@ -1573,9 +1669,13 @@ def derive_closure_sample(state_root: str, level: str, epic_key: str, sprint_key
         total = 0.0
         complete = True
         for cn in children:
-            cv = _actual_metric((cn or {}).get("actual"), metric) if cn is not None else None
+            cv = (
+                _actual_metric((cn or {}).get("actual"), metric)
+                if cn is not None
+                else None
+            )
             if cv is None:
-                complete = False   # missing, N/A, or non-numeric child actual
+                complete = False  # missing, N/A, or non-numeric child actual
                 break
             total += cv
         if not complete:
@@ -1604,15 +1704,20 @@ def derive_closure_sample(state_root: str, level: str, epic_key: str, sprint_key
                 f"tolerance) — this {level}'s own closure-phase spend was attributed to "
                 f"nothing; a 0.0 sample would train the closure component to zero "
                 f"permanently. Re-capture the {level} actual as children + this level's "
-                f"closure-phase spend (metrics-contract.md §6)")
+                f"closure-phase spend (metrics-contract.md §6)"
+            )
             continue
         if residual < 0:
             if metric in WALL_CLOCK_METRICS:
-                skipped[metric] = (f"negative wall-clock residual (parent {pv} below children "
-                                   f"sum {total}) — expected under parallel execution, not a miscount")
+                skipped[metric] = (
+                    f"negative wall-clock residual (parent {pv} below children "
+                    f"sum {total}) — expected under parallel execution, not a miscount"
+                )
             else:
-                skipped[metric] = (f"negative residual (parent {pv} below children sum "
-                                   f"{total}) — miscounted")
+                skipped[metric] = (
+                    f"negative residual (parent {pv} below children sum "
+                    f"{total}) — miscounted"
+                )
             continue
         closure[metric] = residual
 
@@ -1640,8 +1745,10 @@ def derive_closure_sample(state_root: str, level: str, epic_key: str, sprint_key
                 orch_f = f
         expected = pmid - est_total - est_total * orch_f * ORCH_MID
         if expected <= 0:
-            skipped[metric] = (f"estimated closure overhead is {round(expected, 4)} (<= 0) — "
-                               f"nothing to measure the residual against")
+            skipped[metric] = (
+                f"estimated closure overhead is {round(expected, 4)} (<= 0) — "
+                f"nothing to measure the residual against"
+            )
             continue
         applied = 1.0
         if hasattr(applied_ratios, "get"):
@@ -1652,11 +1759,17 @@ def derive_closure_sample(state_root: str, level: str, epic_key: str, sprint_key
 
     if not closure:
         return None, "no metric produced a closure residual — " + _skip_summary(skipped)
-    return {"level": level, "closure_actual": closure, "ratios": ratios,
-            "skipped": skipped}, "ok"
+    return {
+        "level": level,
+        "closure_actual": closure,
+        "ratios": ratios,
+        "skipped": skipped,
+    }, "ok"
 
 
-def record_closure_sample(state_root: str, level: str, epic_key: str, sprint_key=None) -> str:
+def record_closure_sample(
+    state_root: str, level: str, epic_key: str, sprint_key=None
+) -> str:
     """Derive a sprint/epic's closure sample and append it to the shared file.
 
     A write path, unlike load_calibration: migrates a stale schema version
@@ -1676,6 +1789,7 @@ def record_closure_sample(state_root: str, level: str, epic_key: str, sprint_key
         return "no closure sample: " + _skip_summary(sample["skipped"])
 
     from ruamel.yaml.comments import CommentedMap
+
     with calibration_lock(state_root):
         y, cal = load_calibration(state_root)
         if cal.get("version") != CALIBRATION_SCHEMA_VERSION:
@@ -1697,8 +1811,9 @@ def record_closure_sample(state_root: str, level: str, epic_key: str, sprint_key
     return note
 
 
-def record_orchestration_sample(state_root: str, level: str, epic_key: str,
-                                 sprint_key=None) -> str:
+def record_orchestration_sample(
+    state_root: str, level: str, epic_key: str, sprint_key=None
+) -> str:
     """Append one closed sprint/epic's orchestration-vs-children fraction.
 
     THE FRACTION, NOT A RATIO. Every other component here (scope, closure)
@@ -1759,6 +1874,7 @@ def record_orchestration_sample(state_root: str, level: str, epic_key: str,
         children.append(cn)
 
     from ruamel.yaml.comments import CommentedMap
+
     recorded, skipped = {}, {}
     for metric in CALIBRATED_METRIC_FIELDS:
         over = _actual_metric(orch, metric)
@@ -1766,7 +1882,11 @@ def record_orchestration_sample(state_root: str, level: str, epic_key: str,
             continue  # orchestration itself has no actual for this metric
         total, complete = 0.0, True
         for cn in children:
-            cv = _actual_metric((cn or {}).get("actual"), metric) if cn is not None else None
+            cv = (
+                _actual_metric((cn or {}).get("actual"), metric)
+                if cn is not None
+                else None
+            )
             if cv is None:
                 complete = False
                 break
@@ -1775,12 +1895,16 @@ def record_orchestration_sample(state_root: str, level: str, epic_key: str,
             skipped[metric] = "a child is missing this metric's actual"
             continue
         if total <= 0:
-            skipped[metric] = "children's total is zero or negative — nothing to divide by"
+            skipped[metric] = (
+                "children's total is zero or negative — nothing to divide by"
+            )
             continue
         recorded[metric] = round(over / total, 4)
 
     if not recorded:
-        return "" if not skipped else "no orchestration sample: " + _skip_summary(skipped)
+        return (
+            "" if not skipped else "no orchestration sample: " + _skip_summary(skipped)
+        )
 
     with calibration_lock(state_root):
         y, cal = load_calibration(state_root)
@@ -1790,7 +1914,9 @@ def record_orchestration_sample(state_root: str, level: str, epic_key: str,
             sys.stderr.write(f"pm-status.py: calibration migration: {line}\n")
         for line in migrate_calibration_token_basis(y, cal, state_root):
             sys.stderr.write(f"pm-status.py: calibration migration: {line}\n")
-        bucket = cal.setdefault("orchestration", CommentedMap()).setdefault(level, CommentedMap())
+        bucket = cal.setdefault("orchestration", CommentedMap()).setdefault(
+            level, CommentedMap()
+        )
         for metric, frac in recorded.items():
             entry = bucket.setdefault(metric, CommentedMap())
             entry.setdefault("samples", [])
@@ -1824,12 +1950,14 @@ def redrive_story_samples(state_root: str) -> dict:
     from different inputs and were never affected, so they are left exactly as they are.
     """
     from ruamel.yaml.comments import CommentedMap
+
     report = {"stories": 0, "sampled": 0, "provenance": {}, "skipped": 0}
     with calibration_lock(state_root):
         y, cal = load_calibration(state_root)
         backup = calibration_path(state_root) + ".pre-redrive"
         if os.path.exists(calibration_path(state_root)) and not os.path.exists(backup):
             import shutil
+
             shutil.copy2(calibration_path(state_root), backup)
             report["backup"] = os.path.basename(backup)
 
@@ -1850,7 +1978,7 @@ def redrive_story_samples(state_root: str) -> dict:
                         report["stories"] += 1
                         try:
                             _, node = load_node(sf)
-                        except Exception:                     # noqa: BLE001
+                        except Exception:  # noqa: BLE001
                             report["skipped"] += 1
                             continue
                         sample = derive_story_sample(node)
@@ -1865,9 +1993,11 @@ def redrive_story_samples(state_root: str) -> dict:
                             entry["samples"].append(round(ratio, 4))
                         iters = sample["fix_iterations"]
                         if iters is not None:
-                            _bump_cohort(cal["fix"].setdefault(cls, CommentedMap()),
-                                         "clean" if iters == 0 else "reworked",
-                                         sample["actual_man_hours"])
+                            _bump_cohort(
+                                cal["fix"].setdefault(cls, CommentedMap()),
+                                "clean" if iters == 0 else "reworked",
+                                sample["actual_man_hours"],
+                            )
                         report["sampled"] += 1
                         pv = sample["provenance"]
                         report["provenance"][pv] = report["provenance"].get(pv, 0) + 1
@@ -1884,9 +2014,13 @@ def cmd_calibration(args) -> int:
         sys.stdout.write(
             f"OK calibration redrive — stories seen {rep['stories']}, "
             f"samples rebuilt {rep['sampled']}, skipped {rep['skipped']}"
-            + (f" [{prov}]" if prov else "") + "\n")
-        sys.stdout.write("scope and fix rebuilt from the nodes; closure, orchestration and "
-                         "token_mix untouched.\n")
+            + (f" [{prov}]" if prov else "")
+            + "\n"
+        )
+        sys.stdout.write(
+            "scope and fix rebuilt from the nodes; closure, orchestration and "
+            "token_mix untouched.\n"
+        )
         return 0
     if getattr(args, "action", "show") == "migrate-metrics":
         with calibration_lock(args.state_root):
@@ -1909,7 +2043,9 @@ def cmd_calibration(args) -> int:
     exists = os.path.exists(calibration_path(args.state_root))
     rows = []
     for c in CLASSIFICATIONS:
-        for m in CALIBRATED_METRIC_FIELDS:  # cost never scope-calibrates (derived, see above)
+        for m in (
+            CALIBRATED_METRIC_FIELDS
+        ):  # cost never scope-calibrates (derived, see above)
             n = len(_component_samples(cal, "scope", c, m))
             r = active_scope_ratio(cal, c, m)
             rows.append(("scope", f"{c}/{m}", n, r))
@@ -1934,18 +2070,29 @@ def cmd_calibration(args) -> int:
             rows.append(("orchestration", f"{lv}/{m}", n, r))
     for c in CLASSIFICATIONS:
         entry = (cal.get("fix") or {}).get(c) or {}
-        n = min(int((entry.get("clean") or {}).get("samples", 0)),
-                int((entry.get("reworked") or {}).get("samples", 0)))
+        n = min(
+            int((entry.get("clean") or {}).get("samples", 0)),
+            int((entry.get("reworked") or {}).get("samples", 0)),
+        )
         rows.append(("fix", c, n, active_fix_factor(cal, c)))
 
     if getattr(args, "format", "text") == "json":
         import json
-        sys.stdout.write(json.dumps({
-            "exists": exists,
-            "granularity": cal.get("granularity", "story"),
-            "components": [{"component": a, "bucket": b, "samples": n,
-                            "active_ratio": r} for a, b, n, r in rows],
-        }, indent=2) + "\n")
+
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "exists": exists,
+                    "granularity": cal.get("granularity", "story"),
+                    "components": [
+                        {"component": a, "bucket": b, "samples": n, "active_ratio": r}
+                        for a, b, n, r in rows
+                    ],
+                },
+                indent=2,
+            )
+            + "\n"
+        )
         return 0
 
     if not exists:
@@ -1965,12 +2112,42 @@ TOKEN_CLASSES = ("input", "output", "cache_write", "cache_read")
 # Partner-operated platforms (Bedrock, Vertex) price separately and need a
 # config override at modules.l3io-pm.token_rates.
 TOKEN_RATES = {
-    "claude-opus-5":      {"input": 5.00,  "output": 25.00, "cache_write": 6.25,  "cache_read": 0.50},
-    "claude-opus-5-fast": {"input": 10.00, "output": 50.00, "cache_write": 12.50, "cache_read": 1.00},
-    "claude-fable-5":     {"input": 10.00, "output": 50.00, "cache_write": 12.50, "cache_read": 1.00},
-    "claude-sonnet-5":    {"input": 3.00,  "output": 15.00, "cache_write": 3.75,  "cache_read": 0.30},
-    "claude-sonnet-4-6":  {"input": 3.00,  "output": 15.00, "cache_write": 3.75,  "cache_read": 0.30},
-    "claude-haiku-4-5":   {"input": 1.00,  "output": 5.00,  "cache_write": 1.25,  "cache_read": 0.10},
+    "claude-opus-5": {
+        "input": 5.00,
+        "output": 25.00,
+        "cache_write": 6.25,
+        "cache_read": 0.50,
+    },
+    "claude-opus-5-fast": {
+        "input": 10.00,
+        "output": 50.00,
+        "cache_write": 12.50,
+        "cache_read": 1.00,
+    },
+    "claude-fable-5": {
+        "input": 10.00,
+        "output": 50.00,
+        "cache_write": 12.50,
+        "cache_read": 1.00,
+    },
+    "claude-sonnet-5": {
+        "input": 3.00,
+        "output": 15.00,
+        "cache_write": 3.75,
+        "cache_read": 0.30,
+    },
+    "claude-sonnet-4-6": {
+        "input": 3.00,
+        "output": 15.00,
+        "cache_write": 3.75,
+        "cache_read": 0.30,
+    },
+    "claude-haiku-4-5": {
+        "input": 1.00,
+        "output": 5.00,
+        "cache_write": 1.25,
+        "cache_read": 0.10,
+    },
 }
 
 
@@ -1986,8 +2163,10 @@ def resolve_rates(model: str, overrides=None) -> dict:
         for k, v in overrides.items():
             table[k] = {**table.get(k, {}), **v}
     if model not in table:
-        raise KeyError(f"unknown model {model!r} — add it to modules.l3io-pm.token_rates "
-                       f"or use one of {sorted(table)}")
+        raise KeyError(
+            f"unknown model {model!r} — add it to modules.l3io-pm.token_rates "
+            f"or use one of {sorted(table)}"
+        )
     return table[model]
 
 
@@ -2006,8 +2185,10 @@ def cost_from_tokens(tokens: dict, model: str, overrides=None) -> float:
         # "cache_read". Same hard-error policy as an unknown model, but with a
         # message that says what to do.
         if cls not in rates:
-            raise KeyError(f"model {model!r} has no {cls!r} rate — modules.l3io-pm.token_rates "
-                           f"must define all of {list(TOKEN_CLASSES)} for a model it adds")
+            raise KeyError(
+                f"model {model!r} has no {cls!r} rate — modules.l3io-pm.token_rates "
+                f"must define all of {list(TOKEN_CLASSES)} for a model it adds"
+            )
         total += v * rates[cls]
     return round(total / 1000.0, 2)
 
@@ -2092,7 +2273,9 @@ def cmd_rates(args) -> int:
     # rate card) is listed rather than silently omitted. Listing sorted(TOKEN_RATES)
     # alone made `rates` report the shipped defaults while pricing used something
     # else, which is the one thing this read-only subcommand exists to prevent.
-    models = [args.model] if args.model else sorted(set(TOKEN_RATES) | set(overrides or {}))
+    models = (
+        [args.model] if args.model else sorted(set(TOKEN_RATES) | set(overrides or {}))
+    )
     for m in models:
         try:
             r = resolve_rates(m, overrides)
@@ -2105,8 +2288,10 @@ def cmd_rates(args) -> int:
         # shipped defaults to merge over) can legitimately define a subset of
         # the four classes, and listing it must report the gap rather than
         # raise KeyError on the model the user added by hand.
-        cells = "  ".join(f"{c}=" + (f"{r[c]:.2f}" if _is_number(r.get(c)) else "n/a")
-                          for c in TOKEN_CLASSES)
+        cells = "  ".join(
+            f"{c}=" + (f"{r[c]:.2f}" if _is_number(r.get(c)) else "n/a")
+            for c in TOKEN_CLASSES
+        )
         sys.stdout.write(f"{m:<22} {cells}\n")
     return 0
 
@@ -2126,6 +2311,7 @@ def load_adr_register(state_root: str):
     y, data = _load(p)
     if data is None:
         from ruamel.yaml.comments import CommentedMap
+
         reg = CommentedMap()
         reg["next"] = 1
         reg["reserved"] = []
@@ -2148,6 +2334,7 @@ def cmd_adr_reserve(args) -> int:
         sys.stderr.write("ERROR --count must be >= 1\n")
         return 2
     from ruamel.yaml.comments import CommentedMap
+
     with adr_register_lock(args.state_root):
         yaml, reg = load_adr_register(args.state_root)
         # Unlike a malformed `next` (recoverable -- reset to 1 and keep going),
@@ -2162,16 +2349,18 @@ def cmd_adr_reserve(args) -> int:
                 f"(expected a list, got {type(reserved).__name__}: {reserved!r}); "
                 f"refusing to reserve -- a register that cannot say who is already "
                 f"in flight cannot be trusted to hand out a new number. Fix or "
-                f"restore adr-register.yaml by hand, then retry.\n")
+                f"restore adr-register.yaml by hand, then retry.\n"
+            )
             return 2
         try:
             start = int(reg.get("next", 1))
         except (TypeError, ValueError):
-            sys.stderr.write(f"pm-status.py: adr-register.yaml has a malformed "
-                             f"'next' ({reg.get('next')!r}); resetting to 1\n")
+            sys.stderr.write(
+                f"pm-status.py: adr-register.yaml has a malformed "
+                f"'next' ({reg.get('next')!r}); resetting to 1\n"
+            )
             start = 1
-        if start < 1:
-            start = 1
+        start = max(start, 1)
         numbers = list(range(start, start + args.count))
         for n in numbers:
             entry = CommentedMap()
@@ -2196,8 +2385,12 @@ DEFAULT_ESTIMATE_MODEL = "claude-opus-5"
 # once three story samples carry class data (see observed_mix below). It
 # affects only how a banded TOTAL is SPLIT across classes — the banded total
 # itself is untouched by it.
-COLD_START_TOKEN_MIX = {"input": 0.15, "output": 0.05,
-                        "cache_write": 0.30, "cache_read": 0.50}
+COLD_START_TOKEN_MIX = {
+    "input": 0.15,
+    "output": 0.05,
+    "cache_write": 0.30,
+    "cache_read": 0.50,
+}
 
 
 def observed_mix(cal) -> dict:
@@ -2208,15 +2401,21 @@ def observed_mix(cal) -> dict:
     # must fall back to cold-start like every other malformed shape here —
     # not crash `estimate-story` for the whole project. Same guard as the
     # tokens_k mapping check in record_story_sample above.
-    usable = [s for s in samples if hasattr(s, "get") and
-              all(_num_or_none(s.get(c)) is not None for c in TOKEN_CLASSES)]
+    usable = [
+        s
+        for s in samples
+        if hasattr(s, "get")
+        and all(_num_or_none(s.get(c)) is not None for c in TOKEN_CLASSES)
+    ]
     if len(usable) < MIN_SAMPLES:
         return dict(COLD_START_TOKEN_MIX)
     mix = {c: sum(float(s[c]) for s in usable) / len(usable) for c in TOKEN_CLASSES}
     total = sum(mix.values())
     if total <= 0:
         return dict(COLD_START_TOKEN_MIX)
-    return {c: v / total for c, v in mix.items()}   # renormalize; means need not sum to 1
+    return {
+        c: v / total for c, v in mix.items()
+    }  # renormalize; means need not sum to 1
 
 
 def split_tokens(total: float, mix: dict) -> dict:
@@ -2247,12 +2446,24 @@ def split_tokens(total: float, mix: dict) -> dict:
 # numbers upward to meet a cache-inclusive actual: cache_read is projected from the
 # observed mix at estimate time and belongs to orchestration, not scope.
 BASE_BANDS = {
-    "simple":   {"man_hours": (2, 4),  "hitl_hours": (0.1, 0.3), "elapsed_hours": (0.5, 1.5),
-                 "tokens_k": (20, 50)},
-    "standard": {"man_hours": (4, 8),  "hitl_hours": (0.2, 0.5), "elapsed_hours": (1, 3),
-                 "tokens_k": (40, 100)},
-    "complex":  {"man_hours": (8, 16), "hitl_hours": (0.3, 1.0), "elapsed_hours": (2, 6),
-                 "tokens_k": (80, 200)},
+    "simple": {
+        "man_hours": (2, 4),
+        "hitl_hours": (0.1, 0.3),
+        "elapsed_hours": (0.5, 1.5),
+        "tokens_k": (20, 50),
+    },
+    "standard": {
+        "man_hours": (4, 8),
+        "hitl_hours": (0.2, 0.5),
+        "elapsed_hours": (1, 3),
+        "tokens_k": (40, 100),
+    },
+    "complex": {
+        "man_hours": (8, 16),
+        "hitl_hours": (0.3, 1.0),
+        "elapsed_hours": (2, 6),
+        "tokens_k": (80, 200),
+    },
 }
 
 
@@ -2291,6 +2502,7 @@ def cmd_estimate_story(args) -> int:
     fix = COLD_START_FIX_FACTOR if fix is None else fix
 
     from ruamel.yaml.comments import CommentedMap
+
     est = node.get("estimate")
     if est is None:
         est = CommentedMap()
@@ -2313,8 +2525,12 @@ def cmd_estimate_story(args) -> int:
     fresh_total = est.pop("tokens_k")
     mix = observed_mix(cal)
     fshare = fresh_share(mix)
-    counts = split_tokens(fresh_total, {c: mix.get(c, 0.0) / fshare for c in FRESH_TOKEN_CLASSES})
-    counts["cache_read"] = int(round(fresh_total * (mix.get("cache_read", 0.0) / fshare)))
+    counts = split_tokens(
+        fresh_total, {c: mix.get(c, 0.0) / fshare for c in FRESH_TOKEN_CLASSES}
+    )
+    counts["cache_read"] = int(
+        round(fresh_total * (mix.get("cache_read", 0.0) / fshare))
+    )
     est["tokens_k"] = tokens_block(counts)
     model = args.model or DEFAULT_ESTIMATE_MODEL
     try:
@@ -2327,15 +2543,17 @@ def cmd_estimate_story(args) -> int:
 
     est["fix_factor"] = round(fix, 4)
     est["scope_ratios"] = applied
-    est.pop("scope_ratio", None)   # the superseded single-value form
+    est.pop("scope_ratio", None)  # the superseded single-value form
     if args.confidence:
         est["confidence"] = args.confidence
     node["classification"] = cls
     node["updated_at"] = _now_iso()
     save_node(y, node, path)
     shown = " ".join(f"{m}={v}" for m, v in applied.items())
-    sys.stdout.write(f"OK estimate-story {args.story} class={cls} "
-                     f"scope_ratios[{shown}] fix_factor={est['fix_factor']}\n")
+    sys.stdout.write(
+        f"OK estimate-story {args.story} class={cls} "
+        f"scope_ratios[{shown}] fix_factor={est['fix_factor']}\n"
+    )
     return 0
 
 
@@ -2416,8 +2634,10 @@ def cmd_estimate_rollup(args) -> int:
         child_paths = list_story_files(args.state_root, args.epic, args.sprint)
     else:
         ppath = epic_file(args.state_root, args.epic)
-        child_paths = [sprint_file(args.state_root, args.epic, _sprint_key_from_dir(d))
-                       for d in list_sprint_dirs(args.state_root, args.epic)]
+        child_paths = [
+            sprint_file(args.state_root, args.epic, _sprint_key_from_dir(d))
+            for d in list_sprint_dirs(args.state_root, args.epic)
+        ]
     if ppath is None:
         _die_notfound(f"{level} {args.sprint or args.epic}")
     y, pnode = load_node(ppath)
@@ -2426,6 +2646,7 @@ def cmd_estimate_rollup(args) -> int:
 
     _, cal = load_calibration(args.state_root)
     from ruamel.yaml.comments import CommentedMap
+
     est = CommentedMap()
     applied = CommentedMap()
     orch_applied = CommentedMap()
@@ -2446,7 +2667,7 @@ def cmd_estimate_rollup(args) -> int:
         counted = max(counted, seen)
         ratio = active_closure_ratio(cal, level, metric)
         if ratio is None:
-            ratio = 1.0            # cold start: the closure band applies unscaled
+            ratio = 1.0  # cold start: the closure band applies unscaled
         applied[metric] = round(ratio, 4)
 
         frac = active_orchestration_fraction(cal, level, metric)
@@ -2460,7 +2681,9 @@ def cmd_estimate_rollup(args) -> int:
             est[lo_key], est[hi_key] = round(lo, 2), round(hi, 2)
 
     if counted == 0:
-        _die_usage(f"{level} {args.sprint or args.epic} has no child estimates to roll up")
+        _die_usage(
+            f"{level} {args.sprint or args.epic} has no child estimates to roll up"
+        )
 
     est["closure_ratios"] = applied
     est["orchestration_ratios"] = orch_applied
@@ -2477,7 +2700,8 @@ def cmd_estimate_rollup(args) -> int:
         sys.stderr.write(
             "pm-status.py: warning — orchestration is unestimated for "
             f"{', '.join(inactive)} (component has <{MIN_SAMPLES} samples at "
-            f"{level} level); this estimate is known-low on those metrics.\n")
+            f"{level} level); this estimate is known-low on those metrics.\n"
+        )
 
     model = args.model or DEFAULT_ESTIMATE_MODEL
     mix = observed_mix(cal)
@@ -2485,7 +2709,9 @@ def cmd_estimate_rollup(args) -> int:
         for bound, key in (("tokens_k_min", "cost_low"), ("tokens_k_max", "cost_high")):
             tv = _num_or_none(est.get(bound))
             if tv is not None:
-                est[key] = cost_from_tokens(split_tokens(tv, mix), model, rate_overrides(args))
+                est[key] = cost_from_tokens(
+                    split_tokens(tv, mix), model, rate_overrides(args)
+                )
     except KeyError as e:
         # e.args[0], not str(e) — KeyError.__str__ repr-quotes its argument,
         # which would double-wrap a message that already reads as prose.
@@ -2496,8 +2722,10 @@ def cmd_estimate_rollup(args) -> int:
     pnode["estimate"] = est
     pnode["updated_at"] = _now_iso()
     save_node(y, pnode, ppath)
-    sys.stdout.write(f"OK estimate-rollup {level} {args.sprint or args.epic} "
-                     f"from {counted} children\n")
+    sys.stdout.write(
+        f"OK estimate-rollup {level} {args.sprint or args.epic} "
+        f"from {counted} children\n"
+    )
     return 0
 
 
@@ -2509,8 +2737,11 @@ def list_story_files(state_root: str, epic_key: str, sprint_key: str) -> list:
     sd = os.path.join(d, sprint_dirname(sprint_key))
     if not os.path.isdir(sd):
         return []
-    return sorted(os.path.join(sd, n) for n in os.listdir(sd)
-                  if n.endswith(".yaml") and n != "sprint.yaml")
+    return sorted(
+        os.path.join(sd, n)
+        for n in os.listdir(sd)
+        if n.endswith(".yaml") and n != "sprint.yaml"
+    )
 
 
 def _accumulate_actuals(totals: dict, node) -> None:
@@ -2590,9 +2821,11 @@ def _spend_total(spend: dict) -> dict:
 
 
 def _sprint_spend(story_totals: dict, snode) -> dict:
-    return {"stories": dict(story_totals),
-            "closure": _closure_totals(_block_totals(snode, "actual"), story_totals),
-            "orchestration": _block_totals(snode, "orchestration")}
+    return {
+        "stories": dict(story_totals),
+        "closure": _closure_totals(_block_totals(snode, "actual"), story_totals),
+        "orchestration": _block_totals(snode, "orchestration"),
+    }
 
 
 def _has_spend(spend: dict) -> bool:
@@ -2641,8 +2874,10 @@ def rollup_epic(state_root: str, epic_key: str) -> dict:
     _, enode = load_node(ep) if ep else (None, None)
     # The epic's OWN closure residual sits on top of its sprints' — one bucket,
     # two levels, because both are "the closing level's own closure phases".
-    _add_totals(spend["closure"],
-                _closure_totals(_block_totals(enode, "actual"), sprint_actual_sum))
+    _add_totals(
+        spend["closure"],
+        _closure_totals(_block_totals(enode, "actual"), sprint_actual_sum),
+    )
     _add_totals(spend["orchestration"], _block_totals(enode, "orchestration"))
     return {
         "key": epic_key,
@@ -2697,15 +2932,16 @@ def list_all_epics(state_root: str) -> list:
                 continue
             if not os.path.isdir(os.path.join(base, name)):
                 continue
-            suffix = name[len("epic-"):]
+            suffix = name[len("epic-") :]
             if not suffix.isdigit():
                 continue
             found.append((f"E{int(suffix):03d}", status))
     return sorted(found, key=lambda t: t[0])
 
 
-def _build_sprint_detail(state_root: str, epic_key: str, sprint_key: str,
-                         events_index: dict, now=None) -> dict:
+def _build_sprint_detail(
+    state_root: str, epic_key: str, sprint_key: str, events_index: dict, now=None
+) -> dict:
     """One sprint and its stories.
 
     `detail["flags"]` holds only the sprint's OWN flags (its stuck state, and any story
@@ -2722,14 +2958,24 @@ def _build_sprint_detail(state_root: str, epic_key: str, sprint_key: str,
             _, loaded = load_node(sp)
             snode = loaded or {}
         except Exception as e:  # noqa: BLE001 - a bad file must not kill the report
-            flags.append({"kind": "unreadable", "level": "sprint",
-                          "key": f"{epic_key}/{sprint_key}", "detail": str(e)})
+            flags.append(
+                {
+                    "kind": "unreadable",
+                    "level": "sprint",
+                    "key": f"{epic_key}/{sprint_key}",
+                    "detail": str(e),
+                }
+            )
 
     s_status = str(snode.get("status", "unknown"))
-    s_dwell, s_exact = dwell_hours({"key": sprint_key, "status": s_status,
-                                    "updated_at": snode.get("updated_at")},
-                                   events_index, now)
-    flags += compute_flags("sprint", f"{epic_key}/{sprint_key}", s_status, s_dwell, s_exact)
+    s_dwell, s_exact = dwell_hours(
+        {"key": sprint_key, "status": s_status, "updated_at": snode.get("updated_at")},
+        events_index,
+        now,
+    )
+    flags += compute_flags(
+        "sprint", f"{epic_key}/{sprint_key}", s_status, s_dwell, s_exact
+    )
 
     stories, by_status, totals = [], {}, {}
     for p in list_story_files(state_root, epic_key, sprint_key):
@@ -2737,8 +2983,14 @@ def _build_sprint_detail(state_root: str, epic_key: str, sprint_key: str,
             _, node = load_node(p)
         except Exception as e:  # noqa: BLE001
             # No story node exists to hang this on, so it belongs to the sprint.
-            flags.append({"kind": "unreadable", "level": "story",
-                          "key": os.path.basename(p), "detail": str(e)})
+            flags.append(
+                {
+                    "kind": "unreadable",
+                    "level": "story",
+                    "key": os.path.basename(p),
+                    "detail": str(e),
+                }
+            )
             continue
         if node is None:
             continue
@@ -2747,22 +2999,34 @@ def _build_sprint_detail(state_root: str, epic_key: str, sprint_key: str,
         by_status[st] = by_status.get(st, 0) + 1
         _accumulate_actuals(totals, node)
         d, ex = dwell_hours(node, events_index, now)
-        stories.append({"key": key, "status": st,
-                        "estimate": dict(node.get("estimate") or {}),
-                        "actual": dict(node.get("actual") or {}),
-                        "updated_at": node.get("updated_at"),
-                        "dwell_hours": None if d is None else round(d, 2),
-                        "dwell_exact": ex,
-                        "flags": compute_flags("story", key, st, d, ex)})
+        stories.append(
+            {
+                "key": key,
+                "status": st,
+                "estimate": dict(node.get("estimate") or {}),
+                "actual": dict(node.get("actual") or {}),
+                "updated_at": node.get("updated_at"),
+                "dwell_hours": None if d is None else round(d, 2),
+                "dwell_exact": ex,
+                "flags": compute_flags("story", key, st, d, ex),
+            }
+        )
 
-    return {"key": sprint_key, "status": s_status, "story_count": len(stories),
-            "by_status": by_status, "actual_totals": totals,
-            "node_actual": _block_totals(snode, "actual"),
-            "spend": _sprint_spend(totals, snode),
-            "estimate": dict(snode.get("estimate") or {}),
-            "updated_at": snode.get("updated_at"),
-            "dwell_hours": None if s_dwell is None else round(s_dwell, 2),
-            "dwell_exact": s_exact, "flags": flags, "stories": stories}
+    return {
+        "key": sprint_key,
+        "status": s_status,
+        "story_count": len(stories),
+        "by_status": by_status,
+        "actual_totals": totals,
+        "node_actual": _block_totals(snode, "actual"),
+        "spend": _sprint_spend(totals, snode),
+        "estimate": dict(snode.get("estimate") or {}),
+        "updated_at": snode.get("updated_at"),
+        "dwell_hours": None if s_dwell is None else round(s_dwell, 2),
+        "dwell_exact": s_exact,
+        "flags": flags,
+        "stories": stories,
+    }
 
 
 def _collect_flags(epic_detail: dict) -> list:
@@ -2775,8 +3039,9 @@ def _collect_flags(epic_detail: dict) -> list:
     return out
 
 
-def build_epic_detail(state_root: str, epic_key: str, dir_status: str,
-                      events_index: dict, now=None) -> dict:
+def build_epic_detail(
+    state_root: str, epic_key: str, dir_status: str, events_index: dict, now=None
+) -> dict:
     """One epic subtree, enriched with dwell times, flags, and placement checks."""
     flags: list = []
     ep = epic_file(state_root, epic_key)
@@ -2785,16 +3050,28 @@ def build_epic_detail(state_root: str, epic_key: str, dir_status: str,
         try:
             _, y_node = load_node(ep)
         except Exception as e:  # noqa: BLE001
-            flags.append({"kind": "unreadable", "level": "epic", "key": epic_key,
-                          "detail": str(e)})
+            flags.append(
+                {
+                    "kind": "unreadable",
+                    "level": "epic",
+                    "key": epic_key,
+                    "detail": str(e),
+                }
+            )
     enode = y_node or {}
 
     status = str(enode.get("status", "unknown"))
     expected = STATUS_FOR_DIR.get(dir_status)
     if expected and status != "unknown" and status != expected:
-        flags.append({"kind": "placement", "level": "epic", "key": epic_key,
-                      "detail": f"status {status!r} but sits in {dir_status}/ "
-                                f"(expected {expected!r})"})
+        flags.append(
+            {
+                "kind": "placement",
+                "level": "epic",
+                "key": epic_key,
+                "detail": f"status {status!r} but sits in {dir_status}/ "
+                f"(expected {expected!r})",
+            }
+        )
 
     lock = None
     raw_lock = enode.get("_lock")
@@ -2804,22 +3081,34 @@ def build_epic_detail(state_root: str, epic_key: str, dir_status: str,
         stale = False
         if claimed is not None and ttl:
             try:
-                age_min = ((now or datetime.now(timezone.utc))
-                           - claimed).total_seconds() / 60.0
+                age_min = (
+                    (now or datetime.now(timezone.utc)) - claimed
+                ).total_seconds() / 60.0
                 stale = age_min > float(ttl)
             except (TypeError, ValueError):
                 stale = False
-        lock = {"session_id": raw_lock.get("session_id"),
-                "claimed_at": raw_lock.get("claimed_at"),
-                "ttl_minutes": ttl, "stale": stale}
+        lock = {
+            "session_id": raw_lock.get("session_id"),
+            "claimed_at": raw_lock.get("claimed_at"),
+            "ttl_minutes": ttl,
+            "stale": stale,
+        }
         if stale:
-            flags.append({"kind": "stale-lock", "level": "epic", "key": epic_key,
-                          "detail": f"lock claimed {raw_lock.get('claimed_at')} "
-                                    f"exceeds ttl {ttl}m"})
+            flags.append(
+                {
+                    "kind": "stale-lock",
+                    "level": "epic",
+                    "key": epic_key,
+                    "detail": f"lock claimed {raw_lock.get('claimed_at')} "
+                    f"exceeds ttl {ttl}m",
+                }
+            )
 
-    dwell, exact = dwell_hours({"key": epic_key, "status": status,
-                                "updated_at": enode.get("updated_at")},
-                               events_index, now)
+    dwell, exact = dwell_hours(
+        {"key": epic_key, "status": status, "updated_at": enode.get("updated_at")},
+        events_index,
+        now,
+    )
     flags += compute_flags("epic", epic_key, status, dwell, exact)
 
     sprints, totals, by_status, story_count = [], {}, {}, 0
@@ -2835,19 +3124,30 @@ def build_epic_detail(state_root: str, epic_key: str, dir_status: str,
             totals[k] = totals.get(k, 0.0) + v
         _merge_spend(spend, s_detail["spend"])
         _add_totals(sprint_actual_sum, s_detail["node_actual"])
-    _add_totals(spend["closure"],
-                _closure_totals(_block_totals(enode, "actual"), sprint_actual_sum))
+    _add_totals(
+        spend["closure"],
+        _closure_totals(_block_totals(enode, "actual"), sprint_actual_sum),
+    )
     _add_totals(spend["orchestration"], _block_totals(enode, "orchestration"))
 
     return {
-        "key": epic_key, "title": enode.get("title"), "status": status,
-        "dir_status": dir_status, "sprint_count": len(sprints),
-        "story_count": story_count, "by_status": by_status,
+        "key": epic_key,
+        "title": enode.get("title"),
+        "status": status,
+        "dir_status": dir_status,
+        "sprint_count": len(sprints),
+        "story_count": story_count,
+        "by_status": by_status,
         "estimate": dict(enode.get("estimate") or {}),
-        "actual_totals": totals, "node_actual": _block_totals(enode, "actual"),
-        "spend": spend, "updated_at": enode.get("updated_at"),
+        "actual_totals": totals,
+        "node_actual": _block_totals(enode, "actual"),
+        "spend": spend,
+        "updated_at": enode.get("updated_at"),
         "dwell_hours": None if dwell is None else round(dwell, 2),
-        "dwell_exact": exact, "lock": lock, "flags": flags, "sprints": sprints,
+        "dwell_exact": exact,
+        "lock": lock,
+        "flags": flags,
+        "sprints": sprints,
     }
 
 
@@ -2872,25 +3172,31 @@ def load_plan(plan_pointer: str):
     phases = []
     snap_name = meta.get("current_plan")
     if snap_name:
-        snap = os.path.join(os.path.dirname(os.path.abspath(plan_pointer)), str(snap_name))
+        snap = os.path.join(
+            os.path.dirname(os.path.abspath(plan_pointer)), str(snap_name)
+        )
         if os.path.isfile(snap):
             try:
                 _, snode = _load(snap)
                 phases = [dict(p) for p in ((snode or {}).get("phases") or [])]
             except Exception as e:  # noqa: BLE001
-                sys.stderr.write(f"pm-status.py: warning — could not read plan "
-                                 f"snapshot: {e}\n")
+                sys.stderr.write(
+                    f"pm-status.py: warning — could not read plan snapshot: {e}\n"
+                )
         else:
-            sys.stderr.write(f"pm-status.py: warning — plan pointer names a missing "
-                             f"snapshot: {snap_name}\n")
+            sys.stderr.write(
+                f"pm-status.py: warning — plan pointer names a missing "
+                f"snapshot: {snap_name}\n"
+            )
     return {"meta": meta, "phases": phases}
 
 
 DEFAULT_REPORT_STATUSES = ("planned", "active")
 
 
-def build_progress_model(state_root: str, plan=None, statuses=None,
-                         include_archived: bool = False, now=None) -> dict:
+def build_progress_model(
+    state_root: str, plan=None, statuses=None, include_archived: bool = False, now=None
+) -> dict:
     """The one model every renderer and every surface consumes.
 
     `statuses` selects which state folders appear in the DISPLAY lists — pass a subset of
@@ -2911,8 +3217,10 @@ def build_progress_model(state_root: str, plan=None, statuses=None,
     statuses = set(statuses)
     unknown = statuses - set(STATUS_DIRS)
     if unknown:
-        raise ValueError(f"unknown status folder(s): {sorted(unknown)} "
-                         f"— expected a subset of {list(STATUS_DIRS)}")
+        raise ValueError(
+            f"unknown status folder(s): {sorted(unknown)} "
+            f"— expected a subset of {list(STATUS_DIRS)}"
+        )
     events_index = build_events_index(state_root)
     details, flags = {}, []
     totals = {"epics": {}, "sprints": {}, "stories": {}}
@@ -2940,13 +3248,17 @@ def build_progress_model(state_root: str, plan=None, statuses=None,
         members = [str(k) for k in (ph.get("epics") or [])]
         claimed.update(members)
         present = [details[k] for k in members if k in details]
-        phases.append({
-            "phase": ph.get("phase"), "parallel": bool(ph.get("parallel")),
-            "epics": members, "dependencies": list(ph.get("dependencies") or []),
-            "epic_total": len(members),
-            "epic_done": sum(1 for d in present if d["status"] == "done"),
-            "epics_detail": [d for d in present if visible(d)],
-        })
+        phases.append(
+            {
+                "phase": ph.get("phase"),
+                "parallel": bool(ph.get("parallel")),
+                "epics": members,
+                "dependencies": list(ph.get("dependencies") or []),
+                "epic_total": len(members),
+                "epic_done": sum(1 for d in present if d["status"] == "done"),
+                "epics_detail": [d for d in present if visible(d)],
+            }
+        )
 
     return {
         "generated": _now_iso(),
@@ -2954,8 +3266,9 @@ def build_progress_model(state_root: str, plan=None, statuses=None,
         "statuses": sorted(statuses),
         "plan": (plan or {}).get("meta"),
         "phases": phases,
-        "unplanned_epics": [d for k, d in sorted(details.items())
-                            if k not in claimed and visible(d)],
+        "unplanned_epics": [
+            d for k, d in sorted(details.items()) if k not in claimed and visible(d)
+        ],
         "totals": totals,
         "spend": spend,
         "spend_total": _spend_total(spend),
@@ -2982,33 +3295,47 @@ def _dwell_str(node: dict) -> str:
 
 
 def _stuck_suffix(node: dict) -> str:
-    return "  ⚠ stuck" if any(f["kind"] == "stuck" for f in node.get("flags") or []) else ""
+    return (
+        "  ⚠ stuck"
+        if any(f["kind"] == "stuck" for f in node.get("flags") or [])
+        else ""
+    )
 
 
 def _render_epic_tree(d: dict, out: list, indent: str = "  ") -> None:
     done = d["by_status"].get("done", 0)
-    out.append(f"{indent}{d['key']} {(d.get('title') or ''):<24} {d['status']:<12} "
-               f"{done}/{d['story_count']} stories  {_dwell_str(d)}{_stuck_suffix(d)}")
+    out.append(
+        f"{indent}{d['key']} {(d.get('title') or ''):<24} {d['status']:<12} "
+        f"{done}/{d['story_count']} stories  {_dwell_str(d)}{_stuck_suffix(d)}"
+    )
     if d.get("lock") and d["lock"].get("stale"):
-        out.append(f"{indent}  ⚠ STALE LOCK — claimed {d['lock'].get('claimed_at')} "
-                   f"(ttl {d['lock'].get('ttl_minutes')}m)")
+        out.append(
+            f"{indent}  ⚠ STALE LOCK — claimed {d['lock'].get('claimed_at')} "
+            f"(ttl {d['lock'].get('ttl_minutes')}m)"
+        )
     for sp in d["sprints"]:
         s_done = sp["by_status"].get("done", 0)
-        out.append(f"{indent}  {sp['key']:<6} {sp['status']:<12} "
-                   f"{s_done}/{sp['story_count']}  {_dwell_str(sp)}{_stuck_suffix(sp)}")
+        out.append(
+            f"{indent}  {sp['key']:<6} {sp['status']:<12} "
+            f"{s_done}/{sp['story_count']}  {_dwell_str(sp)}{_stuck_suffix(sp)}"
+        )
         for st in sp["stories"]:
             if st["status"] == "done":
                 continue  # counts above carry finished work; the tree shows what is live
-            out.append(f"{indent}    {st['key']:<20} {st['status']:<14} "
-                       f"{_dwell_str(st)}{_stuck_suffix(st)}")
+            out.append(
+                f"{indent}    {st['key']:<20} {st['status']:<14} "
+                f"{_dwell_str(st)}{_stuck_suffix(st)}"
+            )
 
 
 def render_tree(model: dict) -> str:
     out: list = []
     plan = model.get("plan")
     if plan:
-        out.append(f"PLAN {plan.get('current_plan')}   readiness={plan.get('readiness')}"
-                   f"   generated={plan.get('generated')}")
+        out.append(
+            f"PLAN {plan.get('current_plan')}   readiness={plan.get('readiness')}"
+            f"   generated={plan.get('generated')}"
+        )
     else:
         out.append("PLAN (none — showing state only)")
     out.append(f"STATE {model['state_root']}")
@@ -3019,16 +3346,20 @@ def render_tree(model: dict) -> str:
     if sorted(shown) == sorted(STATUS_DIRS):
         out.append("SHOWING every status, including archived")
     elif sorted(shown) != sorted(DEFAULT_REPORT_STATUSES):
-        out.append(f"SHOWING {', '.join(shown)} only "
-                   f"(totals and phase counts still cover every epic)")
+        out.append(
+            f"SHOWING {', '.join(shown)} only "
+            f"(totals and phase counts still cover every epic)"
+        )
     out.append("")
 
     total_phases = len(model["phases"])
     for ph in model["phases"]:
         kind = "parallel" if ph["parallel"] else "sequential"
-        out.append(f"Phase {ph['phase']}/{total_phases} ({kind})  "
-                   f"{_bar(ph['epic_done'], ph['epic_total'])}  "
-                   f"{ph['epic_done']}/{ph['epic_total']} epics done")
+        out.append(
+            f"Phase {ph['phase']}/{total_phases} ({kind})  "
+            f"{_bar(ph['epic_done'], ph['epic_total'])}  "
+            f"{ph['epic_done']}/{ph['epic_total']} epics done"
+        )
         if ph["dependencies"]:
             out.append(f"  depends on: {', '.join(str(x) for x in ph['dependencies'])}")
         if not ph["epics_detail"]:
@@ -3056,7 +3387,9 @@ def render_tree(model: dict) -> str:
     spend = model.get("spend") or {}
     if _has_spend(spend):
         out.append("")
-        out.append("Spend (actual, by attribution — covers every epic, not just those listed)")
+        out.append(
+            "Spend (actual, by attribution — covers every epic, not just those listed)"
+        )
         for bucket in SPEND_BUCKETS:
             out.append(f"  {bucket:<14} {_fmt_actuals(spend.get(bucket) or {})}")
         out.append(f"  {'TOTAL':<14} {_fmt_actuals(model.get('spend_total') or {})}")
@@ -3070,54 +3403,86 @@ def render_tree(model: dict) -> str:
 
     if any(f["kind"] == "stuck" and not f.get("exact") for f in model["flags"]):
         out.append("")
-        out.append("~ dwell times are approximate (no event log yet — derived from "
-                   "updated_at, which any field write refreshes)")
+        out.append(
+            "~ dwell times are approximate (no event log yet — derived from "
+            "updated_at, which any field write refreshes)"
+        )
     # Column padding leaves ragged trailing spaces on rows with no dwell/flag suffix.
     return "\n".join(line.rstrip() for line in out) + "\n"
 
 
 def render_md(model: dict) -> str:
     plan = model.get("plan")
-    out = ["# Progress Report", "",
-           f"Generated by `pm-status.py report` at {model['generated']}. This file is a "
-           "view, not a source of truth — do not hand-edit; regenerate it.", ""]
+    out = [
+        "# Progress Report",
+        "",
+        f"Generated by `pm-status.py report` at {model['generated']}. This file is a "
+        "view, not a source of truth — do not hand-edit; regenerate it.",
+        "",
+    ]
     if plan:
-        out.append(f"**Plan:** `{plan.get('current_plan')}` — readiness "
-                   f"`{plan.get('readiness')}`, generated {plan.get('generated')}")
+        out.append(
+            f"**Plan:** `{plan.get('current_plan')}` — readiness "
+            f"`{plan.get('readiness')}`, generated {plan.get('generated')}"
+        )
     else:
         out.append("**Plan:** none found — state only.")
     out.append("")
 
     if model["phases"]:
-        out += ["## Phases", "", "| Phase | Mode | Epics done | Members |",
-                "|---|---|---|---|"]
+        out += [
+            "## Phases",
+            "",
+            "| Phase | Mode | Epics done | Members |",
+            "|---|---|---|---|",
+        ]
         for ph in model["phases"]:
             mode = "parallel" if ph["parallel"] else "sequential"
-            out.append(f"| {ph['phase']} | {mode} | {ph['epic_done']}/{ph['epic_total']} "
-                       f"| {', '.join(ph['epics'])} |")
+            out.append(
+                f"| {ph['phase']} | {mode} | {ph['epic_done']}/{ph['epic_total']} "
+                f"| {', '.join(ph['epics'])} |"
+            )
         out.append("")
 
-    rows = [d for ph in model["phases"] for d in ph["epics_detail"]] + model["unplanned_epics"]
-    out += ["## Epics", "", "| Epic | Title | Status | Sprints | Stories done | Dwell |",
-            "|---|---|---|---|---|---|"]
+    rows = [d for ph in model["phases"] for d in ph["epics_detail"]] + model[
+        "unplanned_epics"
+    ]
+    out += [
+        "## Epics",
+        "",
+        "| Epic | Title | Status | Sprints | Stories done | Dwell |",
+        "|---|---|---|---|---|---|",
+    ]
     if not rows:
         out.append("| _none_ | | | | | |")
     for d in rows:
-        out.append(f"| {d['key']} | {d.get('title') or ''} | {d['status']} "
-                   f"| {d['sprint_count']} | {d['by_status'].get('done', 0)}/"
-                   f"{d['story_count']} | {_dwell_str(d) or '—'} |")
+        out.append(
+            f"| {d['key']} | {d.get('title') or ''} | {d['status']} "
+            f"| {d['sprint_count']} | {d['by_status'].get('done', 0)}/"
+            f"{d['story_count']} | {_dwell_str(d) or '—'} |"
+        )
     out.append("")
 
-    live = [(d, sp, st) for d in rows for sp in d["sprints"] for st in sp["stories"]
-            if st["status"] not in ("done", "backlog")]
+    live = [
+        (d, sp, st)
+        for d in rows
+        for sp in d["sprints"]
+        for st in sp["stories"]
+        if st["status"] not in ("done", "backlog")
+    ]
     if live:
-        out += ["## Stories in flight", "",
-                "| Story | Epic | Sprint | Status | Dwell | Stuck |",
-                "|---|---|---|---|---|---|"]
+        out += [
+            "## Stories in flight",
+            "",
+            "| Story | Epic | Sprint | Status | Dwell | Stuck |",
+            "|---|---|---|---|---|---|",
+        ]
         for d, sp, st in live:
             stuck = "yes" if any(f["kind"] == "stuck" for f in st["flags"]) else ""
-            out.append(f"| {st['key']} | {d['key']} | {sp['key']} | {st['status']} "
-                       f"| {_dwell_str(st) or '—'} | {stuck} |")
+            out.append(
+                f"| {st['key']} | {d['key']} | {sp['key']} | {st['status']} "
+                f"| {_dwell_str(st) or '—'} | {stuck} |"
+            )
         out.append("")
 
     out += ["## Totals", "", "| Level | Counts |", "|---|---|"]
@@ -3129,13 +3494,17 @@ def render_md(model: dict) -> str:
 
     spend = model.get("spend") or {}
     if _has_spend(spend):
-        out += ["## Spend", "",
-                "Actual spend by attribution, over every epic in the tree (not only the "
-                "epics listed above). `stories` is the sum of the leaf actuals, `closure` "
-                "each level's own closure-phase residual, `orchestration` the separate "
-                "orchestration block.", "",
-                "| Attribution | " + " | ".join(METRIC_FIELDS) + " |",
-                "|---|" + "---|" * len(METRIC_FIELDS)]
+        out += [
+            "## Spend",
+            "",
+            "Actual spend by attribution, over every epic in the tree (not only the "
+            "epics listed above). `stories` is the sum of the leaf actuals, `closure` "
+            "each level's own closure-phase residual, `orchestration` the separate "
+            "orchestration block.",
+            "",
+            "| Attribution | " + " | ".join(METRIC_FIELDS) + " |",
+            "|---|" + "---|" * len(METRIC_FIELDS),
+        ]
         rows = [(b, spend.get(b) or {}) for b in SPEND_BUCKETS]
         rows.append(("**total**", model.get("spend_total") or {}))
         for label, vals in rows:
@@ -3150,9 +3519,15 @@ def render_md(model: dict) -> str:
 # --------------------------------------------------------------------------- #
 def cmd_set_status(args) -> int:
     kind = _infer_kind(args)
-    valid = {"story": VALID_STORY_STATUS, "sprint": VALID_SPRINT_STATUS, "epic": VALID_EPIC_STATUS}[kind]
+    valid = {
+        "story": VALID_STORY_STATUS,
+        "sprint": VALID_SPRINT_STATUS,
+        "epic": VALID_EPIC_STATUS,
+    }[kind]
     if args.status not in valid:
-        _die_usage(f"invalid {kind} status '{args.status}' — expected one of {sorted(valid)}")
+        _die_usage(
+            f"invalid {kind} status '{args.status}' — expected one of {sorted(valid)}"
+        )
 
     y, node, path, label = _load_checked(args.state_root, args, kind)
     prior = str(node.get("status", "")) or None
@@ -3163,9 +3538,13 @@ def cmd_set_status(args) -> int:
     save_node(y, node, path, getattr(args, "flock", False))
 
     if not getattr(args, "no_events", False):
-        payload = {"ts": _now_iso(), "event": "status",
-                   "from": prior, "to": args.status,
-                   "session": getattr(args, "session_id", None)}
+        payload = {
+            "ts": _now_iso(),
+            "event": "status",
+            "from": prior,
+            "to": args.status,
+            "session": getattr(args, "session_id", None),
+        }
         payload.update(_event_keys(kind, args))
         append_event(args.state_root, payload)
 
@@ -3185,8 +3564,13 @@ def story_doc_path(artifacts_root: str, story_key: str) -> str:
     m = re.match(r"^E(\d{3})-S(\d{2})-\d{3}$", story_key)
     if not m:
         raise ValueError(f"not a story key: {story_key!r}")
-    return os.path.join(artifacts_root, f"epic-{m.group(1)}",
-                        f"sprint-{m.group(2)}", "stories", f"{story_key}.md")
+    return os.path.join(
+        artifacts_root,
+        f"epic-{m.group(1)}",
+        f"sprint-{m.group(2)}",
+        "stories",
+        f"{story_key}.md",
+    )
 
 
 def cmd_sync_story_doc(args) -> int:
@@ -3202,8 +3586,10 @@ def cmd_sync_story_doc(args) -> int:
     transition that is already durable.
     """
     if args.status not in VALID_STORY_STATUS:
-        sys.stderr.write(f"ERROR unknown story status {args.status!r}; "
-                         f"expected one of {', '.join(sorted(VALID_STORY_STATUS))}\n")
+        sys.stderr.write(
+            f"ERROR unknown story status {args.status!r}; "
+            f"expected one of {', '.join(sorted(VALID_STORY_STATUS))}\n"
+        )
         return 2
     try:
         path = story_doc_path(args.artifacts_root, args.story)
@@ -3211,11 +3597,12 @@ def cmd_sync_story_doc(args) -> int:
         sys.stderr.write(f"ERROR {exc}\n")
         return 2
     if not os.path.exists(path):
-        sys.stderr.write(f"WARN no story file at {path} — state was written, "
-                         f"document not updated\n")
+        sys.stderr.write(
+            f"WARN no story file at {path} — state was written, document not updated\n"
+        )
         return 0
 
-    with io.open(path, encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         text = fh.read()
     if not text.startswith("---\n"):
         sys.stderr.write(f"WARN {path} has no YAML frontmatter — nothing to update\n")
@@ -3224,26 +3611,31 @@ def cmd_sync_story_doc(args) -> int:
     if end == -1:
         sys.stderr.write(f"WARN {path} has an unterminated frontmatter block\n")
         return 0
-    head, body = text[4:end + 1], text[end + 4:]
+    head, body = text[4 : end + 1], text[end + 4 :]
 
     # ruamel round-trip: preserves key order and comments. Never split on '---'
     # by hand -- a body line of dashes is legal markdown and would corrupt it.
     from ruamel.yaml.comments import CommentedMap
+
     yaml = _yaml()
     try:
         meta = yaml.load(head)
-    except Exception:                                    # noqa: BLE001
+    except Exception:  # noqa: BLE001
         # Deliberately broad. This runs after a set-status that already
         # succeeded, and no parse failure is worth stranding a durable state
         # transition over. The warning is the signal; the exit code is not.
-        sys.stderr.write(f"WARN {path} frontmatter does not parse as YAML — "
-                         f"state was written, document not updated\n")
+        sys.stderr.write(
+            f"WARN {path} frontmatter does not parse as YAML — "
+            f"state was written, document not updated\n"
+        )
         return 0
     if meta is None:
         meta = CommentedMap()
     if not hasattr(meta, "get"):
-        sys.stderr.write(f"WARN {path} frontmatter is not a mapping — "
-                         f"state was written, document not updated\n")
+        sys.stderr.write(
+            f"WARN {path} frontmatter is not a mapping — "
+            f"state was written, document not updated\n"
+        )
         return 0
     if meta.get("status") == args.status:
         if not args.quiet:
@@ -3252,7 +3644,7 @@ def cmd_sync_story_doc(args) -> int:
     meta["status"] = args.status
     buf = io.StringIO()
     yaml.dump(meta, buf)
-    with io.open(path, "w", encoding="utf-8") as fh:
+    with open(path, "w", encoding="utf-8") as fh:
         fh.write("---\n" + buf.getvalue() + "---" + body)
     if not args.quiet:
         sys.stdout.write(f"OK {args.story} document -> {args.status}\n")
@@ -3263,8 +3655,10 @@ def cmd_set_actual(args) -> int:
     kind = args.node
     block = getattr(args, "block", "actual")
     if block == "orchestration" and kind == "story":
-        _die_usage("--block orchestration is only valid on a sprint or epic — a story's "
-                   "orchestration belongs to its parent sprint")
+        _die_usage(
+            "--block orchestration is only valid on a sprint or epic — a story's "
+            "orchestration belongs to its parent sprint"
+        )
     y, node, path, label = _load_checked(args.state_root, args, kind)
 
     provided = {
@@ -3274,8 +3668,10 @@ def cmd_set_actual(args) -> int:
     }
 
     if args.cost is not None:
-        _die_usage("--cost is not accepted: cost is derived from tokens x rates. "
-                   "Fix the token counts or modules.l3io-pm.token_rates instead.")
+        _die_usage(
+            "--cost is not accepted: cost is derived from tokens x rates. "
+            "Fix the token counts or modules.l3io-pm.token_rates instead."
+        )
 
     classes = {c: getattr(args, "tokens_" + c) for c in TOKEN_CLASSES}
     given = {c: v for c, v in classes.items() if v is not None}
@@ -3283,8 +3679,10 @@ def cmd_set_actual(args) -> int:
         _die_usage("--tokens-na cannot be combined with explicit token counts")
     if args.tokens_na:
         if args.runtime == "claude":
-            _die_usage("runtime=claude forbids tokens=N/A — capture the exact per-class "
-                       "counts from the session transcript (see metrics-contract.md §3)")
+            _die_usage(
+                "runtime=claude forbids tokens=N/A — capture the exact per-class "
+                "counts from the session transcript (see metrics-contract.md §3)"
+            )
         provided["tokens_k"] = "N/A"
         provided["cost"] = "N/A"
     elif given:
@@ -3307,10 +3705,13 @@ def cmd_set_actual(args) -> int:
                 "Read input_tokens, output_tokens, cache_creation_input_tokens and "
                 "cache_read_input_tokens from the session transcript's usage fields "
                 "(metrics-contract.md §3); pass an explicit 0 for a class that really "
-                "is zero.")
+                "is zero."
+            )
         if not args.model:
-            _die_usage("--model is required whenever token counts are given — the same "
-                       "token count prices 2x apart between a $5/M and a $10/M tier")
+            _die_usage(
+                "--model is required whenever token counts are given — the same "
+                "token count prices 2x apart between a $5/M and a $10/M tier"
+            )
         try:
             cost = cost_from_tokens(given, args.model, rate_overrides(args))
         except KeyError as e:
@@ -3323,8 +3724,10 @@ def cmd_set_actual(args) -> int:
 
     provided = {k: v for k, v in provided.items() if v is not None}
     if not provided:
-        _die_usage("set-actual needs at least one of --elapsed-hours/--man-hours/"
-                   "--hitl-hours/--tokens-* /--tokens-na")
+        _die_usage(
+            "set-actual needs at least one of --elapsed-hours/--man-hours/"
+            "--hitl-hours/--tokens-* /--tokens-na"
+        )
 
     block_data = node.get(block)
     if block_data is None:
@@ -3346,24 +3749,35 @@ def cmd_set_actual(args) -> int:
             if block == "orchestration":
                 # kind is "sprint" or "epic" here — a story was already rejected above.
                 calib_note = record_orchestration_sample(
-                    args.state_root, kind, args.epic, args.sprint if kind == "sprint" else None)
+                    args.state_root,
+                    kind,
+                    args.epic,
+                    args.sprint if kind == "sprint" else None,
+                )
             elif kind == "story":
                 # path + y so the sample can stamp its replay marker on the node
                 calib_note = record_story_sample(args.state_root, node, path, y)
             elif kind == "sprint":
-                calib_note = record_closure_sample(args.state_root, "sprint",
-                                                   args.epic, args.sprint)
+                calib_note = record_closure_sample(
+                    args.state_root, "sprint", args.epic, args.sprint
+                )
             elif kind == "epic":
                 calib_note = record_closure_sample(args.state_root, "epic", args.epic)
-        except Exception as e:                      # noqa: BLE001 - deliberate isolation
-            sys.stderr.write(f"pm-status.py: warning — actual written, but calibration "
-                             f"sample failed: {e}\n")
+        except Exception as e:  # noqa: BLE001 - deliberate isolation
+            sys.stderr.write(
+                f"pm-status.py: warning — actual written, but calibration "
+                f"sample failed: {e}\n"
+            )
             calib_note = "calibration skipped (see stderr)"
 
     if not getattr(args, "no_events", False):
-        payload = {"ts": _now_iso(), "event": "actual",
-                   "from": None, "to": None,
-                   "session": getattr(args, "session_id", None)}
+        payload = {
+            "ts": _now_iso(),
+            "event": "actual",
+            "from": None,
+            "to": None,
+            "session": getattr(args, "session_id", None),
+        }
         payload.update(_event_keys(kind, args))
         append_event(args.state_root, payload)
 
@@ -3381,7 +3795,9 @@ def _parse_version_line(path: str):
                 if not line:
                     break
                 if "pm-status-version:" in line:
-                    token = line.split("pm-status-version:")[1].strip().split()[0]  # first token only
+                    token = (
+                        line.split("pm-status-version:")[1].strip().split()[0]
+                    )  # first token only
                     return tuple(int(x) for x in token.split("."))
     except (OSError, ValueError):
         return None
@@ -3431,8 +3847,11 @@ def resolve_session_transcript(session_id: str = "") -> tuple:
         # omitted every dispatched agent's spend.
         sub = os.path.join(root, d, session_id, "subagents")
         if os.path.isdir(sub):
-            hits.extend(os.path.join(sub, n) for n in sorted(os.listdir(sub))
-                        if n.endswith(".jsonl"))
+            hits.extend(
+                os.path.join(sub, n)
+                for n in sorted(os.listdir(sub))
+                if n.endswith(".jsonl")
+            )
     return hits, session_id
 
 
@@ -3487,11 +3906,12 @@ def read_transcript_usage(paths, since=None, until=None) -> dict:
     Returns the four class totals plus counts that let a caller sanity-check the read.
     """
     files = []
-    for entry in (paths if isinstance(paths, (list, tuple)) else [paths]):
+    for entry in paths if isinstance(paths, (list, tuple)) else [paths]:
         if os.path.isdir(entry):
             for root, _dirs, names in os.walk(entry):
-                files.extend(os.path.join(root, n) for n in sorted(names)
-                             if n.endswith(".jsonl"))
+                files.extend(
+                    os.path.join(root, n) for n in sorted(names) if n.endswith(".jsonl")
+                )
         elif os.path.exists(entry):
             files.append(entry)
 
@@ -3511,7 +3931,7 @@ def read_transcript_usage(paths, since=None, until=None) -> dict:
                 try:
                     rec = json.loads(line)
                 except ValueError:
-                    continue          # torn or partial line; the log is appended to live
+                    continue  # torn or partial line; the log is appended to live
                 if not isinstance(rec, dict) or rec.get("type") != "assistant":
                     continue
                 msg = rec.get("message")
@@ -3539,8 +3959,9 @@ def read_transcript_usage(paths, since=None, until=None) -> dict:
                     if when is None:
                         undated += 1
                         continue
-                    if (since is not None and when < since) or \
-                       (until is not None and when > until):
+                    if (since is not None and when < since) or (
+                        until is not None and when > until
+                    ):
                         outside += 1
                         continue
                 if rec.get("isSidechain"):
@@ -3548,17 +3969,28 @@ def read_transcript_usage(paths, since=None, until=None) -> dict:
                 totals["input"] += _num_or_none(usage.get("input_tokens")) or 0
                 totals["output"] += _num_or_none(usage.get("output_tokens")) or 0
                 # Trap 2: the flat field only, never the nested mapping as well.
-                totals["cache_write"] += _num_or_none(usage.get("cache_creation_input_tokens")) or 0
-                totals["cache_read"] += _num_or_none(usage.get("cache_read_input_tokens")) or 0
+                totals["cache_write"] += (
+                    _num_or_none(usage.get("cache_creation_input_tokens")) or 0
+                )
+                totals["cache_read"] += (
+                    _num_or_none(usage.get("cache_read_input_tokens")) or 0
+                )
 
-    return {"tokens": totals, "files": len(files), "records": records,
-            "unique_messages": len(seen), "sidechain_messages": sidechain,
-            "outside_window": outside, "undated_skipped": undated,
-            "windowed": since is not None or until is not None}
+    return {
+        "tokens": totals,
+        "files": len(files),
+        "records": records,
+        "unique_messages": len(seen),
+        "sidechain_messages": sidechain,
+        "outside_window": outside,
+        "undated_skipped": undated,
+        "windowed": since is not None or until is not None,
+    }
 
 
-def dispatch_window(state_root: str, agent: str = "", epic: str = "",
-                    sprint: str = "", story: str = ""):
+def dispatch_window(
+    state_root: str, agent: str = "", epic: str = "", sprint: str = "", story: str = ""
+):
     """(open_ts, close_ts) for a node's dispatch bracket. (None, None) if unbracketed.
 
     This is what makes a node's actual measurable at all. A session transcript records
@@ -3633,10 +4065,14 @@ def cmd_usage(args) -> int:
         if not paths:
             sys.stderr.write(
                 "pm-status.py: cannot resolve this session's transcript — "
-                + (f"no ~/.claude/projects/*/{want}.jsonl found\n" if want else
-                   f"{CLAUDE_SESSION_ENV} is not set\n")
+                + (
+                    f"no ~/.claude/projects/*/{want}.jsonl found\n"
+                    if want
+                    else f"{CLAUDE_SESSION_ENV} is not set\n"
+                )
                 + "  Pass the transcript path explicitly, or --claude-session ID. Refusing to\n"
-                  "  guess: summing the wrong file is the error this command exists to prevent.\n")
+                "  guess: summing the wrong file is the error this command exists to prevent.\n"
+            )
             return 2
 
     if not args.allow_unidentified:
@@ -3644,13 +4080,19 @@ def cmd_usage(args) -> int:
         for fp in paths:
             targets = [fp]
             if os.path.isdir(fp):
-                targets = [os.path.join(r, n) for r, _d, ns in os.walk(fp)
-                           for n in sorted(ns) if n.endswith(".jsonl")]
+                targets = [
+                    os.path.join(r, n)
+                    for r, _d, ns in os.walk(fp)
+                    for n in sorted(ns)
+                    if n.endswith(".jsonl")
+                ]
             for t in targets:
                 found = transcript_sessions(t)
                 if not found:
-                    problems.append(f"{t}: carries no sessionId — this is not a session "
-                                    f"transcript (a task .output artifact looks like this)")
+                    problems.append(
+                        f"{t}: carries no sessionId — this is not a session "
+                        f"transcript (a task .output artifact looks like this)"
+                    )
                 elif len(found) > 1:
                     # Checked BEFORE membership: a file holding two sessions is malformed
                     # whatever we were expecting, and "mixes N sessions" is the actionable
@@ -3658,24 +4100,34 @@ def cmd_usage(args) -> int:
                     # and hid the fact that the file itself is wrong.
                     problems.append(f"{t}: mixes {len(found)} sessions {sorted(found)}")
                 elif want and want not in found:
-                    problems.append(f"{t}: belongs to session(s) {sorted(found)}, not {want}")
+                    problems.append(
+                        f"{t}: belongs to session(s) {sorted(found)}, not {want}"
+                    )
         if problems:
-            sys.stderr.write("pm-status.py: refusing to sum — cannot confirm whose transcript "
-                             "this is:\n")
+            sys.stderr.write(
+                "pm-status.py: refusing to sum — cannot confirm whose transcript "
+                "this is:\n"
+            )
             for pr in problems:
                 sys.stderr.write(f"  {pr}\n")
-            sys.stderr.write("  Pass the right file, set --claude-session, or --allow-unidentified\n"
-                             "  to override deliberately.\n")
+            sys.stderr.write(
+                "  Pass the right file, set --claude-session, or --allow-unidentified\n"
+                "  to override deliberately.\n"
+            )
             return 2
 
     since = _parse_iso(args.since) if args.since else None
     until = _parse_iso(args.until) if args.until else None
     scope_src = "explicit --since/--until" if (since or until) else ""
-    node_keys = {k: getattr(args, k, "") or "" for k in ("agent", "epic", "sprint", "story")}
+    node_keys = {
+        k: getattr(args, k, "") or "" for k in ("agent", "epic", "sprint", "story")
+    }
     if not (since or until) and any(node_keys.values()):
         if not args.state_root:
-            _die_usage("--state-root is required to derive a window from a node's dispatch "
-                       "bracket (or pass --since/--until yourself)")
+            _die_usage(
+                "--state-root is required to derive a window from a node's dispatch "
+                "bracket (or pass --since/--until yourself)"
+            )
         since, until = dispatch_window(args.state_root, **node_keys)
         named = " ".join(f"{k}={v}" for k, v in node_keys.items() if v)
         if since is None and until is None:
@@ -3683,7 +4135,8 @@ def cmd_usage(args) -> int:
                 f"pm-status.py: no dispatch bracket found for {named} in events.jsonl —\n"
                 "  refusing to report an unscoped total for a node. A session transcript spans\n"
                 "  everything that session did; without the bracket there is nothing to cut it\n"
-                "  to. Bracket the spawn (metrics-contract.md §6) or pass --since/--until.\n")
+                "  to. Bracket the spawn (metrics-contract.md §6) or pass --since/--until.\n"
+            )
             return 2
         scope_src = f"dispatch bracket for {named}"
 
@@ -3691,21 +4144,31 @@ def cmd_usage(args) -> int:
     res["scope"] = scope_src
     res["since"], res["until"] = since, until
     if not res["files"]:
-        sys.stderr.write("pm-status.py: no .jsonl transcript found at the given path(s)\n")
+        sys.stderr.write(
+            "pm-status.py: no .jsonl transcript found at the given path(s)\n"
+        )
         return 3
     # Only claim a session when identity was actually CHECKED. Printing the id from the
     # environment beside numbers read out of an unverified file is the same lie in a new
     # place -- a header that asserts provenance it does not have.
     verified = not args.allow_unidentified
-    res["session"] = (want or "(unverified)") if verified else "(UNVERIFIED — --allow-unidentified)"
-    res["source"] = ("resolved from environment" if resolved
-                     else "given on the command line, identity checked" if verified
-                     else "given on the command line, identity NOT checked")
+    res["session"] = (
+        (want or "(unverified)") if verified else "(UNVERIFIED — --allow-unidentified)"
+    )
+    res["source"] = (
+        "resolved from environment"
+        if resolved
+        else "given on the command line, identity checked"
+        if verified
+        else "given on the command line, identity NOT checked"
+    )
     res["paths"] = paths
     t = res["tokens"]
     total = sum(t.values())
     if args.format == "json":
-        sys.stdout.write(json.dumps({**res, "total": total}, indent=2, sort_keys=True) + "\n")
+        sys.stdout.write(
+            json.dumps({**res, "total": total}, indent=2, sort_keys=True) + "\n"
+        )
         return 0
 
     k = {c: t[c] / 1000.0 for c in TOKEN_CLASSES}
@@ -3717,38 +4180,56 @@ def cmd_usage(args) -> int:
         sys.stdout.write(f"  {fp}\n")
     sys.stdout.write(
         f"files={res['files']} records={res['records']} "
-        f"unique={res['unique_messages']} sidechain={res['sidechain_messages']}\n")
+        f"unique={res['unique_messages']} sidechain={res['sidechain_messages']}\n"
+    )
     if res["records"] > res["unique_messages"]:
         dropped = res["records"] - res["unique_messages"]
-        sys.stdout.write(f"  deduplicated {dropped} repeated record(s) of the same message\n")
+        sys.stdout.write(
+            f"  deduplicated {dropped} repeated record(s) of the same message\n"
+        )
     if res["sidechain_messages"] == 0 and res["files"] == 1:
-        sys.stdout.write("  note: no subagent (sidechain) turns seen in this file — if this "
-                         "run dispatched subagents, pass their transcripts too\n")
+        sys.stdout.write(
+            "  note: no subagent (sidechain) turns seen in this file — if this "
+            "run dispatched subagents, pass their transcripts too\n"
+        )
     if res.get("windowed"):
-        sys.stdout.write(f"  excluded {res['outside_window']} message(s) outside the window"
-                         + (f", {res['undated_skipped']} undated\n" if res["undated_skipped"]
-                            else "\n"))
+        sys.stdout.write(
+            f"  excluded {res['outside_window']} message(s) outside the window"
+            + (
+                f", {res['undated_skipped']} undated\n"
+                if res["undated_skipped"]
+                else "\n"
+            )
+        )
     else:
         sys.stdout.write(
             "  ** UNSCOPED — this is the WHOLE SESSION, not one node. A session transcript\n"
             "     spans every story it ever ran; one observed file totalled ~66x the sprint\n"
             "     being closed. Do NOT pass this to set-actual. Scope it with --story/--sprint\n"
-            "     /--epic (+ --state-root) or --since/--until. **\n")
+            "     /--epic (+ --state-root) or --since/--until. **\n"
+        )
     for c in TOKEN_CLASSES:
         sys.stdout.write(f"  {c:<12} {t[c]:>12,}  ({k[c]:.1f}k)\n")
     sys.stdout.write(f"  {'TOTAL':<12} {total:>12,}  ({total / 1000.0:.1f}k)\n\n")
     if args.model:
         try:
-            sys.stdout.write(f"cost {cost_from_tokens(k, args.model, rate_overrides(args)):.2f} "
-                             f"USD at {args.model} rates\n\n")
+            sys.stdout.write(
+                f"cost {cost_from_tokens(k, args.model, rate_overrides(args)):.2f} "
+                f"USD at {args.model} rates\n\n"
+            )
         except KeyError as e:
             _die_usage(e.args[0])
     if not res.get("windowed"):
-        sys.stdout.write("set-actual flags withheld: an unscoped session total is not a "
-                         "node's actual.\n")
+        sys.stdout.write(
+            "set-actual flags withheld: an unscoped session total is not a "
+            "node's actual.\n"
+        )
         return 0
-    sys.stdout.write("set-actual flags:\n  " + " ".join(
-        f"--tokens-{c.replace('_', '-')} {k[c]:.3f}" for c in TOKEN_CLASSES) + "\n")
+    sys.stdout.write(
+        "set-actual flags:\n  "
+        + " ".join(f"--tokens-{c.replace('_', '-')} {k[c]:.3f}" for c in TOKEN_CLASSES)
+        + "\n"
+    )
     return 0
 
 
@@ -3780,26 +4261,35 @@ def cmd_self_install(args) -> int:
     if os.path.exists(dest) and not args.force:
         same = _file_sha(src) is not None and _file_sha(src) == _file_sha(dest)
         if same:
-            sys.stdout.write(f"OK self-install skipped — {dest} is already this exact script "
-                             f"({PM_STATUS_VERSION})\n")
+            sys.stdout.write(
+                f"OK self-install skipped — {dest} is already this exact script "
+                f"({PM_STATUS_VERSION})\n"
+            )
             return 0
         if theirs is not None and theirs > mine:
-            sys.stdout.write(f"OK self-install skipped — {dest} is "
-                             f"{'.'.join(map(str, theirs))} > {PM_STATUS_VERSION} "
-                             f"(refusing to downgrade)\n")
+            sys.stdout.write(
+                f"OK self-install skipped — {dest} is "
+                f"{'.'.join(map(str, theirs))} > {PM_STATUS_VERSION} "
+                f"(refusing to downgrade)\n"
+            )
             return 0
         if theirs is not None and theirs == mine:
             # Same number, different bytes. Installing is right; saying nothing is not --
             # this means a release shipped a changed script without moving the marker, and
             # the only place that can be noticed is here.
-            sys.stderr.write(f"pm-status.py: warning — {dest} reports {PM_STATUS_VERSION} but "
-                             f"its content differs from this copy; reinstalling. A changed "
-                             f"script shipped under an unchanged version marker.\n")
+            sys.stderr.write(
+                f"pm-status.py: warning — {dest} reports {PM_STATUS_VERSION} but "
+                f"its content differs from this copy; reinstalling. A changed "
+                f"script shipped under an unchanged version marker.\n"
+            )
     d = os.path.dirname(dest) or "."
     os.makedirs(d, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=".pm-status.", suffix=".tmp", dir=d)
     try:
-        with open(src, "r", encoding="utf-8") as rf, os.fdopen(fd, "w", encoding="utf-8") as wf:
+        with (
+            open(src, "r", encoding="utf-8") as rf,
+            os.fdopen(fd, "w", encoding="utf-8") as wf,
+        ):
             wf.write(rf.read())
             wf.flush()
             os.fsync(wf.fileno())
@@ -3826,6 +4316,7 @@ def cmd_set_lock(args) -> int:
     the same check-then-act race this function exists to close.
     """
     from ruamel.yaml.comments import CommentedMap
+
     path = _epic_path_or_die(args)
     with epic_node_lock(path):
         y, data = load_node(path)
@@ -3839,21 +4330,24 @@ def cmd_set_lock(args) -> int:
                 sys.stdout.write(
                     f"LOCKED epic {args.epic}: existing _lock is malformed (not a "
                     f"mapping) — a lock that cannot be read is not a lock that may "
-                    f"be stolen; refusing to claim\n")
+                    f"be stolen; refusing to claim\n"
+                )
                 return 5
             holder = str(existing.get("session_id", ""))
             if holder != args.session_id:
                 if "claimed_at" not in existing:
                     sys.stdout.write(
                         f"LOCKED epic {args.epic}: existing _lock held by {holder!r} "
-                        f"has no claimed_at — refusing to claim\n")
+                        f"has no claimed_at — refusing to claim\n"
+                    )
                     return 5
                 claimed = _parse_iso(existing.get("claimed_at"))
                 if claimed is None:
                     sys.stdout.write(
                         f"LOCKED epic {args.epic}: existing _lock held by {holder!r} "
                         f"has an unparseable claimed_at "
-                        f"({existing.get('claimed_at')!r}) — refusing to claim\n")
+                        f"({existing.get('claimed_at')!r}) — refusing to claim\n"
+                    )
                     return 5
                 ttl = int(existing.get("ttl_minutes", 30))
                 age_minutes = _lock_age_minutes(claimed)
@@ -3861,10 +4355,13 @@ def cmd_set_lock(args) -> int:
                     remaining = ttl - age_minutes
                     sys.stdout.write(
                         f"LOCKED epic {args.epic} held by {holder} "
-                        f"({remaining:.1f}m remaining of {ttl}m ttl)\n")
+                        f"({remaining:.1f}m remaining of {ttl}m ttl)\n"
+                    )
                     return 5
-                takeover_note = (f" (took over stale lock from {holder}, "
-                                  f"age={age_minutes:.1f}m > ttl={ttl}m)")
+                takeover_note = (
+                    f" (took over stale lock from {holder}, "
+                    f"age={age_minutes:.1f}m > ttl={ttl}m)"
+                )
             # else: same session — re-claim below, refreshing claimed_at. A retry
             # by the owner must not deadlock or refuse against its own lock.
 
@@ -3882,7 +4379,8 @@ def cmd_set_lock(args) -> int:
         _atomic_dump(y, ordered, path)
         sys.stdout.write(
             f"OK set-lock epic {args.epic} session={args.session_id} "
-            f"ttl={args.ttl_minutes}m{takeover_note}\n")
+            f"ttl={args.ttl_minutes}m{takeover_note}\n"
+        )
     return 0
 
 
@@ -3925,17 +4423,19 @@ def cmd_check_lock(args) -> int:
         return 0
     holder = str(lock.get("session_id", ""))
     if holder == args.session_id:
-        sys.stdout.write(f"FREE (own session)\n")
+        sys.stdout.write("FREE (own session)\n")
         return 0
     claimed_str = str(lock.get("claimed_at", ""))
     ttl = int(lock.get("ttl_minutes", 30))
     claimed = _parse_iso(claimed_str)
     if claimed is None:
-        sys.stdout.write(f"FREE (unreadable lock timestamp — treating as stale)\n")
+        sys.stdout.write("FREE (unreadable lock timestamp — treating as stale)\n")
         return 0
     age_minutes = _lock_age_minutes(claimed)
     if age_minutes > ttl:
-        sys.stdout.write(f"FREE (stale lock from {holder}, age={age_minutes:.1f}m > ttl={ttl}m)\n")
+        sys.stdout.write(
+            f"FREE (stale lock from {holder}, age={age_minutes:.1f}m > ttl={ttl}m)\n"
+        )
         return 0
     sys.stdout.write(f"LOCKED by {holder} (claimed {claimed_str}, ttl={ttl}m)\n")
     return 5
@@ -3955,15 +4455,21 @@ def cmd_set_estimate(args) -> int:
     # direct input. --cost, --cost-low, and --cost-high stay declared (with
     # help=argparse.SUPPRESS) purely so this is a clear usage error instead of
     # an argparse "unrecognized arguments" one.
-    if getattr(args, "cost", None) is not None or getattr(args, "cost_low", None) is not None \
-            or getattr(args, "cost_high", None) is not None:
-        _die_usage("cost is derived from tokens x rates and cannot be set directly — "
-                   "fix the token counts or modules.l3io-pm.token_rates instead")
+    if (
+        getattr(args, "cost", None) is not None
+        or getattr(args, "cost_low", None) is not None
+        or getattr(args, "cost_high", None) is not None
+    ):
+        _die_usage(
+            "cost is derived from tokens x rates and cannot be set directly — "
+            "fix the token counts or modules.l3io-pm.token_rates instead"
+        )
 
     kind = _infer_kind(args)
     y, node, path, label = _load_checked(args.state_root, args, kind)
 
     from ruamel.yaml.comments import CommentedMap
+
     est = node.get("estimate")
     if est is None:
         est = CommentedMap()
@@ -4001,9 +4507,16 @@ def cmd_set_estimate(args) -> int:
         # top of this function and can therefore never satisfy — so every
         # hand-written story estimate came out `low` no matter how complete it
         # was, and the derivation could only ever report one of its two values.
-        range_keys = ["man_hours_low", "man_hours_high", "hitl_hours_low", "hitl_hours_high",
-                      "elapsed_hours_low", "elapsed_hours_high",
-                      "tokens_k_min", "tokens_k_max"]
+        range_keys = [
+            "man_hours_low",
+            "man_hours_high",
+            "hitl_hours_low",
+            "hitl_hours_high",
+            "elapsed_hours_low",
+            "elapsed_hours_high",
+            "tokens_k_min",
+            "tokens_k_max",
+        ]
         story_keys = ["man_hours", "hitl_hours", "elapsed_hours", "tokens_k"]
         check = story_keys if kind == "story" else range_keys
         est["confidence"] = "medium" if all(k in est for k in check) else "low"
@@ -4020,8 +4533,10 @@ def cmd_set_field(args) -> int:
     --value: string value to set
     """
     if args.field in DERIVED_NODE_FIELDS:
-        _die_usage(f"--field {args.field} is not directly writable: "
-                   f"{DERIVED_NODE_FIELDS[args.field]}")
+        _die_usage(
+            f"--field {args.field} is not directly writable: "
+            f"{DERIVED_NODE_FIELDS[args.field]}"
+        )
 
     kind = _infer_kind(args)
     y, node, path, label = _load_checked(args.state_root, args, kind)
@@ -4031,6 +4546,7 @@ def cmd_set_field(args) -> int:
     for part in field_parts[:-1]:
         if target.get(part) is None:
             from ruamel.yaml.comments import CommentedMap
+
             target[part] = CommentedMap()
         target = target[part]
     value = args.value
@@ -4042,7 +4558,8 @@ def cmd_set_field(args) -> int:
                     f"--field {args.field} needs a non-negative whole number, got {value!r}. "
                     "Stored as text this silently becomes provenance=backout on a story that "
                     "needed no rework, and the clean fix cohort never fills. If the value came "
-                    "from a template placeholder, it was not substituted.")
+                    "from a template placeholder, it was not substituted."
+                )
             value = n
         elif _is_number(value):
             value = _coerce(field_parts[-1], value)
@@ -4088,6 +4605,7 @@ def cmd_add_test_run(args) -> int:
     if node is None:
         _die_notfound(f"story {args.story} — file {path} is empty")
     from ruamel.yaml.comments import CommentedMap
+
     ce = node.setdefault("completion_evidence", CommentedMap())
     runs = ce.setdefault("test_runs", [])
     entry = CommentedMap()
@@ -4110,9 +4628,11 @@ def cmd_add_test_run(args) -> int:
         for r in latest.values()
     )
     save_node(y, node, path, use_flock=True)
-    sys.stdout.write(f"OK {args.story} test run recorded "
-                     f"({args.command} -> {args.exit_code}); "
-                     f"tests_passing={ce['tests_passing']}\n")
+    sys.stdout.write(
+        f"OK {args.story} test run recorded "
+        f"({args.command} -> {args.exit_code}); "
+        f"tests_passing={ce['tests_passing']}\n"
+    )
     return 0
 
 
@@ -4158,7 +4678,9 @@ def _find_issue_by_key(backlog, key: str):
     return None
 
 
-def _find_issue_by_content(backlog, epic_norm: str, sprint_norm: str, source: str, norm_title: str):
+def _find_issue_by_content(
+    backlog, epic_norm: str, sprint_norm: str, source: str, norm_title: str
+):
     """Match on all four of normalized title + epic + sprint + source, deliberately.
     Over-matching (e.g. title alone) loses a real finding; under-matching leaves
     noise. Losing data is the worse failure, so this only catches near-certain
@@ -4207,10 +4729,12 @@ def cmd_append_issue(args) -> int:
         y, data = _load(args.file)
         if data is None:
             from ruamel.yaml.comments import CommentedMap, CommentedSeq
+
             data = CommentedMap()
             data["backlog"] = CommentedSeq()
         if data.get("backlog") is None:
             from ruamel.yaml.comments import CommentedSeq
+
             data["backlog"] = CommentedSeq()
         backlog = data["backlog"]
         # Unlike a missing 'backlog' (recoverable -- default to an empty list
@@ -4228,7 +4752,8 @@ def cmd_append_issue(args) -> int:
                 f"{type(backlog).__name__}: {backlog!r}); refusing to append "
                 f"-- appending to a silently-replaced empty list would hide "
                 f"whatever was already recorded there. Fix or restore "
-                f"{args.file} by hand, then retry.\n")
+                f"{args.file} by hand, then retry.\n"
+            )
             return 2
 
         if args.key:
@@ -4238,22 +4763,27 @@ def cmd_append_issue(args) -> int:
                     f"pm-status.py: append-issue: --key {args.key!r} already exists "
                     f"(title: {existing.get('title', '')!r}) -- refusing to silently "
                     f"assign a different key; pick a key that is not already taken, "
-                    f"or omit --key to auto-allocate the next one for this epic\n")
+                    f"or omit --key to auto-allocate the next one for this epic\n"
+                )
                 return 2
             key = args.key
         else:
             key = f"BL-E{epic_norm}-{_next_issue_number(backlog, epic_norm)}"
 
         if not args.allow_duplicate:
-            dup = _find_issue_by_content(backlog, epic_norm, sprint_norm, args.source, norm_title)
+            dup = _find_issue_by_content(
+                backlog, epic_norm, sprint_norm, args.source, norm_title
+            )
             if dup is not None:
                 sys.stdout.write(
                     f"OK append-issue skipped -- matches existing {dup.get('key', '')} "
                     f"(same title/epic/sprint/source); nothing written. Pass "
-                    f"--allow-duplicate to force a second entry.\n")
+                    f"--allow-duplicate to force a second entry.\n"
+                )
                 return 0
 
         from ruamel.yaml.comments import CommentedMap
+
         item = CommentedMap()
         item["key"] = key
         item["epic"] = args.epic
@@ -4306,7 +4836,10 @@ def cmd_list_issues(args) -> int:
     severity_filter = set(args.severity) if args.severity else None
 
     def matches(item) -> bool:
-        if epic_filter is not None and _norm_num(item.get("epic", ""), 3) != epic_filter:
+        if (
+            epic_filter is not None
+            and _norm_num(item.get("epic", ""), 3) != epic_filter
+        ):
             return False
         if sprint_filter is not None:
             item_sprint = str(item.get("sprint", "") or "").strip()
@@ -4321,6 +4854,7 @@ def cmd_list_issues(args) -> int:
 
     if args.format == "json":
         import json
+
         sys.stdout.write(json.dumps([dict(i) for i in filtered], indent=2) + "\n")
         return 0
 
@@ -4329,14 +4863,26 @@ def cmd_list_issues(args) -> int:
         return 0
 
     headers = ["KEY", "EPIC", "SPRINT", "SEVERITY", "STATUS", "TITLE"]
-    rows = [[str(i.get("key", "")), str(i.get("epic", "")), str(i.get("sprint", "")) or "-",
-             str(i.get("severity", "")), str(i.get("status", "")), str(i.get("title", ""))]
-            for i in filtered]
-    widths = [max(len(headers[c]), *(len(r[c]) for r in rows)) for c in range(len(headers))]
+    rows = [
+        [
+            str(i.get("key", "")),
+            str(i.get("epic", "")),
+            str(i.get("sprint", "")) or "-",
+            str(i.get("severity", "")),
+            str(i.get("status", "")),
+            str(i.get("title", "")),
+        ]
+        for i in filtered
+    ]
+    widths = [
+        max(len(headers[c]), *(len(r[c]) for r in rows)) for c in range(len(headers))
+    ]
 
     def _fmt_row(cells):
         last = len(cells) - 1
-        return "  ".join(c if idx == last else c.ljust(widths[idx]) for idx, c in enumerate(cells))
+        return "  ".join(
+            c if idx == last else c.ljust(widths[idx]) for idx, c in enumerate(cells)
+        )
 
     sys.stdout.write(_fmt_row(headers) + "\n")
     for r in rows:
@@ -4362,7 +4908,9 @@ def move_epic(state_root: str, epic_key: str, to_status: str) -> str:
     them, so that degradation must not be silent: the fallback now warns on stderr.
     """
     if to_status not in STATUS_DIRS:
-        raise ValueError(f"bad status folder {to_status!r} — expected one of {list(STATUS_DIRS)}")
+        raise ValueError(
+            f"bad status folder {to_status!r} — expected one of {list(STATUS_DIRS)}"
+        )
     state_root = os.path.abspath(state_root)
     src = find_epic_dir(state_root, epic_key)
     if src is None:
@@ -4380,17 +4928,21 @@ def move_epic(state_root: str, epic_key: str, to_status: str) -> str:
     reason = "git mv was not attempted"
     try:
         import subprocess
-        r = subprocess.run(["git", "mv", src, dest], cwd=state_root,
-                           capture_output=True, text=True)
+
+        r = subprocess.run(
+            ["git", "mv", src, dest], cwd=state_root, capture_output=True, text=True
+        )
         moved = r.returncode == 0
         if not moved:
-            reason = (r.stderr.strip() or r.stdout.strip()
-                      or f"git mv exited {r.returncode}").replace("\n", " ")
+            reason = (
+                r.stderr.strip() or r.stdout.strip() or f"git mv exited {r.returncode}"
+            ).replace("\n", " ")
     except (OSError, ImportError) as e:
         moved = False
         reason = f"could not run git: {e}"
     if not moved:
         import shutil
+
         sys.stderr.write(
             f"pm-status.py: WARNING — `git mv` failed ({reason}); falling back to a plain "
             f"filesystem move of {src} -> {dest}. Git will see this as delete+add, not a "
@@ -4433,7 +4985,9 @@ def cmd_show(args) -> int:
         if not os.path.isdir(sd):
             _die_notfound(f"epic {args.epic} sprint {args.sprint}")
         r = rollup_sprint(args.state_root, args.epic, args.sprint)
-        sys.stdout.write(f"{args.epic}/{r['key']}  status={r['status']}  stories={r['story_count']}\n")
+        sys.stdout.write(
+            f"{args.epic}/{r['key']}  status={r['status']}  stories={r['story_count']}\n"
+        )
         for s in r["stories"]:
             sys.stdout.write(f"  {s['key']:<20} {s['status']}\n")
         sys.stdout.write(f"  actuals: {_fmt_actuals(r['actual_totals'])}\n")
@@ -4441,10 +4995,14 @@ def cmd_show(args) -> int:
         return 0
 
     r = rollup_epic(args.state_root, args.epic)
-    sys.stdout.write(f"{r['key']}  status={r['status']}  sprints={r['sprint_count']}  "
-                     f"stories={r['story_count']}\n")
+    sys.stdout.write(
+        f"{r['key']}  status={r['status']}  sprints={r['sprint_count']}  "
+        f"stories={r['story_count']}\n"
+    )
     for sp in r["sprints"]:
-        sys.stdout.write(f"  {sp['key']:<8} status={sp['status']:<12} stories={sp['story_count']}\n")
+        sys.stdout.write(
+            f"  {sp['key']:<8} status={sp['status']:<12} stories={sp['story_count']}\n"
+        )
     sys.stdout.write(f"  actuals: {_fmt_actuals(r['actual_totals'])}\n")
     _write_spend(r["spend"])
     return 0
@@ -4479,8 +5037,10 @@ def cmd_report(args) -> int:
         statuses = {x.strip() for x in args.status.split(",") if x.strip()}
         unknown = statuses - set(STATUS_DIRS)
         if unknown:
-            _die_usage(f"unknown --status value(s) {sorted(unknown)} "
-                       f"— expected a subset of {list(STATUS_DIRS)}")
+            _die_usage(
+                f"unknown --status value(s) {sorted(unknown)} "
+                f"— expected a subset of {list(STATUS_DIRS)}"
+            )
     elif args.all:
         statuses = set(STATUS_DIRS)
     else:
@@ -4489,8 +5049,9 @@ def cmd_report(args) -> int:
     def once() -> str:
         plan = load_plan(args.plan) if args.plan else None
         model = build_progress_model(args.state_root, plan=plan, statuses=statuses)
-        stalled = open_dispatches(args.state_root,
-                                  getattr(args, "stall_minutes", DEFAULT_STALL_MINUTES))
+        stalled = open_dispatches(
+            args.state_root, getattr(args, "stall_minutes", DEFAULT_STALL_MINUTES)
+        )
         if args.format == "json":
             model["stalled_dispatches"] = stalled
             return json.dumps(model, indent=2, sort_keys=True) + "\n"
@@ -4499,18 +5060,23 @@ def cmd_report(args) -> int:
             lines = ["", "STALLED DISPATCH (open past threshold):"]
             for s in stalled:
                 where = " ".join(x for x in (s["epic"], s["sprint"], s["story"]) if x)
-                lines.append(f"  {s['agent']:<20} {where:<28} "
-                             f"{s['age_minutes']}m  since {s['opened_at']}")
+                lines.append(
+                    f"  {s['agent']:<20} {where:<28} "
+                    f"{s['age_minutes']}m  since {s['opened_at']}"
+                )
             text = text + "\n".join(lines) + "\n"
         return text
 
     if args.watch:
         import time
+
         try:
             while True:
-                sys.stdout.write("\x1b[2J\x1b[H")   # clear + home
+                sys.stdout.write("\x1b[2J\x1b[H")  # clear + home
                 sys.stdout.write(once())
-                sys.stdout.write(f"\n[refreshing every {args.watch}s — Ctrl-C to stop]\n")
+                sys.stdout.write(
+                    f"\n[refreshing every {args.watch}s — Ctrl-C to stop]\n"
+                )
                 sys.stdout.flush()
                 time.sleep(args.watch)
         except KeyboardInterrupt:
@@ -4546,8 +5112,10 @@ def cmd_verify(args) -> int:
                 if stnode is None:
                     failures.append(f"{os.path.basename(stf)}: empty")
                     continue
-                failures += [f"{stnode.get('key', '?')}: {p}"
-                             for p in check_backrefs(stnode, args.epic, skey)]
+                failures += [
+                    f"{stnode.get('key', '?')}: {p}"
+                    for p in check_backrefs(stnode, args.epic, skey)
+                ]
         if failures:
             for f in failures:
                 sys.stderr.write(f"FAIL {f}\n")
@@ -4575,7 +5143,9 @@ def cmd_verify(args) -> int:
         else:  # tokens_k, cost
             if _is_na(val):
                 if args.require_tokens or args.runtime == "claude":
-                    problems.append(f"actual.{m}=N/A (forbidden under runtime=claude / --require-tokens)")
+                    problems.append(
+                        f"actual.{m}=N/A (forbidden under runtime=claude / --require-tokens)"
+                    )
 
     # tokens_k, once structured, is self-verifying: its total must equal the sum
     # of its four classes, and its cost must equal what those tokens price out to
@@ -4596,7 +5166,9 @@ def cmd_verify(args) -> int:
         # catching any genuine (typically integer-scale, since counts are whole
         # thousands of tokens) divergence.
         if total is None or abs(total - parts) > 0.01:
-            problems.append(f"actual.tokens_k.total={total!r} != sum of classes ({parts})")
+            problems.append(
+                f"actual.tokens_k.total={total!r} != sum of classes ({parts})"
+            )
         model = actual.get("model")
         if not model:
             problems.append("actual.model absent (cost cannot be verified)")
@@ -4617,8 +5189,9 @@ def cmd_verify(args) -> int:
                 # float-summation noise (~1e-9 to 1e-14) with enormous margin
                 # while catching any one-cent divergence.
                 if got is None or abs(got - expect) > 0.005:
-                    problems.append(f"actual.cost={got!r} != derived {expect} "
-                                    f"for model {model}")
+                    problems.append(
+                        f"actual.cost={got!r} != derived {expect} for model {model}"
+                    )
     elif "tokens_k" in actual and not _is_na(tk):
         # A bare scalar tokens_k has no class split, so the cost invariant above
         # cannot run at all — `tokens_k: 500` next to `cost: 9999.99` used to
@@ -4632,7 +5205,8 @@ def cmd_verify(args) -> int:
                 f"actual.tokens_k={tk!r} is not the per-class mapping — cost cannot be "
                 f"verified against it. Re-capture the four classes with set-actual "
                 f"--tokens-input/--tokens-output/--tokens-cache-write/--tokens-cache-read "
-                f"and --model (metrics-contract.md §3)")
+                f"and --model (metrics-contract.md §3)"
+            )
 
     if kind == "story" and "completion_evidence" not in node:
         problems.append("completion_evidence absent")
@@ -4681,8 +5255,11 @@ def _coerce(field: str, v: str):
 # CLI
 # --------------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="pm-status.py", description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        prog="pm-status.py",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def node_args(sp):
@@ -4691,64 +5268,117 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--sprint", help="zero-paddable sprint id")
 
     s = sub.add_parser("set-status", help="set a node's status atomically")
-    s.add_argument("--state-root", required=True, help="path to {implementation_artifacts}/state")
+    s.add_argument(
+        "--state-root", required=True, help="path to {implementation_artifacts}/state"
+    )
     node_args(s)
     s.add_argument("--status", required=True)
     s.add_argument("--title")
-    s.add_argument("--flock", action="store_true", help="acquire exclusive flock before write")
-    s.add_argument("--no-events", dest="no_events", action="store_true",
-                   help="skip the events.jsonl append for this call")
-    s.add_argument("--session-id", dest="session_id", default=None,
-                   help="recorded in the event payload; null when omitted")
+    s.add_argument(
+        "--flock", action="store_true", help="acquire exclusive flock before write"
+    )
+    s.add_argument(
+        "--no-events",
+        dest="no_events",
+        action="store_true",
+        help="skip the events.jsonl append for this call",
+    )
+    s.add_argument(
+        "--session-id",
+        dest="session_id",
+        default=None,
+        help="recorded in the event payload; null when omitted",
+    )
     s.set_defaults(func=cmd_set_status)
 
-    sd = sub.add_parser("sync-story-doc",
-                        help="write status into the story markdown's frontmatter")
-    sd.add_argument("--artifacts-root", required=True,
-                    help="implementation_artifacts root (NOT the state root)")
+    sd = sub.add_parser(
+        "sync-story-doc", help="write status into the story markdown's frontmatter"
+    )
+    sd.add_argument(
+        "--artifacts-root",
+        required=True,
+        help="implementation_artifacts root (NOT the state root)",
+    )
     sd.add_argument("--story", required=True)
     sd.add_argument("--status", required=True)
     sd.add_argument("--quiet", action="store_true")
     sd.set_defaults(func=cmd_sync_story_doc)
 
     a = sub.add_parser("set-actual", help="write a validated actual block")
-    a.add_argument("--state-root", required=True, help="path to {implementation_artifacts}/state")
+    a.add_argument(
+        "--state-root", required=True, help="path to {implementation_artifacts}/state"
+    )
     a.add_argument("--node", required=True, choices=["story", "sprint", "epic"])
     node_args(a)
-    a.add_argument("--block", choices=["actual", "orchestration"], default="actual",
-                   help="which metric block to write (orchestration: sprint/epic only)")
+    a.add_argument(
+        "--block",
+        choices=["actual", "orchestration"],
+        default="actual",
+        help="which metric block to write (orchestration: sprint/epic only)",
+    )
     a.add_argument("--elapsed-hours", dest="elapsed_hours")
     a.add_argument("--man-hours", dest="man_hours")
-    a.add_argument("--hitl-hours", dest="hitl_hours",
-                   help="human attention actually spent supervising (hours)")
+    a.add_argument(
+        "--hitl-hours",
+        dest="hitl_hours",
+        help="human attention actually spent supervising (hours)",
+    )
     a.add_argument("--tokens-input", dest="tokens_input")
     a.add_argument("--tokens-output", dest="tokens_output")
     a.add_argument("--tokens-cache-write", dest="tokens_cache_write")
     a.add_argument("--tokens-cache-read", dest="tokens_cache_read")
-    a.add_argument("--tokens-na", dest="tokens_na", action="store_true",
-                   help="record tokens/cost as N/A (runtime=other only)")
+    a.add_argument(
+        "--tokens-na",
+        dest="tokens_na",
+        action="store_true",
+        help="record tokens/cost as N/A (runtime=other only)",
+    )
     a.add_argument("--model", default="", help="model id that priced these tokens")
-    a.add_argument("--token-rates", dest="token_rates", default="",
-                   help="JSON object of per-model rate overrides")
+    a.add_argument(
+        "--token-rates",
+        dest="token_rates",
+        default="",
+        help="JSON object of per-model rate overrides",
+    )
     a.add_argument("--cost", default=None, help=argparse.SUPPRESS)
     a.add_argument("--runtime", choices=["claude", "other"], default="other")
-    a.add_argument("--flock", action="store_true", help="acquire exclusive flock before write")
-    a.add_argument("--no-calibrate", dest="no_calibrate", action="store_true",
-                   help="skip calibration sampling (backfills, replays)")
-    a.add_argument("--no-events", dest="no_events", action="store_true",
-                   help="skip the events.jsonl append for this call")
-    a.add_argument("--session-id", dest="session_id", default=None,
-                   help="recorded in the event payload; null when omitted")
+    a.add_argument(
+        "--flock", action="store_true", help="acquire exclusive flock before write"
+    )
+    a.add_argument(
+        "--no-calibrate",
+        dest="no_calibrate",
+        action="store_true",
+        help="skip calibration sampling (backfills, replays)",
+    )
+    a.add_argument(
+        "--no-events",
+        dest="no_events",
+        action="store_true",
+        help="skip the events.jsonl append for this call",
+    )
+    a.add_argument(
+        "--session-id",
+        dest="session_id",
+        default=None,
+        help="recorded in the event payload; null when omitted",
+    )
     a.set_defaults(func=cmd_set_actual)
 
     v = sub.add_parser("verify", help="read-back gate; nonzero exit on any gap")
-    v.add_argument("--state-root", required=True, help="path to {implementation_artifacts}/state")
+    v.add_argument(
+        "--state-root", required=True, help="path to {implementation_artifacts}/state"
+    )
     v.add_argument("--scope", required=True, choices=["story", "sprint", "epic"])
     node_args(v)
     v.add_argument("--require-tokens", action="store_true")
     v.add_argument("--runtime", choices=["claude", "other"], default="other")
-    v.add_argument("--token-rates", dest="token_rates", default="",
-                   help="JSON object of per-model rate overrides")
+    v.add_argument(
+        "--token-rates",
+        dest="token_rates",
+        default="",
+        help="JSON object of per-model rate overrides",
+    )
     v.set_defaults(func=cmd_verify)
 
     sh = sub.add_parser("show", help="render a computed sprint or epic roll-up")
@@ -4757,22 +5387,39 @@ def build_parser() -> argparse.ArgumentParser:
     sh.add_argument("--sprint", default="")
     sh.set_defaults(func=cmd_show)
 
-    rp = sub.add_parser("report", help="plan-aware progress report (read-only unless --out)")
+    rp = sub.add_parser(
+        "report", help="plan-aware progress report (read-only unless --out)"
+    )
     rp.add_argument("--state-root", required=True)
     rp.add_argument("--plan", default="", help="path to plan-output-meta.yaml")
     rp.add_argument("--format", choices=["tree", "json", "md"], default="tree")
     rp.add_argument("--out", default="", help="write to this file instead of stdout")
-    rp.add_argument("--all", action="store_true",
-                    help="show every status folder (sugar for --status planned,active,archived)")
-    rp.add_argument("--status", default="",
-                    help="comma list of state folders to display: planned, active, archived "
-                         "(default: planned,active). Counting is unaffected — phase "
-                         "denominators always see the whole tree")
-    rp.add_argument("--watch", type=int, default=0, metavar="SECS",
-                    help="re-render on an interval (tree only in practice)")
-    rp.add_argument("--stall-minutes", dest="stall_minutes", type=float,
-                    default=DEFAULT_STALL_MINUTES,
-                    help="flag dispatches open longer than this (default 15)")
+    rp.add_argument(
+        "--all",
+        action="store_true",
+        help="show every status folder (sugar for --status planned,active,archived)",
+    )
+    rp.add_argument(
+        "--status",
+        default="",
+        help="comma list of state folders to display: planned, active, archived "
+        "(default: planned,active). Counting is unaffected — phase "
+        "denominators always see the whole tree",
+    )
+    rp.add_argument(
+        "--watch",
+        type=int,
+        default=0,
+        metavar="SECS",
+        help="re-render on an interval (tree only in practice)",
+    )
+    rp.add_argument(
+        "--stall-minutes",
+        dest="stall_minutes",
+        type=float,
+        default=DEFAULT_STALL_MINUTES,
+        help="flag dispatches open longer than this (default 15)",
+    )
     rp.set_defaults(func=cmd_report)
 
     dp = sub.add_parser("dispatch", help="record a subagent dispatch open/close")
@@ -4785,9 +5432,17 @@ def build_parser() -> argparse.ArgumentParser:
     dp.add_argument("--session-id", dest="session_id", default=None)
     dp.set_defaults(func=cmd_dispatch)
 
-    si = sub.add_parser("self-install", help="copy this script to --dest, version-guarded")
-    si.add_argument("--dest", required=True, help="target path, e.g. {project-root}/_bmad/scripts/pm-status.py")
-    si.add_argument("--force", action="store_true", help="overwrite even if dest is same/newer")
+    si = sub.add_parser(
+        "self-install", help="copy this script to --dest, version-guarded"
+    )
+    si.add_argument(
+        "--dest",
+        required=True,
+        help="target path, e.g. {project-root}/_bmad/scripts/pm-status.py",
+    )
+    si.add_argument(
+        "--force", action="store_true", help="overwrite even if dest is same/newer"
+    )
     si.set_defaults(func=cmd_self_install)
 
     sl = sub.add_parser("set-lock", help="write _lock block to a per-epic active file")
@@ -4797,19 +5452,29 @@ def build_parser() -> argparse.ArgumentParser:
     sl.add_argument("--ttl-minutes", dest="ttl_minutes", type=int, default=30)
     sl.set_defaults(func=cmd_set_lock)
 
-    cl = sub.add_parser("clear-lock", help="remove _lock block from a per-epic active file")
+    cl = sub.add_parser(
+        "clear-lock", help="remove _lock block from a per-epic active file"
+    )
     cl.add_argument("--state-root", required=True)
     cl.add_argument("--epic", required=True, help="epic key, e.g. E001")
     cl.set_defaults(func=cmd_clear_lock)
 
-    ck = sub.add_parser("check-lock", help="check if a per-epic file is free to claim; exit 5 if held")
+    ck = sub.add_parser(
+        "check-lock", help="check if a per-epic file is free to claim; exit 5 if held"
+    )
     ck.add_argument("--state-root", required=True)
     ck.add_argument("--epic", required=True, help="epic key, e.g. E001")
-    ck.add_argument("--session-id", dest="session_id", required=True, help="caller's session id")
+    ck.add_argument(
+        "--session-id", dest="session_id", required=True, help="caller's session id"
+    )
     ck.set_defaults(func=cmd_check_lock)
 
-    se = sub.add_parser("set-estimate", help="write estimate block to a story, sprint, or epic node")
-    se.add_argument("--state-root", required=True, help="path to {implementation_artifacts}/state")
+    se = sub.add_parser(
+        "set-estimate", help="write estimate block to a story, sprint, or epic node"
+    )
+    se.add_argument(
+        "--state-root", required=True, help="path to {implementation_artifacts}/state"
+    )
     node_args(se)
     # Range fields (sprint/epic)
     se.add_argument("--man-hours-low", dest="man_hours_low")
@@ -4817,7 +5482,9 @@ def build_parser() -> argparse.ArgumentParser:
     se.add_argument("--hitl-hours-low", dest="hitl_hours_low")
     se.add_argument("--hitl-hours-high", dest="hitl_hours_high")
     se.add_argument("--elapsed-hours-low", "--time-hours-low", dest="elapsed_hours_low")
-    se.add_argument("--elapsed-hours-high", "--time-hours-high", dest="elapsed_hours_high")
+    se.add_argument(
+        "--elapsed-hours-high", "--time-hours-high", dest="elapsed_hours_high"
+    )
     se.add_argument("--tokens-k-min", dest="tokens_k_min")
     se.add_argument("--tokens-k-max", dest="tokens_k_max")
     # --cost / --cost-low / --cost-high are declared but SUPPRESSed from --help
@@ -4830,61 +5497,116 @@ def build_parser() -> argparse.ArgumentParser:
     se.add_argument("--cost-high", dest="cost_high", help=argparse.SUPPRESS)
     # Single-value fields (story)
     se.add_argument("--man-hours", dest="man_hours")
-    se.add_argument("--hitl-hours", dest="hitl_hours",
-                    help="human attention actually spent supervising (hours)")
-    se.add_argument("--elapsed-hours", "--time-hours", dest="elapsed_hours",
-                    help="--time-hours is a deprecated alias")
-    se.add_argument("--tokens-k", dest="tokens_k_min")  # alias to tokens_k_min for story use
+    se.add_argument(
+        "--hitl-hours",
+        dest="hitl_hours",
+        help="human attention actually spent supervising (hours)",
+    )
+    se.add_argument(
+        "--elapsed-hours",
+        "--time-hours",
+        dest="elapsed_hours",
+        help="--time-hours is a deprecated alias",
+    )
+    se.add_argument(
+        "--tokens-k", dest="tokens_k_min"
+    )  # alias to tokens_k_min for story use
     se.add_argument("--cost", dest="cost", help=argparse.SUPPRESS)
     se.add_argument("--confidence", choices=["low", "medium", "high"])
-    se.add_argument("--fix-factor", dest="fix_factor",
-                    help="fix multiplier applied; required for the scope/fix split")
-    se.add_argument("--scope-ratio", dest="scope_ratio",
-                    help="calibrated scope ratio applied (1.0 when cold-start)")
-    se.add_argument("--flock", action="store_true", help="acquire exclusive flock before write")
+    se.add_argument(
+        "--fix-factor",
+        dest="fix_factor",
+        help="fix multiplier applied; required for the scope/fix split",
+    )
+    se.add_argument(
+        "--scope-ratio",
+        dest="scope_ratio",
+        help="calibrated scope ratio applied (1.0 when cold-start)",
+    )
+    se.add_argument(
+        "--flock", action="store_true", help="acquire exclusive flock before write"
+    )
     se.set_defaults(func=cmd_set_estimate)
 
-    sf = sub.add_parser("set-field", help="set a nested field at a dot-path within a node")
-    sf.add_argument("--state-root", required=True, help="path to {implementation_artifacts}/state")
+    sf = sub.add_parser(
+        "set-field", help="set a nested field at a dot-path within a node"
+    )
+    sf.add_argument(
+        "--state-root", required=True, help="path to {implementation_artifacts}/state"
+    )
     node_args(sf)
-    sf.add_argument("--field", required=True, help="dot-path within the node, e.g. 'retrospective.summary'")
+    sf.add_argument(
+        "--field",
+        required=True,
+        help="dot-path within the node, e.g. 'retrospective.summary'",
+    )
     sf.add_argument("--value", required=True, help="string value to set")
     sf.set_defaults(func=cmd_set_field)
 
-    a = sub.add_parser("add-test-run", help="record one executed test command and its exit code")
-    a.add_argument("--state-root", required=True, help="path to {implementation_artifacts}/state")
+    a = sub.add_parser(
+        "add-test-run", help="record one executed test command and its exit code"
+    )
+    a.add_argument(
+        "--state-root", required=True, help="path to {implementation_artifacts}/state"
+    )
     a.add_argument("--story", required=True)
-    a.add_argument("--command", required=True, help="the test command actually executed")
+    a.add_argument(
+        "--command", required=True, help="the test command actually executed"
+    )
     a.add_argument("--exit-code", dest="exit_code", type=int, required=True)
     a.set_defaults(func=cmd_add_test_run)
 
     ai = sub.add_parser("append-issue", help="append a BL item to state/issues.yaml")
     ai.add_argument("--file", required=True)
-    ai.add_argument("--key", default="",
-                    help="BL-E{nnn}-{nnn}; omit to auto-allocate the next number for "
-                         "--epic under a lock. An explicit key that already exists "
-                         "exits 2 rather than being silently reassigned.")
+    ai.add_argument(
+        "--key",
+        default="",
+        help="BL-E{nnn}-{nnn}; omit to auto-allocate the next number for "
+        "--epic under a lock. An explicit key that already exists "
+        "exits 2 rather than being silently reassigned.",
+    )
     ai.add_argument("--epic", required=True, help="zero-padded epic number, e.g. '001'")
-    ai.add_argument("--sprint", default="", help="zero-padded sprint number; empty for epic-level")
+    ai.add_argument(
+        "--sprint", default="", help="zero-padded sprint number; empty for epic-level"
+    )
     ai.add_argument("--title", required=True)
     ai.add_argument("--source", required=True, help="review phase + finding ID")
-    ai.add_argument("--severity", required=True, choices=["Low", "Medium", "High", "Critical"])
+    ai.add_argument(
+        "--severity", required=True, choices=["Low", "Medium", "High", "Critical"]
+    )
     ai.add_argument("--description", default="")
-    ai.add_argument("--allow-duplicate", dest="allow_duplicate", action="store_true",
-                    help="append even if an existing item matches this title+epic+"
-                         "sprint+source (default: skip and exit 0)")
+    ai.add_argument(
+        "--allow-duplicate",
+        dest="allow_duplicate",
+        action="store_true",
+        help="append even if an existing item matches this title+epic+"
+        "sprint+source (default: skip and exit 0)",
+    )
     ai.set_defaults(func=cmd_append_issue)
 
-    li = sub.add_parser("list-issues", help="list (with filters) the flat backlog in issues.yaml")
-    li.add_argument("--state-root", required=True, help="path to {implementation_artifacts}/state")
+    li = sub.add_parser(
+        "list-issues", help="list (with filters) the flat backlog in issues.yaml"
+    )
+    li.add_argument(
+        "--state-root", required=True, help="path to {implementation_artifacts}/state"
+    )
     li.add_argument("--epic", help="epic id — accepts 'E001' or '001'")
-    li.add_argument("--sprint", help="sprint id — accepts 'S01' or '01'; never matches an epic-level (empty-sprint) item")
-    li.add_argument("--severity", action="append", choices=["Low", "Medium", "High", "Critical"],
-                    help="filter by severity; repeat to OR multiple severities")
+    li.add_argument(
+        "--sprint",
+        help="sprint id — accepts 'S01' or '01'; never matches an epic-level (empty-sprint) item",
+    )
+    li.add_argument(
+        "--severity",
+        action="append",
+        choices=["Low", "Medium", "High", "Critical"],
+        help="filter by severity; repeat to OR multiple severities",
+    )
     li.add_argument("--format", choices=["text", "json"], default="text")
     li.set_defaults(func=cmd_list_issues)
 
-    mv = sub.add_parser("move-epic", help="move an epic directory between status folders")
+    mv = sub.add_parser(
+        "move-epic", help="move an epic directory between status folders"
+    )
     mv.add_argument("--state-root", required=True)
     mv.add_argument("--epic", required=True)
     mv.add_argument("--to", required=True, choices=list(STATUS_DIRS))
@@ -4895,25 +5617,45 @@ def build_parser() -> argparse.ArgumentParser:
     ae.add_argument("--epic", required=True)
     ae.set_defaults(func=cmd_move_epic, to="archived")
 
-    up = sub.add_parser("usage", help="sum a session transcript's token usage, by class")
-    up.add_argument("transcript", nargs="*",
-                    help="transcript .jsonl file(s) or directory(ies); omit to resolve this "
-                         "session's own transcript from $" + CLAUDE_SESSION_ENV)
-    up.add_argument("--claude-session", dest="claude_session", default="",
-                    help="the Claude session id the transcript must belong to (NOT the l3io "
-                         "run --session-id); defaults to $" + CLAUDE_SESSION_ENV)
+    up = sub.add_parser(
+        "usage", help="sum a session transcript's token usage, by class"
+    )
+    up.add_argument(
+        "transcript",
+        nargs="*",
+        help="transcript .jsonl file(s) or directory(ies); omit to resolve this "
+        "session's own transcript from $" + CLAUDE_SESSION_ENV,
+    )
+    up.add_argument(
+        "--claude-session",
+        dest="claude_session",
+        default="",
+        help="the Claude session id the transcript must belong to (NOT the l3io "
+        "run --session-id); defaults to $" + CLAUDE_SESSION_ENV,
+    )
     up.add_argument("--state-root", default="", help="state root, to read events.jsonl")
-    up.add_argument("--agent", default="", help="scope to this agent's dispatch bracket")
+    up.add_argument(
+        "--agent", default="", help="scope to this agent's dispatch bracket"
+    )
     up.add_argument("--epic", default="", help="scope to this epic")
     up.add_argument("--sprint", default="", help="scope to this sprint")
     up.add_argument("--story", default="", help="scope to this story")
     up.add_argument("--since", default="", help="ISO timestamp lower bound")
     up.add_argument("--until", default="", help="ISO timestamp upper bound")
-    up.add_argument("--allow-unidentified", action="store_true",
-                    help="sum a file that cannot be confirmed as this session's transcript")
-    up.add_argument("--model", default="", help="also price the total at this model's rates")
-    up.add_argument("--token-rates", dest="token_rates", default="",
-                    help="JSON overrides for the rate table")
+    up.add_argument(
+        "--allow-unidentified",
+        action="store_true",
+        help="sum a file that cannot be confirmed as this session's transcript",
+    )
+    up.add_argument(
+        "--model", default="", help="also price the total at this model's rates"
+    )
+    up.add_argument(
+        "--token-rates",
+        dest="token_rates",
+        default="",
+        help="JSON overrides for the rate table",
+    )
     up.add_argument("--format", choices=["text", "json"], default="text")
     up.set_defaults(func=cmd_usage)
 
@@ -4928,37 +5670,63 @@ def build_parser() -> argparse.ArgumentParser:
     es.add_argument("--story", required=True)
     es.add_argument("--classification", required=True, choices=list(CLASSIFICATIONS))
     es.add_argument("--confidence", choices=["low", "medium", "high"])
-    es.add_argument("--model", default="",
-                    help="model id to price the derived cost; falls back to DEFAULT_ESTIMATE_MODEL")
-    es.add_argument("--token-rates", dest="token_rates", default="",
-                    help="JSON object of per-model rate overrides")
+    es.add_argument(
+        "--model",
+        default="",
+        help="model id to price the derived cost; falls back to DEFAULT_ESTIMATE_MODEL",
+    )
+    es.add_argument(
+        "--token-rates",
+        dest="token_rates",
+        default="",
+        help="JSON object of per-model rate overrides",
+    )
     es.set_defaults(func=cmd_estimate_story)
 
-    er = sub.add_parser("estimate-rollup", help="roll child estimates up to a sprint or epic")
+    er = sub.add_parser(
+        "estimate-rollup", help="roll child estimates up to a sprint or epic"
+    )
     er.add_argument("--state-root", required=True)
     er.add_argument("--epic", required=True)
     er.add_argument("--sprint", default="")
-    er.add_argument("--model", default="",
-                    help="model id to price the derived cost; falls back to DEFAULT_ESTIMATE_MODEL")
-    er.add_argument("--token-rates", dest="token_rates", default="",
-                    help="JSON object of per-model rate overrides")
+    er.add_argument(
+        "--model",
+        default="",
+        help="model id to price the derived cost; falls back to DEFAULT_ESTIMATE_MODEL",
+    )
+    er.add_argument(
+        "--token-rates",
+        dest="token_rates",
+        default="",
+        help="JSON object of per-model rate overrides",
+    )
     er.set_defaults(func=cmd_estimate_rollup)
 
-    rt = sub.add_parser("rates", help="print the effective token rate table (read-only)")
+    rt = sub.add_parser(
+        "rates", help="print the effective token rate table (read-only)"
+    )
     rt.add_argument("--model", default="")
-    rt.add_argument("--token-rates", dest="token_rates", default="",
-                    help="JSON object of per-model rate overrides")
+    rt.add_argument(
+        "--token-rates",
+        dest="token_rates",
+        default="",
+        help="JSON object of per-model rate overrides",
+    )
     rt.set_defaults(func=cmd_rates)
 
-    ar = sub.add_parser("adr-reserve",
-                        help="reserve N sequential ADR numbers under a lock, before dispatch")
+    ar = sub.add_parser(
+        "adr-reserve",
+        help="reserve N sequential ADR numbers under a lock, before dispatch",
+    )
     ar.add_argument("--state-root", required=True)
     ar.add_argument("--epic", required=True)
     ar.add_argument("--slug", required=True)
     ar.add_argument("--count", type=int, default=1)
     ar.set_defaults(func=cmd_adr_reserve)
 
-    p.add_argument("--version", action="version", version=f"pm-status.py {PM_STATUS_VERSION}")
+    p.add_argument(
+        "--version", action="version", version=f"pm-status.py {PM_STATUS_VERSION}"
+    )
     return p
 
 

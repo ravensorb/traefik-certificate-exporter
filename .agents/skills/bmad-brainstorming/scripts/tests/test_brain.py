@@ -3,6 +3,7 @@
 # dependencies = ["pytest>=8.0"]
 # ///
 """Tests for brain.py. Run: uv run -m pytest scripts/tests/test_brain.py"""
+
 import json
 import sys
 from pathlib import Path
@@ -10,7 +11,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import brain  # noqa: E402
+import brain
 
 CSV = """category,technique_name,description,detail
 collaborative,Yes And Building,Build on every idea with "yes and" to keep momentum,
@@ -19,7 +20,9 @@ structured,SCAMPER Method,Run the idea through seven transformation lenses,
 wild,Anti-Solution,Brainstorm how to make the problem worse then invert,
 """
 
-DETAIL = "# Quantum Superposition\nFull multi-step instructions for the complex technique."
+DETAIL = (
+    "# Quantum Superposition\nFull multi-step instructions for the complex technique."
+)
 
 
 @pytest.fixture
@@ -39,12 +42,19 @@ def test_load_normalizes_detail(lib):
 
 
 def test_categories_counts_sorted(lib):
-    assert brain.categories(brain.load(lib)) == [("collaborative", 1), ("structured", 1), ("wild", 2)]
+    assert brain.categories(brain.load(lib)) == [
+        ("collaborative", 1),
+        ("structured", 1),
+        ("wild", 2),
+    ]
 
 
 def test_filter_is_case_insensitive(lib):
     rows = brain.filter_cats(brain.load(lib), ["WILD"])
-    assert {r["technique_name"] for r in rows} == {"Quantum Superposition", "Anti-Solution"}
+    assert {r["technique_name"] for r in rows} == {
+        "Quantum Superposition",
+        "Anti-Solution",
+    }
 
 
 def test_filter_none_returns_all(lib):
@@ -112,6 +122,7 @@ def test_list_all_dumps_everything(lib, capsys):
 
 def test_json_output(lib, capsys):
     import json
+
     brain.main(["--file", str(lib), "--json", "categories"])
     data = json.loads(capsys.readouterr().out)
     assert {"category": "wild", "count": 2} in data
@@ -135,6 +146,7 @@ def test_missing_file_returns_2(tmp_path):
 
 
 # --- html selection page ------------------------------------------------
+
 
 def test_html_requires_out(lib, capsys):
     # never dump the catalog to stdout — writing to a file is the whole point
@@ -183,7 +195,17 @@ def test_extra_merges_into_categories(lib, extra, capsys):
 
 
 def test_extra_appears_in_list_and_random(lib, extra, capsys):
-    brain.main(["--file", str(lib), "--extra", str(extra), "list", "--category", "domain-specific"])
+    brain.main(
+        [
+            "--file",
+            str(lib),
+            "--extra",
+            str(extra),
+            "list",
+            "--category",
+            "domain-specific",
+        ]
+    )
     assert "Regulatory Inversion" in capsys.readouterr().out
 
 
@@ -191,7 +213,15 @@ def test_extra_replaces_shipped_row_by_name(lib, extra, tmp_path, capsys):
     shipped = brain.load(Path(lib))[0]
     overlay = tmp_path / "replace.json"
     overlay.write_text(
-        json.dumps([{"category": shipped["category"], "technique_name": shipped["technique_name"], "description": "RETUNED"}]),
+        json.dumps(
+            [
+                {
+                    "category": shipped["category"],
+                    "technique_name": shipped["technique_name"],
+                    "description": "RETUNED",
+                }
+            ]
+        ),
         encoding="utf-8",
     )
     brain.main(["--file", str(lib), "--extra", str(overlay), "list", "--all"])
@@ -202,7 +232,7 @@ def test_extra_replaces_shipped_row_by_name(lib, extra, tmp_path, capsys):
 
 def test_extra_malformed_exits_cleanly(lib, tmp_path, capsys):
     bad = tmp_path / "bad.json"
-    for content in ('{not json', '{"a": 1}', '["not-an-object"]'):
+    for content in ("{not json", '{"a": 1}', '["not-an-object"]'):
         bad.write_text(content, encoding="utf-8")
         assert brain.main(["--file", str(lib), "--extra", str(bad), "categories"]) == 2
         assert "could not read --extra" in capsys.readouterr().err
@@ -210,7 +240,12 @@ def test_extra_malformed_exits_cleanly(lib, tmp_path, capsys):
 
 def test_extra_is_first_class_in_html(lib, extra, tmp_path):
     out = tmp_path / "sel.html"
-    assert brain.main(["--file", str(lib), "--extra", str(extra), "html", "--out", str(out)]) == 0
+    assert (
+        brain.main(
+            ["--file", str(lib), "--extra", str(extra), "html", "--out", str(out)]
+        )
+        == 0
+    )
     doc = out.read_text(encoding="utf-8")
     # custom technique is selectable and its new category renders without crashing (fallback glyph/hue)
     assert "Regulatory Inversion" in doc
@@ -218,7 +253,12 @@ def test_extra_is_first_class_in_html(lib, extra, tmp_path):
 
 
 def test_extra_missing_file_returns_2(lib, tmp_path):
-    assert brain.main(["--file", str(lib), "--extra", str(tmp_path / "nope.json"), "categories"]) == 2
+    assert (
+        brain.main(
+            ["--file", str(lib), "--extra", str(tmp_path / "nope.json"), "categories"]
+        )
+        == 2
+    )
 
 
 def test_unknown_category_style_uses_fallback_glyph():

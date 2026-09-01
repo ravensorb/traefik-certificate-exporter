@@ -424,9 +424,7 @@ def test_merge_commits_listed_but_excluded_from_files(tmp_path):
 def test_story_attribution_survives_merges(tmp_path):
     repo, base = _merge_repo(tmp_path)
     out = _json(
-        _proc(
-            "--repo", str(repo), "--range", f"{base}..HEAD", "--stories", "1-2,1-3"
-        )
+        _proc("--repo", str(repo), "--range", f"{base}..HEAD", "--stories", "1-2,1-3")
     )
     by_subject = {c["subject"]: c for c in out["commits"]}
     assert by_subject["epic-1-2 story one"]["stories"] == ["1-2"]
@@ -621,9 +619,7 @@ def test_multi_story_subject_attributes_to_every_match(tmp_path):
     _git(repo, "commit", "-qam", "fix seam between 1-2 and 1-3")
 
     out = _json(
-        _proc(
-            "--repo", str(repo), "--range", "HEAD~1..HEAD", "--stories", "1-3,1-2"
-        )
+        _proc("--repo", str(repo), "--range", "HEAD~1..HEAD", "--stories", "1-3,1-2")
     )
     # Every match, in --stories order — not whichever id was passed first.
     assert out["commits"][0]["stories"] == ["1-3", "1-2"]
@@ -650,9 +646,7 @@ def test_subject_naming_no_story_gets_an_empty_list(tmp_path):
     _git(repo, "commit", "-qam", "chore: tidy imports")
 
     out = _json(
-        _proc(
-            "--repo", str(repo), "--range", "HEAD~1..HEAD", "--stories", "1-2,1-3"
-        )
+        _proc("--repo", str(repo), "--range", "HEAD~1..HEAD", "--stories", "1-2,1-3")
     )
     assert out["commits"][0]["stories"] == []
 

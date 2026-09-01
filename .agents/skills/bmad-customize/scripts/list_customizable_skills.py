@@ -32,8 +32,9 @@ import argparse
 import json
 import re
 import sys
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 # Top-level TOML blocks that indicate a customization surface.
 SURFACE_KEYS = ("agent", "workflow")
@@ -143,9 +144,7 @@ def scan_skills(
             # both. Emit one entry per surface so the caller can group cleanly.
             surfaces_found = [k for k in SURFACE_KEYS if k in data]
             if not surfaces_found:
-                errors.append(
-                    f"no [agent] or [workflow] block in {customize_toml}"
-                )
+                errors.append(f"no [agent] or [workflow] block in {customize_toml}")
                 continue
             for surface in surfaces_found:
                 entry = dict(entry_base)

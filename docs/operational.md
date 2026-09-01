@@ -72,6 +72,44 @@ None today — no metrics endpoint, no health check (PRD backlog item #15). The 
 is the process's stdout/log-file output; monitor container/process liveness externally
 (e.g. `docker inspect` health status is not configured either).
 
+## Recover a failed release push
+
+An atomic-push failure leaves the prepared local version commit and annotated exact tag intact for
+inspection. It does not confirm that either remote ref changed, and the helper never retries with a
+broad, forced, separate, or non-atomic push.
+
+First inspect the local and remote identities without changing them (replace the example version
+and branch with the values printed by the failed command):
+
+```bash
+git status --short
+git show --stat --decorate HEAD
+git cat-file -t v1.2.4
+git rev-parse HEAD 'HEAD^' 'v1.2.4^{}'
+git ls-remote --symref origin HEAD
+git ls-remote origin refs/heads/main refs/tags/v1.2.4 'refs/tags/v1.2.4^{}'
+poetry version --short
+```
+
+If the working tree is clean, `HEAD` is the sole unpushed release commit, the exact matching tag is
+annotated, its version equals Poetry's committed version, the remote branch still equals the local
+commit's parent, and the remote tag is absent, resume through the guard:
+
+```bash
+just release-resume
+```
+
+Resume does not recalculate a version, create another commit, or replace the tag. It refetches,
+revalidates the recovery state, and repeats the same atomic two-ref push. Changed or ambiguous
+state, multiple tags, a lightweight tag, or an already-present remote tag is refused without a
+push.
+
+Manual abandon is deliberately non-destructive. Valid choices include leaving the local commit and
+tag in place while the incident is investigated, recording their object IDs in the incident notes,
+or adding an archival branch such as `git branch archive/release-v1.2.4 HEAD`. This runbook does not
+prescribe deleting tags, resetting a branch, or rewriting history; any later cleanup should be a
+separate maintainer decision made after the refs are understood and preserved.
+
 ## Rollback
 
 Pin the previous image tag/PyPI version; there is no migration/state to roll back — the

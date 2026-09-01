@@ -62,7 +62,16 @@ def _run_json(cmd):
 def load_agents(project_root: Path):
     """Installed agents as {code: entry}. Empty dict (with a flag) on failure."""
     script = project_root / "_bmad" / "scripts" / "resolve_config.py"
-    data = _run_json([sys.executable, str(script), "--project-root", str(project_root), "--key", "agents"])
+    data = _run_json(
+        [
+            sys.executable,
+            str(script),
+            "--project-root",
+            str(project_root),
+            "--key",
+            "agents",
+        ]
+    )
     if data is None:
         return {}, False
     return data.get("agents", {}) or {}, True
@@ -71,7 +80,9 @@ def load_agents(project_root: Path):
 def load_workflow(project_root: Path, skill_root: Path):
     """Merged [workflow] table. Falls back to the skill's base customize.toml."""
     script = project_root / "_bmad" / "scripts" / "resolve_customization.py"
-    data = _run_json([sys.executable, str(script), "--skill", str(skill_root), "--key", "workflow"])
+    data = _run_json(
+        [sys.executable, str(script), "--skill", str(skill_root), "--key", "workflow"]
+    )
     if data is not None and "workflow" in data:
         return data["workflow"]
     # Fallback: read the skill's base customize.toml directly (no override merge).
@@ -89,7 +100,7 @@ def _alias(code: str) -> str:
     """Short alias for an installed agent code: bmad-agent-analyst -> analyst."""
     for prefix in ("bmad-agent-", "bmad-"):
         if code.startswith(prefix):
-            return code[len(prefix):]
+            return code[len(prefix) :]
     return code
 
 
@@ -121,19 +132,22 @@ def build_collective(agents: dict, party_members: list):
             index[name.lower()] = code
 
     for code, info in agents.items():
-        register(code, {
-            "code": code,
-            "name": info.get("name", code),
-            "icon": info.get("icon", ""),
-            "title": info.get("title", ""),
-            "description": info.get("description", ""),
-            "module": info.get("module", ""),
-            "team": info.get("team", ""),
-            "source": "installed",
-        })
+        register(
+            code,
+            {
+                "code": code,
+                "name": info.get("name", code),
+                "icon": info.get("icon", ""),
+                "title": info.get("title", ""),
+                "description": info.get("description", ""),
+                "module": info.get("module", ""),
+                "team": info.get("team", ""),
+                "source": "installed",
+            },
+        )
         installed_codes.append(code)
 
-    for m in (party_members if isinstance(party_members, list) else []):
+    for m in party_members if isinstance(party_members, list) else []:
         if not isinstance(m, dict):
             continue
         code = m.get("code")
@@ -177,8 +191,11 @@ def group_menu(groups):
         if not isinstance(g, dict) or not g.get("id"):
             continue
         members = g.get("members", []) or []
-        entry = {"id": g["id"], "name": g.get("name", g["id"]),
-                 "member_count": len(members)}
+        entry = {
+            "id": g["id"],
+            "name": g.get("name", g["id"]),
+            "member_count": len(members),
+        }
         if not members:
             entry["open_cast"] = True
         out.append(entry)
@@ -206,9 +223,13 @@ def group_detail(g, collective, index):
     """
     raw_members = g.get("members", []) or []
     members, unresolved = resolve_members(raw_members, collective, index)
-    detail = {"active": g["id"], "name": g.get("name", g["id"]),
-              "members": members, "unresolved": unresolved,
-              "memory_enabled": bool(g.get("memory", False))}
+    detail = {
+        "active": g["id"],
+        "name": g.get("name", g["id"]),
+        "members": members,
+        "unresolved": unresolved,
+        "memory_enabled": bool(g.get("memory", False)),
+    }
     if g.get("scene"):
         detail["scene"] = g["scene"]
     if not raw_members:
@@ -219,7 +240,9 @@ def group_detail(g, collective, index):
 def main():
     ap = argparse.ArgumentParser(description="Resolve the party-mode roster, lazily.")
     ap.add_argument("--project-root", required=True)
-    ap.add_argument("--skill", required=True, help="Path to the bmad-party-mode skill dir")
+    ap.add_argument(
+        "--skill", required=True, help="Path to the bmad-party-mode skill dir"
+    )
     ap.add_argument("--party", help="Resolve full detail for this group id")
     ap.add_argument("--list-groups", action="store_true", help="Group names only")
     args = ap.parse_args()
@@ -237,37 +260,53 @@ def main():
 
     # Group menu never needs the (more expensive) installed-agent resolve.
     if args.list_groups:
-        _emit({
-            "party_mode": party_mode,
-            "default_party": default_party,
-            "groups": group_menu(groups),
-        })
+        _emit(
+            {
+                "party_mode": party_mode,
+                "default_party": default_party,
+                "groups": group_menu(groups),
+            }
+        )
         return
 
     agents, agents_ok = load_agents(project_root)
-    collective, index, installed_codes = build_collective(agents, workflow.get("party_members", []))
+    collective, index, installed_codes = build_collective(
+        agents, workflow.get("party_members", [])
+    )
 
     if args.party:
         g = find_group(groups, args.party)
         if g is None:
-            _emit({"error": "unknown_group", "requested": args.party,
-                   "available": group_menu(groups)})
+            _emit(
+                {
+                    "error": "unknown_group",
+                    "requested": args.party,
+                    "available": group_menu(groups),
+                }
+            )
             return
         _emit({**group_detail(g, collective, index), "party_mode": party_mode})
         return
 
     # Default: the active roster to load on entry.
-    result = {"party_mode": party_mode, "groups": group_menu(groups),
-              "installed_agents_resolved": agents_ok}
+    result = {
+        "party_mode": party_mode,
+        "groups": group_menu(groups),
+        "installed_agents_resolved": agents_ok,
+    }
     g = find_group(groups, default_party) if default_party else None
     if g is not None:
         result.update(group_detail(g, collective, index))
     else:
         # No default group: the installed agents (custom additions stay in the
         # pool but don't crowd the default room), exactly like a plain install.
-        result.update({"active": "installed",
-                       "members": [collective[c] for c in installed_codes],
-                       "memory_enabled": party_memory})
+        result.update(
+            {
+                "active": "installed",
+                "members": [collective[c] for c in installed_codes],
+                "memory_enabled": party_memory,
+            }
+        )
     _emit(result)
 
 

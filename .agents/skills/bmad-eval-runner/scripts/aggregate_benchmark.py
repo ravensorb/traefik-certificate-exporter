@@ -41,11 +41,11 @@ import math
 import sys
 from pathlib import Path
 
-
 NUMERIC = (int, float)
 
 
 # --- statistics -------------------------------------------------------------
+
 
 def sample_stddev(values: list[float]) -> float:
     """Sample standard deviation using n-1 (Bessel's correction).
@@ -89,8 +89,9 @@ def summarize_config(records: list[dict]) -> dict:
     by_metric = collect_numeric_metrics(records)
     return {
         "runs": len(records),
-        "metrics": {name: summarize_metric(vals)
-                    for name, vals in sorted(by_metric.items())},
+        "metrics": {
+            name: summarize_metric(vals) for name, vals in sorted(by_metric.items())
+        },
     }
 
 
@@ -118,6 +119,7 @@ def delta_configs(baseline: dict, variant: dict) -> dict:
 
 # --- input loading ----------------------------------------------------------
 
+
 def load_records(path: Path) -> list[dict]:
     """Load run records from a JSON file, a {'runs': [...]} file, or a dir of
     timing.json files."""
@@ -141,6 +143,7 @@ def load_records(path: Path) -> list[dict]:
 
 
 # --- self-test --------------------------------------------------------------
+
 
 def run_self_test() -> int:
     """Verify mean/stddev/min/max/delta on a known fixture."""
@@ -185,28 +188,50 @@ def run_self_test() -> int:
     assert abs(d["total_tokens"]["delta"] + 100.0) < 1e-9, d
     assert abs(d["total_tokens"]["delta_pct"] + 50.0) < 1e-9, d
 
-    print(json.dumps({"self_test": "passed",
-                      "checked": ["mean", "stddev_n_minus_1", "min", "max",
-                                  "single_value_stddev", "bool_excluded",
-                                  "delta", "delta_pct"]}))
+    print(
+        json.dumps(
+            {
+                "self_test": "passed",
+                "checked": [
+                    "mean",
+                    "stddev_n_minus_1",
+                    "min",
+                    "max",
+                    "single_value_stddev",
+                    "bool_excluded",
+                    "delta",
+                    "delta_pct",
+                ],
+            }
+        )
+    )
     return 0
 
 
 # --- main -------------------------------------------------------------------
+
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("--runs", type=Path,
-                   help="summarize one config (JSON file or dir of timing.json)")
-    p.add_argument("--baseline", type=Path,
-                   help="baseline config for a two-config comparison")
-    p.add_argument("--variant", type=Path,
-                   help="variant config for a two-config comparison")
-    p.add_argument("--self-test", action="store_true",
-                   help="run the built-in fixture self-test and exit")
+    p.add_argument(
+        "--runs",
+        type=Path,
+        help="summarize one config (JSON file or dir of timing.json)",
+    )
+    p.add_argument(
+        "--baseline", type=Path, help="baseline config for a two-config comparison"
+    )
+    p.add_argument(
+        "--variant", type=Path, help="variant config for a two-config comparison"
+    )
+    p.add_argument(
+        "--self-test",
+        action="store_true",
+        help="run the built-in fixture self-test and exit",
+    )
     args = p.parse_args(argv)
 
     if args.self_test:

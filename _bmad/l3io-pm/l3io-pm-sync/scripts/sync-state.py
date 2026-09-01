@@ -26,7 +26,6 @@ from pathlib import Path
 
 import yaml
 
-
 STATE_FILE = "_bmad/sync-state.yaml"
 
 
@@ -45,7 +44,9 @@ def save_state(project_root: Path, state: dict) -> None:
     state_path = project_root / STATE_FILE
     state_path.parent.mkdir(parents=True, exist_ok=True)
     with state_path.open("w") as f:
-        yaml.dump(state, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        yaml.dump(
+            state, f, default_flow_style=False, allow_unicode=True, sort_keys=False
+        )
 
 
 def now_iso() -> str:
@@ -88,7 +89,10 @@ def cmd_get_remote(project_root: Path, args: list[str]) -> int:
 
 def cmd_upsert(project_root: Path, args: list[str]) -> int:
     if not args:
-        print("ERROR: upsert requires '-' (stdin), '@<file>' (file path), or a JSON string", file=sys.stderr)
+        print(
+            "ERROR: upsert requires '-' (stdin), '@<file>' (file path), or a JSON string",
+            file=sys.stderr,
+        )
         return 1
     source = args[0]
     try:
@@ -157,9 +161,7 @@ def cmd_remove(project_root: Path, args: list[str]) -> int:
     bmad_key = args[0]
     state = load_state(project_root)
     before = len(state["mappings"])
-    state["mappings"] = [
-        e for e in state["mappings"] if e.get("bmad_key") != bmad_key
-    ]
+    state["mappings"] = [e for e in state["mappings"] if e.get("bmad_key") != bmad_key]
     if len(state["mappings"]) == before:
         print(f"ERROR: No mapping found for bmad_key={bmad_key}", file=sys.stderr)
         return 1

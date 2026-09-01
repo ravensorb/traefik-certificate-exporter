@@ -1,0 +1,110 @@
+generated: "2026-09-01T21:40:00Z"
+plan_version: 2
+readiness: amber
+stories_elaborated: 6
+total_epics_in_scope: 2
+
+# Epics 1-7 are complete and archived. Phase numbering continues from the previous
+# snapshot for continuity of reference.
+phases:
+  - phase: 2
+    parallel: false
+    epics: ['E008']
+    dependencies: ['E007']
+    estimate:
+      estimates_as_of: "2026-09-01T21:40:00Z"
+      wall_clock_hours_low: 3.6
+      wall_clock_hours_high: 3.72
+      man_hours_low: 137.36
+      man_hours_high: 142.55
+      hitl_hours_low: 0.0
+      hitl_hours_high: 0.0
+      tokens_k_min: 2714
+      tokens_k_max: 3084
+      cost_low: 11.2
+      cost_high: 12.72
+      confidence: medium
+  - phase: 3
+    parallel: false
+    epics: ['E009']
+    dependencies: ['E008']
+    estimate:
+      estimates_as_of: "2026-09-01T21:40:00Z"
+      wall_clock_hours_low: 2.74
+      wall_clock_hours_high: 2.83
+      man_hours_low: 34.73
+      man_hours_high: 36.04
+      hitl_hours_low: 0.45
+      hitl_hours_high: 0.53
+      tokens_k_min: 908
+      tokens_k_max: 1031
+      cost_low: 3.73
+      cost_high: 4.26
+      confidence: medium
+
+readiness_detail:
+  - key: 'E008'
+    status: amber
+    gaps:
+      - 'Six stories elaborated with technical ACs, test anchors and planted-violation
+         cases. Amber, not green, because three open questions must be answered before the
+         stories are executable, and two packaged schemas must be extended.'
+      - 'OPEN QUESTION 1 -- who owns Git alias creation: LiquidLogicLabs/git-action-tag-floating-version
+         (proposed by the condensed assessment) or .github/actions/publication-contract,
+         which a surviving fragment of the original calls "the sole tag classifier". The
+         sources also disagree on @v1 vs @v2. The OCI side currently assumes
+         `docker buildx imagetools create` because crane/regctl sit outside the approved
+         action-owner allowlist, so a publication-contract answer must still say what
+         performs the registry-side copy.'
+      - 'OPEN QUESTION 2 -- is forge package publication deliberately removed? The condensed
+         assessment keeps only TestPyPI (dev) and PyPI (stable); a surviving fragment and
+         the elaborated stories both have the owning forge native package registry always
+         published on Gitea. Answering "removed" means editing S01-001 and S01-004;
+         answering "kept" means a third package destination through toggle, preflight,
+         plan, reconciliation and receipt. Needed before E009 planning.'
+      - 'OPEN QUESTION 3 -- the residual immutable-publication race can be narrowed but not
+         closed inside a workflow. The tolerated window needs writing down either way.'
+      - 'SCHEMA WORK -- publication-plan-v1 is additionalProperties:false over a single
+         registry/repository/endpoint quadruple and cannot express per-destination targets,
+         credential modes, development distance, git_aliases or run correlation.
+         release-receipt-v1 reconciliationStatus (failed|matched|pending) cannot express
+         missing/mismatched/unverifiable. Both are safe to extend in place: no producer
+         exists yet.'
+  - key: 'E009'
+    status: red
+    gaps:
+      - 'Three stories have documents but were not elaborated in this pass. Re-estimated
+         for snapshot consistency only, using existing classifications.'
+      - 'Depends on E008-S01-006, so it cannot start before E008 completes.'
+
+arch_gate_summary:
+  ran: false
+  reviewers: []
+  findings: []
+
+# ---------------------------------------------------------------------------
+# Notes
+#
+# work_type for E008 is MIXED, not CONFIG. Its acceptance criteria read as workflow
+# configuration, but delivery needs fail-closed validation logic, forge-kind derivation,
+# development-distance computation and schema-valid plan/receipt emission -- which in this
+# codebase lands in src/publication_contract/ with tests. E007 was classified CONFIG while
+# delivering ~3,500 lines of Python; that skipped six of seven review gates and the one
+# retained lens then returned 10 MAJOR findings. MIXED runs adversarial analysis and red
+# team, which is the right posture for the epic holding PyPI tokens, registry logins, OIDC
+# and the only contents:write job the repo will permit.
+#
+# Estimates moved because E007's actuals are now in pm-calibration.yaml:
+#
+#   E008 man_hours   98.22-102.57  ->  137.36-142.55   (+40%)
+#   E008 elapsed     33.14-34.56   ->    3.60-3.72     (-89%)
+#
+# The rise comes from a calibrated `complex` scope ratio of 1.1248, learned from E007
+# landing at 140 actual against 69.7-72.79 estimated. The previous six story estimates were
+# an identical 15.0 placeholder apiece.
+#
+# hitl_hours of 0.00 is a calibration artifact, not a forecast. It derives from E007
+# recording ~0 human hours, while E008 genuinely needs a human to provision PyPI/TestPyPI
+# tokens, registry credentials and trusted publishing, and to approve a first real release.
+# Read the hitl band as unmeasured rather than zero.
+# ---------------------------------------------------------------------------

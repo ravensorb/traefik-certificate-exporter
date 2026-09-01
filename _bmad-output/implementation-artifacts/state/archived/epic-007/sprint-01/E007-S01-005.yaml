@@ -2,7 +2,7 @@ key: 'E007-S01-005'
 epic: 'E007'
 sprint: 'S01'
 title: 'Integrate Pull Requests, Local Act, and Workflow Governance'
-status: backlog
+status: done
 classification: standard
 depends_on: ['E007-S01-003', 'E007-S01-004']
 estimate:
@@ -24,4 +24,11 @@ estimate:
     elapsed_hours: 0.4865
     tokens_k: 1.0
   confidence: high
-updated_at: '2026-09-01T19:56:54Z'
+updated_at: '2026-09-01T22:40:11Z'
+actual:
+  elapsed_hours: 0.2
+  man_hours: 6
+  hitl_hours: 0
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-09-01T22:40:14Z'

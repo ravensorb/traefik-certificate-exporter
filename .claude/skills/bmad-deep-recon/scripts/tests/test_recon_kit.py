@@ -94,19 +94,26 @@ class StalenessTest(unittest.TestCase):
         self.assertEqual(add_months(date(2026, 1, 31), 1), date(2026, 2, 28))
 
     def test_windows(self):
-        claims = json.dumps([
-            {"claim": "sizing", "class": "size/growth", "pub_date": "2024-06"},
-            {"claim": "pricing", "class": "pricing", "pub_date": "2026-06"},
-            {"claim": "odd", "class": "unmapped", "pub_date": "2026-06"},
-        ])
+        claims = json.dumps(
+            [
+                {"claim": "sizing", "class": "size/growth", "pub_date": "2024-06"},
+                {"claim": "pricing", "class": "pricing", "pub_date": "2026-06"},
+                {"claim": "odd", "class": "unmapped", "pub_date": "2026-06"},
+            ]
+        )
         f = Path(__file__).parent / "_claims.json"
         f.write_text(claims, encoding="utf-8")
         try:
-            code, result = run([
-                "staleness", str(f),
-                "--windows", '{"size/growth": 18, "pricing": 3}',
-                "--today", "2026-07-22",
-            ])
+            code, result = run(
+                [
+                    "staleness",
+                    str(f),
+                    "--windows",
+                    '{"size/growth": 18, "pricing": 3}',
+                    "--today",
+                    "2026-07-22",
+                ]
+            )
         finally:
             f.unlink()
         self.assertEqual(result["stale_count"], 1)  # sizing recheck 2025-12 < today
@@ -118,8 +125,9 @@ class StalenessTest(unittest.TestCase):
 class SlugTest(unittest.TestCase):
     def test_deterministic_folder(self):
         self.assertEqual(slugify("Créme Brûlée: AI Tools!"), "creme-brulee-ai-tools")
-        code, result = run(["slug", "SMB Accounting SaaS", "--type", "market",
-                            "--date", "2026-07-22"])
+        code, result = run(
+            ["slug", "SMB Accounting SaaS", "--type", "market", "--date", "2026-07-22"]
+        )
         self.assertEqual(result["folder"], "market-smb-accounting-saas-2026-07-22")
         self.assertEqual(code, 0)
 
@@ -133,7 +141,9 @@ class EscapeSourcesTest(unittest.TestCase):
         finally:
             report.unlink()
         self.assertEqual(result["rows"], 3)
-        self.assertTrue(any(u.startswith("javascript:") for u in result["invalid_urls"]))
+        self.assertTrue(
+            any(u.startswith("javascript:") for u in result["invalid_urls"])
+        )
         self.assertNotIn("javascript:", result["html"])  # never linked
         self.assertIn('href="https://example.com/g"', result["html"])
         self.assertIn('id="src-1"', result["html"])

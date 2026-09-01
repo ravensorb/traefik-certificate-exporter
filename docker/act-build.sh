@@ -1,32 +1,76 @@
 #!/usr/bin/env bash
 
-# Always run from the repo root, regardless of the caller's cwd -- act's checkout scope
-# follows its working directory, and the build needs pyproject.toml/poetry.lock/src/ at
-# the root (build-container.yaml's Docker context is the repo root, not docker/).
-cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 1
+set -euo pipefail
 
-EVENT_NAME=${1:-push}
-GITHUB_TAG=$(git describe --tags --abbrev=0)
-
-echo "--------------------------------------------------------------------------------------"
-echo "Building image (Triggering Event: $EVENT_NAME)"
-echo "Version: $GITHUB_TAG"
-echo "--------------------------------------------------------------------------------------"
-
-echo "Building traefik-certificate-exporter"
-# CI_CA_CERTIFICATE (only needed if a custom CA cert is required locally) is supplied via
-# act's --secret-file, e.g. --secret-file .pipeline.secrets.traefik-certificate-exporter
-# containing CI_CA_CERTIFICATE=<path-or-url-or-inline-pem> -- the workflow itself is
-# runner-agnostic now (see build-container.yaml's "Install custom CA certificate" step) and
-# no longer requires a bind-mounted certificate path specific to this machine.
+# --------------------------------------------------------------------------------------
+# Runs the governed verifier locally, in a DISPOSABLE CLONE -- never against this tree.
 #
+# On 2026-09-01 running act directly against the repository destroyed it, losing every
+# unpublished commit. `~/.actrc` sets `--bind`, so act mounts the host directory as the
+# container's /github/workspace instead of copying it; verify-build.yaml's first job runs
+# `actions/checkout` with a `ref:`, which logged
+#
+#     Deleting the contents of '<repo>'
+#     git init '<repo>'
+#
+# and only then failed to fetch the ref, because that commit existed only locally. The
+# destructive half had already run against the real .git. Committing often was no
+# protection: the commits lived inside the directory that was deleted.
+#
+# Cloning first makes that harmless. `--no-hardlinks` is load-bearing -- without it the
+# clone's objects are hardlinked into this repository's object store, so a destructive
+# checkout could still reach them.
+#
+# It also fixes a second defect the incident exposed: because checkout resolves the SHA
+# from `origin`, this only ever verified what the remote already had. A local clone
+# carries local commits, so the ref resolves without a push.
+#
+# Consequence: this verifies HEAD, not the dirty working tree -- which is what CI would
+# verify anyway. The script warns when the two differ.
+#
+# No credentials are passed. verify-build.yaml is the secret-free verifier (ADR-0007);
+# a local run that injected secrets would not be exercising the same contract.
+# --------------------------------------------------------------------------------------
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+if [ -n "$(git status --porcelain)" ]; then
+    echo "WARNING: uncommitted changes will NOT be verified -- this runs against HEAD." >&2
+fi
+
+WORKTREE="$(mktemp -d -t act-verify-XXXXXXXX)"
+trap 'rm -rf "$WORKTREE"' EXIT
+git clone --quiet --local --no-hardlinks "$REPO_ROOT" "$WORKTREE"
+
+# Refuse to continue unless we are demonstrably elsewhere: a clone that resolved back to
+# the real repository would reintroduce the failure this script exists to prevent.
+CLONE_ROOT="$(cd "$WORKTREE" && git rev-parse --show-toplevel)"
+if [ "$CLONE_ROOT" = "$REPO_ROOT" ]; then
+    echo "refusing to run: the disposable clone resolved to the real repository" >&2
+    exit 1
+fi
+
+cd "$CLONE_ROOT"
+
+SOURCE_SHA="$(git rev-parse HEAD)"
+PACKAGE_VERSION="$(poetry version --short)"
+
+echo "--------------------------------------------------------------------------------------"
+echo "Running the governed verifier locally, in a disposable clone"
+echo "Clone:  $CLONE_ROOT"
+echo "Source: $SOURCE_SHA"
+echo "Package version: $PACKAGE_VERSION"
+echo "--------------------------------------------------------------------------------------"
+
 # -P ubuntu-24.04=... is required: act ships no default image mapping for that runner
-# label (only older ubuntu-latest/-22.04/-20.04 are pre-mapped), so build-container.yaml's
-# `runs-on: ubuntu-24.04` job is silently skipped ("Skipping unsupported platform")
+# label (only older ubuntu-latest/-22.04/-20.04 are pre-mapped), so verify-build.yaml's
+# `runs-on: ubuntu-24.04` jobs are silently skipped ("Skipping unsupported platform")
 # without it.
-act \
-    --env-file .pipeline.env.traefik-certificate-exporter \
-    --env GITHUB_TAG=${GITHUB_TAG#v} \
+act workflow_dispatch \
+    -W .github/workflows/verify-build.yaml \
+    --input channel=ci \
+    --input package-version="$PACKAGE_VERSION" \
+    --input source-sha="$SOURCE_SHA" \
     -P ubuntu-24.04=catthehacker/ubuntu:act-latest \
-    -a ${EVENT_NAME} \
-    | tee act-build-traefik-certificate-exporter.log
+    | tee "$REPO_ROOT/act-build-traefik-certificate-exporter.log"

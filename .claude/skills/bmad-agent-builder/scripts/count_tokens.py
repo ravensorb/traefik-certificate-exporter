@@ -23,6 +23,7 @@ Output (one line of JSON on stdout):
 Budgets this feeds: SKILL.md ~1500-2500, multi-branch reference ~4500,
 single-purpose reference ~9000.
 """
+
 import argparse
 import json
 import sys
@@ -60,7 +61,9 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("file", nargs="?", help="path to the file to count")
-    p.add_argument("--stdin", action="store_true", help="read text from stdin instead of a file")
+    p.add_argument(
+        "--stdin", action="store_true", help="read text from stdin instead of a file"
+    )
     args = p.parse_args(argv)
 
     if not args.stdin and not args.file:

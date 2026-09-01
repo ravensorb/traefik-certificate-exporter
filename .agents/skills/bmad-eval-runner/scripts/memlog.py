@@ -52,6 +52,7 @@ Commands:
 
 The path is the memlog file itself (conventionally {run-folder}/.memlog.md).
 """
+
 import argparse
 import json
 import os
@@ -83,7 +84,7 @@ def split(text: str) -> tuple[dict, str]:
         if ":" in line:
             k, v = line.split(":", 1)
             meta[k.strip()] = v.strip()
-    return meta, "\n".join(lines[end + 1:]).lstrip("\n")
+    return meta, "\n".join(lines[end + 1 :]).lstrip("\n")
 
 
 def render(meta: dict, body: str) -> str:
@@ -128,7 +129,10 @@ def ack(path: Path, meta: dict, body: str, entry_type: str = "") -> None:
 def cmd_init(args) -> int:
     path = Path(args.path)
     if path.exists():
-        print(f"error: {path} already exists; use append/set-complete to update it", file=sys.stderr)
+        print(
+            f"error: {path} already exists; use append/set-complete to update it",
+            file=sys.stderr,
+        )
         return 2
     path.parent.mkdir(parents=True, exist_ok=True)
     meta: dict[str, str] = {}
@@ -148,12 +152,17 @@ def cmd_init(args) -> int:
 def cmd_append(args) -> int:
     path = Path(args.path)
     if args.type not in ENTRY_TYPES:
-        print(f"error: --type must be one of {', '.join(ENTRY_TYPES)}; got {args.type!r}", file=sys.stderr)
+        print(
+            f"error: --type must be one of {', '.join(ENTRY_TYPES)}; got {args.type!r}",
+            file=sys.stderr,
+        )
         return 2
     meta, body = split(path.read_text(encoding="utf-8"))
     text = " ".join(args.text.split())  # collapse newlines/runs -> one-line entry
     entry = f"- ({args.type}) {text}"
-    body = (body.rstrip("\n") + "\n" + entry) if body.strip() else entry  # always at the end
+    body = (
+        (body.rstrip("\n") + "\n" + entry) if body.strip() else entry
+    )  # always at the end
     touch(meta)
     write_atomic(path, render(meta, body))
     ack(path, meta, body, args.type)
@@ -171,12 +180,21 @@ def cmd_set_complete(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pi = sub.add_parser("init", help="create the memlog")
-    pi.add_argument("--path", required=True, help="memlog file path (e.g. {run-folder}/.memlog.md)")
-    pi.add_argument("--field", action="append", metavar="KEY=VALUE", help="frontmatter field (repeatable)")
+    pi.add_argument(
+        "--path", required=True, help="memlog file path (e.g. {run-folder}/.memlog.md)"
+    )
+    pi.add_argument(
+        "--field",
+        action="append",
+        metavar="KEY=VALUE",
+        help="frontmatter field (repeatable)",
+    )
     pi.set_defaults(func=cmd_init)
 
     pa = sub.add_parser("append", help="append one typed entry at the end")

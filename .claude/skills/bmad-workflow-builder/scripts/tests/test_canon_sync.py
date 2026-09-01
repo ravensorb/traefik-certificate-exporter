@@ -9,7 +9,7 @@ sync mechanism instead: all three copies must be byte-identical.
 Run with: uv run --with pytest -m pytest test_canon_sync.py
 (or plain `uv run test_canon_sync.py` for a lightweight self-check).
 """
-import sys
+
 from pathlib import Path
 
 SKILLS_DIR = Path(__file__).resolve().parents[3]
@@ -30,9 +30,7 @@ def test_all_copies_identical():
     contents = {p: p.read_bytes() for p in CANON_COPIES if p.is_file()}
     reference = CANON_COPIES[0]
     diverged = [
-        str(p)
-        for p, body in contents.items()
-        if body != contents.get(reference)
+        str(p) for p, body in contents.items() if body != contents.get(reference)
     ]
     assert not diverged, (
         "canon copies have drifted from "

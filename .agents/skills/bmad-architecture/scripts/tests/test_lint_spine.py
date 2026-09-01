@@ -8,6 +8,7 @@ The spine under test: a clean spine lints empty; the linter catches exactly the
 mechanical defects a prompt is unreliable at — literal placeholders, AD-n id breakage,
 AD-n blocks missing required fields, and unpinned Stack versions.
 """
+
 import importlib.util
 import json
 import re
@@ -91,15 +92,17 @@ def test_unfilled_template_token_caught():
 
 
 def test_duplicate_ad_id_caught():
-    text = CLEAN.replace("### AD-2 — layered deps `[ADOPTED]`", "### AD-1 — layered deps")
+    text = CLEAN.replace(
+        "### AD-2 — layered deps `[ADOPTED]`", "### AD-1 — layered deps"
+    )
     result = lint_spine.lint(text)
     assert "ad_id" in cats(result)
 
 
 def test_non_monotonic_ad_id_caught():
-    text = CLEAN.replace("### AD-2 — layered deps `[ADOPTED]`", "### AD-5 — layered deps").replace(
-        "### AD-1 — single write path", "### AD-9 — single write path"
-    )
+    text = CLEAN.replace(
+        "### AD-2 — layered deps `[ADOPTED]`", "### AD-5 — layered deps"
+    ).replace("### AD-1 — single write path", "### AD-9 — single write path")
     result = lint_spine.lint(text)
     assert any("non-monotonic" in f["detail"] for f in result["findings"])
 
@@ -107,7 +110,10 @@ def test_non_monotonic_ad_id_caught():
 def test_missing_field_caught():
     text = CLEAN.replace("- **Rule:** state changes only through the command bus\n", "")
     result = lint_spine.lint(text)
-    assert any(f["category"] == "ad_fields" and "rule" in f["detail"] for f in result["findings"])
+    assert any(
+        f["category"] == "ad_fields" and "rule" in f["detail"]
+        for f in result["findings"]
+    )
 
 
 def test_unpinned_dep_caught():
@@ -119,7 +125,10 @@ def test_unpinned_dep_caught():
 def test_placeholder_version_caught():
     text = CLEAN.replace("| fastapi | 0.115 |", "| fastapi | {pin} |")
     result = lint_spine.lint(text)
-    assert any(f["category"] == "version_pin" and "fastapi" in f["detail"] for f in result["findings"])
+    assert any(
+        f["category"] == "version_pin" and "fastapi" in f["detail"]
+        for f in result["findings"]
+    )
 
 
 def test_no_stack_section_ok():
@@ -130,13 +139,17 @@ def test_no_stack_section_ok():
 
 def test_stack_skeleton_row_not_version_pinned():
     # a leftover {token} name is the placeholder pass's job, not a double-reported version_pin
-    text = CLEAN.replace("| fastapi | 0.115 |", "| {language / framework} | {pinned version} |")
+    text = CLEAN.replace(
+        "| fastapi | 0.115 |", "| {language / framework} | {pinned version} |"
+    )
     result = lint_spine.lint(text)
     assert "version_pin" not in cats(result)
 
 
 def test_stack_html_comment_not_parsed_as_row():
-    text = CLEAN.replace("## Stack\n", "## Stack\n\n<!-- SEED — verified current 2026-06 -->\n")
+    text = CLEAN.replace(
+        "## Stack\n", "## Stack\n\n<!-- SEED — verified current 2026-06 -->\n"
+    )
     result = lint_spine.lint(text)
     assert "version_pin" not in cats(result)
 
@@ -146,7 +159,11 @@ def test_template_token_is_low_severity():
     # mechanical pass stays near-zero false-positive
     text = CLEAN.replace("single write path", "{decision}")
     result = lint_spine.lint(text)
-    toks = [f for f in result["findings"] if f["category"] == "placeholder" and "template token" in f["detail"]]
+    toks = [
+        f
+        for f in result["findings"]
+        if f["category"] == "placeholder" and "template token" in f["detail"]
+    ]
     assert toks and all(f["severity"] == "low" for f in toks)
 
 
@@ -158,10 +175,14 @@ def test_no_frontmatter_body_still_scanned():
 
 def test_frontmatter_value_with_dashes_not_truncated():
     # a value containing '---' must not be read as the closing fence (line-exact close)
-    text = ("---\nname: 'x'\nscope: 'phase 1 --- phase 2'\n---\n\n"
-            "## Stack\n\n| Name | Version |\n| --- | --- |\n| fastapi |  |\n")
+    text = (
+        "---\nname: 'x'\nscope: 'phase 1 --- phase 2'\n---\n\n"
+        "## Stack\n\n| Name | Version |\n| --- | --- |\n| fastapi |  |\n"
+    )
     result = lint_spine.lint(text)
-    assert any(f["category"] == "version_pin" for f in result["findings"])  # read past the inline ---
+    assert any(
+        f["category"] == "version_pin" for f in result["findings"]
+    )  # read past the inline ---
 
 
 def test_ad_heading_in_fence_not_counted():
@@ -171,20 +192,26 @@ def test_ad_heading_in_fence_not_counted():
         "## Docs\n\n```text\n### AD-2 — illustrative only, no fields\n```\n"
     )
     result = lint_spine.lint(text)
-    assert result["ok"] is True  # the fenced AD-2 is not a live AD → no ad_fields/ad_id finding
+    assert (
+        result["ok"] is True
+    )  # the fenced AD-2 is not a live AD → no ad_fields/ad_id finding
 
 
 def test_stack_table_flags_only_the_unpinned_row():
-    text = ("---\nname: 'x'\n---\n\n## Stack\n\n| Name | Version |\n| --- | --- |\n"
-            "| fastapi | 0.115 |\n| redis |  |\n")
+    text = (
+        "---\nname: 'x'\n---\n\n## Stack\n\n| Name | Version |\n| --- | --- |\n"
+        "| fastapi | 0.115 |\n| redis |  |\n"
+    )
     result = lint_spine.lint(text)
     pins = [f for f in result["findings"] if f["category"] == "version_pin"]
     assert len(pins) == 1 and "redis" in pins[0]["detail"]
 
 
 def test_stack_table_all_pinned_ok():
-    text = ("---\nname: 'x'\n---\n\n## Stack\n\n| Name | Version |\n| --- | --- |\n"
-            "| fastapi | 0.115 |\n")
+    text = (
+        "---\nname: 'x'\n---\n\n## Stack\n\n| Name | Version |\n| --- | --- |\n"
+        "| fastapi | 0.115 |\n"
+    )
     result = lint_spine.lint(text)
     assert "version_pin" not in cats(result)
 
@@ -192,23 +219,27 @@ def test_stack_table_all_pinned_ok():
 def test_fenced_stack_rows_not_parsed():
     # an illustrative fenced table under ## Stack must not be read as live rows (fences are
     # blanked first, like every other pass) — a blank-version row inside a fence is not a finding
-    text = ("---\nname: 'x'\n---\n\n## Stack\n\n| Name | Version |\n| --- | --- |\n"
-            "| fastapi | 0.115 |\n\n```text\n| example |  |\n```\n")
+    text = (
+        "---\nname: 'x'\n---\n\n## Stack\n\n| Name | Version |\n| --- | --- |\n"
+        "| fastapi | 0.115 |\n\n```text\n| example |  |\n```\n"
+    )
     result = lint_spine.lint(text)
     assert "version_pin" not in cats(result)
 
 
 def test_fenced_stack_heading_not_live():
     # a `## Stack` heading shown inside a code fence is not the live Stack section
-    text = ("---\nname: 'x'\n---\n\n## Docs\n\n```md\n## Stack\n\n| foo |  |\n```\n")
+    text = "---\nname: 'x'\n---\n\n## Docs\n\n```md\n## Stack\n\n| foo |  |\n```\n"
     result = lint_spine.lint(text)
     assert "version_pin" not in cats(result)
 
 
 def test_renamed_stack_heading_still_scanned():
     # the heading match is word-boundary, so a varied `## Stack` heading still counts
-    text = ("---\nname: 'x'\n---\n\n## Stack & Versions\n\n| Name | Version |\n| --- | --- |\n"
-            "| redis |  |\n")
+    text = (
+        "---\nname: 'x'\n---\n\n## Stack & Versions\n\n| Name | Version |\n| --- | --- |\n"
+        "| redis |  |\n"
+    )
     result = lint_spine.lint(text)
     pins = [f for f in result["findings"] if f["category"] == "version_pin"]
     assert len(pins) == 1 and "redis" in pins[0]["detail"]
@@ -216,8 +247,10 @@ def test_renamed_stack_heading_still_scanned():
 
 def test_reordered_columns_pair_name_to_version():
     # Version-then-Name header: the unpinned row must still be flagged by its real name
-    text = ("---\nname: 'x'\n---\n\n## Stack\n\n| Version | Name |\n| --- | --- |\n"
-            "| 0.115 | fastapi |\n|  | redis |\n")
+    text = (
+        "---\nname: 'x'\n---\n\n## Stack\n\n| Version | Name |\n| --- | --- |\n"
+        "| 0.115 | fastapi |\n|  | redis |\n"
+    )
     result = lint_spine.lint(text)
     pins = [f for f in result["findings"] if f["category"] == "version_pin"]
     assert len(pins) == 1 and "redis" in pins[0]["detail"]
@@ -225,12 +258,7 @@ def test_reordered_columns_pair_name_to_version():
 
 def test_placeholder_line_number_is_absolute():
     # a TBD after a multi-line fence reports its real file line (fence blanked, not collapsed)
-    text = (
-        "---\nname: 'x'\n---\n\n"
-        "## A\n\n"
-        "```text\nf1\nf2\nf3\n```\n\n"
-        "TBD here\n"
-    )
+    text = "---\nname: 'x'\n---\n\n## A\n\n```text\nf1\nf2\nf3\n```\n\nTBD here\n"
     result = lint_spine.lint(text)
     ph = next(f for f in result["findings"] if "TBD" in f["detail"])
     n = int(re.search(r"line (\d+)", ph["location"]).group(1))
@@ -247,15 +275,23 @@ def test_frontmatter_unfilled_token_caught():
     # an unfilled {scope}/{paradigm}/{date} in frontmatter is part of the contract and must lint
     text = "---\nname: 'x'\nscope: '{what this spine governs}'\n---\n\n## Invariants\n"
     result = lint_spine.lint(text)
-    fm = [f for f in result["findings"] if f["category"] == "placeholder" and "frontmatter" in f["detail"]]
+    fm = [
+        f
+        for f in result["findings"]
+        if f["category"] == "placeholder" and "frontmatter" in f["detail"]
+    ]
     assert fm and any("template token" in f["detail"] for f in fm)
 
 
 def test_frontmatter_tbd_caught():
     text = "---\nname: 'x'\nstatus: TBD\n---\n\n## Invariants\n"
     result = lint_spine.lint(text)
-    assert any(f["category"] == "placeholder" and "frontmatter" in f["detail"] and "TBD" in f["detail"]
-               for f in result["findings"])
+    assert any(
+        f["category"] == "placeholder"
+        and "frontmatter" in f["detail"]
+        and "TBD" in f["detail"]
+        for f in result["findings"]
+    )
 
 
 def test_unreadable_spine_returns_error_not_crash(tmp_path, capsys):

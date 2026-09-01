@@ -1,0 +1,17 @@
+{
+  "schema_version": "publication-plan-v1",
+  "forge_kind": "github",
+  "registry": "ghcr.io",
+  "repository": "ravensorb/traefik-certificate-exporter",
+  "package_endpoint": "https://upload.pypi.org/legacy/",
+  "credential_mode": "oidc",
+  "channel": "stable",
+  "package_version": "1.2.3",
+  "source_sha": "dddddddddddddddddddddddddddddddddddddddd",
+  "destinations": ["package"],
+  "tags": {
+    "immutable": ["1.2.3"],
+    "aliases": []
+  },
+  "password_hint": "forbidden"
+}

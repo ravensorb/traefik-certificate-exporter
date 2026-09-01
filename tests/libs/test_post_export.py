@@ -56,7 +56,7 @@ def test_no_domains_processed_yields_empty_env_var(tmp_path):
 
 def test_non_zero_exit_is_logged_but_does_not_raise(caplog):
     run_post_export_command(
-        f"{sys.executable} -c \"import sys; sys.exit(3)\"", ["example.com"], dryRun=False
+        f'{sys.executable} -c "import sys; sys.exit(3)"', ["example.com"], dryRun=False
     )
 
     assert any("exited 3" in message for message in caplog.messages)
@@ -66,7 +66,7 @@ def test_timeout_is_logged_but_does_not_raise(monkeypatch, caplog):
     monkeypatch.setattr(post_export, "POST_EXPORT_COMMAND_TIMEOUT_SECONDS", 0.2)
 
     run_post_export_command(
-        f"{sys.executable} -c \"import time; time.sleep(5)\"",
+        f'{sys.executable} -c "import time; time.sleep(5)"',
         ["example.com"],
         dryRun=False,
     )

@@ -8,6 +8,7 @@ story nodes, the sprint.yaml-is-not-a-story exclusion, backlog items from the fl
 state/issues.yaml, and the unmapped/changed/missing drift classification against
 _bmad/sync-state.yaml. Also covers the missing-state-root clean-exit path.
 """
+
 import io
 import json
 import os
@@ -42,7 +43,7 @@ class Base(unittest.TestCase):
     # TOML layers and prints JSON, exactly as core does. Written into each scratch project
     # so these tests exercise the real resolution path (subprocess + JSON + layer
     # precedence) without depending on a BMad install being present in CI.
-    RESOLVER_STUB = '''\
+    RESOLVER_STUB = """\
 import json, sys, tomllib
 from pathlib import Path
 root = Path(sys.argv[sys.argv.index("--project-root") + 1]) / "_bmad"
@@ -67,7 +68,7 @@ for rel in ("config.toml", "config.user.toml", "custom/config.toml", "custom/con
         else:
             merged[k] = v
 json.dump(merged, sys.stdout)
-'''
+"""
 
     def setUp(self):
         self.project_root = tempfile.mkdtemp()
@@ -87,26 +88,56 @@ json.dump(merged, sys.stdout)
 
         _write(
             os.path.join(self.project_root, "_bmad", "sync-state.yaml"),
-            yaml.dump({"version": 1, "last_sync": None, "mappings": mappings},
-                      default_flow_style=False, sort_keys=False),
+            yaml.dump(
+                {"version": 1, "last_sync": None, "mappings": mappings},
+                default_flow_style=False,
+                sort_keys=False,
+            ),
         )
 
-    def make_epic(self, status: str, num: str, key=None, title="Test Epic",
-                  epic_status="in-progress", goal="Ship it"):
+    def make_epic(
+        self,
+        status: str,
+        num: str,
+        key=None,
+        title="Test Epic",
+        epic_status="in-progress",
+        goal="Ship it",
+    ):
         key = key or f"E{num}"
         path = os.path.join(self.state_root, status, f"epic-{num}", "epic.yaml")
-        _write(path, f"key: '{key}'\ntitle: '{title}'\nstatus: {epic_status}\ngoal: '{goal}'\n")
+        _write(
+            path,
+            f"key: '{key}'\ntitle: '{title}'\nstatus: {epic_status}\ngoal: '{goal}'\n",
+        )
         return os.path.dirname(path)
 
-    def make_sprint(self, epic_dir: str, num: str, epic_key: str, key=None,
-                     title="Test Sprint", sprint_status="in-progress"):
+    def make_sprint(
+        self,
+        epic_dir: str,
+        num: str,
+        epic_key: str,
+        key=None,
+        title="Test Sprint",
+        sprint_status="in-progress",
+    ):
         key = key or f"S{num}"
         path = os.path.join(epic_dir, f"sprint-{num}", "sprint.yaml")
-        _write(path, f"key: '{key}'\nepic: '{epic_key}'\ntitle: '{title}'\nstatus: {sprint_status}\n")
+        _write(
+            path,
+            f"key: '{key}'\nepic: '{epic_key}'\ntitle: '{title}'\nstatus: {sprint_status}\n",
+        )
         return os.path.dirname(path)
 
-    def make_story(self, sprint_dir: str, story_key: str, epic_key: str, sprint_key: str,
-                    title="Test Story", story_status="in-progress"):
+    def make_story(
+        self,
+        sprint_dir: str,
+        story_key: str,
+        epic_key: str,
+        sprint_key: str,
+        title="Test Story",
+        story_status="in-progress",
+    ):
         path = os.path.join(sprint_dir, f"{story_key}.yaml")
         _write(
             path,
@@ -166,7 +197,9 @@ class TestShardedTreeCollection(Base):
 
         keys_by_type = {}
         for bucket_entry in report["unmapped_local"]:
-            keys_by_type.setdefault(bucket_entry["bmad_type"], set()).add(bucket_entry["bmad_key"])
+            keys_by_type.setdefault(bucket_entry["bmad_type"], set()).add(
+                bucket_entry["bmad_key"]
+            )
 
         self.assertEqual(keys_by_type["epic"], {"E001", "E005", "E002"})
         self.assertEqual(keys_by_type["sprint"], {"E001-S01", "E005-S01", "E002-S01"})
@@ -179,11 +212,16 @@ class TestShardedTreeCollection(Base):
     def test_story_bmad_path_uses_three_digit_epic_and_two_digit_sprint(self):
         code, report, err = self.run_main()
         self.assertEqual(code, 0, err)
-        story_entries = [e for e in report["unmapped_local"] if e["bmad_type"] == "story"
-                          and e["bmad_key"] == "E001-S01-001"]
+        story_entries = [
+            e
+            for e in report["unmapped_local"]
+            if e["bmad_type"] == "story" and e["bmad_key"] == "E001-S01-001"
+        ]
         self.assertEqual(len(story_entries), 1)
         path = story_entries[0]["bmad_path"]
-        self.assertIn(os.path.join("epic-001", "sprint-01", "stories", "E001-S01-001.md"), path)
+        self.assertIn(
+            os.path.join("epic-001", "sprint-01", "stories", "E001-S01-001.md"), path
+        )
 
 
 class TestSprintYamlExcluded(Base):
@@ -198,7 +236,9 @@ class TestSprintYamlExcluded(Base):
     def test_sprint_with_no_stories_yields_no_story_entities(self):
         code, report, err = self.run_main()
         self.assertEqual(code, 0, err)
-        story_keys = {e["bmad_key"] for e in report["unmapped_local"] if e["bmad_type"] == "story"}
+        story_keys = {
+            e["bmad_key"] for e in report["unmapped_local"] if e["bmad_type"] == "story"
+        }
         self.assertEqual(story_keys, set())
         # Only the epic + sprint entities should be present.
         self.assertEqual(report["total_entities"], 2)
@@ -224,15 +264,19 @@ class TestDriftClassification(Base):
         self.assertEqual(report["missing_local"], [])
 
     def test_entity_with_stale_hash_is_changed(self):
-        self.write_sync_state([{
-            "bmad_key": "E001-S01-002",
-            "bmad_type": "story",
-            "bmad_path": "artifacts/epic-001/sprint-01/stories/E001-S01-002.md",
-            "remote_id": 42,
-            "remote_url": "https://example.invalid/issues/42",
-            "last_synced_hash": "00000000",
-            "last_synced_at": "2026-01-01T00:00:00Z",
-        }])
+        self.write_sync_state(
+            [
+                {
+                    "bmad_key": "E001-S01-002",
+                    "bmad_type": "story",
+                    "bmad_path": "artifacts/epic-001/sprint-01/stories/E001-S01-002.md",
+                    "remote_id": 42,
+                    "remote_url": "https://example.invalid/issues/42",
+                    "last_synced_hash": "00000000",
+                    "last_synced_at": "2026-01-01T00:00:00Z",
+                }
+            ]
+        )
         code, report, err = self.run_main()
         self.assertEqual(code, 0, err)
         changed = {e["bmad_key"]: e for e in report["changed_local"]}
@@ -246,20 +290,26 @@ class TestDriftClassification(Base):
         self.assertNotIn("E001-S01-002", unmapped_keys)
 
     def test_sync_state_entry_with_no_local_file_is_missing(self):
-        self.write_sync_state([{
-            "bmad_key": "E999-S01-001",
-            "bmad_type": "story",
-            "bmad_path": "artifacts/epic-999/sprint-01/stories/E999-S01-001.md",
-            "remote_id": 7,
-            "remote_url": "https://example.invalid/issues/7",
-            "last_synced_hash": "abcdef01",
-            "last_synced_at": "2026-01-01T00:00:00Z",
-        }])
+        self.write_sync_state(
+            [
+                {
+                    "bmad_key": "E999-S01-001",
+                    "bmad_type": "story",
+                    "bmad_path": "artifacts/epic-999/sprint-01/stories/E999-S01-001.md",
+                    "remote_id": 7,
+                    "remote_url": "https://example.invalid/issues/7",
+                    "last_synced_hash": "abcdef01",
+                    "last_synced_at": "2026-01-01T00:00:00Z",
+                }
+            ]
+        )
         code, report, err = self.run_main()
         self.assertEqual(code, 0, err)
         missing_keys = {e["bmad_key"] for e in report["missing_local"]}
         self.assertEqual(missing_keys, {"E999-S01-001"})
-        self.assertEqual(report["missing_local"][0]["remote_url"], "https://example.invalid/issues/7")
+        self.assertEqual(
+            report["missing_local"][0]["remote_url"], "https://example.invalid/issues/7"
+        )
 
 
 class TestMissingStateRoot(Base):
@@ -282,15 +332,19 @@ class TestMissingStateRoot(Base):
     def test_missing_state_root_still_reports_stale_mappings_as_missing(self):
         # A prior sync-state mapping with nothing on disk anywhere must still surface
         # honestly as missing_local, even though the state root itself is absent.
-        self.write_sync_state([{
-            "bmad_key": "E001-S01-001",
-            "bmad_type": "story",
-            "bmad_path": "artifacts/epic-001/sprint-01/stories/E001-S01-001.md",
-            "remote_id": 1,
-            "remote_url": "https://example.invalid/issues/1",
-            "last_synced_hash": "deadbeef",
-            "last_synced_at": "2026-01-01T00:00:00Z",
-        }])
+        self.write_sync_state(
+            [
+                {
+                    "bmad_key": "E001-S01-001",
+                    "bmad_type": "story",
+                    "bmad_path": "artifacts/epic-001/sprint-01/stories/E001-S01-001.md",
+                    "remote_id": 1,
+                    "remote_url": "https://example.invalid/issues/1",
+                    "last_synced_hash": "deadbeef",
+                    "last_synced_at": "2026-01-01T00:00:00Z",
+                }
+            ]
+        )
         code, report, err = self.run_main()
         self.assertEqual(code, 0, err)
         self.assertFalse(report["state_root_found"])

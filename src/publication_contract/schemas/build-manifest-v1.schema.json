@@ -1,0 +1,219 @@
+{
+  "$id": "https://github.com/ravensorb/traefik-certificate-exporter/schemas/build-manifest-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "development_distance": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "distributions": {
+      "additionalProperties": false,
+      "properties": {
+        "sdist": {
+          "$ref": "#/$defs/sdist"
+        },
+        "wheel": {
+          "$ref": "#/$defs/wheel"
+        }
+      },
+      "required": [
+        "wheel",
+        "sdist"
+      ],
+      "type": "object"
+    },
+    "image_plan": {
+      "additionalProperties": false,
+      "properties": {
+        "base_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "build_args": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "properties": {
+            "POETRY_VERSION": {
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+              "type": "string"
+            },
+            "REVISION": {
+              "$ref": "#/$defs/sourceSha"
+            },
+            "VERSION": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "WHEEL_PATH": {
+              "$ref": "#/$defs/safePath"
+            },
+            "WHEEL_SHA256": {
+              "$ref": "#/$defs/hash"
+            }
+          },
+          "propertyNames": {
+            "anyOf": [
+              {
+                "enum": [
+                  "credential_mode"
+                ]
+              },
+              {
+                "not": {
+                  "pattern": "(?:^|_)(?:[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll]_[Hh][Ii][Nn][Tt]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll]_[Vv][Aa][Ll][Uu][Ee]|[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Tt][Oo][Kk][Ee][Nn])(?:_|$)"
+                }
+              }
+            ]
+          },
+          "required": [
+            "POETRY_VERSION",
+            "REVISION",
+            "VERSION",
+            "WHEEL_PATH",
+            "WHEEL_SHA256"
+          ],
+          "type": "object"
+        },
+        "context": {
+          "$ref": "#/$defs/safePath"
+        },
+        "dockerfile": {
+          "$ref": "#/$defs/safePath"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/hash"
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "properties": {
+            "org.opencontainers.image.description": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "org.opencontainers.image.revision": {
+              "$ref": "#/$defs/sourceSha"
+            },
+            "org.opencontainers.image.source": {
+              "format": "uri",
+              "pattern": "^https://",
+              "type": "string"
+            },
+            "org.opencontainers.image.title": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "org.opencontainers.image.version": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "org.opencontainers.image.title",
+            "org.opencontainers.image.description",
+            "org.opencontainers.image.source",
+            "org.opencontainers.image.version",
+            "org.opencontainers.image.revision"
+          ],
+          "type": "object"
+        },
+        "target": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "dockerfile",
+        "target",
+        "base_digest",
+        "build_args",
+        "labels",
+        "fingerprint"
+      ],
+      "type": "object"
+    },
+    "package_version": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "build-manifest-v1"
+    },
+    "source_sha": {
+      "$ref": "#/$defs/sourceSha"
+    }
+  },
+  "required": [
+    "schema_version",
+    "package_version",
+    "source_sha",
+    "distributions",
+    "image_plan"
+  ],
+  "title": "Build manifest v1",
+  "type": "object",
+  "$defs": {
+    "digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "safePath": {
+      "allOf": [
+        {
+          "not": {
+            "pattern": "(^/|^\\\\|\\\\|(^|/)\\.\\.(/|$))"
+          }
+        },
+        {
+          "pattern": "^(?:\\.|[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*)$"
+        }
+      ],
+      "type": "string"
+    },
+    "sdist": {
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*\\.tar\\.gz$",
+          "type": "string"
+        },
+        "sha256": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "required": [
+        "filename",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "sourceSha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "wheel": {
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*\\.whl$",
+          "type": "string"
+        },
+        "sha256": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "required": [
+        "filename",
+        "sha256"
+      ],
+      "type": "object"
+    }
+  }
+}

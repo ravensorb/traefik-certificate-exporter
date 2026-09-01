@@ -23,9 +23,9 @@ Usage:
     skill-path:   Path to the skill directory (where SKILL.md, references/, assets/ live)
 """
 
-import sys
 import re
 import shutil
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -37,9 +37,7 @@ SANCTUM_DIR = SKILL_NAME
 # Files that stay in the skill bundle (only used during First Breath)
 SKILL_ONLY_FILES = {"{skill-only-files}"}
 
-TEMPLATE_FILES = [
-    {template-files-list}
-]
+TEMPLATE_FILES = [{template - files - list}]
 
 # Whether the owner can teach this agent new capabilities
 EVOLVABLE = {evolvable}
@@ -121,12 +119,14 @@ def discover_capabilities(references_dir: Path, sanctum_refs_path: str) -> list[
             continue
         meta = parse_frontmatter(md_file)
         if meta.get("name") and meta.get("code"):
-            capabilities.append({
-                "name": meta["name"],
-                "description": meta.get("description", ""),
-                "code": meta["code"],
-                "source": f"{sanctum_refs_path}/{md_file.name}",
-            })
+            capabilities.append(
+                {
+                    "name": meta["name"],
+                    "description": meta.get("description", ""),
+                    "code": meta["code"],
+                    "source": f"{sanctum_refs_path}/{md_file.name}",
+                }
+            )
     return capabilities
 
 
@@ -146,34 +146,38 @@ def generate_capabilities_md(capabilities: list[dict], evolvable: bool) -> str:
         )
 
     if evolvable:
-        lines.extend([
-            "",
-            "## Learned",
-            "",
-            "_Capabilities added by the owner over time. Prompts live in `capabilities/`._",
-            "",
-            "| Code | Name | Description | Source | Added |",
-            "|------|------|-------------|--------|-------|",
-            "",
-            "## How to Add a Capability",
-            "",
-            'Tell me "I want you to be able to do X" and we\'ll create it together.',
-            "I'll write the prompt, save it to `capabilities/`, and register it here.",
-            "Next session, I'll know how.",
-            "Load `references/capability-authoring.md` for the full creation framework.",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Learned",
+                "",
+                "_Capabilities added by the owner over time. Prompts live in `capabilities/`._",
+                "",
+                "| Code | Name | Description | Source | Added |",
+                "|------|------|-------------|--------|-------|",
+                "",
+                "## How to Add a Capability",
+                "",
+                'Tell me "I want you to be able to do X" and we\'ll create it together.',
+                "I'll write the prompt, save it to `capabilities/`, and register it here.",
+                "Next session, I'll know how.",
+                "Load `references/capability-authoring.md` for the full creation framework.",
+            ]
+        )
 
-    lines.extend([
-        "",
-        "## Tools",
-        "",
-        "Prefer crafting your own tools over depending on external ones. A script you wrote "
-        "and saved is more reliable than an external API. Use the file system creatively.",
-        "",
-        "### User-Provided Tools",
-        "",
-        "_MCP servers, APIs, or services the owner has made available. Document them here._",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Tools",
+            "",
+            "Prefer crafting your own tools over depending on external ones. A script you wrote "
+            "and saved is more reliable than an external API. Use the file system creatively.",
+            "",
+            "### User-Provided Tools",
+            "",
+            "_MCP servers, APIs, or services the owner has made available. Document them here._",
+        ]
+    )
 
     return "\n".join(lines) + "\n"
 
@@ -271,7 +275,9 @@ def main():
     capabilities = discover_capabilities(references_dir, sanctum_refs_path)
     capabilities_content = generate_capabilities_md(capabilities, evolvable=EVOLVABLE)
     (sanctum_path / "CAPABILITIES.md").write_text(capabilities_content)
-    print(f"  Created CAPABILITIES.md ({len(capabilities)} built-in capabilities discovered)")
+    print(
+        f"  Created CAPABILITIES.md ({len(capabilities)} built-in capabilities discovered)"
+    )
 
     print()
     print("First Breath scaffolding complete.")

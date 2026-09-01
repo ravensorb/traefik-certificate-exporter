@@ -1,0 +1,94 @@
+name: Set up pinned Python and Poetry
+description: >-
+  Single owner of the interpreter setup and of the committed Poetry pin for every
+  governed job. The Poetry version is resolved at run time from pyproject.toml's dev
+  group -- the authority -- instead of being repeated as a hand-copied literal in
+  every job that needs Poetry.
+
+inputs:
+  python-version:
+    description: Exact interpreter version handed to actions/setup-python.
+    required: true
+  poetry:
+    description: Install the committed Poetry pin ("true" or "false").
+    required: false
+    default: "true"
+  dependencies:
+    description: >-
+      Locked dependency installation: "all" (poetry install), "build-only"
+      (poetry install --no-root --no-directory), or "none".
+    required: false
+    default: "all"
+
+outputs:
+  package-version:
+    description: Committed tool.poetry.version read from pyproject.toml.
+    value: ${{ steps.committed.outputs.package-version }}
+  poetry-version:
+    description: Pinned Poetry version read from pyproject.toml's dev group.
+    value: ${{ steps.committed.outputs.poetry-version }}
+  python-version:
+    description: Interpreter version actually resolved by actions/setup-python.
+    value: ${{ steps.python.outputs.python-version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up the pinned interpreter
+      id: python
+      uses: actions/setup-python@v7
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Read the committed package version and Poetry pin
+      id: committed
+      shell: bash
+      env:
+        DEPENDENCIES: ${{ inputs.dependencies }}
+        POETRY_ENABLED: ${{ inputs.poetry }}
+      run: |
+        set -euo pipefail
+        case "$POETRY_ENABLED" in
+          true|false) ;;
+          *) echo "poetry: must be 'true' or 'false', got '$POETRY_ENABLED'" >&2; exit 2 ;;
+        esac
+        case "$DEPENDENCIES" in
+          all|build-only|none) ;;
+          *) echo "dependencies: must be all, build-only, or none" >&2; exit 2 ;;
+        esac
+        if [[ "$DEPENDENCIES" != "none" && "$POETRY_ENABLED" != "true" ]]; then
+          echo "dependencies: installing locked dependencies requires poetry: true" >&2
+          exit 2
+        fi
+        # tomllib is stdlib from 3.11 and the pytest matrix still verifies 3.10, so
+        # fall back to the maintained tomli backport rather than parsing TOML by hand.
+        if ! python -c "import tomllib" >/dev/null 2>&1; then
+          python -m pip install --disable-pip-version-check --quiet "tomli>=2,<3"
+        fi
+        versions="$GITHUB_WORKSPACE/scripts/committed_versions.py"
+        {
+          echo "package-version=$(python "$versions" package-version)"
+          echo "poetry-version=$(python "$versions" poetry-version)"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Install the committed Poetry pin
+      if: ${{ inputs.poetry == 'true' }}
+      shell: bash
+      env:
+        POETRY_PIN: ${{ steps.committed.outputs.poetry-version }}
+      run: |
+        set -euo pipefail
+        pipx install "poetry==$POETRY_PIN"
+
+    - name: Install locked dependencies
+      if: ${{ inputs.dependencies != 'none' }}
+      shell: bash
+      env:
+        DEPENDENCIES: ${{ inputs.dependencies }}
+      run: |
+        set -euo pipefail
+        if [[ "$DEPENDENCIES" == "all" ]]; then
+          poetry install
+        else
+          poetry install --no-root --no-directory
+        fi

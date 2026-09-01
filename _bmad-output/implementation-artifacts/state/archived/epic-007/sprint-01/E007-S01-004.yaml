@@ -1,10 +1,10 @@
-key: 'E007-S01-001'
+key: 'E007-S01-004'
 epic: 'E007'
 sprint: 'S01'
-title: 'Establish the Reproducible Local Package and Image Workflow'
-status: backlog
+title: 'Build and Prove One Promotable Artifact Set'
+status: done
 classification: complex
-depends_on: []
+depends_on: ['E007-S01-002', 'E007-S01-003']
 estimate:
   man_hours: 15.0
   hitl_hours: 0.81
@@ -24,4 +24,11 @@ estimate:
     elapsed_hours: 1.0
     tokens_k: 1.0
   confidence: high
-updated_at: '2026-09-01T19:56:53Z'
+updated_at: '2026-09-01T22:40:11Z'
+actual:
+  elapsed_hours: 0.72
+  man_hours: 18
+  hitl_hours: 0
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-09-01T22:40:13Z'

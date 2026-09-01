@@ -7,6 +7,7 @@
 Run: uv run scripts/tests/test_pick_methods.py
  or: uv run --with pytest -m pytest scripts/tests/test_pick_methods.py
 """
+
 import json
 import random
 import sys
@@ -15,7 +16,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import pick_methods  # noqa: E402
+import pick_methods
 
 CSV = """num,category,method_name,description,output_pattern
 1,risk,Pre-mortem Analysis,Imagine future failure then work backwards,failure → causes → prevention
@@ -56,6 +57,7 @@ def rows(lib):
 
 # --- load / merge -----------------------------------------------------------
 
+
 def test_load_all_fields_present(lib):
     r = rows(lib)
     assert len(r) == 5
@@ -75,32 +77,49 @@ def test_load_extra_json_literal_and_file(tmp_path, lib):
 
 
 def test_merge_extra_replaces_by_name_and_appends(lib):
-    merged = pick_methods.merge_extra(rows(lib), pick_methods.load_extra(json.dumps(EXTRA)))
+    merged = pick_methods.merge_extra(
+        rows(lib), pick_methods.load_extra(json.dumps(EXTRA))
+    )
     assert len(merged) == 6  # 5 shipped, 1 replaced in place, 1 appended
     premortem = next(r for r in merged if r["method_name"] == "Pre-mortem Analysis")
     assert premortem["description"] == "RETUNED pre-mortem"
     assert premortem["num"] == "1"  # replacement inherits the shipped num
     appended = next(r for r in merged if r["method_name"] == "Regulatory Inversion")
     assert appended["num"] == "6"  # appended extras get the next free num
-    assert dict(pick_methods.categories(merged))["domain"] == 1  # new category is first-class
+    assert (
+        dict(pick_methods.categories(merged))["domain"] == 1
+    )  # new category is first-class
 
 
 def test_extras_are_addressable_by_num(lib):
-    merged = pick_methods.merge_extra(rows(lib), pick_methods.load_extra(json.dumps(EXTRA)))
+    merged = pick_methods.merge_extra(
+        rows(lib), pick_methods.load_extra(json.dumps(EXTRA))
+    )
     found, missing = pick_methods.find(merged, ["6", "1"])
-    assert [r["method_name"] for r in found] == ["Regulatory Inversion", "Pre-mortem Analysis"]
+    assert [r["method_name"] for r in found] == [
+        "Regulatory Inversion",
+        "Pre-mortem Analysis",
+    ]
     assert missing == []
 
 
 # --- categories / filter / find / exclude -----------------------------------
 
+
 def test_categories_counts_sorted(lib):
-    assert pick_methods.categories(rows(lib)) == [("core", 2), ("creative", 1), ("risk", 2)]
+    assert pick_methods.categories(rows(lib)) == [
+        ("core", 2),
+        ("creative", 1),
+        ("risk", 2),
+    ]
 
 
 def test_filter_is_case_insensitive(lib):
     got = pick_methods.filter_cats(rows(lib), ["RISK"])
-    assert {r["method_name"] for r in got} == {"Pre-mortem Analysis", "Assumption Audit"}
+    assert {r["method_name"] for r in got} == {
+        "Pre-mortem Analysis",
+        "Assumption Audit",
+    }
 
 
 def test_filter_none_returns_all(lib):
@@ -109,18 +128,24 @@ def test_filter_none_returns_all(lib):
 
 def test_find_by_name_num_and_missing(lib):
     found, missing = pick_methods.find(rows(lib), ["scamper method", "3", "Nope"])
-    assert [r["method_name"] for r in found] == ["SCAMPER Method", "First Principles Analysis"]
+    assert [r["method_name"] for r in found] == [
+        "SCAMPER Method",
+        "First Principles Analysis",
+    ]
     assert missing == ["Nope"]
 
 
 def test_exclude_skips_named(lib):
     got = pick_methods.exclude(rows(lib), ["pre-mortem analysis", "SCAMPER Method"])
     assert {r["method_name"] for r in got} == {
-        "Assumption Audit", "First Principles Analysis", "Socratic Questioning",
+        "Assumption Audit",
+        "First Principles Analysis",
+        "Socratic Questioning",
     }
 
 
 # --- spread sampling ---------------------------------------------------------
+
 
 def test_spread_hits_distinct_categories(lib):
     for seed in range(20):
@@ -139,6 +164,7 @@ def test_spread_clamps_to_pool(lib):
 
 
 # --- CLI ---------------------------------------------------------------------
+
 
 def run(args, lib, capsys):
     code = pick_methods.main(["--file", str(lib), *args])
@@ -200,7 +226,9 @@ def test_cli_extra_inline_json(lib, capsys):
 
 
 def test_cli_bad_extra_and_missing_file(tmp_path, lib, capsys):
-    code, _, err = run(["--extra", str(tmp_path / "gone.json"), "categories"], lib, capsys)
+    code, _, err = run(
+        ["--extra", str(tmp_path / "gone.json"), "categories"], lib, capsys
+    )
     assert code == 2 and "--extra" in err
     code = pick_methods.main(["--file", str(tmp_path / "gone.csv"), "categories"])
     assert code == 2
@@ -214,6 +242,7 @@ def test_cli_json_output(lib, capsys):
 
 
 # --- shipped catalog integration ----------------------------------------------
+
 
 def test_shipped_catalog_loads_clean():
     shipped = pick_methods.DEFAULT_FILE

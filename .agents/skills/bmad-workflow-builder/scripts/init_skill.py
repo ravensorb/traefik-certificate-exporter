@@ -23,6 +23,7 @@ Usage:
 Output: one JSON object on stdout describing what was created.
 Exit code 0 on success, 1 on failure (e.g. the target already exists).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -70,14 +71,19 @@ def scaffold(args) -> dict:
         if not d:
             continue
         if d not in KNOWN_DIRS:
-            raise ValueError(f"unknown resource dir {d!r}; known: {', '.join(KNOWN_DIRS)}")
+            raise ValueError(
+                f"unknown resource dir {d!r}; known: {', '.join(KNOWN_DIRS)}"
+            )
         requested.append(d)
 
     skill_dir.mkdir(parents=True)
     created = [str(skill_dir)]
 
     skill_md = skill_dir / "SKILL.md"
-    skill_md.write_text(fill_template(template_path.read_text(encoding="utf-8"), skill_name), encoding="utf-8")
+    skill_md.write_text(
+        fill_template(template_path.read_text(encoding="utf-8"), skill_name),
+        encoding="utf-8",
+    )
     created.append(str(skill_md))
 
     for d in requested:
@@ -87,7 +93,11 @@ def scaffold(args) -> dict:
 
     customize_emitted = False
     if args.customizable:
-        ct_path = Path(args.customize_template) if args.customize_template else DEFAULT_CUSTOMIZE
+        ct_path = (
+            Path(args.customize_template)
+            if args.customize_template
+            else DEFAULT_CUSTOMIZE
+        )
         if not ct_path.is_file():
             raise FileNotFoundError(f"customize template not found: {ct_path}")
         target = skill_dir / "customize.toml"
@@ -110,12 +120,28 @@ def scaffold(args) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Deterministic scaffolder for a new skill")
-    p.add_argument("--name", required=True, help="raw skill name; normalized to hyphen-case <=64")
-    p.add_argument("--dest", required=True, help="parent directory the skill folder is created under")
-    p.add_argument("--dirs", default="", help="comma-separated resource dirs to stub (references,scripts,assets,agents)")
-    p.add_argument("--customizable", action="store_true", help="emit customize.toml (only when customization was accepted)")
+    p.add_argument(
+        "--name", required=True, help="raw skill name; normalized to hyphen-case <=64"
+    )
+    p.add_argument(
+        "--dest",
+        required=True,
+        help="parent directory the skill folder is created under",
+    )
+    p.add_argument(
+        "--dirs",
+        default="",
+        help="comma-separated resource dirs to stub (references,scripts,assets,agents)",
+    )
+    p.add_argument(
+        "--customizable",
+        action="store_true",
+        help="emit customize.toml (only when customization was accepted)",
+    )
     p.add_argument("--template", help="override path to the SKILL.md template")
-    p.add_argument("--customize-template", help="override path to the customize.toml template")
+    p.add_argument(
+        "--customize-template", help="override path to the customize.toml template"
+    )
     args = p.parse_args(argv)
 
     try:

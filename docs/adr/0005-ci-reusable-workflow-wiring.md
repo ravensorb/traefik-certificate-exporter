@@ -1,9 +1,15 @@
 # ADR-0005: CI reusable-workflow wiring for build.yaml
 
-- **Status:** Proposed
+- **Status:** Superseded by ADR-0007
 - **Date:** 2026-08-30
 - **Deciders:** Maintainer (ravensorb)
 - **Principle(s) in tension:** GitHub Actions overlay (prefer composite/reusable workflows over copy-paste; correct wiring), Core §2 reuse
+
+> **Superseded by [ADR-0007](0007-pr-verification-topology.md) (2026-09-01).** The wiring
+> below was never built. This ADR describes `build.yaml` orchestrating `build-package.yaml`
+> and `build-container.yaml` with `secrets: inherit`; what shipped is a fork-safe
+> pull-request adapter over a single secret-free reusable verifier. Do not treat the
+> Decision below as current — it is retained for the reasoning that led to ADR-0007.
 
 ## Context
 

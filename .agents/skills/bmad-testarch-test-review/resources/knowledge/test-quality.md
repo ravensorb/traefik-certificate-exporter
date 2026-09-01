@@ -670,13 +670,12 @@ test.only('checkout applies the promo code', async ({ page }) => {
 ```python
 # ❌ BAD: skipped with no reason anyone can act on
 @pytest.mark.skip
-def test_invoice_voids_after_payment():
-    ...
+def test_invoice_voids_after_payment(): ...
+
 
 # ✅ GOOD: pytest carries the reason in the marker itself
 @pytest.mark.skip(reason="void endpoint returns 500 upstream, see TEA-412")
-def test_invoice_voids_after_payment():
-    ...
+def test_invoice_voids_after_payment(): ...
 ```
 
 ```java

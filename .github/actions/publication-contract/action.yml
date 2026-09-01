@@ -1,0 +1,160 @@
+name: Publication evidence contract
+description: Produce and validate deterministic, secret-free publication evidence.
+
+inputs:
+  operation:
+    description: validate, write, build-manifest, checksums, or verify-checksums
+    required: true
+  contract:
+    description: publication-plan, build-manifest, or release-receipt
+    required: false
+  input-file:
+    description: Candidate contract or canonical checksum file to validate
+    required: false
+  output-file:
+    description: Destination contract or SHA256SUMS path
+    required: false
+  artifact-directory:
+    description: Root directory containing exactly one wheel and one sdist
+    required: false
+  package-version:
+    description: Normalized PEP 440 package version
+    required: false
+  source-sha:
+    description: Full lowercase 40-character Git commit SHA
+    required: false
+  development-distance:
+    description: Optional non-negative VCS development distance
+    required: false
+  image-context:
+    description: Safe relative Docker build context
+    required: false
+  dockerfile:
+    description: Safe relative Dockerfile path
+    required: false
+  target:
+    description: Docker build target
+    required: false
+  base-digest:
+    description: Pinned sha256 base-image digest
+    required: false
+  build-args-json:
+    description: Non-secret Docker build arguments as a JSON object
+    required: false
+    default: "{}"
+  labels-json:
+    description: Required OCI labels as a JSON object
+    required: false
+    default: "{}"
+
+outputs:
+  file:
+    description: Contract or checksum path
+    value: ${{ steps.contract.outputs.file }}
+  file-sha256:
+    description: SHA-256 of the deterministic output file
+    value: ${{ steps.contract.outputs.file-sha256 }}
+  schema-version:
+    description: Validated schema version
+    value: ${{ steps.contract.outputs.schema-version }}
+  package-version:
+    description: Validated normalized package version
+    value: ${{ steps.contract.outputs.package-version }}
+  source-sha:
+    description: Validated full source SHA
+    value: ${{ steps.contract.outputs.source-sha }}
+  image-plan-fingerprint:
+    description: Fingerprint covering every image-plan identity input
+    value: ${{ steps.contract.outputs.image-plan-fingerprint }}
+  wheel-filename:
+    description: Validated root-level wheel filename
+    value: ${{ steps.contract.outputs.wheel-filename }}
+  wheel-sha256:
+    description: Validated wheel SHA-256
+    value: ${{ steps.contract.outputs.wheel-sha256 }}
+  sdist-filename:
+    description: Validated root-level sdist filename
+    value: ${{ steps.contract.outputs.sdist-filename }}
+  sdist-sha256:
+    description: Validated sdist SHA-256
+    value: ${{ steps.contract.outputs.sdist-sha256 }}
+
+runs:
+  using: composite
+  steps:
+    - name: Execute publication evidence contract
+      id: contract
+      shell: bash
+      env:
+        PC_OPERATION: ${{ inputs.operation }}
+        PC_CONTRACT: ${{ inputs.contract }}
+        PC_INPUT_FILE: ${{ inputs.input-file }}
+        PC_OUTPUT_FILE: ${{ inputs.output-file }}
+        PC_ARTIFACT_DIRECTORY: ${{ inputs.artifact-directory }}
+        PC_PACKAGE_VERSION: ${{ inputs.package-version }}
+        PC_SOURCE_SHA: ${{ inputs.source-sha }}
+        PC_DEVELOPMENT_DISTANCE: ${{ inputs.development-distance }}
+        PC_IMAGE_CONTEXT: ${{ inputs.image-context }}
+        PC_DOCKERFILE: ${{ inputs.dockerfile }}
+        PC_TARGET: ${{ inputs.target }}
+        PC_BASE_DIGEST: ${{ inputs.base-digest }}
+        PC_BUILD_ARGS_JSON: ${{ inputs.build-args-json }}
+        PC_LABELS_JSON: ${{ inputs.labels-json }}
+      run: |
+        set -euo pipefail
+        # One invocation path. The validator lives in src/publication_contract/, and
+        # PYTHONPATH makes it importable whether or not the consuming job installed the
+        # project root -- verify-build.yaml's distribution job installs with
+        # --no-root --no-directory, so a console script alone would not resolve there.
+        export PYTHONPATH="$GITHUB_WORKSPACE/src${PYTHONPATH:+:$PYTHONPATH}"
+        command=(poetry run python -m publication_contract)
+        case "$PC_OPERATION" in
+          validate)
+            command+=(validate --contract "$PC_CONTRACT" --input "$PC_INPUT_FILE")
+            if [[ -n "$PC_ARTIFACT_DIRECTORY" ]]; then
+              command+=(--artifact-directory "$PC_ARTIFACT_DIRECTORY")
+            fi
+            ;;
+          write)
+            command+=(write --contract "$PC_CONTRACT" --input "$PC_INPUT_FILE" --output "$PC_OUTPUT_FILE")
+            if [[ -n "$PC_ARTIFACT_DIRECTORY" ]]; then
+              command+=(--artifact-directory "$PC_ARTIFACT_DIRECTORY")
+            fi
+            ;;
+          build-manifest)
+            command+=(
+              build-manifest
+              --artifact-directory "$PC_ARTIFACT_DIRECTORY"
+              --output "$PC_OUTPUT_FILE"
+              --package-version "$PC_PACKAGE_VERSION"
+              --source-sha "$PC_SOURCE_SHA"
+              --image-context "$PC_IMAGE_CONTEXT"
+              --dockerfile "$PC_DOCKERFILE"
+              --target "$PC_TARGET"
+              --base-digest "$PC_BASE_DIGEST"
+              --build-args-json "$PC_BUILD_ARGS_JSON"
+              --labels-json "$PC_LABELS_JSON"
+            )
+            if [[ -n "$PC_DEVELOPMENT_DISTANCE" ]]; then
+              command+=(--development-distance "$PC_DEVELOPMENT_DISTANCE")
+            fi
+            ;;
+          checksums)
+            command+=(checksums --artifact-directory "$PC_ARTIFACT_DIRECTORY" --output "$PC_OUTPUT_FILE")
+            ;;
+          verify-checksums)
+            verification_file="$(mktemp)"
+            trap 'rm -f -- "$verification_file"' EXIT
+            command+=(checksums --artifact-directory "$PC_ARTIFACT_DIRECTORY" --output "$verification_file")
+            ;;
+          *)
+            echo "publication contract error: unsupported operation '$PC_OPERATION'" >&2
+            exit 2
+            ;;
+        esac
+        "${command[@]}"
+        if [[ "$PC_OPERATION" == "verify-checksums" ]] &&
+          ! cmp --silent -- "$verification_file" "$PC_INPUT_FILE"; then
+          echo "publication contract error: checksums do not match the canonical distribution set" >&2
+          exit 2
+        fi

@@ -6,6 +6,86 @@ This tool can be used to extract acme certificates (ex: lets encrypt) from traef
 
 ## Docker
 
+### Build the exact-wheel image locally
+
+The supported local build starts at the repository root and uses the same declarative Bake target
+that CI consumes:
+
+```bash
+just image
+```
+
+This runs local checks, creates exactly one wheel and one source distribution in `dist/`, validates
+both distributions, and locally loads `traefik-certificate-exporter:local`. It performs no registry
+login, push, or publication.
+
+Container contributors can invoke Bake directly after `just build`. The following dynamic inputs
+are required and must describe the exact wheel being installed:
+
+| Input | Contract |
+|---|---|
+| `WHEEL_PATH` | Repository-relative path or glob selecting exactly one `.whl` file. |
+| `WHEEL_SHA256` | SHA-256 of that wheel as 64 lowercase hexadecimal characters. |
+| `VERSION` | Package version in the wheel metadata. |
+| `REVISION` | Full lowercase source Git SHA. |
+
+For example:
+
+```bash
+mapfile -d '' -t wheels < <(find dist -maxdepth 1 -type f -name '*.whl' -print0)
+if (( ${#wheels[@]} != 1 )); then
+  echo >&2 "wheel contract: dist must contain exactly one wheel"
+  exit 1
+fi
+wheel="${wheels[0]}"
+WHEEL_PATH="$wheel" \
+WHEEL_SHA256="$(poetry run python -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$wheel")" \
+VERSION="$(poetry run python -c 'import sys, zipfile; archive = zipfile.ZipFile(sys.argv[1]); metadata = archive.read(next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))).decode(); print(next(line.removeprefix("Version: ") for line in metadata.splitlines() if line.startswith("Version: ")))' "$wheel")" \
+REVISION="$(git rev-parse HEAD)" \
+docker buildx bake image
+```
+
+`docker-bake.hcl` also accepts `TAGS`, `PLATFORMS`, `OUTPUTS`, and
+`ATTESTATIONS` (lists) as explicit environment overrides. Labels are the exception: they
+are a map, so there is no CSV form and `LABELS_JSON` is the only spelling. Use CSV for simple list values or append
+`_JSON` to the variable name for JSON values, such as `PLATFORMS_JSON='["linux/amd64",
+"linux/arm64"]'`. Its local defaults select the native platform, load the image into Docker, apply
+the local tag, and emit no attestations. CI can override those values without copying the Docker
+context, Dockerfile, target, pinned base, pinned Poetry version, or build-argument mapping into a
+second build command.
+
+The default `OUTPUTS=["type=docker"]` is a single-platform local-load exporter. A multi-platform
+`PLATFORMS` override must also select a compatible output, for example:
+
+```bash
+PLATFORMS_JSON='["linux/amd64","linux/arm64"]' \
+OUTPUTS_JSON='["type=oci,dest=dist/traefik-certificate-exporter.oci.tar"]' \
+docker buildx bake image
+```
+
+The Dockerfile installs runtime dependencies only from `pyproject.toml` and `poetry.lock`, verifies
+the selected wheel hash, and installs it with `pip install --no-deps --no-index`. There is no
+application package-index lookup or fallback: fetching a same-version package later could put bytes
+in the image other than the artifact that was tested.
+
+Inspect the locally loaded image and run both smoke paths with:
+
+```bash
+docker image inspect traefik-certificate-exporter:local \
+  --format '{{ index .Config.Labels "org.opencontainers.image.version" }} {{ index .Config.Labels "org.opencontainers.image.revision" }}'
+docker run --rm --entrypoint traefik-certificate-exporter \
+  traefik-certificate-exporter:local --help
+docker run --rm --name traefik-certificate-exporter-smoke -d \
+  -e TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=false \
+  traefik-certificate-exporter:local
+docker logs traefik-certificate-exporter-smoke
+docker stop traefik-certificate-exporter-smoke
+```
+
+The direct entrypoint checks the installed CLI. The final commands start through LinuxServer/s6,
+confirm packaged configuration initialization while the watcher is disabled, and stop the
+temporary smoke container.
+
 ```bash
 docker pull ravensorb/traefik-certificate-exporter:latest
 ```

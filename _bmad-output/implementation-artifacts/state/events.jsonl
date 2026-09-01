@@ -126,3 +126,17 @@
 {"epic": "E006", "event": "actual", "from": null, "key": "S01", "node": "sprint", "session": "l3io-pm-20260830T202636Z-22345", "sprint": "S01", "to": null, "ts": "2026-08-30T23:18:18Z"}
 {"epic": "E006", "event": "status", "from": "in-progress", "key": "E006", "node": "epic", "session": "l3io-pm-20260830T202636Z-22345", "sprint": null, "to": "done", "ts": "2026-08-30T23:19:29Z"}
 {"epic": "E006", "event": "actual", "from": null, "key": "E006", "node": "epic", "session": "l3io-pm-20260830T202636Z-22345", "sprint": null, "to": null, "ts": "2026-08-30T23:19:30Z"}
+{"epic": "E007", "event": "status", "from": "backlog", "key": "E007-S01-001", "node": "story", "session": null, "sprint": "S01", "to": "done", "ts": "2026-09-01T22:40:10Z"}
+{"epic": "E007", "event": "status", "from": "backlog", "key": "E007-S01-002", "node": "story", "session": null, "sprint": "S01", "to": "done", "ts": "2026-09-01T22:40:10Z"}
+{"epic": "E007", "event": "status", "from": "backlog", "key": "E007-S01-003", "node": "story", "session": null, "sprint": "S01", "to": "done", "ts": "2026-09-01T22:40:11Z"}
+{"epic": "E007", "event": "status", "from": "backlog", "key": "E007-S01-004", "node": "story", "session": null, "sprint": "S01", "to": "done", "ts": "2026-09-01T22:40:11Z"}
+{"epic": "E007", "event": "status", "from": "backlog", "key": "E007-S01-005", "node": "story", "session": null, "sprint": "S01", "to": "done", "ts": "2026-09-01T22:40:11Z"}
+{"epic": "E007", "event": "actual", "from": null, "key": "E007-S01-001", "node": "story", "session": null, "sprint": "S01", "to": null, "ts": "2026-09-01T22:40:12Z"}
+{"epic": "E007", "event": "actual", "from": null, "key": "E007-S01-002", "node": "story", "session": null, "sprint": "S01", "to": null, "ts": "2026-09-01T22:40:12Z"}
+{"epic": "E007", "event": "actual", "from": null, "key": "E007-S01-003", "node": "story", "session": null, "sprint": "S01", "to": null, "ts": "2026-09-01T22:40:13Z"}
+{"epic": "E007", "event": "actual", "from": null, "key": "E007-S01-004", "node": "story", "session": null, "sprint": "S01", "to": null, "ts": "2026-09-01T22:40:13Z"}
+{"epic": "E007", "event": "actual", "from": null, "key": "E007-S01-005", "node": "story", "session": null, "sprint": "S01", "to": null, "ts": "2026-09-01T22:40:14Z"}
+{"epic": "E007", "event": "actual", "from": null, "key": "S01", "node": "sprint", "session": null, "sprint": "S01", "to": null, "ts": "2026-09-01T22:40:26Z"}
+{"epic": "E007", "event": "status", "from": "backlog", "key": "S01", "node": "sprint", "session": null, "sprint": "S01", "to": "done", "ts": "2026-09-01T22:40:28Z"}
+{"epic": "E007", "event": "actual", "from": null, "key": "E007", "node": "epic", "session": null, "sprint": null, "to": null, "ts": "2026-09-01T22:40:43Z"}
+{"epic": "E007", "event": "status", "from": "backlog", "key": "E007", "node": "epic", "session": null, "sprint": null, "to": "done", "ts": "2026-09-01T22:40:44Z"}

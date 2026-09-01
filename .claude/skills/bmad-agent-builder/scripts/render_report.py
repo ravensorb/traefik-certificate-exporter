@@ -21,6 +21,7 @@ Usage:
 On success prints one JSON line: output paths, grade, and severity
 counts derived from the findings array.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -114,9 +115,7 @@ def inject(shell_html: str, data: dict) -> str:
 
 def atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(
-        dir=path.parent, prefix=path.name + ".", suffix=".tmp"
-    )
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
@@ -134,7 +133,10 @@ def atomic_write(path: Path, text: str) -> None:
 def _finding_lines(finding: dict, heading_level: str) -> list[str]:
     fid = str(finding.get("id", ""))
     title = str(finding.get("title", "(untitled finding)"))
-    lines = [f"{heading_level} {fid} — {title}" if fid else f"{heading_level} {title}", ""]
+    lines = [
+        f"{heading_level} {fid} — {title}" if fid else f"{heading_level} {title}",
+        "",
+    ]
     for key, label in (
         ("lens", "Lens"),
         ("location", "Location"),
@@ -204,9 +206,7 @@ def render_md(data: dict) -> str:
                     if finding:
                         loc = finding.get("location")
                         suffix = f" — `{loc}`" if loc else ""
-                        lines.append(
-                            f"  - `{fid}` {finding.get('title', '')}{suffix}"
-                        )
+                        lines.append(f"  - `{fid}` {finding.get('title', '')}{suffix}")
                     else:
                         lines.append(f"  - `{fid}`")
             lines.append("")
@@ -290,9 +290,7 @@ def render_md(data: dict) -> str:
 
     experience = data.get("experience")
     if isinstance(experience, dict):
-        journeys = [
-            j for j in experience.get("journeys") or [] if isinstance(j, dict)
-        ]
+        journeys = [j for j in experience.get("journeys") or [] if isinstance(j, dict)]
         headless = experience.get("headless")
         if journeys or headless:
             lines.append("## Experience")
@@ -354,10 +352,7 @@ def main() -> int:
 
     errors = validate(data)
     if errors:
-        fail(
-            f"{args.findings} failed shape validation:\n  - "
-            + "\n  - ".join(errors)
-        )
+        fail(f"{args.findings} failed shape validation:\n  - " + "\n  - ".join(errors))
 
     try:
         shell_html = args.shell.read_text(encoding="utf-8")

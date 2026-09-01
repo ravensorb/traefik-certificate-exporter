@@ -65,9 +65,8 @@ class AcmeCertificateExporter:
                         name = c["domain"]["main"]
                         privatekey = c["key"]
                         fullchain = c["certificate"]
-                        sans = (
-                            c["domain"]["sans"] if "sans" in c["domain"] else []
-                        )  # not sure what this is - can't find any here...
+                        # not sure what this is - can't find any here...
+                        sans = c["domain"].get("sans", [])
                 else:
                     # This should NEVER happen
                     self.__logger.error(
@@ -182,7 +181,7 @@ class AcmeCertificateExporter:
                         name, ", ".join(sans) if sans else ""
                     )
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - one bad domain must not stop the rest
                 self.__logger.error(f"Error processing domain: {e}")
 
         return names
@@ -202,7 +201,7 @@ class AcmeCertificateExporter:
                 self.__logger.error(f"File is empty: {sourceFile}")
                 return []
 
-            data = json.loads(open(sourceFile).read())
+            data = json.loads(Path(sourceFile).read_text())
 
             resolversToProcess = []
             keys = "uppercase"
@@ -244,7 +243,7 @@ class AcmeCertificateExporter:
                 names = self.__exportCertificate(data, keys=keys) or []
 
             return names
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - one bad file must not stop the sweep
             self.__logger.error(f"Error processing file '{sourceFile}': {e}")
 
     # --------------------------------------------------------------------------------------
@@ -277,14 +276,10 @@ class PemToPfxConverter:
         # if data is a string, convert to bytes, if it is a private key leave it alone for now
         if isinstance(key_data, str):
             key_data = key_data.encode("utf-8")
-        elif isinstance(key_data, bytes):
-            key_data = key_data
 
         # if data is a string, convert to bytes, if it is a certificate leave it alone for now
         if isinstance(cert_data, str):
             cert_data = cert_data.encode("utf-8")
-        elif isinstance(cert_data, bytes):
-            cert_data = cert_data
 
         # if the private key is bytes lets load it, otherwise assume it is a private key object
         if isinstance(key_data, bytes):
@@ -305,7 +300,7 @@ class PemToPfxConverter:
                     0
                 ].value
             )  # type: ignore
-        except:
+        except Exception:  # noqa: BLE001 - fall back to an unnamed certificate
             globalLogger.error("Failed to get common name from certificate")
             globalLogger.debug(
                 f"File: '{filename}', Certificate Subject: '{cert.subject!s}'"
@@ -338,8 +333,8 @@ class PemToPfxConverter:
         Path(filename).write_bytes(pkcs12_bytes)
 
         if globalLogger.isEnabledFor(logging.DEBUG):
-            (pkcs12_key, pkcs12_cert, pkcs12_chain) = pkcs12.load_key_and_certificates(
-                pkcs12_bytes, passphrase
+            (_pkcs12_key, pkcs12_cert, _pkcs12_chain) = (
+                pkcs12.load_key_and_certificates(pkcs12_bytes, passphrase)
             )
 
             globalLogger.debug(f"Creating PKCS12 file: {filename}")
@@ -383,12 +378,12 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
 
     # --------------------------------------------------------------------------------------
     def on_created(self, event):
-        self.__logger.debug("Watchdog received created event - % s." % event.src_path)
+        self.__logger.debug(f"Watchdog received created event - {event.src_path}.")
         self.handleEvent(event)
 
     # --------------------------------------------------------------------------------------
     def on_modified(self, event):
-        self.__logger.debug("Watchdog received modified event - % s." % event.src_path)
+        self.__logger.debug(f"Watchdog received modified event - {event.src_path}.")
         self.handleEvent(event)
 
     # --------------------------------------------------------------------------------------
