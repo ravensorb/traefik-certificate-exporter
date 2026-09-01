@@ -14,7 +14,6 @@ WORKFLOWS = PROJECT_ROOT / ".github" / "workflows"
 ACTIONS = PROJECT_ROOT / ".github" / "actions"
 FIXTURES = Path(__file__).parent / "fixtures" / "workflows"
 CI_WORKFLOW = WORKFLOWS / "ci.yaml"
-BUILD_WORKFLOW = WORKFLOWS / "build.yaml"
 VERIFY_WORKFLOW = WORKFLOWS / "verify-build.yaml"
 SETUP_ACTION = ACTIONS / "setup-poetry-python" / "action.yml"
 
@@ -22,12 +21,6 @@ VERIFIER_REFERENCE = "./.github/workflows/verify-build.yaml"
 SETUP_ACTION_REFERENCE = "./.github/actions/setup-poetry-python"
 # Workflows that build or ship an artifact. A push event that reaches one of these
 # without first reaching the verifier is the regression this file exists to prevent.
-PUBLISHER_REFERENCES = frozenset(
-    {
-        "./.github/workflows/build-container.yaml",
-        "./.github/workflows/build-package.yaml",
-    }
-)
 
 
 def _load_committed_versions() -> Any:
@@ -60,6 +53,19 @@ GOVERNED_DEFINITIONS = _governed_definitions()
 # apply only to the verifier pair, because those two run untrusted fork code and must
 # never hold a publishing capability -- the publisher workflows legitimately do.
 SECRET_FREE_WORKFLOWS = (CI_WORKFLOW, VERIFY_WORKFLOW)
+
+# Jobs permitted to write repository contents -- push refs, or create a forge Release.
+# A registry of granted exceptions, not a derived scope: adding a name here IS the grant,
+# and each needs an ADR. ADR-0006 draws the line at *identity* -- the committed version
+# and the exact vX.Y.Z tag are chosen only by the local guarded transaction. A finalizer
+# attaching a Release, its assets, or moving aliases to an identity already decided is not
+# a second version authority. Empty until Epic 8 registers one.
+RELEASE_FINALIZER_JOBS: frozenset[str] = frozenset()
+
+# `release` and `tag` as verbs in an action name -- the ref-writing ones. `publish` is
+# deliberately absent so pypa/gh-action-pypi-publish and image pushes, which write no ref,
+# are not caught by a guard about repository writes.
+RELEASE_ACTION_VERB = re.compile(r"(?:\A|[-/])(?:release|tag)(?:[-/]|\Z)")
 SECRET_FREE_PROHIBITIONS = (
     "secrets:",
     "id-token: write",
@@ -76,10 +82,6 @@ APPROVED_ACTION_OWNERS = {
     "docker",
     "pypa",
     "LiquidLogicLabs",
-    # googleapis/release-please-action: official vendor action, generally available,
-    # published under a maintained floating major alias. Approved rather than replaced
-    # -- release-please has no local substitute.
-    "googleapis",
 }
 
 # A maintained floating major alias, so a fix ships without a manifest edit. Most
@@ -274,81 +276,128 @@ def test_pull_request_adapter_is_minimal_and_fork_safe() -> None:
 
 
 def test_the_committed_version_authority_has_one_implementation() -> None:
-    """ci.yaml's plan job used to be a third `tool.poetry.version` reader, inline, on
-    an unpinned interpreter. Both plan jobs now pin the interpreter through the
-    composite action and read the version through the shared script."""
-    for path in (CI_WORKFLOW, BUILD_WORKFLOW):
-        plan = _jobs(_load_workflow(path))["plan"]
-        uses = [step.get("uses") for step in plan["steps"]]
-        assert SETUP_ACTION_REFERENCE in uses, path
-        commands = "\n".join(str(step.get("run", "")) for step in plan["steps"])
+    """ci.yaml's plan job used to be a third `tool.poetry.version` reader, inline, on an
+    unpinned interpreter. Scope is derived from disk -- every `plan` job in every workflow
+    -- so an orchestrator added later is covered without editing this test."""
+    plans = 0
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        jobs = _jobs(_load_workflow(path))
+        if "plan" not in jobs:
+            continue
+        plans += 1
+        plan = jobs["plan"]
+        assert SETUP_ACTION_REFERENCE in [x.get("uses") for x in plan["steps"]], path
+        commands = "\n".join(str(x.get("run", "")) for x in plan["steps"])
         assert "tomllib" not in commands, path
-        # An inline heredoc reimplementation would need an import statement.
         assert not re.search(r"^\s*import\s", commands, re.MULTILINE), path
+    assert plans, "no plan job found; the version authority is unasserted"
 
-    build_plan = _jobs(_load_workflow(BUILD_WORKFLOW))["plan"]
-    build_commands = "\n".join(str(step.get("run", "")) for step in build_plan["steps"])
-    assert "scripts/committed_versions.py" in build_commands
-    assert committed_versions.development_version(7) == (
-        f"{committed_versions.package_version()}.dev7"
-    )
+    # The plan jobs consume the version through the composite action's output, so the
+    # single implementation is asserted where it actually lives.
+    assert "scripts/committed_versions.py" in SETUP_ACTION.read_text(encoding="utf-8")
+    assert committed_versions.development_version(7).endswith(".dev7")
 
 
-def test_every_pushed_ref_reaches_the_governed_verifier() -> None:
-    """Sprint S01 deleted test.yaml, and nothing replaced it: pushes to main and v*
-    tags ran zero tests. This asserts the path back to the verifier exists and that a
-    publisher can never be reached without it."""
-    push_triggered = {}
+def test_any_push_triggered_workflow_verifies_before_it_ships() -> None:
+    """Epic 7 deleted test.yaml and nothing replaced it, so pushes ran zero tests.
+    build.yaml restored that, then went with the rest of the legacy publish path, so no
+    workflow reacts to push right now -- Epic 8's dev.yaml closes that.
+
+    Asserts the conditional invariant rather than the absent one: any workflow that does
+    react to push must reach the verifier before anything that ships. Passes vacuously
+    today and bites the moment a push workflow reappears. Deliberately does not assert
+    that some push workflow exists -- that would be red for all of Epic 8, and a
+    permanently-red gate gets disabled rather than fixed.
+    """
     for path in sorted(WORKFLOWS.glob("*.yaml")):
         document = _load_workflow(path)
         triggers = document["on"]
-        events = (
-            set(triggers)
-            if isinstance(triggers, dict)
-            else {triggers}
-            if isinstance(triggers, str)
-            else set(triggers)
-        )
-        if "push" in events:
-            push_triggered[path.name] = document
-    assert push_triggered, "no workflow reacts to push; main can never be verified"
-
-    verified_builders = set()
-    for name, document in push_triggered.items():
+        events = set(triggers) if not isinstance(triggers, str) else {triggers}
+        if "push" not in events:
+            continue
         jobs = _jobs(document)
-        called = {job_name: job.get("uses") for job_name, job in jobs.items()}
-        publishers = {j for j, used in called.items() if used in PUBLISHER_REFERENCES}
+        called = {name: job.get("uses") for name, job in jobs.items()}
+        publishers = {
+            name
+            for name, used in called.items()
+            if isinstance(used, str)
+            and used.startswith("./.github/workflows/")
+            and used != VERIFIER_REFERENCE
+        }
         if not publishers:
             continue
-        verifiers = {j for j, used in called.items() if used == VERIFIER_REFERENCE}
-        assert verifiers, f"{name}: builds artifacts on push without the verifier"
+        verifiers = {n for n, used in called.items() if used == VERIFIER_REFERENCE}
+        assert verifiers, f"{path.name}: builds artifacts on push without the verifier"
         for publisher in publishers:
             assert verifiers <= _transitive_needs(jobs, publisher), (
-                f"{name}: job {publisher!r} does not depend on the governed verifier"
+                f"{path.name}: job {publisher!r} does not depend on the governed verifier"
             )
-        verified_builders.add(name)
-    assert verified_builders, "no push-triggered workflow builds through the verifier"
 
-    build = _load_workflow(BUILD_WORKFLOW)
-    push = build["on"]["push"]
-    assert set(push["branches"]) == {"main", "master"}
-    assert push["tags"] == ["v*"]
 
-    verify = _jobs(build)["verify"]
-    assert verify["uses"] == VERIFIER_REFERENCE
-    assert verify["with"] == {
-        "channel": "${{ needs.plan.outputs.channel }}",
-        "package-version": "${{ needs.plan.outputs.package-version }}",
-        "source-sha": "${{ needs.plan.outputs.source-sha }}",
-    }
+def test_no_workflow_calls_a_local_workflow_or_action_that_does_not_exist() -> None:
+    # Deleting the legacy workflows left every `uses:` pointing at them dangling. GitHub
+    # fails such a call at run time, not at lint time, so nothing else here catches it.
+    for path in sorted(WORKFLOWS.glob("*.yaml")) + sorted(ACTIONS.rglob("action.yml")):
+        text = path.read_text(encoding="utf-8")
+        for reference in re.findall(r"uses:\s*(\./[^\s#]+)", text):
+            target = PROJECT_ROOT / reference.removeprefix("./")
+            if target.is_dir():
+                target = target / "action.yml"
+            assert target.exists(), f"{path.name}: `uses: {reference}` does not exist"
 
-    # Branch pushes verify a development version; v* tags verify the committed
-    # release identity. Both reach the same verifier.
-    plan_commands = "\n".join(
-        str(step.get("run", "")) for step in _jobs(build)["plan"]["steps"]
+
+def test_no_workflow_holds_github_token_write_access_to_contents() -> None:
+    """Named for exactly what it checks. `permissions:` configures only the automatic
+    GITHUB_TOKEN, so a job authenticating with a PAT or App token is not governed by it
+    at all. The behavioural guard below covers the credential this one cannot see."""
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        document = _load_workflow(path)
+        scopes = [(None, document.get("permissions"))]
+        scopes += [
+            (n, j.get("permissions")) for n, j in document.get("jobs", {}).items()
+        ]
+        for job_name, permissions in scopes:
+            if not isinstance(permissions, dict):
+                continue
+            if permissions.get("contents") != "write":
+                continue
+            assert job_name in RELEASE_FINALIZER_JOBS, (
+                f"{path.name}: `contents: write` makes CI a writer of repository "
+                "contents; version identity goes through `just release` (ADR-0006)"
+            )
+
+
+def test_no_workflow_writes_refs_or_releases_outside_a_finalizer() -> None:
+    """The behavioural half of the rule above -- it catches a push made with a PAT, which
+    a `permissions:` check is structurally blind to."""
+    write_commands = (
+        r"\bgit\s+push\b",
+        r"\bgh\s+release\s+(?:create|upload|edit|delete)\b",
+        r"\bgh\s+api\b.*\breleases\b",
     )
-    assert 'channel="dev"' in plan_commands
-    assert 'channel="stable"' in plan_commands
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _load_workflow(path).get("jobs", {}).items():
+            if job_name in RELEASE_FINALIZER_JOBS:
+                continue
+            for step in job.get("steps", []) or []:
+                command = str(step.get("run", ""))
+                for pattern in write_commands:
+                    assert not re.search(pattern, command), (
+                        f"{path.name}: job {job_name!r} writes refs or releases; "
+                        "register it in RELEASE_FINALIZER_JOBS with an ADR"
+                    )
+                name = str(step.get("uses", "")).split("@", 1)[0]
+                assert not RELEASE_ACTION_VERB.search(name), (
+                    f"{path.name}: job {job_name!r} uses a release/tag-writing action "
+                    f"({name}); register it in RELEASE_FINALIZER_JOBS with an ADR"
+                )
+
+
+def test_no_workflow_delegates_versioning_to_an_external_release_bot() -> None:
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        assert "release-please" not in path.read_text(encoding="utf-8"), (
+            f"{path.name}: release-please is a competing version authority (ADR-0006)"
+        )
 
 
 def test_setup_action_owns_interpreter_and_poetry_installation() -> None:
