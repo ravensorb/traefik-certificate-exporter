@@ -618,7 +618,7 @@ jobs:
       - name: Upload verified promotable distribution set
         # v4 remains the GitHub/Gitea conformance baseline paired with
         # actions/download-artifact@v4 until both-forge validation approves a new pair.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: verified-dist-v1
           if-no-files-found: error
