@@ -1,0 +1,27 @@
+key: 'E007-S01-005'
+epic: 'E007'
+sprint: 'S01'
+title: 'Integrate Pull Requests, Local Act, and Workflow Governance'
+status: backlog
+classification: standard
+depends_on: ['E007-S01-003', 'E007-S01-004']
+estimate:
+  man_hours: 3.87
+  hitl_hours: 0.2
+  elapsed_hours: 1.22
+  tokens_k:
+    total: 176
+    input: 26
+    output: 9
+    cache_write: 53
+    cache_read: 88
+  cost: 0.73
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 0.5161
+    hitl_hours: 0.4507
+    elapsed_hours: 0.4865
+    tokens_k: 1.0
+  confidence: high
+updated_at: '2026-09-01T19:56:54Z'
