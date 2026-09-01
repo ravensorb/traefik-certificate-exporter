@@ -318,3 +318,76 @@ Proceed with the three-epic plan. Do not start by adding more destination-specif
 First establish the reproducible verifier and version transaction, then layer publication on
 the verified bundle, and certify Gitea last. This sequencing gives every later operation a
 testable artifact and recovery contract.
+
+---
+
+## Appendix: rules recovered from the original assessment
+
+This document is a condensed rewrite. The original (~57 KB) was lost with the working tree on
+2026-09-01 and was never fully read by any session, so only grep-matched fragments survive —
+35 distinct lines, preserved with their original line numbers in the recovery snapshot.
+
+Comparing those fragments against this rewrite surfaced four rules that are **not** expressed
+above. All four govern concurrency and ordering, which is the part hardest to notice missing
+and most expensive to get wrong. They are reproduced here verbatim, with the original line
+numbers, so they are not lost a second time.
+
+### 1. `N` in `.devN` is the first-parent commit count (original line 188)
+
+> `1.2.3`, it derives a version such as `1.2.4.dev7`, where `7` is the first-parent commit
+> count from …
+
+The rewrite specifies the shape `X.Y.(Z+1).devN` but never defines `N`. Without a definition
+the development version is not uniquely determined by the commit, and two commits can collide
+on one version. First-parent distance is also what makes the sequence monotonic along the
+default branch.
+
+### 2. A stable tag event exclusively owns publication for its commit (original lines 69–70, 301–303)
+
+> tag events can exist. `dev.yaml` may still run verification, but it must detect an exact
+> stable tag at `HEAD` and skip development publication. The tag event exclusively owns
+> publication for that commit.
+
+> Before development publication, fetch tags and skip every publisher when `HEAD` is already
+> the … publishing the same commit to both TestPyPI and PyPI or moving `dev` alongside
+> `latest`.
+
+This is the rule that stops a single commit being published to both the development and stable
+channels, and stops `dev` being dragged onto a commit that `latest` also points at. The
+rewrite's ordering section does not cover it.
+
+### 3. Immutable publication and alias finalization are non-cancellable (original lines 298–299)
+
+> immutable publication is non-cancellable. All development runs use a separate
+> non-cancellable alias-finalization group for the floating `dev` tag.
+
+Two distinct concurrency groups, both non-cancellable. A publication run cancelled midway is
+precisely how a half-published artifact set arises — some registries written, others not, with
+no receipt. The rewrite discusses aliases at length but never states that these groups must
+not be cancellable.
+
+### 4. Moving `dev` requires comparing against what `dev` already points at (original lines 312–315)
+
+> After every enabled development publisher succeeds and after taking the alias lock, read the
+> source SHA and first-parent distance recorded by the current remote `dev` manifest. Move
+> `dev` by … An out-of-order older run succeeds without changing `dev`; a newer failed build …
+
+The rewrite says `dev` "moves only when every enabled development publication has succeeded",
+which is necessary but not sufficient. Success alone does not establish that this run is the
+newest: a slow older build finishing last would move `dev` backwards. The original requires
+reading the distance currently recorded on the remote `dev` manifest and declining to move it
+when this run is older — the older run still succeeds, it just does not touch the alias.
+
+### Two divergences to reconcile, not recovered rules
+
+Flagged because they differ from other surviving sources rather than from the fragments:
+
+- This rewrite proposes `LiquidLogicLabs/git-action-tag-floating-version@v1` for Git
+  major/minor aliases. That owner is on the approved action allowlist, but the surviving
+  fragment at line 674 describes `.github/actions/publication-contract/` as "the sole tag
+  classifier and plan/manifest/receipt producer/validator", and the elaborated Epic 8 stories
+  assume `docker buildx imagetools create` for OCI aliases. Decide which owns alias creation.
+- This rewrite states forge package publication is removed, keeping only TestPyPI for
+  development and PyPI for stable. The surviving fragment at line 21 and the elaborated Epic 8
+  stories both have the owning forge's native package registry always published on Gitea. If
+  the removal is deliberate, Epic 8's stories need updating to match; if not, this line does.
