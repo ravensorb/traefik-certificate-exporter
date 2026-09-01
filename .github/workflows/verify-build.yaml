@@ -46,6 +46,11 @@ on:
 permissions:
   contents: read
 
+# One authority for the interpreter. The Poetry pin has its own authority --
+# pyproject.toml's dev group -- resolved at run time by setup-poetry-python.
+env:
+  PYTHON_VERSION: "3.14"
+
 jobs:
   source-integrity:
     name: Source identity
@@ -91,11 +96,10 @@ jobs:
           fetch-tags: true
           persist-credentials: false
           ref: ${{ inputs.source-sha }}
-      - uses: actions/setup-python@v7
+      - uses: ./.github/actions/setup-poetry-python
         with:
-          python-version: "3.14"
-      - name: Install pinned Poetry
-        run: pipx install poetry==2.4.2
+          python-version: ${{ env.PYTHON_VERSION }}
+          dependencies: none
       - name: Check manifest and lock
         run: poetry check --lock
 
@@ -110,11 +114,10 @@ jobs:
           fetch-tags: true
           persist-credentials: false
           ref: ${{ inputs.source-sha }}
-      - uses: actions/setup-python@v7
+      - uses: ./.github/actions/setup-poetry-python
         with:
-          python-version: "3.14"
-      - run: pipx install poetry==2.4.2
-      - run: poetry install
+          python-version: ${{ env.PYTHON_VERSION }}
+          dependencies: all
       - name: Run configured Ruff check
         run: poetry run pre-commit run ruff-check --all-files
 
@@ -129,11 +132,10 @@ jobs:
           fetch-tags: true
           persist-credentials: false
           ref: ${{ inputs.source-sha }}
-      - uses: actions/setup-python@v7
+      - uses: ./.github/actions/setup-poetry-python
         with:
-          python-version: "3.14"
-      - run: pipx install poetry==2.4.2
-      - run: poetry install
+          python-version: ${{ env.PYTHON_VERSION }}
+          dependencies: all
       - name: Run configured Ruff format verification
         run: poetry run pre-commit run ruff-format --all-files
 
@@ -148,11 +150,10 @@ jobs:
           fetch-tags: true
           persist-credentials: false
           ref: ${{ inputs.source-sha }}
-      - uses: actions/setup-python@v7
+      - uses: ./.github/actions/setup-poetry-python
         with:
-          python-version: "3.14"
-      - run: pipx install poetry==2.4.2
-      - run: poetry install
+          python-version: ${{ env.PYTHON_VERSION }}
+          dependencies: all
       - name: Scan tracked content for credentials
         run: poetry run pre-commit run gitleaks --all-files
 
@@ -167,11 +168,10 @@ jobs:
           fetch-tags: true
           persist-credentials: false
           ref: ${{ inputs.source-sha }}
-      - uses: actions/setup-python@v7
+      - uses: ./.github/actions/setup-poetry-python
         with:
-          python-version: "3.14"
-      - run: pipx install poetry==2.4.2
-      - run: poetry install
+          python-version: ${{ env.PYTHON_VERSION }}
+          dependencies: all
       - name: Validate all Actions workflows
         run: poetry run pre-commit run actionlint --all-files
       - name: Enforce workflow governance policy
@@ -188,11 +188,10 @@ jobs:
           fetch-tags: true
           persist-credentials: false
           ref: ${{ inputs.source-sha }}
-      - uses: actions/setup-python@v7
+      - uses: ./.github/actions/setup-poetry-python
         with:
-          python-version: "3.14"
-      - run: pipx install poetry==2.4.2
-      - run: poetry install
+          python-version: ${{ env.PYTHON_VERSION }}
+          dependencies: all
       - name: Check TOML
         run: poetry run pre-commit run check-toml --all-files
       - name: Check YAML
@@ -220,13 +219,10 @@ jobs:
           fetch-tags: true
           persist-credentials: false
           ref: ${{ inputs.source-sha }}
-      - uses: actions/setup-python@v7
+      - uses: ./.github/actions/setup-poetry-python
         with:
-          python-version: ${{ matrix.python }}
-      - name: Install pinned Poetry
-        run: pipx install poetry==2.4.2
-      - name: Install locked dependencies
-        run: poetry install
+          python-version: ${{ env.PYTHON_VERSION }}
+          dependencies: all
       - name: Run complete test suite
         run: poetry run pytest
 
@@ -253,11 +249,10 @@ jobs:
           fetch-tags: true
           persist-credentials: false
           ref: ${{ inputs.source-sha }}
-      - uses: actions/setup-python@v7
+      - uses: ./.github/actions/setup-poetry-python
         with:
-          python-version: "3.14"
-      - name: Install pinned Poetry
-        run: pipx install poetry==2.4.2
+          python-version: ${{ env.PYTHON_VERSION }}
+          dependencies: none
       - name: Install locked build dependencies without the application
         run: poetry install --no-root --no-directory
       - name: Apply and validate package version in disposable checkout

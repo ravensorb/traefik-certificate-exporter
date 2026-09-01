@@ -65,8 +65,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 # --- self-contained helpers -------------------------------------------------
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -117,6 +117,7 @@ def parse_skill_md(skill_path: Path) -> tuple[str, str]:
 
 # --- adapter ----------------------------------------------------------------
 
+
 def find_adapter(explicit: Path | None, queries_file: Path) -> Path | None:
     if explicit is not None:
         return explicit if explicit.is_file() else None
@@ -142,15 +143,19 @@ def load_adapter(path: Path) -> dict:
 def build_argv(invocation: list, query: str, cwd: str) -> list[str]:
     out: list[str] = []
     for tok in invocation:
-        tok = (str(tok).replace("{prompt}", query)
-               .replace("{query}", query)
-               .replace("{cwd}", cwd))
+        tok = (
+            str(tok)
+            .replace("{prompt}", query)
+            .replace("{query}", query)
+            .replace("{cwd}", cwd)
+        )
         out.append(tok)
     return out
 
 
-def build_case_env(adapter: dict | None, home_dir: Path,
-                   host_env: dict) -> dict[str, str]:
+def build_case_env(
+    adapter: dict | None, home_dir: Path, host_env: dict
+) -> dict[str, str]:
     """Build the subprocess environment from scratch — never from os.environ.
 
     Inheriting the host env would leak shell config, tokens, and runtime
@@ -180,8 +185,10 @@ def build_case_env(adapter: dict | None, home_dir: Path,
 
 # --- synthetic skill staging ------------------------------------------------
 
-def write_synthetic_skill(skills_dir: Path, skill_name: str,
-                          description: str, unique: str) -> str:
+
+def write_synthetic_skill(
+    skills_dir: Path, skill_name: str, description: str, unique: str
+) -> str:
     """Write a synthetic skill the runtime can discover. Returns its unique name.
 
     A unique suffix lets the detector tell this synthetic skill apart from any
@@ -205,6 +212,7 @@ def write_synthetic_skill(skills_dir: Path, skill_name: str,
 
 
 # --- load detection (behind the adapter) ------------------------------------
+
 
 def validate_load_signal(load_signal: dict | None) -> None:
     """Reject substring-style load signals before any query runs."""
@@ -260,8 +268,15 @@ def detect_load(transcript_text: str, load_signal: dict, clean_name: str) -> boo
 
 # --- per-query execution ----------------------------------------------------
 
-def run_query_once(query: str, skill_name: str, description: str,
-                   adapter: dict, stage_dir: Path, timeout: int) -> bool:
+
+def run_query_once(
+    query: str,
+    skill_name: str,
+    description: str,
+    adapter: dict,
+    stage_dir: Path,
+    timeout: int,
+) -> bool:
     skill_subdir = adapter.get("skill_dir", ".claude/skills")
     skills_dir = stage_dir / skill_subdir
     skills_dir.mkdir(parents=True, exist_ok=True)
@@ -301,6 +316,7 @@ def run_query_once(query: str, skill_name: str, description: str,
 
 # --- main -------------------------------------------------------------------
 
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description=__doc__,
@@ -338,8 +354,9 @@ def main(argv: list[str] | None = None) -> int:
             validate_load_signal(adapter.get("load_signal"))
             adapter_note = str(adapter_path)
         except Exception as e:
-            print(f"adapter config invalid ({e}); degrading to skip-only",
-                  file=sys.stderr)
+            print(
+                f"adapter config invalid ({e}); degrading to skip-only", file=sys.stderr
+            )
             adapter = None
             adapter_note = f"invalid: {e}"
 
@@ -347,21 +364,27 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = (args.output_dir / run_id).resolve()
     (run_dir / "queries").mkdir(parents=True, exist_ok=True)
 
-    write_json(run_dir / "run.json", {
-        "run_id": run_id,
-        "skill_name": skill_name,
-        "description": description,
-        "adapter": adapter_note,
-        "started_at": utc_now_iso(),
-        "query_count": len(queries),
-        "runs_per_query": args.runs_per_query,
-        "threshold": args.threshold,
-    })
+    write_json(
+        run_dir / "run.json",
+        {
+            "run_id": run_id,
+            "skill_name": skill_name,
+            "description": description,
+            "adapter": adapter_note,
+            "started_at": utc_now_iso(),
+            "query_count": len(queries),
+            "runs_per_query": args.runs_per_query,
+            "threshold": args.threshold,
+        },
+    )
 
     if adapter is None:
         if not args.quiet:
-            print("[run_triggers] no runtime adapter configured; staging only "
-                  "(no crash).", file=sys.stderr)
+            print(
+                "[run_triggers] no runtime adapter configured; staging only "
+                "(no crash).",
+                file=sys.stderr,
+            )
         output = {
             "run_id": run_id,
             "completed_at": utc_now_iso(),
@@ -370,8 +393,12 @@ def main(argv: list[str] | None = None) -> int:
             "status": "skipped",
             "reason": "no runtime adapter configured",
             "results": [],
-            "summary": {"total": len(queries), "passed": 0, "failed": 0,
-                        "skipped": len(queries)},
+            "summary": {
+                "total": len(queries),
+                "passed": 0,
+                "failed": 0,
+                "skipped": len(queries),
+            },
         }
         write_json(run_dir / "triggers-result.json", output)
         print(json.dumps(output, indent=2))
@@ -384,19 +411,24 @@ def main(argv: list[str] | None = None) -> int:
         stage.mkdir(parents=True, exist_ok=True)
         try:
             triggered = run_query_once(
-                q["query"], skill_name, description, adapter, stage, args.timeout)
+                q["query"], skill_name, description, adapter, stage, args.timeout
+            )
         except FileNotFoundError:
             adapter_missing["flag"] = True
             triggered = False
         finally:
-            shutil.rmtree(stage / adapter.get("skill_dir", ".claude/skills").split("/")[0],
-                          ignore_errors=True)
+            shutil.rmtree(
+                stage / adapter.get("skill_dir", ".claude/skills").split("/")[0],
+                ignore_errors=True,
+            )
         return idx, triggered
 
     per_query: dict[int, list[bool]] = {}
     if not args.quiet:
-        print(f"[run_triggers] {len(queries)} queries x {args.runs_per_query} "
-              f"runs", file=sys.stderr)
+        print(
+            f"[run_triggers] {len(queries)} queries x {args.runs_per_query} runs",
+            file=sys.stderr,
+        )
 
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
         futures = []
@@ -431,14 +463,16 @@ def main(argv: list[str] | None = None) -> int:
         rate = (sum(runs) / len(runs)) if runs else 0.0
         should = bool(q.get("should_trigger", True))
         passed = (rate >= args.threshold) if should else (rate < args.threshold)
-        results.append({
-            "query": q["query"],
-            "should_trigger": should,
-            "trigger_rate": round(rate, 3),
-            "triggers": int(sum(runs)),
-            "runs": len(runs),
-            "pass": passed,
-        })
+        results.append(
+            {
+                "query": q["query"],
+                "should_trigger": should,
+                "trigger_rate": round(rate, 3),
+                "triggers": int(sum(runs)),
+                "runs": len(runs),
+                "pass": passed,
+            }
+        )
 
     output = {
         "run_id": run_id,

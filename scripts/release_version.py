@@ -115,7 +115,8 @@ def _stable_version(value: str, *, label: str) -> tuple[int, int, int]:
         raise ReleaseError(
             f"{label} must be an exact stable MAJOR.MINOR.PATCH version: {value!r}"
         )
-    return tuple(int(part) for part in match.groups())
+    major, minor, patch = match.groups()
+    return int(major), int(minor), int(patch)
 
 
 class ReleaseTransaction:

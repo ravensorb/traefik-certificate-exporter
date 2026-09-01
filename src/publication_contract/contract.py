@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
-import os
 import re
-import sys
 import tempfile
 from collections.abc import Mapping, Sequence
+from importlib import resources
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, Final, NoReturn
 from urllib.parse import urlsplit
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -23,15 +21,35 @@ from packaging.utils import (
 )
 from packaging.version import InvalidVersion, Version
 
-ACTION_ROOT = Path(__file__).resolve().parent
-SCHEMA_ROOT = ACTION_ROOT / "schemas"
-SCHEMAS = {
-    "publication-plan": SCHEMA_ROOT / "publication-plan-v1.schema.json",
-    "build-manifest": SCHEMA_ROOT / "build-manifest-v1.schema.json",
-    "release-receipt": SCHEMA_ROOT / "release-receipt-v1.schema.json",
+PACKAGE = "publication_contract"
+SCHEMA_DIRECTORY = "schemas"
+SCHEMA_FILENAMES: Final[Mapping[str, str]] = {
+    "build-manifest": "build-manifest-v1.schema.json",
+    "publication-plan": "publication-plan-v1.schema.json",
+    "release-receipt": "release-receipt-v1.schema.json",
 }
-SECRET_FIELD_RE = re.compile(
-    r"(?:^|_)(?:secret|password|passwd|token|credential_value|credential_hint)(?:_|$)",
+CONTRACTS: Final[tuple[str, ...]] = tuple(sorted(SCHEMA_FILENAMES))
+
+# The "no secret-bearing fields in evidence" rule is expressed exactly once, here.
+# A field name is forbidden when any of its underscore-delimited components is one
+# of these terms, compared case-insensitively. `secret_field_name_schema()` derives
+# the equivalent JSON Schema fragment from the same tuple, and
+# `tests/ci/test_publication_contract.py` proves the checked-in schemas carry
+# nothing but that generated fragment, so the two cannot drift.
+SECRET_FIELD_TERMS: Final[tuple[str, ...]] = (
+    "credential_hint",
+    "credential_value",
+    "key",
+    "passwd",
+    "password",
+    "secret",
+    "token",
+)
+# `credential_mode` names which credential mechanism a publication uses; it carries
+# no credential material and is therefore the one allowed `credential_*` field.
+SECRET_FIELD_EXEMPTIONS: Final[frozenset[str]] = frozenset({"credential_mode"})
+SECRET_FIELD_RE: Final[re.Pattern[str]] = re.compile(
+    rf"(?:^|_)(?:{'|'.join(SECRET_FIELD_TERMS)})(?:_|$)",
     re.IGNORECASE,
 )
 
@@ -42,6 +60,44 @@ class ContractError(ValueError):
 
 def _fail(path: str, message: str) -> NoReturn:
     raise ContractError(f"{path}: {message}")
+
+
+def _ecma_case_insensitive(term: str) -> str:
+    """Render one term case-insensitively without an inline regex flag.
+
+    JSON Schema's ECMA-262 ``pattern`` dialect has no inline ``(?i)`` flag, so
+    case insensitivity has to be spelled out as explicit character classes.
+    """
+    return "".join(
+        f"[{character.upper()}{character.lower()}]"
+        if character.isalpha()
+        else re.escape(character)
+        for character in term
+    )
+
+
+SECRET_FIELD_SCHEMA_PATTERN: Final[str] = (
+    "(?:^|_)"
+    f"(?:{'|'.join(_ecma_case_insensitive(term) for term in SECRET_FIELD_TERMS)})"
+    "(?:_|$)"
+)
+
+
+def secret_field_name_schema() -> dict[str, Any]:
+    """Return the JSON Schema fragment equivalent to :func:`is_secret_field`."""
+    return {
+        "anyOf": [
+            {"enum": sorted(SECRET_FIELD_EXEMPTIONS)},
+            {"not": {"pattern": SECRET_FIELD_SCHEMA_PATTERN}},
+        ]
+    }
+
+
+def is_secret_field(name: str) -> bool:
+    """Return whether ``name`` is a forbidden secret-bearing evidence field."""
+    if name in SECRET_FIELD_EXEMPTIONS:
+        return False
+    return SECRET_FIELD_RE.search(name) is not None
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -56,13 +112,15 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def load_json(path: Path) -> Any:
     """Load JSON while rejecting duplicate keys and non-standard numeric values."""
     try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as error:
+        _fail(str(path), str(error))
+    try:
         return json.loads(
-            path.read_text(encoding="utf-8"),
+            text,
             object_pairs_hook=_reject_duplicate_keys,
             parse_constant=lambda value: _fail("$", f"invalid numeric value {value}"),
         )
-    except OSError as error:
-        _fail(str(path), str(error))
     except json.JSONDecodeError as error:
         _fail(f"{path}:{error.lineno}:{error.colno}", error.msg)
 
@@ -76,6 +134,18 @@ def load_json_value(value: str, field: str) -> Any:
         )
     except json.JSONDecodeError as error:
         _fail(field, f"invalid JSON: {error.msg}")
+
+
+def load_schema(contract: str) -> Any:
+    """Load one packaged contract schema as data owned by this package."""
+    if contract not in SCHEMA_FILENAMES:
+        _fail("contract", f"unsupported contract {contract!r}")
+    resource = (
+        resources.files(PACKAGE)
+        .joinpath(SCHEMA_DIRECTORY)
+        .joinpath(SCHEMA_FILENAMES[contract])
+    )
+    return load_json_value(resource.read_text(encoding="utf-8"), f"schema.{contract}")
 
 
 def canonical_json_bytes(document: Any) -> bytes:
@@ -116,16 +186,20 @@ def _field_path(error: Any) -> str:
     return path
 
 
-def _walk(document: Any, path: str = "$") -> Any:
+def reject_secret_fields(document: Any, path: str = "$") -> None:
+    """Raise :class:`ContractError` for any secret-bearing field in ``document``.
+
+    Deliberately a plain recursive function rather than a generator: the guard has
+    to fire when it is called, not when a caller happens to exhaust it.
+    """
     if isinstance(document, Mapping):
         for key, value in document.items():
-            if SECRET_FIELD_RE.search(key) and key != "credential_mode":
+            if is_secret_field(key):
                 _fail(f"{path}.{key}", "secret-bearing fields are forbidden")
-            yield from _walk(value, f"{path}.{key}")
+            reject_secret_fields(value, f"{path}.{key}")
     elif isinstance(document, Sequence) and not isinstance(document, (str, bytes)):
         for index, value in enumerate(document):
-            yield from _walk(value, f"{path}[{index}]")
-    yield path, document
+            reject_secret_fields(value, f"{path}[{index}]")
 
 
 def _require_normalized_version(value: str, path: str) -> None:
@@ -265,9 +339,7 @@ def validate_contract(
     artifact_root: Path | None = None,
 ) -> None:
     """Validate schema and cross-field/disk invariants for one contract."""
-    if contract not in SCHEMAS:
-        _fail("contract", f"unsupported contract {contract!r}")
-    schema = load_json(SCHEMAS[contract])
+    schema = load_schema(contract)
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     errors = sorted(
@@ -277,8 +349,7 @@ def validate_contract(
         error = errors[0]
         _fail(_field_path(error), error.message)
 
-    for _path, _value in _walk(document):
-        pass
+    reject_secret_fields(document)
 
     if contract == "build-manifest":
         _validate_build_manifest(document, artifact_root)
@@ -286,6 +357,14 @@ def validate_contract(
         _validate_publication_plan(document)
     elif contract == "release-receipt":
         _validate_release_receipt(document)
+
+
+def _write_atomically(payload: bytes, output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=output.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+        stream.write(payload)
+    temporary.replace(output)
 
 
 def write_contract(
@@ -296,16 +375,11 @@ def write_contract(
     artifact_root: Path | None = None,
 ) -> dict[str, str]:
     validate_contract(contract, document, artifact_root=artifact_root)
-    payload = canonical_json_bytes(document)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=output.parent, delete=False) as stream:
-        temporary = Path(stream.name)
-        stream.write(payload)
-    temporary.replace(output)
-    return _identity_outputs(document, output)
+    _write_atomically(canonical_json_bytes(document), output)
+    return identity_outputs(document, output)
 
 
-def _identity_outputs(document: Mapping[str, Any], path: Path) -> dict[str, str]:
+def identity_outputs(document: Mapping[str, Any], path: Path) -> dict[str, str]:
     outputs = {
         "file": str(path),
         "file-sha256": sha256_file(path),
@@ -346,11 +420,24 @@ def _regular_root_artifacts(root: Path) -> tuple[Path, Path]:
     return wheel[0], sdist[0]
 
 
-def build_manifest(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
-    root = args.artifact_directory.resolve()
+def build_manifest(
+    *,
+    artifact_directory: Path,
+    package_version: str,
+    source_sha: str,
+    image_context: str,
+    dockerfile: str,
+    target: str,
+    base_digest: str,
+    build_args_json: str,
+    labels_json: str,
+    development_distance: int | None = None,
+) -> tuple[dict[str, Any], Path]:
+    """Build a manifest document bound to the artifacts in ``artifact_directory``."""
+    root = artifact_directory.resolve()
     wheel, sdist = _regular_root_artifacts(root)
-    build_args = load_json_value(args.build_args_json, "image_plan.build_args")
-    labels = load_json_value(args.labels_json, "image_plan.labels")
+    build_args = load_json_value(build_args_json, "image_plan.build_args")
+    labels = load_json_value(labels_json, "image_plan.labels")
     if not isinstance(build_args, dict):
         _fail("$.image_plan.build_args", "must be a JSON object")
     if not isinstance(labels, dict):
@@ -364,7 +451,7 @@ def build_manifest(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
     except InvalidSdistFilename as error:
         _fail("$.distributions.sdist.filename", str(error))
     try:
-        requested_version = Version(args.package_version)
+        requested_version = Version(package_version)
     except InvalidVersion:
         _fail("$.package_version", "must be a valid PEP 440 package version")
     if wheel_version != requested_version:
@@ -393,26 +480,26 @@ def build_manifest(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         )
     build_args.update(protected_args)
     image_plan: dict[str, Any] = {
-        "context": args.image_context,
-        "dockerfile": args.dockerfile,
-        "target": args.target,
-        "base_digest": args.base_digest,
+        "context": image_context,
+        "dockerfile": dockerfile,
+        "target": target,
+        "base_digest": base_digest,
         "build_args": build_args,
         "labels": labels,
     }
     image_plan["fingerprint"] = image_plan_fingerprint(image_plan, wheel_sha)
     document: dict[str, Any] = {
         "schema_version": "build-manifest-v1",
-        "package_version": args.package_version,
-        "source_sha": args.source_sha,
+        "package_version": package_version,
+        "source_sha": source_sha,
         "distributions": {
             "wheel": {"filename": wheel.name, "sha256": wheel_sha},
             "sdist": {"filename": sdist.name, "sha256": sha256_file(sdist)},
         },
         "image_plan": image_plan,
     }
-    if args.development_distance is not None:
-        document["development_distance"] = args.development_distance
+    if development_distance is not None:
+        document["development_distance"] = development_distance
     return document, root
 
 
@@ -423,12 +510,7 @@ def write_checksums(root: Path, output: Path) -> dict[str, str]:
         f"{sha256_file(path)}  {path.name}"
         for path in sorted(artifacts, key=lambda p: p.name)
     ]
-    payload = ("\n".join(lines) + "\n").encode()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=output.parent, delete=False) as stream:
-        temporary = Path(stream.name)
-        stream.write(payload)
-    temporary.replace(output)
+    _write_atomically(("\n".join(lines) + "\n").encode(), output)
     return {
         "file": str(output),
         "file-sha256": sha256_file(output),
@@ -441,81 +523,3 @@ def write_checksums(root: Path, output: Path) -> dict[str, str]:
         "sdist-filename": "",
         "sdist-sha256": "",
     }
-
-
-def emit_outputs(outputs: Mapping[str, str]) -> None:
-    output_path = os.environ.get("GITHUB_OUTPUT")
-    if output_path:
-        with Path(output_path).open("a", encoding="utf-8", newline="\n") as stream:
-            stream.writelines(f"{key}={value}\n" for key, value in outputs.items())
-    for key, value in outputs.items():
-        print(f"{key}={value}")
-
-
-def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description=__doc__)
-    subparsers = result.add_subparsers(dest="operation", required=True)
-
-    validate = subparsers.add_parser("validate")
-    validate.add_argument("--contract", choices=sorted(SCHEMAS), required=True)
-    validate.add_argument("--input", type=Path, required=True)
-    validate.add_argument("--artifact-directory", type=Path)
-
-    write = subparsers.add_parser("write")
-    write.add_argument("--contract", choices=sorted(SCHEMAS), required=True)
-    write.add_argument("--input", type=Path, required=True)
-    write.add_argument("--output", type=Path, required=True)
-    write.add_argument("--artifact-directory", type=Path)
-
-    manifest = subparsers.add_parser("build-manifest")
-    manifest.add_argument("--artifact-directory", type=Path, required=True)
-    manifest.add_argument("--output", type=Path, required=True)
-    manifest.add_argument("--package-version", required=True)
-    manifest.add_argument("--source-sha", required=True)
-    manifest.add_argument("--development-distance", type=int)
-    manifest.add_argument("--image-context", required=True)
-    manifest.add_argument("--dockerfile", required=True)
-    manifest.add_argument("--target", required=True)
-    manifest.add_argument("--base-digest", required=True)
-    manifest.add_argument("--build-args-json", required=True)
-    manifest.add_argument("--labels-json", required=True)
-
-    checksums = subparsers.add_parser("checksums")
-    checksums.add_argument("--artifact-directory", type=Path, required=True)
-    checksums.add_argument("--output", type=Path, required=True)
-    return result
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    try:
-        args = parser().parse_args(argv)
-        if args.operation == "validate":
-            document = load_json(args.input)
-            validate_contract(
-                args.contract, document, artifact_root=args.artifact_directory
-            )
-            outputs = _identity_outputs(document, args.input)
-        elif args.operation == "write":
-            document = load_json(args.input)
-            outputs = write_contract(
-                args.contract,
-                document,
-                args.output,
-                artifact_root=args.artifact_directory,
-            )
-        elif args.operation == "build-manifest":
-            document, root = build_manifest(args)
-            outputs = write_contract(
-                "build-manifest", document, args.output, artifact_root=root
-            )
-        else:
-            outputs = write_checksums(args.artifact_directory, args.output)
-        emit_outputs(outputs)
-        return 0
-    except ContractError as error:
-        print(f"publication contract error: {error}", file=sys.stderr)
-        return 2
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

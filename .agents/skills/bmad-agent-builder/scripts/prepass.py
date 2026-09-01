@@ -37,6 +37,7 @@ and writes nothing inside the agent tree.
 Usage:
   prepass.py <agent-dir>     classify and count the agent at this directory
 """
+
 from __future__ import annotations
 
 import argparse
@@ -53,12 +54,23 @@ SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "v
 
 # Extensions we treat as countable text. Binary or opaque assets are skipped.
 TEXT_SUFFIXES = {
-    ".md", ".py", ".toml", ".yaml", ".yml", ".json", ".txt",
-    ".csv", ".html", ".sh", ".cfg", ".ini",
+    ".md",
+    ".py",
+    ".toml",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".txt",
+    ".csv",
+    ".html",
+    ".sh",
+    ".cfg",
+    ".ini",
 }
 
 
 # --- token counting ---------------------------------------------------------
+
 
 def _count_via_import(text: str):
     """Count tokens by importing the sibling count_tokens module."""
@@ -120,6 +132,7 @@ def read_text(path: Path) -> str:
 
 # --- agent classification ---------------------------------------------------
 
+
 def iter_files(root: Path):
     """Yield countable text files under root, skipping noise directories."""
     for path in sorted(root.rglob("*")):
@@ -145,7 +158,9 @@ def has_sanctum(root: Path, skill_text: str) -> bool:
         return True
     if re.search(r"\bsanctum\b", skill_text, re.IGNORECASE):
         return True
-    if "Sacred Truth" in skill_text and re.search(r"\b(waking|wake)\b", skill_text, re.IGNORECASE):
+    if "Sacred Truth" in skill_text and re.search(
+        r"\b(waking|wake)\b", skill_text, re.IGNORECASE
+    ):
         return True
 
     for pattern in ("scripts/wake*", "scripts/init-sanctum*"):
@@ -189,8 +204,8 @@ def has_autonomous_wake(root: Path, skill_text: str) -> bool:
                 return True
 
     wake_signals = [
-        r"--pulse:\{",                    # named-task pulse routing
-        r"-p:\{",                          # short-flag named-task routing
+        r"--pulse:\{",  # named-task pulse routing
+        r"-p:\{",  # short-flag named-task routing
         r"default pulse wake",
         r"default wake behavior",
         r"\bquiet hours\b",
@@ -213,6 +228,7 @@ def classify(root: Path, skill_text: str) -> str:
 
 
 # --- main -------------------------------------------------------------------
+
 
 def build_payload(root: Path) -> dict:
     skill_path = root / "SKILL.md"

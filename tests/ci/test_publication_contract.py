@@ -1,24 +1,20 @@
 from __future__ import annotations
 
-import argparse
-import importlib.util
+import inspect
 import json
 import re
 from pathlib import Path
-from types import ModuleType
+from typing import Any
 
 import pytest
 import tomllib
+import yaml
+from jsonschema import Draft202012Validator
 from packaging.specifiers import SpecifierSet
 
+import publication_contract as contract
+
 PROJECT_ROOT = Path(__file__).parents[2]
-ACTION_SCRIPT = (
-    PROJECT_ROOT
-    / ".github"
-    / "actions"
-    / "publication-contract"
-    / "publication_contract.py"
-)
 FIXTURES = Path(__file__).parent / "fixtures" / "publication-contract"
 VERIFY_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "verify-build.yaml"
 DOCKER_BAKE = PROJECT_ROOT / "docker-bake.hcl"
@@ -26,16 +22,22 @@ SOURCE_SHA = "d" * 40
 BASE_DIGEST = f"sha256:{'c' * 64}"
 
 
-def _load_contract_module() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("publication_contract", ACTION_SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def _load_workflow(path: Path) -> dict[str, Any]:
+    # BaseLoader keeps GitHub's `on` key as a string instead of applying YAML 1.1's
+    # obsolete yes/no boolean coercion, and leaves every scalar a string.
+    document = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    assert isinstance(document, dict)
+    return document
 
 
-contract = _load_contract_module()
+def _jobs(workflow: dict[str, Any]) -> dict[str, Any]:
+    jobs = workflow["jobs"]
+    assert isinstance(jobs, dict)
+    return jobs
+
+
+def _steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+    return [step for job in _jobs(workflow).values() for step in job.get("steps", [])]
 
 
 @pytest.mark.parametrize(
@@ -92,6 +94,22 @@ def test_invalid_fixtures_fail_with_field_specific_errors(
         contract.validate_contract(contract_name, document)
 
 
+def test_unsupported_contract_is_named_before_any_schema_is_loaded() -> None:
+    with pytest.raises(contract.ContractError, match=r"^contract: unsupported"):
+        contract.validate_contract("not-a-contract", {})
+
+
+def test_every_declared_contract_ships_a_valid_packaged_schema() -> None:
+    assert set(contract.CONTRACTS) == {
+        "build-manifest",
+        "publication-plan",
+        "release-receipt",
+    }
+    for name in contract.CONTRACTS:
+        schema = contract.load_schema(name)
+        Draft202012Validator.check_schema(schema)
+
+
 def test_duplicate_json_key_is_rejected_at_the_field() -> None:
     with pytest.raises(contract.ContractError, match=r"^\$\.source_sha: duplicate"):
         contract.load_json(FIXTURES / "invalid-duplicate-publication-plan.json")
@@ -105,25 +123,24 @@ def test_malformed_json_reports_its_source_location() -> None:
         contract.load_json(fixture)
 
 
-def _manifest_args(artifact_directory: Path, output: Path) -> argparse.Namespace:
-    return argparse.Namespace(
-        artifact_directory=artifact_directory,
-        output=output,
-        package_version="1.2.3",
-        source_sha=SOURCE_SHA,
-        development_distance=None,
-        image_context=".",
-        dockerfile="docker/Dockerfile",
-        target="runtime",
-        base_digest=BASE_DIGEST,
-        build_args_json=json.dumps(
+def _manifest_inputs(artifact_directory: Path) -> dict[str, Any]:
+    return {
+        "artifact_directory": artifact_directory,
+        "package_version": "1.2.3",
+        "source_sha": SOURCE_SHA,
+        "development_distance": None,
+        "image_context": ".",
+        "dockerfile": "docker/Dockerfile",
+        "target": "runtime",
+        "base_digest": BASE_DIGEST,
+        "build_args_json": json.dumps(
             {
                 "POETRY_VERSION": "2.4.2",
                 "REVISION": SOURCE_SHA,
                 "VERSION": "1.2.3",
             }
         ),
-        labels_json=json.dumps(
+        "labels_json": json.dumps(
             {
                 "org.opencontainers.image.title": "traefik-certificate-exporter",
                 "org.opencontainers.image.description": "fixture",
@@ -134,18 +151,23 @@ def _manifest_args(artifact_directory: Path, output: Path) -> argparse.Namespace
                 "org.opencontainers.image.revision": SOURCE_SHA,
             }
         ),
-    )
+    }
+
+
+def _distributions(directory: Path) -> tuple[Path, Path]:
+    wheel = directory / "package-1.2.3-py3-none-any.whl"
+    sdist = directory / "package-1.2.3.tar.gz"
+    wheel.write_bytes(b"wheel")
+    sdist.write_bytes(b"sdist")
+    return wheel, sdist
 
 
 def test_build_manifest_binds_artifacts_and_all_image_inputs(tmp_path: Path) -> None:
-    wheel = tmp_path / "package-1.2.3-py3-none-any.whl"
-    sdist = tmp_path / "package-1.2.3.tar.gz"
-    wheel.write_bytes(b"wheel")
-    sdist.write_bytes(b"sdist")
-    args = _manifest_args(tmp_path, tmp_path / "build-manifest.json")
+    wheel, sdist = _distributions(tmp_path)
+    output = tmp_path / "build-manifest.json"
 
-    document, root = contract.build_manifest(args)
-    contract.write_contract("build-manifest", document, args.output, artifact_root=root)
+    document, root = contract.build_manifest(**_manifest_inputs(tmp_path))
+    contract.write_contract("build-manifest", document, output, artifact_root=root)
 
     assert document["distributions"]["wheel"]["sha256"] == contract.sha256_file(wheel)
     assert document["distributions"]["sdist"]["sha256"] == contract.sha256_file(sdist)
@@ -156,13 +178,8 @@ def test_build_manifest_binds_artifacts_and_all_image_inputs(tmp_path: Path) -> 
 
 
 def test_artifact_hash_mismatch_is_rejected_at_hash_field(tmp_path: Path) -> None:
-    wheel = tmp_path / "package-1.2.3-py3-none-any.whl"
-    sdist = tmp_path / "package-1.2.3.tar.gz"
-    wheel.write_bytes(b"wheel")
-    sdist.write_bytes(b"sdist")
-    document, _root = contract.build_manifest(
-        _manifest_args(tmp_path, tmp_path / "manifest.json")
-    )
+    wheel, _sdist = _distributions(tmp_path)
+    document, _root = contract.build_manifest(**_manifest_inputs(tmp_path))
     wheel.write_bytes(b"tampered")
 
     with pytest.raises(
@@ -229,57 +246,179 @@ def test_secret_derived_hint_is_rejected() -> None:
         contract.validate_contract("publication-plan", document)
 
 
-def test_verify_workflow_interface_is_minimal_and_credential_free() -> None:
-    workflow = VERIFY_WORKFLOW.read_text(encoding="utf-8")
-    workflow_call = workflow.split("  workflow_call:\n", 1)[1].split(
-        "\npermissions:", 1
-    )[0]
-    workflow_inputs, workflow_outputs = workflow_call.split("    outputs:\n", 1)
-    input_names = set(
-        re.findall(r"^      ([a-z][a-z-]+):$", workflow_inputs, re.MULTILINE)
-    )
-    output_names = set(
-        re.findall(r"^      ([a-z0-9][a-z0-9-]+):$", workflow_outputs, re.MULTILINE)
-    )
+def test_secret_guard_fires_on_call_rather_than_on_exhaustion() -> None:
+    # A generator would only raise once a caller exhausted it, so the guard must
+    # not be one: calling it is what enforces the invariant.
+    assert not inspect.isgeneratorfunction(contract.reject_secret_fields)
+    assert "yield" not in inspect.getsource(contract.reject_secret_fields)
 
-    assert input_names == {"channel", "package-version", "source-sha"}
-    assert output_names == {
+    with pytest.raises(contract.ContractError, match=r"^\$\.a\[1\]\.api_token"):
+        contract.reject_secret_fields({"a": [{}, {"api_token": "x"}]})
+
+
+def test_both_guards_reject_a_secret_bearing_build_arg(tmp_path: Path) -> None:
+    inputs = _manifest_inputs(tmp_path)
+    _distributions(tmp_path)
+    inputs["build_args_json"] = json.dumps(
+        {
+            "POETRY_VERSION": "2.4.2",
+            "REVISION": SOURCE_SHA,
+            "VERSION": "1.2.3",
+            "REGISTRY_TOKEN": "s3cret",
+        }
+    )
+    document, root = contract.build_manifest(**inputs)
+
+    # The generated schema fragment rejects it first, ...
+    with pytest.raises(contract.ContractError, match=r"^\$\.image_plan\.build_args:"):
+        contract.validate_contract("build-manifest", document, artifact_root=root)
+    # ... and the Python guard rejects it on its own, at the exact field.
+    with pytest.raises(
+        contract.ContractError,
+        match=(
+            r"^\$\.image_plan\.build_args\.REGISTRY_TOKEN: "
+            r"secret-bearing fields are forbidden"
+        ),
+    ):
+        contract.reject_secret_fields(document)
+
+
+def _property_names_schemas(node: Any) -> list[Any]:
+    if isinstance(node, dict):
+        found = [node["propertyNames"]] if "propertyNames" in node else []
+        for key, value in node.items():
+            if key != "propertyNames":
+                found.extend(_property_names_schemas(value))
+        return found
+    if isinstance(node, list):
+        return [item for value in node for item in _property_names_schemas(value)]
+    return []
+
+
+def test_no_schema_carries_a_forbidden_field_rule_of_its_own() -> None:
+    # Scope is derived from the packaged schemas, not a hand-kept path list: any
+    # new or moved copy of the rule has to be the generated fragment or fail here.
+    generated = contract.secret_field_name_schema()
+    found = [
+        fragment
+        for name in contract.CONTRACTS
+        for fragment in _property_names_schemas(contract.load_schema(name))
+    ]
+
+    assert found, "the generated forbidden-field fragment is no longer in any schema"
+    assert all(fragment == generated for fragment in found), found
+    # ECMA-262 `pattern` has no inline flags, so the generated pattern must not use
+    # one; case insensitivity is spelled out as explicit character classes.
+    assert re.search(r"\(\?[a-zA-Z]", contract.SECRET_FIELD_SCHEMA_PATTERN) is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "POETRY_VERSION",
+        "REVISION",
+        "VERSION",
+        "WHEEL_PATH",
+        "WHEEL_SHA256",
+        "credential_mode",
+        "monkey",
+        "keys",
+        "REGISTRY_TOKEN",
+        "aws_secret_key",
+        "password",
+        "Passwd",
+        "credential_hint",
+        "credential_value",
+        "signing_key",
+    ],
+)
+def test_schema_fragment_and_python_guard_agree_field_by_field(name: str) -> None:
+    validator = Draft202012Validator(contract.secret_field_name_schema())
+
+    assert contract.is_secret_field(name) is not validator.is_valid(name), name
+
+
+def test_verify_workflow_interface_is_minimal_and_credential_free() -> None:
+    workflow = _load_workflow(VERIFY_WORKFLOW)
+    raw = VERIFY_WORKFLOW.read_text(encoding="utf-8")
+    workflow_call = workflow["on"]["workflow_call"]
+
+    assert set(workflow_call) == {"inputs", "outputs"}
+    assert set(workflow_call["inputs"]) == {"channel", "package-version", "source-sha"}
+    assert set(workflow_call["outputs"]) == {
         "build-manifest-sha256",
         "dist-artifact-name",
         "package-version",
         "source-sha",
     }
-    assert "secrets:" not in workflow
-    assert "continue-on-error" not in workflow
-    assert "permissions:\n  contents: read" in workflow
-    assert workflow.count("persist-credentials: false") == workflow.count(
-        "uses: actions/checkout@"
-    )
-    assert workflow.count("fetch-depth: 0") == workflow.count("uses: actions/checkout@")
-    assert workflow.count("fetch-tags: true") == workflow.count(
-        "uses: actions/checkout@"
-    )
+    assert workflow["permissions"] == {"contents": "read"}
+    # Deliberately textual: `secrets:` must be absent everywhere in the file,
+    # including inside `run:` scripts and comments, where the parsed structure
+    # would no longer show it as a key.
+    assert "secrets:" not in raw
+
+    for name, job in _jobs(workflow).items():
+        assert "continue-on-error" not in job, name
+        assert "secrets" not in job, name
+    for step in _steps(workflow):
+        assert "continue-on-error" not in step, step.get("name")
+
+    checkouts = [
+        step
+        for step in _steps(workflow)
+        if step.get("uses", "").startswith("actions/checkout@")
+    ]
+    assert checkouts
+    for step in checkouts:
+        assert step["with"]["persist-credentials"] == "false"
+        assert step["with"]["fetch-depth"] == "0"
+        assert step["with"]["fetch-tags"] == "true"
 
 
 def test_verify_workflow_exposes_only_one_canonical_promotable_set() -> None:
-    workflow = VERIFY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = _load_workflow(VERIFY_WORKFLOW)
+    steps = _steps(workflow)
+    runs = [step["run"] for step in steps if "run" in step]
+    contract_steps = [
+        step
+        for step in steps
+        if step.get("uses") == "./.github/actions/publication-contract"
+    ]
+    uploads = [
+        step
+        for step in steps
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+    ]
 
-    assert workflow.count("run: poetry build") == 1
-    assert "poetry run twine check --" in workflow
-    assert workflow.count("operation: verify-checksums") == 2
-    assert "LiquidLogicLabs/git-action-docker-test@v2" in workflow
-    assert workflow.count("uses: actions/upload-artifact@") == 1
-    assert "name: verified-dist-v1" in workflow
-    assert "path: verified-dist-v1/" in workflow
-    assert "retention-days: 30" in workflow
-    assert "if-no-files-found: error" in workflow
-    assert "docker/login-action@" not in workflow
-    assert re.search(r"\bdocker\s+(?:login|push)\b", workflow) is None
-    assert "poetry publish" not in workflow
-    assert '"LABELS_JSON": json.dumps(' in workflow
+    assert [run for run in runs if run.strip() == "poetry build"]
+    assert sum(run.strip() == "poetry build" for run in runs) == 1
+    assert any("poetry run twine check --" in run for run in runs)
+    assert (
+        sum(step["with"]["operation"] == "verify-checksums" for step in contract_steps)
+        == 2
+    )
+    assert any(
+        step.get("uses") == "LiquidLogicLabs/git-action-docker-test@v2"
+        for step in steps
+    )
+    assert len(uploads) == 1
+    assert uploads[0]["with"] == {
+        "name": "verified-dist-v1",
+        "if-no-files-found": "error",
+        "path": "verified-dist-v1/",
+        "retention-days": "30",
+    }
+    assert not any(
+        step.get("uses", "").startswith("docker/login-action@") for step in steps
+    )
+    assert not any(re.search(r"\bdocker\s+(?:login|push)\b", run) for run in runs)
+    assert not any("poetry publish" in run for run in runs)
+    assert any('"LABELS_JSON": json.dumps(' in run for run in runs)
     assert "jsondecode(LABELS_JSON)" in DOCKER_BAKE.read_text(encoding="utf-8")
-    assert workflow.count("ORIGINAL_MANIFEST_SHA256:") == 2
-    assert workflow.count("ORIGINAL_CHECKSUMS_SHA256:") == 2
+    assert sum("ORIGINAL_MANIFEST_SHA256" in step.get("env", {}) for step in steps) == 2
+    assert (
+        sum("ORIGINAL_CHECKSUMS_SHA256" in step.get("env", {}) for step in steps) == 2
+    )
 
 
 def test_verify_matrix_exactly_matches_declared_supported_python_range() -> None:
@@ -289,30 +428,40 @@ def test_verify_matrix_exactly_matches_declared_supported_python_range() -> None
     python_constraint = SpecifierSet(
         metadata["tool"]["poetry"]["dependencies"]["python"]
     )
-    workflow = VERIFY_WORKFLOW.read_text(encoding="utf-8")
-    matrix_block = workflow.split("      matrix:\n", 1)[1].split("    steps:\n", 1)[0]
-    matrix_versions = re.findall(
-        r'^          - "([0-9]+\.[0-9]+)"$', matrix_block, re.MULTILINE
-    )
+    supported = [
+        f"{major}.{minor}"
+        for major in range(2, 5)
+        for minor in range(100)
+        if f"{major}.{minor}.0" in python_constraint
+    ]
+    workflow = _load_workflow(VERIFY_WORKFLOW)
+    matrix_versions = _jobs(workflow)["pytest"]["strategy"]["matrix"]["python"]
 
-    assert matrix_versions == ["3.10", "3.11", "3.12", "3.13", "3.14"]
-    assert all(f"{version}.0" in python_constraint for version in matrix_versions)
+    assert supported
+    assert matrix_versions == supported
     assert "3.9.0" not in python_constraint
     assert "3.15.0" not in python_constraint
 
 
 def test_manifest_inputs_match_the_image_build_plan() -> None:
-    workflow = VERIFY_WORKFLOW.read_text(encoding="utf-8")
+    workflow = _load_workflow(VERIFY_WORKFLOW)
     bake = DOCKER_BAKE.read_text(encoding="utf-8")
     base_image = re.search(r'BASE_IMAGE\s*=\s*"[^"@]+@(sha256:[0-9a-f]{64})"', bake)
+    manifest_step = next(
+        step
+        for step in _steps(workflow)
+        if step.get("uses") == "./.github/actions/publication-contract"
+        and step["with"]["operation"] == "build-manifest"
+    )
+    inputs = manifest_step["with"]
 
     assert base_image is not None
-    assert f"base-digest: {base_image.group(1)}" in workflow
+    assert inputs["base-digest"] == base_image.group(1)
     assert 'context    = "."' in bake
-    assert "image-context: ." in workflow
+    assert inputs["image-context"] == "."
     assert 'dockerfile = "docker/Dockerfile"' in bake
-    assert "dockerfile: docker/Dockerfile" in workflow
+    assert inputs["dockerfile"] == "docker/Dockerfile"
     assert 'target     = "runtime"' in bake
-    assert "target: runtime" in workflow
+    assert inputs["target"] == "runtime"
     assert 'POETRY_VERSION = "2.4.2"' in bake
-    assert '"POETRY_VERSION":"2.4.2"' in workflow
+    assert '"POETRY_VERSION":"2.4.2"' in inputs["build-args-json"]

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class ObjectBase:
     __event_handlers = {}
 
@@ -25,15 +26,15 @@ class ObjectBase:
     def _handle_on_progress(self, message):
         """
         Handle the progress of a task.
-        
+
         Parameters:
             self: the object instance
             message: a message indicating the progress
-        
+
         Returns:
             None
         """
-        pass 
+        pass
 
     def _raise_on_progress(self, message):
         """
@@ -42,7 +43,7 @@ class ObjectBase:
         @param message - The message to raise
         """
         self._emit("progress", message)
-        
+
     def _emit(self, event, *args):
         """
         Emit/Trigger an event.

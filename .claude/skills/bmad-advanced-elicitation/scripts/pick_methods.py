@@ -31,6 +31,7 @@ categories are first-class and number-addressable everywhere.
 
 Default output is lean tab-separated text for an LLM to read; --json for structured.
 """
+
 import argparse
 import csv
 import json
@@ -55,7 +56,11 @@ def load(file: Path) -> list[dict]:
 
 def load_extra(spec: str) -> list[dict]:
     """Parse the --extra overlay: a JSON array literal or a path to a JSON file."""
-    text = spec if spec.lstrip().startswith("[") else Path(spec).read_text(encoding="utf-8-sig")
+    text = (
+        spec
+        if spec.lstrip().startswith("[")
+        else Path(spec).read_text(encoding="utf-8-sig")
+    )
     data = json.loads(text)
     if not isinstance(data, list):
         raise ValueError("--extra must be a JSON array of objects")
@@ -128,7 +133,9 @@ def exclude(rows: list[dict], names: list[str] | None) -> list[dict]:
     return [r for r in rows if r["method_name"].lower() not in skip]
 
 
-def spread_sample(rows: list[dict], n: int, rng: random.Random | None = None) -> list[dict]:
+def spread_sample(
+    rows: list[dict], n: int, rng: random.Random | None = None
+) -> list[dict]:
     """Draw n methods with maximum category diversity: shuffle the categories,
     take one random method per category round-robin, wrapping only when there
     are fewer categories than picks."""
@@ -170,23 +177,51 @@ def fmt_rows(rows: list[dict], as_json: bool) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")  # catalog rows contain →; don't die on locale code pages
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--file", type=Path, default=DEFAULT_FILE, help="method CSV (default: sibling assets/methods.csv)")
-    p.add_argument("--extra", help="additional methods: a JSON array literal or a path to a JSON file")
-    p.add_argument("--json", action="store_true", help="emit structured JSON instead of lean text")
+        sys.stdout.reconfigure(
+            encoding="utf-8"
+        )  # catalog rows contain →; don't die on locale code pages
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--file",
+        type=Path,
+        default=DEFAULT_FILE,
+        help="method CSV (default: sibling assets/methods.csv)",
+    )
+    p.add_argument(
+        "--extra",
+        help="additional methods: a JSON array literal or a path to a JSON file",
+    )
+    p.add_argument(
+        "--json", action="store_true", help="emit structured JSON instead of lean text"
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("categories", help="list category names + counts")
-    pl = sub.add_parser("list", help="the index for chosen categories (needs --category or --all)")
-    pl.add_argument("--category", action="append", help="filter to a category (repeatable)")
-    pl.add_argument("--all", action="store_true", help="dump the entire catalog (deliberate; large)")
+    pl = sub.add_parser(
+        "list", help="the index for chosen categories (needs --category or --all)"
+    )
+    pl.add_argument(
+        "--category", action="append", help="filter to a category (repeatable)"
+    )
+    pl.add_argument(
+        "--all", action="store_true", help="dump the entire catalog (deliberate; large)"
+    )
     ps = sub.add_parser("show", help="full row for each named method")
     ps.add_argument("names", nargs="+", help="method names or nums")
     pr = sub.add_parser("random", help="draw methods at random")
     pr.add_argument("-n", type=int, default=1, help="how many (default 1)")
-    pr.add_argument("--category", action="append", help="restrict to a category (repeatable)")
-    pr.add_argument("--exclude", action="append", help="method name to skip (repeatable) — e.g. already shown")
-    pr.add_argument("--spread", action="store_true", help="force category diversity across the draw")
+    pr.add_argument(
+        "--category", action="append", help="restrict to a category (repeatable)"
+    )
+    pr.add_argument(
+        "--exclude",
+        action="append",
+        help="method name to skip (repeatable) — e.g. already shown",
+    )
+    pr.add_argument(
+        "--spread", action="store_true", help="force category diversity across the draw"
+    )
     args = p.parse_args(argv)
 
     if not args.file.is_file():
@@ -223,7 +258,9 @@ def main(argv: list[str] | None = None) -> int:
         if not pool:
             print("# no methods match", file=sys.stderr)
             return 1
-        n = max(0, min(args.n, len(pool)))  # clamp: never crash on a negative or oversized -n
+        n = max(
+            0, min(args.n, len(pool))
+        )  # clamp: never crash on a negative or oversized -n
         picks = spread_sample(pool, n) if args.spread else random.sample(pool, n)
         print(fmt_rows(picks, args.json))
     return 0

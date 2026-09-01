@@ -9,14 +9,15 @@ declared passthrough keys, nothing else.
 Run with: uv run --with pytest -m pytest test_env_isolation.py
 (or plain `uv run test_env_isolation.py` for a lightweight self-check).
 """
+
 import sys
 from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-import run_evals  # noqa: E402
-import run_triggers  # noqa: E402
+import run_evals
+import run_triggers
 
 BUILDERS = [run_evals.build_case_env, run_triggers.build_case_env]
 
@@ -36,8 +37,10 @@ def test_minimal_env_keys():
     adapter = {"auth_env": "ANTHROPIC_API_KEY"}
     for build in BUILDERS:
         env = build(adapter, HOME, HOST_ENV)
-        assert set(env) == {"PATH", "HOME", "CLAUDE_CONFIG_DIR",
-                            "ANTHROPIC_API_KEY"}, (build.__module__, env)
+        assert set(env) == {"PATH", "HOME", "CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"}, (
+            build.__module__,
+            env,
+        )
         assert env["PATH"] == HOST_ENV["PATH"]
         assert env["HOME"] == str(HOME), "HOME must be the fresh case home"
         assert env["CLAUDE_CONFIG_DIR"] == str(HOME / ".claude")
@@ -62,8 +65,10 @@ def test_no_adapter_still_minimal():
 
 
 def test_env_passthrough_only_declared_and_present():
-    adapter = {"auth_env": "ANTHROPIC_API_KEY",
-               "env_passthrough": ["EXTRA_VAR", "NOT_SET_ON_HOST"]}
+    adapter = {
+        "auth_env": "ANTHROPIC_API_KEY",
+        "env_passthrough": ["EXTRA_VAR", "NOT_SET_ON_HOST"],
+    }
     for build in BUILDERS:
         env = build(adapter, HOME, HOST_ENV)
         assert env.get("EXTRA_VAR") == "extra"

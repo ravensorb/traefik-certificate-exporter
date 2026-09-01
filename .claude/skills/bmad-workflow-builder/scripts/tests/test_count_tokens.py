@@ -6,6 +6,7 @@ agreeing within tolerance, the CLI over a file and over stdin, and argument
 guards. Run with: uv run --with pytest -m pytest test_count_tokens.py
 (or plain `uv run test_count_tokens.py` to run a lightweight self-check).
 """
+
 import builtins
 import importlib.util
 import json
@@ -95,7 +96,9 @@ def test_cli_file_output_schema(tmp_path):
     f.write_text(SAMPLE, encoding="utf-8")
     out = subprocess.run(
         [sys.executable, str(SCRIPT), str(f)],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     data = json.loads(out)
     assert set(data.keys()) == {"tokens", "method"}
@@ -107,7 +110,10 @@ def test_cli_file_output_schema(tmp_path):
 def test_cli_stdin_output_schema():
     out = subprocess.run(
         [sys.executable, str(SCRIPT), "--stdin"],
-        input=SAMPLE, capture_output=True, text=True, check=True,
+        input=SAMPLE,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     data = json.loads(out)
     assert set(data.keys()) == {"tokens", "method"}
@@ -117,21 +123,32 @@ def test_cli_stdin_output_schema():
 
 def test_cli_file_and_stdin_agree():
     """The CLI over a file and over stdin produce the same count for same text."""
-    import tempfile, os
+    import os
+    import tempfile
+
     fd, name = tempfile.mkstemp(suffix=".md")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(SAMPLE)
-        file_out = json.loads(subprocess.run(
-            [sys.executable, str(SCRIPT), name],
-            capture_output=True, text=True, check=True,
-        ).stdout)
+        file_out = json.loads(
+            subprocess.run(
+                [sys.executable, str(SCRIPT), name],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        )
     finally:
         os.unlink(name)
-    stdin_out = json.loads(subprocess.run(
-        [sys.executable, str(SCRIPT), "--stdin"],
-        input=SAMPLE, capture_output=True, text=True, check=True,
-    ).stdout)
+    stdin_out = json.loads(
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "--stdin"],
+            input=SAMPLE,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
     assert file_out == stdin_out
 
 
@@ -139,13 +156,15 @@ def test_cli_requires_an_input():
     """No file and no --stdin is a usage error (exit 2 from argparse)."""
     res = subprocess.run(
         [sys.executable, str(SCRIPT)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert res.returncode != 0
 
 
 def _run_all():
     import tempfile
+
     failures = 0
     tests = [
         test_tiktoken_path,

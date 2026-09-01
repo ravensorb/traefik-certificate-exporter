@@ -41,7 +41,11 @@ def section_metrics(text: str) -> list[dict]:
             marker = fence.group(1)
             if open_fence is None:
                 open_fence = (marker[0], len(marker))
-            elif marker[0] == open_fence[0] and len(marker) >= open_fence[1] and line.strip() == marker:
+            elif (
+                marker[0] == open_fence[0]
+                and len(marker) >= open_fence[1]
+                and line.strip() == marker
+            ):
                 open_fence = None
             current["body"].append(line)
             continue
@@ -79,7 +83,9 @@ def metrics(path: Path) -> dict:
 
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")  # JSON is UTF-8 regardless of locale code page
+        sys.stdout.reconfigure(
+            encoding="utf-8"
+        )  # JSON is UTF-8 regardless of locale code page
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("path", help="document to measure")
     parser.add_argument("-o", "--output", help="write JSON here (default: stdout)")

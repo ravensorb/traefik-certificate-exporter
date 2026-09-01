@@ -105,12 +105,14 @@ def discover_capabilities(references_dir: Path, sanctum_refs_path: str) -> list[
             continue
         meta = parse_frontmatter(md_file)
         if meta.get("name") and meta.get("code"):
-            capabilities.append({
-                "name": meta["name"],
-                "description": meta.get("description", ""),
-                "code": meta["code"],
-                "source": f"{sanctum_refs_path}/{md_file.name}",
-            })
+            capabilities.append(
+                {
+                    "name": meta["name"],
+                    "description": meta.get("description", ""),
+                    "code": meta["code"],
+                    "source": f"{sanctum_refs_path}/{md_file.name}",
+                }
+            )
     return capabilities
 
 
@@ -129,17 +131,19 @@ def generate_capabilities_md(capabilities: list[dict]) -> str:
             f"| {cap['code']} | {cap['name']} | {cap['description']} | `{cap['source']}` |"
         )
 
-    lines.extend([
-        "",
-        "## Tools",
-        "",
-        "### Required",
-        "- **WebSearch** — live research for cloud/platform best practices (must be enabled in Claude Code permissions)",
-        "",
-        "### User-Provided Tools",
-        "",
-        "_MCP servers, APIs, or services the owner has made available. Document them here._",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Tools",
+            "",
+            "### Required",
+            "- **WebSearch** — live research for cloud/platform best practices (must be enabled in Claude Code permissions)",
+            "",
+            "### User-Provided Tools",
+            "",
+            "_MCP servers, APIs, or services the owner has made available. Document them here._",
+        ]
+    )
 
     return "\n".join(lines) + "\n"
 
@@ -158,15 +162,25 @@ def main():
         epilog="After this runs, start the agent to begin the First Breath conversation.",
     )
     parser.add_argument("project_root", help="Root of the project (where _bmad/ lives)")
-    parser.add_argument("skill_path", help="Path to the skill directory (where SKILL.md lives)")
-    parser.add_argument("--json", action="store_true", help="Emit structured JSON output")
+    parser.add_argument(
+        "skill_path", help="Path to the skill directory (where SKILL.md lives)"
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Emit structured JSON output"
+    )
     args = parser.parse_args()
 
     project_root = Path(args.project_root).resolve()
     skill_path = Path(args.skill_path).resolve()
     use_json = args.json
 
-    result: dict = {"skill": SKILL_NAME, "status": "unknown", "sanctum": "", "created": [], "warnings": []}
+    result: dict = {
+        "skill": SKILL_NAME,
+        "status": "unknown",
+        "sanctum": "",
+        "created": [],
+        "warnings": [],
+    }
 
     # Paths
     bmad_dir = project_root / "_bmad"
@@ -248,7 +262,9 @@ def main():
         for w in result["warnings"]:
             print(f"  ! {w}")
         print()
-        print("First Breath scaffolding complete. The conversational awakening can now begin.")
+        print(
+            "First Breath scaffolding complete. The conversational awakening can now begin."
+        )
 
 
 if __name__ == "__main__":

@@ -102,7 +102,12 @@ runs:
         PC_LABELS_JSON: ${{ inputs.labels-json }}
       run: |
         set -euo pipefail
-        command=(poetry run python "$GITHUB_ACTION_PATH/publication_contract.py")
+        # One invocation path. The validator lives in src/publication_contract/, and
+        # PYTHONPATH makes it importable whether or not the consuming job installed the
+        # project root -- verify-build.yaml's distribution job installs with
+        # --no-root --no-directory, so a console script alone would not resolve there.
+        export PYTHONPATH="$GITHUB_WORKSPACE/src${PYTHONPATH:+:$PYTHONPATH}"
+        command=(poetry run python -m publication_contract)
         case "$PC_OPERATION" in
           validate)
             command+=(validate --contract "$PC_CONTRACT" --input "$PC_INPUT_FILE")

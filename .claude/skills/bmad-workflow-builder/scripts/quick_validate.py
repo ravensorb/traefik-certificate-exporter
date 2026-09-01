@@ -19,6 +19,7 @@ Usage:
   quick_validate.py <path> --allow-keys name,description
   quick_validate.py <path> --max-name 64 --max-desc 1024
 """
+
 from __future__ import annotations
 
 import argparse
@@ -59,28 +60,52 @@ def validate(content: str, allowed_keys, max_name: int, max_desc: int) -> list[d
 
     extra = [k for k in meta if k not in allowed_keys]
     if extra:
-        errors.append({
-            "check": "allowed-keys",
-            "message": f"unexpected frontmatter keys: {', '.join(sorted(extra))}; allowed: {', '.join(allowed_keys)}",
-        })
+        errors.append(
+            {
+                "check": "allowed-keys",
+                "message": f"unexpected frontmatter keys: {', '.join(sorted(extra))}; allowed: {', '.join(allowed_keys)}",
+            }
+        )
 
     name = meta.get("name", "")
     if not name:
         errors.append({"check": "name", "message": "name is missing or empty"})
     else:
         if not HYPHEN_CASE.match(name):
-            errors.append({"check": "name", "message": f"name {name!r} is not hyphen-case (lowercase, digits, single hyphens)"})
+            errors.append(
+                {
+                    "check": "name",
+                    "message": f"name {name!r} is not hyphen-case (lowercase, digits, single hyphens)",
+                }
+            )
         if len(name) > max_name:
-            errors.append({"check": "name", "message": f"name is {len(name)} chars, over the {max_name} limit"})
+            errors.append(
+                {
+                    "check": "name",
+                    "message": f"name is {len(name)} chars, over the {max_name} limit",
+                }
+            )
 
     desc = meta.get("description", "")
     if not desc:
-        errors.append({"check": "description", "message": "description is missing or empty"})
+        errors.append(
+            {"check": "description", "message": "description is missing or empty"}
+        )
     else:
         if len(desc) > max_desc:
-            errors.append({"check": "description", "message": f"description is {len(desc)} chars, over the {max_desc} limit"})
+            errors.append(
+                {
+                    "check": "description",
+                    "message": f"description is {len(desc)} chars, over the {max_desc} limit",
+                }
+            )
         if "<" in desc or ">" in desc:
-            errors.append({"check": "description", "message": "description contains angle brackets, which break router matching"})
+            errors.append(
+                {
+                    "check": "description",
+                    "message": "description contains angle brackets, which break router matching",
+                }
+            )
 
     return errors
 
@@ -90,17 +115,41 @@ def resolve_skill_md(path: Path) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="Structural lint for a skill's SKILL.md frontmatter")
+    p = argparse.ArgumentParser(
+        description="Structural lint for a skill's SKILL.md frontmatter"
+    )
     p.add_argument("path", type=Path, help="skill directory or a SKILL.md file")
-    p.add_argument("--allow-key", action="append", default=[], help="add one key to the allowed set (repeatable)")
-    p.add_argument("--allow-keys", help="comma-separated set that REPLACES the default allowed keys")
-    p.add_argument("--max-name", type=int, default=64, help="max name length (default 64)")
-    p.add_argument("--max-desc", type=int, default=1024, help="max description length (default 1024)")
+    p.add_argument(
+        "--allow-key",
+        action="append",
+        default=[],
+        help="add one key to the allowed set (repeatable)",
+    )
+    p.add_argument(
+        "--allow-keys",
+        help="comma-separated set that REPLACES the default allowed keys",
+    )
+    p.add_argument(
+        "--max-name", type=int, default=64, help="max name length (default 64)"
+    )
+    p.add_argument(
+        "--max-desc",
+        type=int,
+        default=1024,
+        help="max description length (default 1024)",
+    )
     args = p.parse_args(argv)
 
     skill_md = resolve_skill_md(args.path)
     if not skill_md.is_file():
-        print(json.dumps({"ok": False, "errors": [{"check": "path", "message": f"{skill_md} not found"}]}))
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "errors": [{"check": "path", "message": f"{skill_md} not found"}],
+                }
+            )
+        )
         return 1
 
     if args.allow_keys:
@@ -108,7 +157,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         allowed = list(DEFAULT_ALLOWED_KEYS) + list(args.allow_key)
 
-    errors = validate(skill_md.read_text(encoding="utf-8"), allowed, args.max_name, args.max_desc)
+    errors = validate(
+        skill_md.read_text(encoding="utf-8"), allowed, args.max_name, args.max_desc
+    )
     print(json.dumps({"ok": not errors, "file": str(skill_md), "errors": errors}))
     return 0 if not errors else 1
 

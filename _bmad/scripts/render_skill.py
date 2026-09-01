@@ -109,7 +109,9 @@ def _load_sources(skill_dir: Path) -> dict[str, str]:
         try:
             sources[name] = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as error:
-            raise RenderError(f"failed to read render source {path}: {error}") from error
+            raise RenderError(
+                f"failed to read render source {path}: {error}"
+            ) from error
     if "workflow.md" not in sources:
         raise RenderError(f"render entry is missing: {skill_dir / 'workflow.md'}")
     return sources
@@ -175,7 +177,9 @@ def _format_review_layers(layers: list[dict[str, str]]) -> str:
     return "\n\n".join(sections)
 
 
-def _resolve_customization_value(value: Any, default: Any, label: str) -> tuple[Any, str]:
+def _resolve_customization_value(
+    value: Any, default: Any, label: str
+) -> tuple[Any, str]:
     if isinstance(default, str):
         allow_empty = not default.strip() or label == "customization.workflow.open_spec"
         resolved = _require_string(value, label, allow_empty=allow_empty)
@@ -272,7 +276,9 @@ def _verify_existing(destination: Path, manifest: dict[str, Any]) -> None:
     try:
         existing = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise RenderError(f"corrupt existing generation {destination}: {error}") from error
+        raise RenderError(
+            f"corrupt existing generation {destination}: {error}"
+        ) from error
     if existing != manifest:
         raise RenderError(f"generation collision or corruption at {destination}")
     expected_files = set(manifest["outputs"]) | {"manifest.json"}
@@ -282,17 +288,23 @@ def _verify_existing(destination: Path, manifest: dict[str, Any]) -> None:
         if path.is_file()
     }
     if actual_files != expected_files:
-        raise RenderError(f"generation contains unexpected or missing files: {destination}")
+        raise RenderError(
+            f"generation contains unexpected or missing files: {destination}"
+        )
     for name, expected_hash in manifest["outputs"].items():
         try:
             actual_hash = _hash_bytes((destination / name).read_bytes())
         except OSError as error:
-            raise RenderError(f"failed to verify {destination / name}: {error}") from error
+            raise RenderError(
+                f"failed to verify {destination / name}: {error}"
+            ) from error
         if actual_hash != expected_hash:
             raise RenderError(f"generation output hash mismatch: {destination / name}")
 
 
-def _publish(destination: Path, outputs: dict[str, bytes], manifest: dict[str, Any]) -> None:
+def _publish(
+    destination: Path, outputs: dict[str, bytes], manifest: dict[str, Any]
+) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         _verify_existing(destination, manifest)
@@ -304,7 +316,9 @@ def _publish(destination: Path, outputs: dict[str, bytes], manifest: dict[str, A
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(content)
         (staging / "manifest.json").write_bytes(
-            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True).encode(
+                "utf-8"
+            )
             + b"\n"
         )
         try:

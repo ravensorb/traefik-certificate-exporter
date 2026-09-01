@@ -7,7 +7,10 @@ readme = "README.md"
 repository = "https://github.com/ravensorb/traefik-certificate-exporter"
 homepage = "https://github.com/ravensorb/traefik-certificate-exporter"
 keywords = ['traefik', 'letsencrypt']
-packages = [{include = "traefik_certificate_exporter", from = "src"}]
+packages = [
+    {include = "traefik_certificate_exporter", from = "src"},
+    {include = "publication_contract", from = "src"},
+]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.15"
@@ -24,6 +27,11 @@ logging-tree = "^1.9"
 expandvars = "^0.12.0"
 cryptography = "^50.0.1"
 python-json-logger = "^4.2.0"
+# Runtime dependencies of the publication-contract validator only. Optional so that
+# `poetry install --only main` -- what docker/Dockerfile uses to build the runtime image --
+# does not pull jsonschema and its compiled rpds-py chain into the production image.
+jsonschema = { version = "^4.25.1", optional = true }
+packaging = { version = "^26.3", optional = true }
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.2.1"
@@ -31,14 +39,57 @@ scriv = {extras = ["toml"], version = "^1.2.1"}
 pytest = "^9.1.1"
 poetry = "^2.4.2"
 twine = "^7.0.0"
+pyyaml = "^6.0.1"
+mypy = "^2.3.1"
+types-jsonschema = "^4.25.1"
+dockerfile-parse = "^2.0.1"
+# Mirrors of the two optional publication-contract extras above, so a plain
+# `poetry install` yields a working test environment without --extras. Held identical
+# by tests/ci/test_publication_contract.py.
 jsonschema = "^4.25.1"
 packaging = "^26.3"
 
 [tool.poetry.group.artifact-build.dependencies]
 poetry-core = "2.4.0"
 
+[tool.poetry.extras]
+publication-contract = ["jsonschema", "packaging"]
+
 [tool.poetry.scripts]
 traefik-certificate-exporter = "traefik_certificate_exporter.app:main"
+publication-contract = "publication_contract.cli:main"
+
+[tool.mypy]
+python_version = "3.11"
+# The pre-commit hook runs in an isolated environment without this project's
+# dependencies installed, so import resolution is not the thing being checked here.
+ignore_missing_imports = true
+# Whether an ignore is "unused" depends on which dependencies are importable, which
+# differs between the hook's env and a developer's. Enabling it makes the gate
+# environment-dependent.
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+# Strict only for the contract code Epic 7 added, where annotations ARE the
+# design-by-contract mechanism and nothing else checks them.
+module = ["publication_contract.*"]
+strict = true
+
+[[tool.mypy.overrides]]
+# The pre-Epic-7 application package and the older helper scripts predate any type
+# gate and are largely unannotated. They are checked in default mode -- a NEW type
+# error there still fails this gate -- but are not held to strict. Annotating them is
+# real work with real regression risk and belongs in its own change, not smuggled into
+# a restore. Removing these two blocks is how that work would start.
+module = ["traefik_certificate_exporter.*"]
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+# docker-py ships no py.typed; mypy's partial view of it misses its re-exports.
+module = ["docker.*"]
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

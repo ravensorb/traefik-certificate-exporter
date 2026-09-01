@@ -7,6 +7,7 @@ shells carry a parseable placeholder island.
 Run with: uv run --with pytest -m pytest test_render_report.py
 (or plain `uv run test_render_report.py` for a lightweight self-check).
 """
+
 import json
 import re
 import subprocess
@@ -20,9 +21,7 @@ SHELLS = [
     SKILLS_DIR / "bmad-workflow-builder" / "assets" / "report-shell.html",
     SKILLS_DIR / "bmad-agent-builder" / "assets" / "report-shell.html",
 ]
-ISLAND_RE = re.compile(
-    r'<script[^>]*\bid="report-data"[^>]*>(.*?)</script>', re.DOTALL
-)
+ISLAND_RE = re.compile(r'<script[^>]*\bid="report-data"[^>]*>(.*?)</script>', re.DOTALL)
 
 VALID_DATA = {
     "schema_version": 2,
@@ -46,7 +45,11 @@ VALID_DATA = {
     ],
     "strengths": ["Frontmatter and routing map are exemplary."],
     "recommendations": [
-        {"rank": 1, "action": "De-script the finalize section.", "resolves": ["leanness-1"]}
+        {
+            "rank": 1,
+            "action": "De-script the finalize section.",
+            "resolves": ["leanness-1"],
+        }
     ],
     "findings": [
         {

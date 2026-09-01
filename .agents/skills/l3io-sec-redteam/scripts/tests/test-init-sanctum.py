@@ -46,7 +46,9 @@ class TestParseYamlConfig(unittest.TestCase):
 class TestParseFrontmatter(unittest.TestCase):
     def test_extracts_fields(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-            f.write("---\nname: test-cap\ncode: TC\ndescription: A test capability\n---\n\n# Body\n")
+            f.write(
+                "---\nname: test-cap\ncode: TC\ndescription: A test capability\n---\n\n# Body\n"
+            )
             path = Path(f.name)
         result = m.parse_frontmatter(path)
         self.assertEqual(result["name"], "test-cap")
@@ -64,7 +66,10 @@ class TestParseFrontmatter(unittest.TestCase):
 
 class TestSubstituteVars(unittest.TestCase):
     def test_replaces_placeholders(self):
-        result = m.substitute_vars("Hello {user_name}, born {birth_date}", {"user_name": "Alice", "birth_date": "2026-01-01"})
+        result = m.substitute_vars(
+            "Hello {user_name}, born {birth_date}",
+            {"user_name": "Alice", "birth_date": "2026-01-01"},
+        )
         self.assertEqual(result, "Hello Alice, born 2026-01-01")
 
     def test_unknown_placeholder_left_intact(self):
@@ -74,7 +79,14 @@ class TestSubstituteVars(unittest.TestCase):
 
 class TestGenerateCapabilitiesMd(unittest.TestCase):
     def test_generates_table_rows(self):
-        caps = [{"code": "SM", "name": "Scope Mapping", "description": "Maps attack surface", "source": "references/scope-mapping.md"}]
+        caps = [
+            {
+                "code": "SM",
+                "name": "Scope Mapping",
+                "description": "Maps attack surface",
+                "source": "references/scope-mapping.md",
+            }
+        ]
         output = m.generate_capabilities_md(caps)
         self.assertIn("SM", output)
         self.assertIn("Scope Mapping", output)
@@ -85,7 +97,9 @@ class TestDiscoverCapabilities(unittest.TestCase):
     def test_discovers_capability_with_frontmatter(self):
         with tempfile.TemporaryDirectory() as d:
             cap = Path(d) / "scope-mapping.md"
-            cap.write_text("---\nname: scope-mapping\ncode: SM\ndescription: Maps attack surface\n---\n\n# Body\n")
+            cap.write_text(
+                "---\nname: scope-mapping\ncode: SM\ndescription: Maps attack surface\n---\n\n# Body\n"
+            )
             result = m.discover_capabilities(Path(d), "./references")
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["code"], "SM")
@@ -109,7 +123,9 @@ class TestSanctumCreation(unittest.TestCase):
             (skill_path / "references").mkdir()
 
             # Stub template carrying a placeholder, to verify substitution happens
-            (skill_path / "assets" / "INDEX-template.md").write_text("# Index\n{user_name}\n")
+            (skill_path / "assets" / "INDEX-template.md").write_text(
+                "# Index\n{user_name}\n"
+            )
 
             # A capability reference file, to verify copy_references runs for real
             (skill_path / "references" / "scope-mapping.md").write_text(
@@ -121,7 +137,9 @@ class TestSanctumCreation(unittest.TestCase):
             (project_root / "_bmad" / "config.yaml").write_text("user_name: Alice\n")
 
             sanctum = project_root / "_bmad" / "memory" / m.SKILL_NAME
-            self.assertFalse(sanctum.exists(), "sanctum must not exist before main() runs")
+            self.assertFalse(
+                sanctum.exists(), "sanctum must not exist before main() runs"
+            )
 
             # Patch TEMPLATE_FILES for this test (the fixture only stubs INDEX)
             original = m.TEMPLATE_FILES

@@ -53,9 +53,18 @@
             }
           },
           "propertyNames": {
-            "not": {
-              "pattern": "(?i)(secret|password|passwd|token|credential|key)"
-            }
+            "anyOf": [
+              {
+                "enum": [
+                  "credential_mode"
+                ]
+              },
+              {
+                "not": {
+                  "pattern": "(?:^|_)(?:[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll]_[Hh][Ii][Nn][Tt]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll]_[Vv][Aa][Ll][Uu][Ee]|[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Tt][Oo][Kk][Ee][Nn])(?:_|$)"
+                }
+              }
+            ]
           },
           "required": [
             "POETRY_VERSION",

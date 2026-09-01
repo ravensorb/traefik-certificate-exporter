@@ -26,7 +26,9 @@ from datetime import datetime
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
-STORY_RE = re.compile(r"^(\d+)-\d+[a-z]?-")  # trailing [a-z]? matches split-story keys like 2-6a-...
+STORY_RE = re.compile(
+    r"^(\d+)-\d+[a-z]?-"
+)  # trailing [a-z]? matches split-story keys like 2-6a-...
 DATE_FORMAT = "%m-%d-%Y %H:%M"
 # The authoritative action-item vocabulary, mirrored from bmad-sprint-planning's
 # SKILL.md. Anything outside it would render as unknown in the status dashboard.
@@ -153,9 +155,7 @@ def _comment_counts(text):
     re-emits comments at their original column even when the block around them
     is re-indented, so an exact key costs nothing in practice.
     """
-    return Counter(
-        line for line in text.splitlines() if line.lstrip().startswith("#")
-    )
+    return Counter(line for line in text.splitlines() if line.lstrip().startswith("#"))
 
 
 def _load_document(path, restored=None):
@@ -370,9 +370,7 @@ def cmd_update(args):
             _emit_error("--add-action must be a JSON array", 1, untouched)
         for item in actions:
             if not isinstance(item, dict):
-                _emit_error(
-                    "each --add-action item must be an object", 1, untouched
-                )
+                _emit_error("each --add-action item must be an object", 1, untouched)
             action_value = item.get("action")
             if not isinstance(action_value, str) or not action_value.strip():
                 # A JSON null/number/object would otherwise be str()'d into a
@@ -710,7 +708,7 @@ def build_parser():
         help=(
             "JSON array of status transitions for action items already in the file. "
             'Select each by id -- {"id":str,"status":"open|in-progress|done"} -- or, '
-            'for legacy items with no id, by epic plus exact action text: '
+            "for legacy items with no id, by epic plus exact action text: "
             '{"epic":int,"action":str,"status":...}. An entry carrying both uses the '
             "id. Every selector must match exactly one item; any failure aborts the "
             "whole invocation and leaves the file untouched."
