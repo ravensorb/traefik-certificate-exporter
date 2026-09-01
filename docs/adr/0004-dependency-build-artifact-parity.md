@@ -1,6 +1,6 @@
 # ADR-0004: Build the Docker image from the locked dependency set
 
-- **Status:** Accepted
+- **Status:** Accepted; application-install mechanism amended by ADR-0008
 - **Date:** 2026-08-30
 - **Deciders:** Maintainer (ravensorb), via `l3io-arch-review` Mode C (decision support)
 - **Principle(s) in tension:** Core §2 reuse over copy-paste, Core §7 dependency selection, Python overlay packaging
@@ -40,6 +40,21 @@ version dependency to the build for a result Option C already achieves with a Po
 command that ships in the box. The Docker image's dependency set is derived from
 `poetry.lock` via this mechanism — never a separately hand-maintained list. CI should fail
 if the image's installed set and the lockfile diverge.
+
+### Amendment (ADR-0008, 2026-09-01)
+
+The parity decision recorded here still holds and is still implemented: the image's
+dependency set continues to come from the committed lockfile, not a hand-maintained list.
+Only the *application* half changed. This ADR describes installing the application with
+`COPY src/` plus `poetry install`; the image now installs exactly one caller-supplied,
+SHA-256-verified wheel with `--no-deps --no-index` and no index fallback, and removes pip
+afterwards. See [ADR-0008](0008-exact-wheel-image-provenance.md) for that mechanism and
+its consequences.
+
+This is an amendment rather than a supersession: the principle is unchanged, the
+application-install step is not. Note also that this ADR's closing suggestion — that CI
+should fail when the image's installed set and the lockfile diverge — is now discharged
+inside the build by `pip check`, rather than by a separate CI comparison.
 
 ## Consequences
 
