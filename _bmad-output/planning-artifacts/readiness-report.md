@@ -1,104 +1,67 @@
 # Readiness Report
 
-Generated: 2026-08-30T20:20:00Z
+Generated: 2026-09-01T19:57:30Z
+
 Gate result: green
-Stories checked: 16
+
+Work type: MIXED
+
+Stories checked: 14
+
+## Scope
+
+This readiness run covers the recovered CI/CD initiative only:
+
+- E007 — Reproducible Build and Verification
+- E008 — Multi-Channel Package and Image Delivery
+- E009 — Certified Gitea Portability
+
+Epics E001–E006 are archived and were used only to validate dependency/history boundaries.
 
 ## Findings
 
-| Story | Check | Result | Detail |
-|-------|-------|--------|--------|
-| E001-S01-001 | Classification | 🟢 Green | simple |
-| E001-S01-001 | Technical ACs | 🟢 Green | Given/When/Then with concrete implementation detail |
-| E001-S01-001 | Estimate block | 🟢 Green | populated this run (estimate-story) |
-| E001-S01-001 | depends_on | 🟢 Green | none |
-| E001-S01-001 | Sprint assignment | 🟢 Green | epic-001/sprint-01 |
-| E001-S01-002 | Classification | 🟢 Green | simple |
-| E001-S01-002 | Technical ACs | 🟢 Green | — |
-| E001-S01-002 | Estimate block | 🟢 Green | populated this run |
-| E001-S01-002 | depends_on | 🟢 Green | none |
-| E001-S01-002 | Sprint assignment | 🟢 Green | epic-001/sprint-01 |
-| E001-S01-003 | Classification | 🟢 Green | standard |
-| E001-S01-003 | Technical ACs | 🟢 Green | — |
-| E001-S01-003 | Estimate block | 🟢 Green | populated this run |
-| E001-S01-003 | depends_on | 🟢 Green | none |
-| E001-S01-003 | Sprint assignment | 🟢 Green | epic-001/sprint-01 |
-| E002-S01-001 | Classification | 🟢 Green | simple |
-| E002-S01-001 | Technical ACs | 🟢 Green | — |
-| E002-S01-001 | Estimate block | 🟢 Green | populated this run |
-| E002-S01-001 | depends_on | 🟢 Green | none |
-| E002-S01-001 | Sprint assignment | 🟢 Green | epic-002/sprint-01 |
-| E002-S01-002 | Classification | 🟢 Green | standard |
-| E002-S01-002 | Technical ACs | 🟢 Green | — |
-| E002-S01-002 | Estimate block | 🟢 Green | populated this run |
-| E002-S01-002 | depends_on | 🟢 Green | E002-S01-001 (in scope, not done) |
-| E002-S01-002 | Sprint assignment | 🟢 Green | epic-002/sprint-01 |
-| E002-S01-003 | Classification | 🟢 Green | standard |
-| E002-S01-003 | Technical ACs | 🟢 Green | — |
-| E002-S01-003 | Estimate block | 🟢 Green | populated this run |
-| E002-S01-003 | depends_on | 🟢 Green | none |
-| E002-S01-003 | Sprint assignment | 🟢 Green | epic-002/sprint-01 |
-| E002-S01-004 | Classification | 🟢 Green | standard |
-| E002-S01-004 | Technical ACs | 🟢 Green | — |
-| E002-S01-004 | Estimate block | 🟢 Green | populated this run |
-| E002-S01-004 | depends_on | 🟢 Green | none |
-| E002-S01-004 | Sprint assignment | 🟢 Green | epic-002/sprint-01 |
-| E002-S01-005 | Classification | 🟢 Green | standard |
-| E002-S01-005 | Technical ACs | 🟢 Green | — |
-| E002-S01-005 | Estimate block | 🟢 Green | populated this run |
-| E002-S01-005 | depends_on | 🟢 Green | E002-S01-004 (in scope, not done) |
-| E002-S01-005 | Sprint assignment | 🟢 Green | epic-002/sprint-01 |
-| E003-S01-001 | Classification | 🟢 Green | standard |
-| E003-S01-001 | Technical ACs | 🟢 Green | — |
-| E003-S01-001 | Estimate block | 🟢 Green | populated this run |
-| E003-S01-001 | depends_on | 🟢 Green | none |
-| E003-S01-001 | Sprint assignment | 🟢 Green | epic-003/sprint-01 |
-| E003-S01-002 | Classification | 🟢 Green | simple |
-| E003-S01-002 | Technical ACs | 🟢 Green | — |
-| E003-S01-002 | Estimate block | 🟢 Green | populated this run |
-| E003-S01-002 | depends_on | 🟢 Green | none |
-| E003-S01-002 | Sprint assignment | 🟢 Green | epic-003/sprint-01 |
-| E004-S01-001 | Classification | 🟢 Green | simple |
-| E004-S01-001 | Technical ACs | 🟢 Green | — |
-| E004-S01-001 | Estimate block | 🟢 Green | populated this run |
-| E004-S01-001 | depends_on | 🟢 Green | none |
-| E004-S01-001 | Sprint assignment | 🟢 Green | epic-004/sprint-01 |
-| E004-S01-002 | Classification | 🟢 Green | standard |
-| E004-S01-002 | Technical ACs | 🟢 Green | — |
-| E004-S01-002 | Estimate block | 🟢 Green | populated this run |
-| E004-S01-002 | depends_on | 🟢 Green | none |
-| E004-S01-002 | Sprint assignment | 🟢 Green | epic-004/sprint-01 |
-| E005-S01-001 | Classification | 🟢 Green | standard |
-| E005-S01-001 | Technical ACs | 🟢 Green | — |
-| E005-S01-001 | Estimate block | 🟢 Green | populated this run |
-| E005-S01-001 | depends_on | 🟢 Green | none |
-| E005-S01-001 | Sprint assignment | 🟢 Green | epic-005/sprint-01 |
-| E006-S01-001 | Classification | 🟢 Green | simple |
-| E006-S01-001 | Technical ACs | 🟢 Green | DOCS-only story — check does not apply (still has clear file-level ACs) |
-| E006-S01-001 | Estimate block | 🟢 Green | populated this run |
-| E006-S01-001 | depends_on | 🟢 Green | none |
-| E006-S01-001 | Sprint assignment | 🟢 Green | epic-006/sprint-01 |
-| E006-S01-002 | Classification | 🟢 Green | simple |
-| E006-S01-002 | Technical ACs | 🟢 Green | CONFIG-only story — check does not apply |
-| E006-S01-002 | Estimate block | 🟢 Green | populated this run |
-| E006-S01-002 | depends_on | 🟢 Green | none |
-| E006-S01-002 | Sprint assignment | 🟢 Green | epic-006/sprint-01 |
-| E006-S01-003 | Classification | 🟢 Green | simple |
-| E006-S01-003 | Technical ACs | 🟢 Green | — |
-| E006-S01-003 | Estimate block | 🟢 Green | populated this run |
-| E006-S01-003 | depends_on | 🟢 Green | none |
-| E006-S01-003 | Sprint assignment | 🟢 Green | epic-006/sprint-01 |
+Each row aggregates the five l3io readiness checks: recognized classification, technical
+acceptance criteria, estimate block, valid/cycle-free `depends_on`, and sprint assignment.
+
+| Story | Classification | Technical ACs | Estimate | Dependencies | Sprint | Result |
+|---|---|---|---|---|---|---|
+| E007-S01-001 | complex | interfaces/data/errors/security/tests | present | none | S01 | green |
+| E007-S01-002 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
+| E007-S01-003 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
+| E007-S01-004 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
+| E007-S01-005 | standard | interfaces/data/errors/security/tests | present | valid | S01 | green |
+| E008-S01-001 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
+| E008-S01-002 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
+| E008-S01-003 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
+| E008-S01-004 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
+| E008-S01-005 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
+| E008-S01-006 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
+| E009-S01-001 | standard | interfaces/data/errors/security/tests | present | valid | S01 | green |
+| E009-S01-002 | standard | interfaces/data/errors/security/tests | present | valid | S01 | green |
+| E009-S01-003 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
+
+## Traceability and Architecture Gate
+
+- CI-AR1–CI-AR35 are defined in the CI/CD architecture spine and mapped into `epics.md`.
+- Every CI architecture requirement has at least one implementing story; no story is orphaned
+  from the report/architecture intent.
+- The epic graph is acyclic and ordered `E007 -> E008 -> E009`.
+- Story-level dependencies exist and are acyclic.
+- All stories have detailed implementation documents. No automatic elaboration was required.
+- No UX artifact is required because the scope is CI/CD, CLI, and operator documentation.
+
+## Estimate Note
+
+`pm-status.py` generated story and roll-up estimates using the repository calibration and the
+`claude-opus-5` rate card. Confidence is medium at epic level. The tool reported that sprint and
+epic orchestration overhead is under-calibrated (fewer than three samples), so the ranges are
+known-low for orchestration overhead; this is non-blocking and explicitly retained in state.
 
 ## Summary
 
-- Green: 16
-- Amber: 0
-- Red: 0
+- Green checks: 70
+- Amber checks: 0
+- Red checks: 0
+- Stories elaborated during this run: 0
 
-**Note:** This is the project's first `/l3io-pm-plan` cycle — all 16 story, 6 sprint, and 6
-epic `estimate` blocks were empty going in. Per `steps/shared/step-estimate.md`, `estimate-story`
-(bottom-up, by classification) and `estimate-rollup` (sprint then epic) were run for the full
-scope before this gate, using `--model claude-opus-5` (the module default; no
-`modules.l3io-pm.default_model` override is configured). All rollups report cold-start
-warnings (`orchestration is unestimated ... <3 samples`) — expected with no prior calibration
-history, and every resulting band is a low-confidence, not-yet-calibrated estimate.
+The plan can be implemented without inventing unrecorded product or architecture decisions.

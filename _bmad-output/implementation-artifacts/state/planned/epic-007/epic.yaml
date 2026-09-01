@@ -1,0 +1,29 @@
+key: 'E007'
+title: 'Epic 007 — Reproducible Build and Verification'
+goal: 'Produce one reproducible, secret-free package and multi-architecture image evidence bundle through the same local and hosted verification graph.'
+status: backlog
+depends_on: []
+estimate:
+  man_hours_low: 69.7
+  man_hours_high: 72.79
+  hitl_hours_low: 3.9
+  hitl_hours_high: 4.1
+  elapsed_hours_low: 23.44
+  elapsed_hours_high: 24.44
+  tokens_k_min: 2037
+  tokens_k_max: 2315
+  closure_ratios:
+    man_hours: 0.3045
+    hitl_hours: 0.3481
+    elapsed_hours: 0.2943
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0
+    hitl_hours: 0
+    elapsed_hours: 0
+    tokens_k: 0
+  cost_low: 8.41
+  cost_high: 9.55
+  model: claude-opus-5
+  confidence: medium
+updated_at: '2026-09-01T19:57:07Z'
