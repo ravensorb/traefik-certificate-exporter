@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
-
 from pathlib import Path
+
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -73,7 +73,7 @@ Path(args.output_file).write_bytes(pkcs12_bytes)
 )
 
 print("PKCS12 Details:")
-print("  Name: {}".format(cert_subject_common_name))
+print(f"  Name: {cert_subject_common_name}")
 print(
     "  Subject: {}".format(
         str(
@@ -92,6 +92,6 @@ print(
         )
     )
 )  # type: ignore
-print("  Serial Number: {}".format(str(pkcs12_cert.serial_number)))  # type: ignore
-print("  Not Before: {}".format(pkcs12_cert.not_valid_before_utc.date()))  # type: ignore
-print("  Not After: {}".format(pkcs12_cert.not_valid_after_utc.date()))  # type: ignore
+print(f"  Serial Number: {pkcs12_cert.serial_number!s}")  # type: ignore
+print(f"  Not Before: {pkcs12_cert.not_valid_before_utc.date()}")  # type: ignore
+print(f"  Not After: {pkcs12_cert.not_valid_after_utc.date()}")  # type: ignore

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 ###################################################################################################
 
 import logging
@@ -79,7 +78,7 @@ def setup_logging(
                 config = yaml.safe_load(f.read())
                 logging.config.dictConfig(config)
                 logging.getLogger().setLevel(default_level)
-            except Exception:
+            except Exception:  # noqa: BLE001 - logging setup must never abort startup
                 print("Error in Logging Configuration. Using default configs")
                 traceback.print_exc()
 
@@ -99,7 +98,7 @@ def setup_logging(
 
 globalLoggerName = (
     "traefik_certificate_exporter_consoleonly"
-    if str(os.getenv("TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY", 0)).lower()
+    if str(os.getenv("TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY", "0")).lower()
     in ["true", "1", "t", "y", "yes"]
     else "traefik_certificate_exporter"
 )

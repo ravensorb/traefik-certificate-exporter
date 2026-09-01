@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 #######################################################################
 
 
@@ -72,7 +70,9 @@ class Settings:
     flat: bool
     dryRun: bool
     restartContainers: bool
-    domains: dict = {"include": [], "exclude": []}
+    # Set per instance in __init__; as a class attribute this dict was shared by every
+    # Settings object, so mutating settings.domains['include'] leaked across instances.
+    domains: dict
     watchForChanges: bool
     runAtStart: bool
     watchInterval: int

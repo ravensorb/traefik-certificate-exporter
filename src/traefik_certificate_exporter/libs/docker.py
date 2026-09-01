@@ -1,8 +1,7 @@
 import docker
-import logging
-from typing import Optional
-from .settings import Settings
+
 from .logging_utils import globalLogger
+from .settings import Settings
 
 ###########################################################################################################
 
@@ -16,7 +15,7 @@ class DockerManager:
         self.__logger = globalLogger
 
     # --------------------------------------------------------------------------------------
-    def restartLabeledContainers(self, domains: "Optional[list[str]]"):
+    def restartLabeledContainers(self, domains: "list[str] | None"):
         if not self.__settings.restartContainers:
             return
 
@@ -29,18 +28,16 @@ class DockerManager:
             for c in container:
                 restartDomains = str.split(c.labels[DOCKER_LABEL], ",")  # type: ignore
                 if not set(domains).isdisjoint(restartDomains):
-                    self.__logger.info("Restarting container: {}".format(c.id))
+                    self.__logger.info(f"Restarting container: {c.id}")
                     if not self.__settings.dryRun:
                         try:
                             c.restart()  # type: ignore
-                        except Exception as ex:
-                            self.__logger.error(
-                                "Failed restarting container: {}".format(c.id)
+                        except Exception:
+                            self.__logger.exception(
+                                f"Failed restarting container: {c.id}"
                             )
                     else:
-                        self.__logger.info(
-                            "[DRYRUN] restarting container: {}".format(c.id)
-                        )
+                        self.__logger.info(f"[DRYRUN] restarting container: {c.id}")
 
-        except Exception as ex:
-            self.__logger.error("Failed restarting containers", exc_info=True)
+        except Exception:
+            self.__logger.exception("Failed restarting containers")
