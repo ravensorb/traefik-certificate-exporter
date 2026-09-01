@@ -378,16 +378,60 @@ newest: a slow older build finishing last would move `dev` backwards. The origin
 reading the distance currently recorded on the remote `dev` manifest and declining to move it
 when this run is older — the older run still succeeds, it just does not touch the alias.
 
-### Two divergences to reconcile, not recovered rules
+### Divergences resolved (2026-09-01)
 
-Flagged because they differ from other surviving sources rather than from the fragments:
+Both were put to the maintainer and answered. Recorded here as decisions, not options.
 
-- This rewrite proposes `LiquidLogicLabs/git-action-tag-floating-version@v1` for Git
-  major/minor aliases. That owner is on the approved action allowlist, but the surviving
-  fragment at line 674 describes `.github/actions/publication-contract/` as "the sole tag
-  classifier and plan/manifest/receipt producer/validator", and the elaborated Epic 8 stories
-  assume `docker buildx imagetools create` for OCI aliases. Decide which owns alias creation.
-- This rewrite states forge package publication is removed, keeping only TestPyPI for
-  development and PyPI for stable. The surviving fragment at line 21 and the elaborated Epic 8
-  stories both have the owning forge's native package registry always published on Gitea. If
-  the removal is deliberate, Epic 8's stories need updating to match; if not, this line does.
+**1. Git alias creation — `publication-contract` decides, the vendor action executes.**
+
+`.github/actions/publication-contract/` remains the sole tag *classifier*: it alone decides
+what a tag means (exact release, alias, or invalid) and therefore which floating aliases
+should move. It does not perform the mutation.
+
+- **Git aliases** (`vMAJOR`, `vMAJOR.MINOR`) are created by
+  `LiquidLogicLabs/git-action-tag-floating-version@v2`. `v2` is confirmed as the current
+  maintained floating major -- the repository publishes `v1` and `v2` tags, with `v2.0.3`
+  the newest release -- which settles the `@v1`/`@v2` disagreement between sources. The
+  owner is already on the tier-one approved list and `v2` satisfies the floating-major
+  rule, so no allowlist change is needed.
+- **OCI aliases** (`latest`, `MAJOR`, `MAJOR.MINOR`, `dev`) are moved with
+  `docker buildx imagetools create`, which copies a manifest by digest without repulling.
+  `crane` and `regctl` remain outside the approved-owner allowlist and are not adopted.
+
+This keeps one decider and two executors, and adds no third-party action outside the
+existing policy.
+
+**2. Forge package publication always happens — it is not optional.**
+
+The owning forge's native package registry is published on every release, in the same way
+the owning forge's image registry is. It is not behind an enablement toggle.
+
+The optional destinations are the *external* ones: `PUBLISH_PACKAGE_TESTPYPI`,
+`PUBLISH_PACKAGE_PYPI` and `PUBLISH_IMAGE_DOCKERHUB`. The owning forge — package and image
+alike — is always a destination.
+
+This supersedes the "forge package publication removed" line earlier in this document,
+restores the behaviour the surviving fragment at line 21 describes, and matches what the
+elaborated Epic 8 stories already assume. It also matters for Epic 9: without forge package
+publication, "Gitea portability" would mean images and releases only.
+
+**3. The publication race — narrowed by the release model, not by a workflow lock.**
+
+The maintainer's framing resolves this: **tagging drives the release process, and the only
+ref mutation a workflow performs is moving floating tags.** No workflow decides a version;
+the exact `vX.Y.Z` tag is pushed by the local guarded transaction (ADR-0006).
+
+That leaves two cases, and only one of them was ever the hard problem:
+
+- *Immutable publication.* A tag landing between `dev.yaml`'s stable-tag check and its
+  publish means one commit reaches TestPyPI as `X.Y.(Z+1).devN` and PyPI as `X.Y.Z`. These
+  are different version strings on different indexes; nothing is overwritten and no ref is
+  contended. Untidy, not corrupting. Accepted.
+- *Floating aliases.* This is the case that matters, because `dev` and `latest` are
+  mutable and could otherwise point at the same commit or move backwards. It is closed by
+  the in-lock compare-before-move rule the stories already specify: take the alias lock,
+  read what the alias currently points at, and move only when strictly newer.
+
+So the residual window is bounded to a cosmetic double-publish across two channels, and the
+dangerous half is closed by a mechanism that already exists.
+

@@ -527,14 +527,53 @@ def test_all_governed_steps_are_independent_of_the_act_environment() -> None:
                 )
 
 
+ARTIFACT_ACTIONS = ("actions/upload-artifact", "actions/download-artifact")
+
+
 def test_artifact_actions_remain_on_the_both_forge_v4_pair() -> None:
+    """Deliberately NOT on the latest major, and the only such exception.
+
+    Gitea's act_runner implements the v4 artifact protocol; v5+ are GitHub-only. The
+    inherited invariant is that the same workflow YAML runs on GitHub, Gitea and local
+    act, and Epic 9 is Certified Gitea Portability -- so forge compatibility wins over
+    currency here. `actions/upload-artifact@v7` exists; taking it would drop Gitea.
+
+    Revisit when Gitea's runner supports a newer artifact protocol.
+    """
     references = _external_action_references(VERIFY_WORKFLOW)
-    for action in ("actions/upload-artifact", "actions/download-artifact"):
+    for action in ARTIFACT_ACTIONS:
         assert all(
             reference == f"{action}@v4"
             for reference in references
             if reference.startswith(f"{action}@")
         )
+
+
+def test_dependabot_protects_the_artifact_pin_it_would_otherwise_undo() -> None:
+    """A pin a bot reverts weekly is not a pin.
+
+    Dependabot is what keeps every other action on its latest major, so left alone it
+    proposes upload-artifact v7 until someone merges it and Gitea silently stops working.
+    The exception above is only real if Dependabot is told about it.
+    """
+    dependabot = yaml.load(
+        (PROJECT_ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    actions_entry = next(
+        entry
+        for entry in dependabot["updates"]
+        if entry["package-ecosystem"] == "github-actions"
+    )
+    ignored = {
+        rule["dependency-name"]
+        for rule in actions_entry.get("ignore", [])
+        if "version-update:semver-major" in rule.get("update-types", [])
+    }
+    assert set(ARTIFACT_ACTIONS) <= ignored, (
+        "the forge-compatible artifact pin is not protected from Dependabot: "
+        f"missing {sorted(set(ARTIFACT_ACTIONS) - ignored)}"
+    )
 
 
 def test_dependency_maintenance_covers_actions_python_and_docker() -> None:

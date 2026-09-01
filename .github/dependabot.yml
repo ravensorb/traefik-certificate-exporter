@@ -1,9 +1,26 @@
 version: 2
 updates:
+  # Dependabot is the mechanism that keeps actions on their latest major. The contract
+  # tests enforce the *form* of a reference (approved owner, floating major alias); they
+  # do not and cannot check currency, which needs a network call. Do not add a test that
+  # claims to.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # Deliberate exception to "latest major". Gitea's act_runner implements the v4
+      # artifact protocol; upload/download-artifact v5+ are GitHub-only. The project's
+      # inherited invariant is that the same workflow YAML runs on GitHub, Gitea and local
+      # act, and Epic 9 is Certified Gitea Portability -- so the forge-compatible pair wins
+      # over currency here. Without this ignore, Dependabot proposes v7 weekly and the pin
+      # gets merged away by accident.
+      # Revisit when Gitea's runner supports a newer artifact protocol; asserted by
+      # tests/ci/test_workflow_contracts.py::test_artifact_actions_remain_on_the_both_forge_v4_pair.
+      - dependency-name: "actions/upload-artifact"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "actions/download-artifact"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "pip"
     directory: "/"
