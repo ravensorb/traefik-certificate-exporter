@@ -1,0 +1,41 @@
+key: 'S01'
+epic: 'E007'
+title: 'Sprint 01 — Reproducible Build and Verification'
+status: done
+estimate:
+  man_hours_low: 66.03
+  man_hours_high: 69.26
+  hitl_hours_low: 3.63
+  hitl_hours_high: 3.91
+  elapsed_hours_low: 22.1
+  elapsed_hours_high: 23.43
+  tokens_k_min: 1734
+  tokens_k_max: 1970
+  closure_ratios:
+    man_hours: 0.3374
+    hitl_hours: 0.5416
+    elapsed_hours: 0.417
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0
+    hitl_hours: 0
+    elapsed_hours: 0
+    tokens_k: 0
+  cost_low: 7.16
+  cost_high: 8.12
+  model: claude-opus-5
+  confidence: medium
+updated_at: '2026-09-01T22:40:28Z'
+actual:
+  elapsed_hours: 3.39
+  man_hours: 138
+  hitl_hours: 0.1
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-09-01T22:40:26Z'
+closed:
+  date: '2026-09-01'
+retrospective:
+  summary: All 5 stories delivered. The architectural drift review returned 0 BLOCKER / 10 MAJOR / 11 MINOR and every MAJOR was resolved rather than ADR-waived. The original closure artifacts were destroyed later the same day by an act run against the live repository; the delivery was recovered and every MAJOR fix re-applied and re-verified, but the retrospective, arch-review report and story completion evidence are lost. See epic-closure/closure-report.md for provenance.
+  velocity: '5'
+  carry_over: '0'

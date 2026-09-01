@@ -1,10 +1,10 @@
-key: 'E007-S01-003'
+key: 'E007-S01-001'
 epic: 'E007'
 sprint: 'S01'
-title: 'Define Contracts and Run Secret-Free Quality Verification'
-status: backlog
+title: 'Establish the Reproducible Local Package and Image Workflow'
+status: done
 classification: complex
-depends_on: ['E007-S01-001']
+depends_on: []
 estimate:
   man_hours: 15.0
   hitl_hours: 0.81
@@ -24,4 +24,11 @@ estimate:
     elapsed_hours: 1.0
     tokens_k: 1.0
   confidence: high
-updated_at: '2026-09-01T19:56:54Z'
+updated_at: '2026-09-01T22:40:10Z'
+actual:
+  elapsed_hours: 0.75
+  man_hours: 14
+  hitl_hours: 0
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-09-01T22:40:12Z'
