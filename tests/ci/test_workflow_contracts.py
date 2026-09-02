@@ -1426,6 +1426,7 @@ def test_forge_coordinates_are_derived_from_action_context_and_fail_closed(
         assert emitted == {
             "forge": "github",
             "registry": "ghcr.io",
+            "image-name": "name",
             "image-repository": "ghcr.io/owner/name",
             "package-index-supported": "false",
             "package-index-url": "",
@@ -1446,6 +1447,7 @@ def test_forge_coordinates_are_derived_from_action_context_and_fail_closed(
         assert emitted == {
             "forge": "gitea",
             "registry": "git.example.com:3000",
+            "image-name": "name",
             "image-repository": "git.example.com:3000/owner/name",
             "package-index-supported": "true",
             "package-index-url": "https://git.example.com:3000/api/packages/owner/pypi",
@@ -2508,9 +2510,14 @@ def test_the_release_guard_peels_the_pushed_object_before_comparing_it(
 
 def _release_destinations(**environment: str) -> tuple[Any, dict[str, str]]:
     defaults = {
-        "DOCKERHUB_REPOSITORY": "",
+        "DOCKERHUB_ORG": "",
         "DOCKERHUB_TOGGLE": "",
         "FORGE": "github",
+        # The namespace is the knob; the name follows the built image, so the harness
+        # supplies it the way the forge coordinate does rather than letting a test invent
+        # a name Docker Hub and the forge registry could disagree on.
+        "FORGE_OWNER": "ravensorb",
+        "IMAGE_NAME": "traefik-certificate-exporter",
         "PACKAGE_INDEX_SUPPORTED": "false",
         "PYPI_TOGGLE": "",
     }
@@ -2569,32 +2576,46 @@ def test_a_publication_toggle_is_never_coerced(toggle: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "repository",
-    ["", "Foo/Bar", "nonamespace", "a/b/c", "docker.io/acme/exporter", "acme/", "/x"],
+    "namespace",
+    # The empty string is deliberately ABSENT: it now means "derive from the forge owner"
+    # and is the documented default, covered by the test below. These are the values that
+    # are supplied and unusable.
+    ["Foo", "acme/exporter", "docker.io/acme", "acme/", "/x", "ac me", "-acme"],
 )
-def test_docker_hub_is_never_enabled_without_a_repository_to_publish_to(
-    repository: str,
+def test_docker_hub_is_never_enabled_without_a_namespace_to_publish_to(
+    namespace: str,
 ) -> None:
-    """The namespace on Docker Hub is unrelated to the forge owner, so it cannot be
-    derived -- and an enabled toggle with a typo would push an *immutable* tag to a
-    namespace nobody chose. Fails closed, exactly as an unrecognised forge does."""
+    """An enabled toggle with an unusable namespace would push an *immutable* tag
+    somewhere nobody chose, so it fails closed exactly as an unrecognised forge does.
+
+    Only the namespace is validated now, because only the namespace is supplied. The
+    image name comes from the forge coordinate, so it cannot be malformed independently
+    -- and a namespace carrying a slash is rejected rather than silently composing a
+    three-segment reference."""
     completed, _ = _release_destinations(
-        DOCKERHUB_TOGGLE="true", DOCKERHUB_REPOSITORY=repository
+        DOCKERHUB_TOGGLE="true", DOCKERHUB_ORG=namespace
     )
-    assert completed.returncode != 0, (
-        f"DOCKERHUB_REPOSITORY={repository!r} was accepted"
-    )
+    assert completed.returncode != 0, f"DOCKERHUB_ORG={namespace!r} was accepted"
 
 
 def test_docker_hub_enabled_with_a_well_formed_repository_reaches_the_image_job() -> (
     None
 ):
+    # The namespace is the only knob. The image name follows the built image, so no
+    # override can make Docker Hub ship a different name from the forge registry.
     completed, emitted = _release_destinations(
-        DOCKERHUB_TOGGLE="true", DOCKERHUB_REPOSITORY="acme/exporter"
+        DOCKERHUB_TOGGLE="true", DOCKERHUB_ORG="acme"
     )
     assert completed.returncode == 0, completed.stderr
     assert json.loads(emitted["enabled-destinations"])["image-dockerhub"] == "enabled"
-    assert emitted["dockerhub-repository"] == "acme/exporter"
+    assert emitted["dockerhub-repository"] == "acme/traefik-certificate-exporter"
+
+    # With no override it derives from the forge owner rather than failing closed, which
+    # is what made this destination unusable until an operator set a variable nobody knew
+    # about. Fork-correct: a fork resolves its own namespace.
+    completed, derived = _release_destinations(DOCKERHUB_TOGGLE="true")
+    assert completed.returncode == 0, completed.stderr
+    assert derived["dockerhub-repository"] == "ravensorb/traefik-certificate-exporter"
 
     # And the value reaches the reference renderer as a second `images:` entry. Without
     # this the destination is "enabled" and no Docker Hub tag is ever produced for it --

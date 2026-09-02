@@ -211,7 +211,7 @@ consume its single evidence bundle.
 | `PUBLISH_IMAGE_DOCKERHUB` | additionally publish to Docker Hub; **stable channel only, inert in `dev.yaml`** | `false` |
 | `PUBLISH_PACKAGE_TESTPYPI` | publish development distributions to TestPyPI | `false` |
 | `PUBLISH_PACKAGE_PYPI` | publish stable distributions to PyPI | `false` |
-| `DOCKERHUB_REPOSITORY` | Docker Hub namespace/repository | required when enabled |
+| `DOCKERHUB_ORG` | Docker Hub namespace only; the image name follows the built image | derived from the forge owner |
 
 The active forge registry is always required. The Gitea package index is always required on
 Gitea; GitHub has no equivalent Python index.

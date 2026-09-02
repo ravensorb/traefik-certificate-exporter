@@ -134,7 +134,7 @@ backlog:
   title: DOCKERHUB_REPOSITORY is a new repository variable introduced by release.yaml and needs an operator decision on its value
   source: implementation assumption (E008-S01-002)
   severity: Low
-  status: backlog
+  status: resolved
   description: Docker Hub's namespace cannot be derived from the forge owner, so PUBLISH_IMAGE_DOCKERHUB is honoured only alongside a lowercase <namespace>/<repository> in the DOCKERHUB_REPOSITORY repository variable; an enabled toggle without one fails the plan job (fail-closed, as an unrecognised forge does). The variable and its DOCKERHUB_USERNAME/DOCKERHUB_TOKEN secrets are documented in docs/operational.md but have never been set for this repository, so the Docker Hub destination is untested end to end. Story 8.4's cutover should set them or record that the destination stays off.
 - key: BL-E008-005
   epic: '008'

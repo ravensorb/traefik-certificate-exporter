@@ -94,6 +94,7 @@ jobs:
           {
             echo "forge=$forge"
             echo "registry=$registry"
+            echo "image-name=${repository#*/}"
             echo "image-repository=$registry/$repository"
             echo "package-index-supported=$package_index_supported"
             echo "package-index-url=$package_index_url"

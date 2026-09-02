@@ -202,7 +202,7 @@ against that same single value (CI-AR11). The workflow names no version anywhere
 | Destination | Stable | Controlled by |
 |---|---|---|
 | image -> active forge registry | always | nothing; it is the channel |
-| image -> Docker Hub | when enabled | `PUBLISH_IMAGE_DOCKERHUB` **and** `DOCKERHUB_REPOSITORY` |
+| image -> Docker Hub | when enabled | `PUBLISH_IMAGE_DOCKERHUB` (namespace via `DOCKERHUB_ORG`, derived by default) |
 | package -> forge Python index | when the host has one | host capability, not a toggle |
 | package -> TestPyPI | never | nothing; that is the development channel |
 | package -> PyPI | when enabled, on GitHub | `PUBLISH_PACKAGE_PYPI`, plus host capability |
@@ -215,13 +215,24 @@ PyPI is reached by trusted publishing, which needs a GitHub OIDC identity. On a 
 is none, so the destination is reported `unsupported` rather than failing a job nobody expected --
 the same situation TestPyPI has in the development channel, for the same reason.
 
-### `DOCKERHUB_REPOSITORY`
+### `DOCKERHUB_ORG`
 
-Docker Hub is the one destination whose repository cannot be derived: its namespace is unrelated to
-the forge owner. `DOCKERHUB_REPOSITORY` names it as a lowercase `<namespace>/<repository>`.
-Enabling `PUBLISH_IMAGE_DOCKERHUB` without a well-formed value **fails the plan job**; nothing is
-guessed, for the same reason an unrecognised forge fails closed. Credentials come from the
-`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets, and reach only the image job.
+Two independent things, and only one of them needs you.
+
+The image **name** is not configurable: it is whatever this repository builds, taken from the same
+coordinate that composes the forge image repository. Docker Hub and the forge registry therefore
+ship the same image name by construction, rather than by two settings that agree until one is
+edited.
+
+The **namespace** cannot be derived -- a Docker Hub org is unrelated to the forge owner -- so
+`DOCKERHUB_ORG` is the one knob. It defaults to the lowercased forge owner, which is correct for
+this project and fork-correct besides: a fork resolves its own namespace rather than pushing at
+this one. Set it only if your Docker Hub org differs from the forge owner.
+
+The default is not a fail-open. The composed `<namespace>/<name>` is still validated, so a
+namespace that is not a legal Docker Hub reference **fails the plan job** rather than publishing an
+immutable tag to a mangled guess -- the same posture an unrecognised forge takes. Credentials come
+from the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets, and reach only the image job.
 
 Exactly one immutable tag per enabled destination is published, from one multi-platform Buildx
 invocation shared with the development channel. Mutable aliases -- `latest`, `vX`, `vX.Y` -- and

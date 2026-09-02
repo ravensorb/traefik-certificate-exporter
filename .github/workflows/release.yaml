@@ -112,6 +112,7 @@ jobs:
           {
             echo "forge=$forge"
             echo "registry=$registry"
+            echo "image-name=${repository#*/}"
             echo "image-repository=$registry/$repository"
             echo "package-index-supported=$package_index_supported"
             echo "package-index-url=$package_index_url"
@@ -186,8 +187,10 @@ jobs:
           # The ONLY reader of a PUBLISH_* toggle in this file. Every publisher consumes
           # the set below; two readers of one truth is how the static job graph and the
           # runtime set drift apart (ADR-0011). A contract test enforces it.
-          DOCKERHUB_REPOSITORY: ${{ vars.DOCKERHUB_REPOSITORY }}
+          DOCKERHUB_ORG: ${{ vars.DOCKERHUB_ORG }}
           DOCKERHUB_TOGGLE: ${{ vars.PUBLISH_IMAGE_DOCKERHUB }}
+          FORGE_OWNER: ${{ github.repository_owner }}
+          IMAGE_NAME: ${{ steps.forge.outputs.image-name }}
           FORGE: ${{ steps.forge.outputs.forge }}
           PACKAGE_INDEX_SUPPORTED: ${{ steps.forge.outputs.package-index-supported }}
           PYPI_TOGGLE: ${{ vars.PUBLISH_PACKAGE_PYPI }}
@@ -223,13 +226,31 @@ jobs:
           # namespace there is unrelated to the forge owner, and guessing it means
           # pushing an immutable tag somewhere nobody chose -- the failure CI-AR6 fails
           # closed on for registries. So the toggle alone is not enough; it is enabled
-          # only alongside a well-formed DOCKERHUB_REPOSITORY, and a toggle without one
-          # fails the run rather than publishing to a guess.
+          # only alongside a namespace, and a toggle without a usable one fails the run
+          # rather than publishing to a guess.
+          #
+          # Two independent things, and only one needs an operator. The image NAME is not
+          # configurable: it is whatever this repository builds, taken from the same
+          # `image-name` coordinate that composes the forge image repository, so Docker
+          # Hub and the forge registry ship the same name by construction rather than by
+          # two settings that agree until one is edited. The NAMESPACE cannot be derived
+          # -- a Docker Hub org is unrelated to the forge owner -- so DOCKERHUB_ORG is the
+          # one knob, defaulting to the lowercased forge owner because for this project
+          # they coincide. That default is fork-correct: a fork resolves its own namespace
+          # rather than pushing at this one.
           dockerhub_repository=""
           if [[ "${DOCKERHUB_TOGGLE:-false}" == "true" ]]; then
-            if [[ ! "${DOCKERHUB_REPOSITORY:-}" =~ ^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$ ]]; then
-              echo "PUBLISH_IMAGE_DOCKERHUB is enabled but DOCKERHUB_REPOSITORY is not a" >&2
-              echo "lowercase <namespace>/<repository>: '${DOCKERHUB_REPOSITORY:-}'" >&2
+            dockerhub_org="${DOCKERHUB_ORG:-}"
+            if [[ -z "$dockerhub_org" ]]; then
+              dockerhub_org="$(printf '%s' "$FORGE_OWNER" | tr '[:upper:]' '[:lower:]')"
+            fi
+            DOCKERHUB_REPOSITORY="$dockerhub_org/$IMAGE_NAME"
+            if [[ ! "$DOCKERHUB_REPOSITORY" =~ ^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$ ]]; then
+              echo "PUBLISH_IMAGE_DOCKERHUB is enabled but the composed Docker Hub" >&2
+              echo "repository is not a lowercase <namespace>/<name>:" >&2
+              echo "  '$DOCKERHUB_REPOSITORY'" >&2
+              echo "The name follows the built image; set DOCKERHUB_ORG if the namespace" >&2
+              echo "differs from the forge owner." >&2
               exit 2
             fi
             image_dockerhub="enabled"
