@@ -1,0 +1,87 @@
+generated: "2026-09-02T01:10:00Z"
+plan_version: 5
+readiness: green
+stories_elaborated: 6
+total_epics_in_scope: 2
+
+phases:
+  - phase: 1
+    parallel: true
+    epics: ["E008"]
+    dependencies: ["E007"]
+    estimate:
+      estimates_as_of: "2026-09-02T00:31:00Z"
+      wall_clock_hours_low: 2.87
+      wall_clock_hours_high: 2.97
+      man_hours_low: 74.6
+      man_hours_high: 77.42
+      hitl_hours_low: 0.17
+      hitl_hours_high: 0.18
+      tokens_k_min: 1585
+      tokens_k_max: 1801
+      cost_low: 6.54
+      cost_high: 7.43
+      confidence: medium
+  - phase: 2
+    parallel: false
+    epics: ["E009"]
+    dependencies: ["E008"]
+    estimate:
+      estimates_as_of: "2026-09-02T00:31:00Z"
+      wall_clock_hours_low: 1.67
+      wall_clock_hours_high: 1.73
+      man_hours_low: 28.81
+      man_hours_high: 29.9
+      hitl_hours_low: 0.17
+      hitl_hours_high: 0.18
+      tokens_k_min: 680
+      tokens_k_max: 773
+      cost_low: 2.81
+      cost_high: 3.2
+      confidence: medium
+
+readiness_detail:
+  - key: "E008"
+    status: green
+    gaps: []
+    notes:
+      - 'Four lean stories, deliberately not the 267-370 line versions they replaced -- the
+         retirement spec records that the old transaction design was too expensive to maintain,
+         and story density was part of that. They carry technical-level acceptance criteria
+         citing CI-AR requirements, a Definition of Done naming the checks, and Out of Scope.'
+      - 'Augmented 2026-09-02 with the two things that were genuinely missing rather than a
+         re-elaboration: `Files in scope` (bounded path list, so a reviewer knows what to read
+         and what is out of bounds) and `Test anchors` (each check paired with the violation to
+         plant to prove the guard fires). +18 to +23 lines per story; nothing else changed.'
+      - 'Test anchors are written against tests/ci/test_workflow_contracts.py, whose scope is
+         already derived from disk, and they assert parsed structure rather than file text.
+         Scope attacks are labelled as such. Two deliberately pin a property rather than a
+         spelling, and one plants a deletion while leaving the comment that explains it --
+         both are failure modes this project has actually hit.'
+  - key: "E009"
+    status: green
+    gaps: []
+    notes:
+      - 'Two stories, same lean shape and same augmentation.'
+      - 'Two in-scope filenames are recorded assumptions rather than existing files:
+         docs/ci/gitea-runners.md and docs/ci/gitea-certification.md. Both stories require a
+         written record -- the pinned runner tuple, and the certification report -- so a file
+         is genuinely in scope even though docs/ci/ currently holds only codex-assesment.md.'
+
+arch_gate_summary:
+  ran: false
+  reviewers: []
+  findings: []
+
+# ---------------------------------------------------------------------------
+# Note on phase numbering
+#
+# This snapshot numbers E008 as phase 1 and E009 as phase 2, where v1-v3 numbered them 2 and
+# 3 with E007 as phase 1. The renumbering follows E007 completing and being archived, so the
+# remaining work starts again at 1. It is worth knowing when reading across snapshots that
+# "phase 1" means E007 in v1-v3 and E008 here -- the phase number is an ordinal within a
+# snapshot, not a stable identifier for an epic.
+#
+# Estimates below are carried unchanged from v4 and keep v4's `estimates_as_of` stamp: this
+# revision corrected readiness and added story sections, it did not re-price anything.
+# ---------------------------------------------------------------------------
