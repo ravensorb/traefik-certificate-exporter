@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from packaging.version import Version
 
 PROJECT_ROOT = Path(__file__).parents[2]
 WORKFLOWS = PROJECT_ROOT / ".github" / "workflows"
@@ -295,7 +296,19 @@ def test_the_committed_version_authority_has_one_implementation() -> None:
     # The plan jobs consume the version through the composite action's output, so the
     # single implementation is asserted where it actually lives.
     assert "scripts/committed_versions.py" in SETUP_ACTION.read_text(encoding="utf-8")
-    assert committed_versions.development_version(7).endswith(".dev7")
+    # Pins the ORDERING, not the spelling. `X.Y.Z.devN` sorts BELOW `X.Y.Z` under PEP 440,
+    # so a dev build of post-release work would look older than the release it follows and
+    # pip would prefer the published release over it. The dev version must preview the NEXT
+    # patch. An `endswith(".dev7")` assertion passes either way, which is why this defect
+    # survived a restore: the code regressed and the suite stayed green.
+    released = committed_versions.package_version()
+    development = committed_versions.development_version(7)
+    assert development.endswith(".dev7")
+    assert Version(development) > Version(released), (
+        f"{development} must sort above the released {released}"
+    )
+    major, minor, patch = released.split(".")
+    assert development == f"{major}.{minor}.{int(patch) + 1}.dev7"
 
 
 def test_any_push_triggered_workflow_verifies_before_it_ships() -> None:

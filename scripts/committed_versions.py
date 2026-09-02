@@ -79,6 +79,15 @@ def poetry_version(metadata: dict[str, Any] | None = None) -> str:
 def development_version(distance: int, metadata: dict[str, Any] | None = None) -> str:
     """Return the normalized PEP 440 development version for a branch build.
 
+    ``X.Y.(Z+1).devN`` -- the *next* patch, not the committed one. Under PEP 440 a
+    ``.devN`` segment sorts **below** the release it is attached to, so ``0.1.3.dev7`` is
+    older than ``0.1.3``. Emitting ``X.Y.Z.devN`` would make every development build of
+    work done *after* ``X.Y.Z`` look like a pre-release of a version that already shipped:
+    pip would prefer the published release over a newer dev build.
+
+    Incrementing here does not make this a second version authority (ADR-0006). It derives
+    a throwaway identity that is never committed, never tagged and never written back.
+
     ``distance`` is the first-parent commit count, which makes the version unique per
     commit. No arithmetic is performed on the committed version itself: the release
     number is owned by ``scripts/release_version.py`` and release-please, and a
@@ -86,7 +95,15 @@ def development_version(distance: int, metadata: dict[str, Any] | None = None) -
     """
     if distance < 0:
         raise SystemExit(f"development distance must be non-negative, got {distance}")
-    return f"{package_version(metadata)}.dev{distance}"
+    released = package_version(metadata)
+    parts = released.split(".")
+    if len(parts) != 3:
+        raise SystemExit(
+            "tool.poetry.version must be MAJOR.MINOR.PATCH to derive a development "
+            f"version, got {released!r}"
+        )
+    major, minor, patch = parts
+    return f"{major}.{minor}.{int(patch) + 1}.dev{distance}"
 
 
 def _build_parser() -> argparse.ArgumentParser:
