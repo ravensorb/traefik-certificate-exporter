@@ -109,7 +109,9 @@ The `CI-AR` identifiers remain stable traceability keys.
 - **CI-AR19 — Strict toggles.** Optional publication variables accept only case-normalized
   `true` or `false`; absent means false and any other value fails the owning job.
 - **CI-AR20 — Image destinations.** The active forge registry is always required. Docker Hub is
-  independently enabled by `PUBLISH_IMAGE_DOCKERHUB`.
+  independently enabled by `PUBLISH_IMAGE_DOCKERHUB`, **and applies to the stable channel only**:
+  development images publish to the active forge registry and nowhere else, so the toggle is inert
+  in `dev.yaml`. See ADR-0011.
 - **CI-AR21 — Package channels.** Development uses optional TestPyPI; stable uses optional PyPI.
   Gitea's owning-forge Python index is always required. GitHub has no forge Python index, so this
   destination is absent by host capability and Release assets carry the distributions.
@@ -176,7 +178,13 @@ The `CI-AR` identifiers remain stable traceability keys.
   the required forge registry and optional Docker Hub in that invocation. There is no per-registry
   rebuild. The job exports the published digest and inspected platforms as action/workflow outputs.
 - **CI-AR40 — Required fan-out.** Required and enabled destination jobs may run independently
-  after verification; aggregate success gates the Story 8.3 finalizer. The image job receives
+  after verification; aggregate success gates the Story 8.3 finalizer. **"Aggregate success" is
+  evaluated, not depended on:** the finalizer `needs:` every publisher in its file statically,
+  runs under `if: ${{ !cancelled() }}`, and compares `needs.<job>.result` against the enabled set
+  emitted once as a plan-job output. A `skipped` destination that the enabled set says was off, or
+  is unsupported on this host, does not block; one that should have run does. `needs:` cannot
+  express selective dependency — it is structural and takes no expression — so this is evaluation,
+  not wiring. See ADR-0011. The image job receives
   only enabled image-registry credentials, while package credentials stay isolated in package jobs.
 - **CI-AR41 — Workflow-native run evidence.** Run ID/URL, manifest and artifact hashes, published
   image digest/platform inspection, Release URL, and alias outcomes are emitted as job outputs and
@@ -200,7 +208,7 @@ consume its single evidence bundle.
 
 | Variable | Meaning | Default |
 |---|---|---|
-| `PUBLISH_IMAGE_DOCKERHUB` | additionally publish to Docker Hub | `false` |
+| `PUBLISH_IMAGE_DOCKERHUB` | additionally publish to Docker Hub; **stable channel only, inert in `dev.yaml`** | `false` |
 | `PUBLISH_PACKAGE_TESTPYPI` | publish development distributions to TestPyPI | `false` |
 | `PUBLISH_PACKAGE_PYPI` | publish stable distributions to PyPI | `false` |
 | `FORGE_REGISTRY` | Gitea `host[:port]` override only; same forge, no userinfo/path/query/fragment | derived |

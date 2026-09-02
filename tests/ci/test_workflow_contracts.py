@@ -517,6 +517,48 @@ def test_no_publisher_queries_a_destination_before_uploading() -> None:
                     )
 
 
+def test_a_job_gating_on_publishers_uses_not_cancelled_never_always() -> None:
+    """ADR-0011: the finalizer must run despite a legitimately skipped destination, so it
+    cannot rely on `needs:` alone -- but `always()` is the wrong way to get there.
+
+    `always()` runs the job even when the workflow was cancelled, so aliases could advance
+    over a half-published artifact set. GitHub documents `!cancelled()` as the recommended
+    alternative for exactly this reason. The difference is invisible until someone cancels
+    a release mid-fan-out, which is precisely when it matters.
+    """
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            condition = str(job.get("if", ""))
+            if "always()" not in condition:
+                continue
+            assert not job.get("needs"), (
+                f"{path.name}: job {job_name!r} gates on other jobs with `always()`. Use "
+                f"`!cancelled()` -- `always()` also runs on cancellation, which would let "
+                f"a finalizer act on a half-published set (ADR-0011)."
+            )
+
+
+def test_the_enabled_destination_set_has_one_producer() -> None:
+    """ADR-0011: publishers consume the enabled set; they never re-read `PUBLISH_*`.
+
+    Two readers of one truth is the F7 defect one layer along -- the static job graph and
+    the runtime enabled set drift apart, and the finalizer starts blocking on a
+    destination nobody turned off. The plan job is the single producer.
+    """
+    toggle = re.compile(r"\bPUBLISH_[A-Z_]+\b")
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            outputs = job.get("outputs") or {}
+            if "enabled-destinations" in outputs or "package-version" in outputs:
+                continue  # the plan job is the producer
+            body = json.dumps(job)
+            assert not toggle.search(body), (
+                f"{path.name}: job {job_name!r} reads a PUBLISH_* toggle directly. The "
+                f"enabled set is produced once by the plan job and consumed from its "
+                f"output (ADR-0011)."
+            )
+
+
 def test_no_workflow_calls_a_local_workflow_or_action_that_does_not_exist() -> None:
     # Deleting the legacy workflows left every `uses:` pointing at them dangling. GitHub
     # fails such a call at run time, not at lint time, so nothing else here catches it.
