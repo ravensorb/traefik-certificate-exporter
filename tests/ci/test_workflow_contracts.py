@@ -71,7 +71,32 @@ SECRET_FREE_WORKFLOWS = (CI_WORKFLOW, VERIFY_WORKFLOW)
 # same name in dev.yaml -- and Epic 8 creates a finalizer in both files (gate finding F6).
 # Widened before the first entry is added, while the set is still empty and the change is
 # free.
-RELEASE_FINALIZER_JOBS: frozenset[tuple[str, str]] = frozenset()
+#
+# Epic 8 story E008-S01-003 registers three, and each entry is a deliberate grant:
+#
+# * `("release.yaml", "finalize")` -- creates the forge Release through
+#   `LiquidLogicLabs/git-action-release@v2` (ADR-0010) and advances `vMAJOR` /
+#   `vMAJOR.MINOR` through `LiquidLogicLabs/git-action-tag-floating-version@v1`
+#   (ADR-0006 as amended). It is the only job in the repository declaring
+#   `contents: write`, and it holds no registry credential at all.
+# * `("release.yaml", "finalize-image-aliases")` -- points the `MAJOR.MINOR`, `MAJOR`
+#   and `latest` image names at the digest that was already published. It writes no
+#   ref and declares no `contents: write`; it is registered because it moves an alias,
+#   and alias ownership is what the sole-ownership guard below asserts.
+# * `("dev.yaml", "finalize-dev-alias")` -- points the `dev` image name at the
+#   published digest, after proving the candidate is still the protected default
+#   branch's head. Also no ref write.
+#
+# ADR-0006 draws the line at identity, and none of the three chooses a version: the
+# committed version and the exact `vX.Y.Z` tag are still the local guarded
+# transaction's alone. A Release and an alias attach to an identity already decided.
+RELEASE_FINALIZER_JOBS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("release.yaml", "finalize"),
+        ("release.yaml", "finalize-image-aliases"),
+        ("dev.yaml", "finalize-dev-alias"),
+    }
+)
 
 # `release` and `tag` as verbs in an action name -- the ref-writing ones. `publish` is
 # deliberately absent so pypa/gh-action-pypi-publish and image pushes, which write no ref,
@@ -684,7 +709,20 @@ def test_no_workflow_holds_github_token_write_access_to_contents() -> None:
             (n, j.get("permissions")) for n, j in document.get("jobs", {}).items()
         ]
         for job_name, permissions in scopes:
-            if not isinstance(permissions, dict):
+            # A non-dict `permissions:` is the scalar `write-all` / `read-all` form,
+            # which grants every scope. Skipping it -- which every permission reader in
+            # this file used to do -- walks straight past the ADR-0006 grant registry:
+            # a job spelled that way holds `contents: write` while being registered
+            # nowhere. `test_no_workflow_uses_the_scalar_permissions_form` forbids it
+            # outright; this is the same refusal at the site that matters most, because
+            # a guard that depends on another guard's existence is one deletion from
+            # vacuous.
+            assert permissions is None or isinstance(permissions, dict), (
+                f"{path.name}: {job_name or 'workflow'} uses the scalar `permissions:` "
+                f"form, which grants every scope and is invisible to the ADR-0006 grant "
+                f"registry; spell the scopes out"
+            )
+            if permissions is None:
                 continue
             if permissions.get("contents") != "write":
                 continue
@@ -1702,36 +1740,143 @@ def test_channel_workflows_consume_image_inspection_rather_than_performing_it() 
     ), "publish-image.yaml inspects nothing, so CI-AR39's platform evidence is missing"
 
 
+# The credential every job on a forge is issued automatically, whose authority is set
+# per job by `permissions:` rather than by which secret it was handed. It is excluded
+# from the cross-destination comparison below for that reason -- two jobs each holding
+# it under different `permissions:` scopes is the least-privilege pattern, not a shared
+# destination credential -- and the exclusion is compensated: the same guard asserts no
+# package publisher may take `packages: write`, which is the only way the automatic
+# token becomes a registry credential.
+AMBIENT_FORGE_TOKEN = "GITHUB_TOKEN"
+
+# What a job addresses, derived from what it actually does rather than from its name.
+# A job may belong to exactly one, which is itself asserted below.
+DESTINATION_CLASSES: dict[str, tuple[str, ...]] = {
+    # A container registry: the reusable image publisher, a registry login, or any
+    # tool that writes to one.
+    "image": (
+        re.escape(PUBLISH_IMAGE_REFERENCE),
+        r"docker/login-action",
+        r"docker/setup-buildx-action",
+        r"docker/build-push-action",
+        r"buildx\s+(?:bake|build|imagetools)",
+        r"\bdocker\s+(?:push|tag)\b",
+        r"\bcrane\s+(?:copy|tag|push|append)\b",
+        r"\bskopeo\s+copy\b",
+        r"\bregctl\s+(?:index|image|artifact)\s+(?:copy|put)\b",
+    ),
+    # A Python package index, by token or by trusted publishing.
+    "package": (
+        r"pypa/gh-action-pypi-publish",
+        r'"id-token":\s*"write"',
+        r"\btwine\s+upload\b",
+        r"\buv\s+publish\b",
+        r"\bpoetry\s+publish\b",
+        r"\bflit\s+publish\b",
+    ),
+    # Repository refs and forge Releases.
+    "refs": (
+        re.escape(APPROVED_RELEASE_ACTION),
+        re.escape(APPROVED_ALIAS_ACTION),
+    ),
+}
+
+
+def _destination_classes(job: dict[str, Any]) -> set[str]:
+    body = json.dumps(job)
+    return {
+        name
+        for name, patterns in DESTINATION_CLASSES.items()
+        if any(re.search(pattern, body) for pattern in patterns)
+    }
+
+
 def test_publisher_credentials_stay_disjoint_between_destinations() -> None:
     """CI-AR24 / CI-AR40: each publisher receives only its own destination's credentials.
 
-    Package OIDC and tokens are isolated from image jobs. Asserted as pairwise
-    disjointness of the `secrets.*` each publisher references, derived from the parsed
-    job, so a registry credential added to the package job -- the planted violation --
-    fails regardless of where in the job it appears.
+    Package OIDC and tokens are isolated from image jobs, and the job that writes refs
+    holds neither. Derived from the parsed job, so a registry credential added to the
+    package job -- the planted violation -- fails regardless of where in the job it
+    appears.
+
+    **Amended by story E008-S01-003.** The original comparison was pairwise across every
+    publisher in the file, which encodes "one publisher per destination". That stopped
+    being true the moment a finalizer moved image aliases: the alias job and the image
+    publisher address *the same registry*, so they necessarily present the same
+    credential to it, and the pairwise form rejected the correct arrangement while the
+    rule it documents was satisfied. The rule is per **destination**, so the comparison
+    is now per destination class -- and it gained two obligations the pairwise form never
+    expressed:
+
+    * a publisher belongs to exactly one destination class, so a job that both logs into
+      a registry and uploads a package fails here rather than being compared against
+      itself;
+    * a package publisher may not declare `packages: write`, which is the only way the
+      automatic forge token becomes a registry credential -- and the reason that token
+      can be excluded from the comparison at all.
     """
     secret_reference = re.compile(r"secrets\.([A-Za-z_][A-Za-z0-9_-]*)")
     channel_workflows = _channel_workflows()
     assert channel_workflows, "no workflow calls the image publisher"
     for path in channel_workflows:
         used: dict[str, set[str]] = {}
+        classes: dict[str, set[str]] = {}
         for name, job in _publishers(_load_workflow(path)).items():
-            used[name] = set(secret_reference.findall(json.dumps(job)))
+            # The reusable image publisher passes its caller's secrets through a
+            # `secrets:` block, so the caller job is where they are named.
+            used[name] = set(secret_reference.findall(json.dumps(job))) - {
+                AMBIENT_FORGE_TOKEN
+            }
+            classes[name] = _destination_classes(job)
         assert used, f"{path.name} has no publishers; this guard examined nothing"
-        # Per file, never folded across files: pairwise disjointness over a set of
-        # publishers that reference no secret at all proves nothing, and a global
-        # vacuity check lets one channel pass on another's behalf.
+        # Per file, never folded across files: disjointness over a set of publishers
+        # that reference no secret at all proves nothing, and a global vacuity check
+        # lets one channel pass on another's behalf.
         assert any(used.values()), (
-            f"{path.name}: no publisher references a secret; the guard is vacuous"
+            f"{path.name}: no publisher references a named secret; the guard is vacuous"
+        )
+        assert any(classes.values()), (
+            f"{path.name}: no publisher addresses a recognised destination; the class "
+            f"derivation has stopped seeing this file"
         )
 
-        names = sorted(used)
+        for name, addressed in sorted(classes.items()):
+            # Exactly one, never "at most one". A publisher that matches no pattern
+            # satisfied `<= 1` while escaping the `packages: write` obligation below --
+            # the compensation this amendment was paid for going quietly vacuous on the
+            # first destination written a way `DESTINATION_CLASSES` has not seen. An
+            # unclassifiable publisher is a vocabulary that needs extending, and that is
+            # a thing to be told about.
+            assert len(addressed) == 1, (
+                f"{path.name}: publisher {name!r} addresses "
+                f"{sorted(addressed) or 'no recognised destination'}. A job serving two "
+                f"destinations hands each the other's credentials; a job serving none "
+                f"means DESTINATION_CLASSES no longer describes how this repository "
+                f"publishes -- extend it (CI-AR24)."
+            )
+            permissions = _load_workflow(path)["jobs"][name].get("permissions")
+            if addressed == {"package"} and isinstance(permissions, dict):
+                assert permissions.get("packages") != "write", (
+                    f"{path.name}: package publisher {name!r} takes `packages: write`, "
+                    f"which makes the automatic forge token a registry credential "
+                    f"(CI-AR24)"
+                )
+
+        # The comparison the rule actually states: a named credential must not cross a
+        # destination boundary. Two jobs addressing the SAME registry present the same
+        # credential to it by construction, and that is not a leak.
+        by_class: dict[str, set[str]] = {}
+        for name, secrets in used.items():
+            for addressed in classes[name]:
+                by_class.setdefault(addressed, set()).update(secrets)
+        names = sorted(by_class)
         for index, first in enumerate(names):
             for second in names[index + 1 :]:
-                shared = used[first] & used[second]
+                shared = by_class[first] & by_class[second]
                 assert not shared, (
-                    f"{path.name}: publishers {first!r} and {second!r} share credentials "
-                    f"{sorted(shared)}; each destination gets only its own (CI-AR24)"
+                    f"{path.name}: destinations {first!r} and {second!r} share "
+                    f"credentials {sorted(shared)}; each destination gets only its own "
+                    f"(CI-AR24)"
                 )
 
 
@@ -2051,9 +2196,18 @@ def _executable_text(document: dict[str, Any]) -> str:
 
 
 def _step_with_id(path: Path, step_id: str) -> dict[str, Any]:
-    return next(
-        step for step in _steps(_load_workflow(path)) if step.get("id") == step_id
+    step = next(
+        (step for step in _steps(_load_workflow(path)) if step.get("id") == step_id),
+        None,
     )
+    # A bare `next()` raises StopIteration with no message, so deleting the step a guard
+    # exists to examine reads as a broken test rather than as a caught violation -- and
+    # a broken test gets "fixed" by deleting it.
+    assert step is not None, (
+        f"{path.name} has no step with id {step_id!r}; a guard that examines it was "
+        f"about to examine nothing"
+    )
+    return step
 
 
 def _git(repository: Path, *arguments: str) -> str:
@@ -2707,3 +2861,1038 @@ def test_channel_workflows_surface_the_published_digest_and_platforms() -> None:
                     f"consumed from the image publisher's outputs (CI-AR41, P1)."
                 )
     assert examined, "no channel workflow consumes the image publisher's outputs"
+
+
+# ---------------------------------------------------------------------------
+# Finalization (story E008-S01-003). Every guard below was proven by planting the
+# violation it forbids -- the rule AND the scope -- and confirming the guard fails.
+# ---------------------------------------------------------------------------
+
+# Every spelling of "give an image that already exists another name". A digest copy is
+# a registry WRITE, which is why it is not matched by REGISTRY_READ_COMMANDS: the
+# ordering guard forbids asking a registry what is there, not putting something there.
+GATE_MODULE = "scripts/finalizer_gate.py"
+
+ALIAS_MOVE_COMMANDS = (
+    r"\bbuildx\s+imagetools\s+create\b",
+    r"\bcrane\s+(?:tag|copy)\b",
+    r"\bskopeo\s+copy\b",
+    r"\bregctl\s+(?:index|image)\s+copy\b",
+    r"\bdocker\s+push\b",
+)
+
+# What a finalizer must never do. It attaches names to an artifact set that already
+# exists; a build here would produce a *different* artifact under a name the release
+# already promised (CI-AR39, ADR-0008).
+BUILD_COMMANDS = (
+    r"\bbuildx\s+(?:bake|build)\b",
+    r"\bdocker\s+build\b",
+    r"\bpython\s+-m\s+build\b",
+    r"\bpoetry\s+build\b",
+)
+BUILD_ACTIONS = ("docker/build-push-action", "docker/bake-action")
+
+EXPRESSION = re.compile(r"\$\{\{\s*(.+?)\s*\}\}")
+
+
+def _alias_moving_jobs() -> set[tuple[str, str]]:
+    """Every job that points a mutable name at an artifact, from the parsed steps.
+
+    Both kinds, because the story owns both: a Git alias moved by the approved action,
+    and a registry alias moved by a digest copy. Derived rather than enumerated, so an
+    alias step added to a publisher shows up here without anyone editing a list.
+    """
+    moving = set()
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            for step in job.get("steps", []) or []:
+                if str(step.get("uses", "")).startswith(APPROVED_ALIAS_ACTION):
+                    moving.add((path.name, job_name))
+                command = _uncommented(str(step.get("run", "")))
+                if any(re.search(probe, command) for probe in ALIAS_MOVE_COMMANDS):
+                    moving.add((path.name, job_name))
+    return moving
+
+
+def _finalizers(path: Path) -> set[str]:
+    return {job for workflow, job in RELEASE_FINALIZER_JOBS if workflow == path.name}
+
+
+# Everything a finalizer does that cannot be undone: the Release, a Git alias, a
+# registry alias. Derived from the same constants the ownership guard uses, so a new
+# spelling of "move an alias" reaches the ordering guard below without a second edit.
+def _writing_steps(job: dict[str, Any]) -> list[int]:
+    indices = []
+    for index, step in enumerate(job.get("steps", []) or []):
+        uses = str(step.get("uses", ""))
+        command = _uncommented(str(step.get("run", "")))
+        if uses.startswith((APPROVED_RELEASE_ACTION, APPROVED_ALIAS_ACTION)) or any(
+            re.search(probe, command) for probe in ALIAS_MOVE_COMMANDS
+        ):
+            indices.append(index)
+    return indices
+
+
+# Every refusal this story owns, by the mechanism that performs it rather than by a step
+# name: the enabled-set gate, the `vX.Y.Z` immutability re-check, the alias-ordering
+# decision, and the development channel's just-in-time head proof.
+REFUSAL_MARKERS = (
+    GATE_MODULE,
+    "--expect-tag",
+    "--alias-plan",
+    "rev-parse HEAD",
+)
+
+
+def _refusing_steps(job: dict[str, Any]) -> list[int]:
+    return [
+        index
+        for index, step in enumerate(job.get("steps", []) or [])
+        if any(
+            marker in _uncommented(str(step.get("run", "")))
+            for marker in REFUSAL_MARKERS
+        )
+    ]
+
+
+def _gate_steps(path: Path) -> dict[str, dict[str, Any]]:
+    """Every step that evaluates publisher results, keyed by the job holding it.
+
+    Found by the module it calls, never by a step name: a name is a label and a label
+    can survive the deletion of the thing it labels. All of them, not the first one a
+    set iteration happened to yield -- a second finalizer growing its own gate would
+    otherwise be checked or not depending on set ordering.
+    """
+    found = {}
+    for job_name in sorted(_finalizers(path)):
+        for step in _jobs(_load_workflow(path))[job_name].get("steps", []) or []:
+            if GATE_MODULE in _uncommented(str(step.get("run", ""))):
+                found[job_name] = step
+    return found
+
+
+def _gate_step(path: Path) -> dict[str, Any]:
+    gates = _gate_steps(path)
+    assert len(gates) == 1, (
+        f"{path.name} has {len(gates)} finalization gates ({sorted(gates)}); the "
+        f"executable anchors below assume one and would silently check only some"
+    )
+    return next(iter(gates.values()))
+
+
+def _render(step: dict[str, Any], bindings: dict[str, str]) -> dict[str, str]:
+    """The step's real `env:` block with its expressions resolved.
+
+    A binding the workflow does not ask for is never consulted, and an expression with
+    no binding raises -- so this is a wiring assertion as well as a fixture: renaming a
+    job breaks the render rather than silently supplying the old value.
+    """
+    rendered = {}
+    for name, value in (step.get("env") or {}).items():
+        rendered[str(name)] = EXPRESSION.sub(
+            lambda match: bindings[match.group(1)], str(value)
+        )
+    return rendered
+
+
+def test_only_registered_finalizers_move_an_alias() -> None:
+    """The definition-of-done clause: this story is the sole owner of every alias job.
+
+    Equality, not containment, in both directions. Containment one way lets a publisher
+    grow an alias step; containment the other way lets a registered grant sit unused,
+    which is a `contents: write` nobody is watching.
+    """
+    moving = _alias_moving_jobs()
+    assert moving == RELEASE_FINALIZER_JOBS, (
+        f"alias-moving jobs {sorted(moving)} are not the registered finalizer set "
+        f"{sorted(RELEASE_FINALIZER_JOBS)}. Moving a ref, tag or registry alias is the "
+        f"grant ADR-0006 governs; register the job, or move the step into a finalizer."
+    )
+
+
+def test_no_finalizer_builds_anything() -> None:
+    """A finalizer names artifacts that already exist. Building one here would ship a
+    different artifact under a name the run has already promised, and the difference is
+    invisible: same tag, same version, other bits."""
+    examined = 0
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name in sorted(_finalizers(path)):
+            job = _jobs(_load_workflow(path))[job_name]
+            for step in job.get("steps", []) or []:
+                examined += 1
+                command = _uncommented(str(step.get("run", "")))
+                for pattern in BUILD_COMMANDS:
+                    assert not re.search(pattern, command), (
+                        f"{path.name}: finalizer {job_name!r} builds an artifact. It "
+                        f"may only name what the publishers already shipped (CI-AR39)."
+                    )
+                action = str(step.get("uses", "")).split("@", 1)[0]
+                assert action not in BUILD_ACTIONS, (
+                    f"{path.name}: finalizer {job_name!r} runs {action}, which builds"
+                )
+    assert examined, "no finalizer step was examined"
+
+
+def test_ref_writing_and_registry_alias_privileges_never_meet() -> None:
+    """Least privilege, per job, from the parsed `permissions:` and the parsed steps.
+
+    Two planted violations, in opposite directions: a registry credential on the job
+    that writes refs, and `contents: write` on the job that moves registry aliases.
+    Either one recreates the single over-privileged finalizer the split exists to avoid
+    -- one compromised step that can both rewrite history and publish an image.
+    """
+    ref_writers = 0
+    alias_movers = 0
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            steps = job.get("steps", []) or []
+            permissions = job.get("permissions") or {}
+            writes_refs = any(
+                str(step.get("uses", "")).startswith(
+                    (APPROVED_RELEASE_ACTION, APPROVED_ALIAS_ACTION)
+                )
+                for step in steps
+            )
+            moves_registry_alias = any(
+                re.search(probe, _uncommented(str(step.get("run", ""))))
+                for step in steps
+                for probe in ALIAS_MOVE_COMMANDS
+            )
+            if writes_refs:
+                ref_writers += 1
+                assert permissions.get("packages") != "write", (
+                    f"{path.name}: {job_name!r} writes refs and takes `packages: write`"
+                )
+                body = json.dumps(job)
+                assert "docker/login-action" not in body, (
+                    f"{path.name}: {job_name!r} writes refs and logs into a registry"
+                )
+                registry_secrets = {
+                    secret
+                    for secret in re.findall(
+                        r"secrets\.([A-Za-z_][A-Za-z0-9_-]*)", body
+                    )
+                    if "DOCKER" in secret or "REGISTRY" in secret
+                }
+                assert not registry_secrets, (
+                    f"{path.name}: {job_name!r} writes refs and holds registry "
+                    f"credentials {sorted(registry_secrets)}; each finalizer holds one "
+                    f"kind of authority"
+                )
+            if moves_registry_alias:
+                alias_movers += 1
+                assert permissions.get("contents") != "write", (
+                    f"{path.name}: {job_name!r} moves a registry alias and takes "
+                    f"`contents: write`; ref authority belongs to the Release finalizer"
+                )
+    assert ref_writers, "no job writes a ref; this guard examined nothing"
+    assert alias_movers, "no job moves a registry alias; this guard examined nothing"
+
+
+def test_every_finalizer_waits_for_every_publisher_and_reads_every_result() -> None:
+    """ADR-0011: `needs:` is static, so the finalizer depends on ALL of them and then
+    evaluates their results against the enabled set.
+
+    Both halves, because either alone is satisfiable while the other is broken: a
+    `needs:` entry can be deleted, and a publisher can be added that the gate's env
+    never mentions. Both sets are derived from `_publishers()`, so the scope attack --
+    a new publisher nothing depends on -- fails without anyone editing a list.
+    """
+    channel_workflows = _channel_workflows()
+    assert channel_workflows, "no workflow calls the image publisher"
+    for path in channel_workflows:
+        document = _load_workflow(path)
+        jobs = _jobs(document)
+        finalizers = _finalizers(path)
+        assert finalizers, f"{path.name}: no registered finalizer"
+        destinations = set(_publishers(document)) - finalizers
+        assert destinations, f"{path.name}: no destination publisher; nothing examined"
+
+        for name in sorted(finalizers):
+            missing = destinations - _transitive_needs(jobs, name)
+            assert not missing, (
+                f"{path.name}: finalizer {name!r} does not depend on {sorted(missing)}, "
+                f"so it could create a Release and move aliases while that destination "
+                f"was still running (ADR-0011)"
+            )
+
+        gates = _gate_steps(path)
+        assert gates, f"{path.name}: no finalizer evaluates the enabled set (ADR-0011)"
+        for gated_job, step in sorted(gates.items()):
+            gate = json.dumps(step.get("env") or {})
+            assert "needs.plan.outputs.enabled-destinations" in gate, (
+                f"{path.name}: {gated_job!r}'s gate never reads the enabled set, so a "
+                f"skipped destination cannot be told from a disabled one (ADR-0011)"
+            )
+            for publisher in sorted(destinations):
+                assert f"needs.{publisher}.result" in gate, (
+                    f"{path.name}: {gated_job!r}'s gate never reads "
+                    f"`needs.{publisher}.result`, so that destination's failure would "
+                    f"not block the Release or the aliases (ADR-0011)"
+                )
+
+        # And every finalizer that writes is behind a gate -- its own, or one in a job
+        # it transitively depends on. Without this a second finalizer could be added
+        # with no gate at all and the coverage assertion above would pass, having
+        # examined only the gate that does exist.
+        for name in sorted(finalizers):
+            if not _writing_steps(jobs[name]):
+                continue
+            reachable = _transitive_needs(jobs, name) | {name}
+            assert reachable & set(gates), (
+                f"{path.name}: finalizer {name!r} writes a Release or moves an alias "
+                f"without a finalization gate in itself or in anything it needs "
+                f"(ADR-0011)"
+            )
+
+
+def _run_gate(path: Path, bindings: dict[str, str]) -> Any:
+    step = _gate_step(path)
+    completed, _ = _run_step(
+        str(step["run"]), _render(step, bindings), cwd=PROJECT_ROOT
+    )
+    return completed
+
+
+def _stable_bindings(**results: str) -> dict[str, str]:
+    """Every expression release.yaml's gate step resolves, with results overridable."""
+    defaults = {
+        "publish-image": "success",
+        "publish-package-forge": "success",
+        "publish-package-pypi": "success",
+        "verify": "success",
+    }
+    defaults.update(results)
+    return {f"needs.{job}.result": result for job, result in defaults.items()} | {
+        "needs.plan.outputs.enabled-destinations": json.dumps(
+            {
+                "image-forge": "enabled",
+                "image-dockerhub": "disabled",
+                "package-forge": "unsupported",
+                "package-pypi": "enabled",
+            }
+        )
+    }
+
+
+def test_a_disabled_optional_destination_still_finalizes() -> None:
+    """ADR-0011's first mandatory anchor.
+
+    Docker Hub off by toggle and the forge index absent by host capability: both report
+    `skipped`, both are legitimate, and a release with either of them off must still get
+    its Release and its aliases. The literal reading of "a required failure or skip
+    blocks" would leave that release green with nothing finalized and nothing reported,
+    which is the failure nobody notices until they look for the Release.
+    """
+    completed = _run_gate(
+        RELEASE_WORKFLOW,
+        _stable_bindings(**{"publish-package-forge": "skipped"}),
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_an_enabled_destination_that_skipped_stops_finalization() -> None:
+    """ADR-0011's second mandatory anchor, and the one the first makes possible to get
+    wrong: `skipped` is also what a job reports when its upstream died, so ignoring
+    every skip would advance `latest` over a release whose PyPI upload never happened."""
+    completed = _run_gate(
+        RELEASE_WORKFLOW, _stable_bindings(**{"publish-package-pypi": "skipped"})
+    )
+    assert completed.returncode != 0
+    assert "package-pypi" in completed.stderr
+
+
+@pytest.mark.parametrize("blocking", ["failure", "cancelled"])
+def test_a_failed_or_cancelled_publisher_stops_finalization(blocking: str) -> None:
+    completed = _run_gate(
+        RELEASE_WORKFLOW, _stable_bindings(**{"publish-image": blocking})
+    )
+    assert completed.returncode != 0
+    assert "image-forge" in completed.stderr
+
+
+def test_a_failed_verifier_stops_finalization_whatever_the_destinations_did() -> None:
+    completed = _run_gate(RELEASE_WORKFLOW, _stable_bindings(verify="failure"))
+    assert completed.returncode != 0
+    assert "verify" in completed.stderr
+
+
+def test_the_development_gate_reads_its_own_channels_destinations() -> None:
+    """The same module, a different enabled set -- and the pair registry is why that is
+    safe: `finalize` in dev.yaml would have been granted by a bare-name registry."""
+    bindings = {
+        "needs.publish-image.result": "success",
+        "needs.publish-package-forge.result": "success",
+        "needs.publish-package-testpypi.result": "skipped",
+        "needs.verify.result": "success",
+        "needs.stable-tag-guard.result": "success",
+        "needs.plan.outputs.enabled-destinations": json.dumps(
+            {
+                "image-forge": "enabled",
+                "package-forge": "unsupported",
+                "package-testpypi": "disabled",
+            }
+        ),
+    }
+    completed = _run_gate(DEV_WORKFLOW, bindings)
+    assert completed.returncode == 0, completed.stderr
+    bindings["needs.plan.outputs.enabled-destinations"] = json.dumps(
+        {
+            "image-forge": "enabled",
+            "package-forge": "unsupported",
+            "package-testpypi": "enabled",
+        }
+    )
+    completed = _run_gate(DEV_WORKFLOW, bindings)
+    assert completed.returncode != 0
+    assert "package-testpypi" in completed.stderr
+
+
+@pytest.fixture
+def alias_repository(tmp_path: Path) -> Path:
+    """A repository whose tag set makes every ordering decision distinguishable.
+
+    Real git, and real annotated tags, because git's own version comparison is the
+    ordering authority the workflow delegates to. `v1.2.10` is here so a lexicographic
+    sort -- what a hand-rolled comparison degrades to -- gives a different answer from
+    the correct one.
+    """
+    root = tmp_path / "ordered"
+    root.mkdir()
+    _git(root, "init", "--initial-branch=main")
+    _git(root, "config", "user.email", "test@example.com")
+    _git(root, "config", "user.name", "Test")
+    for index, tags in enumerate(
+        [
+            ("v1.2.3",),
+            ("v1.2.10",),
+            ("v1.3.0",),
+            ("v1.4.0-rc1", "v9.9.9-lightweight", "v1.2", "1.2.3"),
+        ]
+    ):
+        (root / "file.txt").write_text(f"{index}\n", encoding="utf-8")
+        _git(root, "add", ".")
+        _git(root, "commit", "-m", f"commit {index}")
+        for tag in tags:
+            if tag.endswith("-lightweight"):
+                _git(root, "tag", tag)
+            else:
+                _git(root, "tag", "-a", tag, "-m", tag)
+    return root
+
+
+def _alias_plan(
+    repository: Path, tag: str, branch: str = "main"
+) -> tuple[Any, dict[str, str]]:
+    step = _step_with_id(RELEASE_WORKFLOW, "aliases")
+    commit = _git(repository, "rev-parse", f"{tag}^{{commit}}")
+    return _run_step(
+        str(step["run"]),
+        {
+            "DEFAULT_BRANCH_REF": branch,
+            "RELEASE_TAG": tag,
+            "SOURCE_SHA": commit,
+        },
+        cwd=repository,
+    )
+
+
+def test_the_newest_stable_release_advances_both_aliases(
+    alias_repository: Path,
+) -> None:
+    completed, emitted = _alias_plan(alias_repository, "v1.3.0")
+    assert completed.returncode == 0, completed.stderr
+    assert emitted["advance-major"] == "true"
+    assert emitted["advance-minor"] == "true"
+    assert emitted["major-alias"] == "v1"
+    assert emitted["minor-alias"] == "v1.3"
+
+
+def test_a_back_port_patch_never_drags_the_major_alias_backwards(
+    alias_repository: Path,
+) -> None:
+    """Gate finding F4, executed rather than described.
+
+    `git-action-tag-floating-version` moves an alias unconditionally: hand it `v1.2.10`
+    with `v1.3.0` already published and `v1` follows it backwards. The refusal has to
+    come from the workflow, and the workflow's authority is the Git tag set alone.
+
+    `v1.2.10` is also the case a lexicographic comparison gets wrong in the *other*
+    direction -- it sorts below `v1.2.3` -- so this asserts the minor alias may still
+    advance, not only that the major may not.
+    """
+    completed, emitted = _alias_plan(alias_repository, "v1.2.10")
+    assert completed.returncode == 0, completed.stderr
+    assert emitted["advance-major"] == "false"
+    assert emitted["advance-minor"] == "true"
+    assert emitted["greatest-stable"] == "v1.3.0"
+
+
+def test_a_superseded_patch_advances_nothing(alias_repository: Path) -> None:
+    completed, emitted = _alias_plan(alias_repository, "v1.2.3")
+    assert completed.returncode == 0, completed.stderr
+    assert emitted["advance-major"] == "false"
+    assert emitted["advance-minor"] == "false"
+
+
+@pytest.mark.parametrize("tag", ["v1.4.0-rc1", "v9.9.9-lightweight", "v1.2", "1.2.3"])
+def test_no_alias_plan_exists_for_a_tag_that_is_not_an_exact_stable_release(
+    alias_repository: Path, tag: str
+) -> None:
+    """A prerelease, a lightweight tag, a two-part tag and an unprefixed one. The action
+    skips prereleases itself; every other shape has to be refused here, and refusing is
+    the same operation as refusing an ordering violation -- the step exits non-zero and
+    `set -e` stops the job before any alias is touched."""
+    completed, _ = _alias_plan(alias_repository, tag)
+    assert completed.returncode != 0
+
+
+def _stub_docker(tmp_path: Path) -> tuple[Path, Path]:
+    """A `docker` on PATH that records its arguments instead of contacting a registry."""
+    directory = tmp_path / "bin"
+    directory.mkdir()
+    log = tmp_path / "docker.log"
+    stub = directory / "docker"
+    stub.write_text(
+        f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "{log}"\n', encoding="utf-8"
+    )
+    stub.chmod(0o755)
+    return directory, log
+
+
+def _run_alias_step(
+    path: Path, tmp_path: Path, **environment: str
+) -> tuple[Any, list[str]]:
+    directory, log = _stub_docker(tmp_path)
+    summary = tmp_path / "summary.md"
+    summary.touch()
+    step = _step_with_id(path, "image-alias")
+    completed, _ = _run_step(
+        str(step["run"]),
+        {
+            "PATH": f"{directory}:{os.environ['PATH']}",
+            "GITHUB_STEP_SUMMARY": str(summary),
+            **environment,
+        },
+        cwd=tmp_path,
+    )
+    invocations = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+    return completed, invocations
+
+
+DIGEST = "sha256:" + "ab" * 32
+
+
+def _moved(invocations: list[str]) -> set[str]:
+    """Every reference the alias step actually named, across every invocation."""
+    arguments = " ".join(invocations).split()
+    return {
+        arguments[index + 1]
+        for index, token in enumerate(arguments)
+        if token == "--tag"
+    }
+
+
+@pytest.mark.parametrize("workflow", [RELEASE_WORKFLOW, DEV_WORKFLOW])
+@pytest.mark.parametrize("digest", ["", "latest", "sha256:short", DIGEST[:-1] + "z"])
+def test_an_absent_or_malformed_digest_halts_before_any_name_moves(
+    workflow: Path, tmp_path: Path, digest: str
+) -> None:
+    """The alias step is handed the publisher's `digest` output. When the publisher was
+    skipped that output is the empty string, and `repo@` with nothing after it is either
+    an obscure failure or -- if anything ever coerces it back to a tag -- a copy of
+    whatever `repo:` resolves to. Halting is the only safe reading."""
+    completed, invocations = _run_alias_step(
+        workflow,
+        tmp_path,
+        ADVANCE_MAJOR="true",
+        ADVANCE_MINOR="true",
+        DOCKERHUB_REPOSITORY="",
+        IMAGE_DIGEST=digest,
+        IMAGE_REPOSITORY="ghcr.io/owner/name",
+        MAJOR_ALIAS="v1",
+        MINOR_ALIAS="v1.3",
+    )
+    assert completed.returncode != 0, completed.stdout
+    assert not invocations, f"a name was moved onto {digest!r}"
+
+
+def test_a_stable_alias_step_moves_only_the_names_the_tag_set_permits(
+    tmp_path: Path,
+) -> None:
+    completed, invocations = _run_alias_step(
+        RELEASE_WORKFLOW,
+        tmp_path,
+        ADVANCE_MAJOR="false",
+        ADVANCE_MINOR="true",
+        DOCKERHUB_REPOSITORY="docker.io/owner/name",
+        IMAGE_DIGEST=DIGEST,
+        IMAGE_REPOSITORY="ghcr.io/owner/name",
+        MAJOR_ALIAS="v1",
+        MINOR_ALIAS="v1.2",
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert _moved(invocations) == {
+        "ghcr.io/owner/name:1.2",
+        "docker.io/owner/name:1.2",
+    }
+    assert all("imagetools create" in line for line in invocations)
+    assert all("@" + DIGEST in line for line in invocations)
+
+
+def test_the_stable_alias_step_moves_latest_only_with_the_major(tmp_path: Path) -> None:
+    completed, invocations = _run_alias_step(
+        RELEASE_WORKFLOW,
+        tmp_path,
+        ADVANCE_MAJOR="true",
+        ADVANCE_MINOR="true",
+        DOCKERHUB_REPOSITORY="",
+        IMAGE_DIGEST=DIGEST,
+        IMAGE_REPOSITORY="ghcr.io/owner/name",
+        MAJOR_ALIAS="v1",
+        MINOR_ALIAS="v1.3",
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert _moved(invocations) == {
+        "ghcr.io/owner/name:1.3",
+        "ghcr.io/owner/name:1",
+        "ghcr.io/owner/name:latest",
+    }
+    # `latest` and `MAJOR` mean the same thing, so they must not be two writes that can
+    # disagree: one repository, one `imagetools create`.
+    assert len(invocations) == 1, invocations
+
+
+def test_a_superseded_release_moves_no_image_alias_at_all(tmp_path: Path) -> None:
+    completed, invocations = _run_alias_step(
+        RELEASE_WORKFLOW,
+        tmp_path,
+        ADVANCE_MAJOR="false",
+        ADVANCE_MINOR="false",
+        DOCKERHUB_REPOSITORY="docker.io/owner/name",
+        IMAGE_DIGEST=DIGEST,
+        IMAGE_REPOSITORY="ghcr.io/owner/name",
+        MAJOR_ALIAS="v1",
+        MINOR_ALIAS="v1.2",
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert not invocations
+
+
+def test_a_disabled_docker_hub_receives_no_alias_request(tmp_path: Path) -> None:
+    """The credentials half is gated on the enabled set; this is the requests half. An
+    alias pushed at a destination the run declared disabled is a request to a registry
+    it never logged into."""
+    completed, invocations = _run_alias_step(
+        RELEASE_WORKFLOW,
+        tmp_path,
+        ADVANCE_MAJOR="true",
+        ADVANCE_MINOR="true",
+        DOCKERHUB_REPOSITORY="",
+        IMAGE_DIGEST=DIGEST,
+        IMAGE_REPOSITORY="ghcr.io/owner/name",
+        MAJOR_ALIAS="v1",
+        MINOR_ALIAS="v1.3",
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert not any("docker.io" in line for line in invocations)
+
+
+def test_a_stale_development_candidate_halts_without_moving_dev(
+    tmp_path: Path, alias_repository: Path
+) -> None:
+    """The just-in-time head re-read. Concurrency cancels a superseded run, but the
+    cancellation is not instantaneous and the push events are unordered, so the head is
+    proven again immediately before the alias moves."""
+    step = _step_with_id(DEV_WORKFLOW, "recheck-head")
+    summary = tmp_path / "summary.md"
+    summary.touch()
+    head = _git(alias_repository, "rev-parse", "HEAD")
+    stale = _git(alias_repository, "rev-parse", "HEAD~1")
+
+    completed, _ = _run_step(
+        str(step["run"]),
+        {"GITHUB_STEP_SUMMARY": str(summary), "SOURCE_SHA": head},
+        cwd=alias_repository,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+    completed, _ = _run_step(
+        str(step["run"]),
+        {"GITHUB_STEP_SUMMARY": str(summary), "SOURCE_SHA": stale},
+        cwd=alias_repository,
+    )
+    assert completed.returncode != 0
+    assert "no longer the head" in completed.stderr
+
+
+def test_the_git_alias_action_runs_only_behind_the_ordering_gate() -> None:
+    """F4's wiring half, which the behavioural tests above cannot see.
+
+    They prove the ordering decision is correct. Nothing yet proved the action is
+    actually *gated* on it -- and the action moves unconditionally, so an alias step
+    that stopped consulting the decision would pass every ordering test in this file
+    while dragging `vMAJOR` backwards on the next back-port release.
+
+    The deciding step is found by the flag it passes, never by a step name, and the
+    condition must name that step's own output.
+    """
+    examined = 0
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            steps = job.get("steps", []) or []
+            deciders = {
+                str(step["id"])
+                for step in steps
+                if step.get("id")
+                and "--alias-plan" in _uncommented(str(step.get("run", "")))
+            }
+            for step in steps:
+                if not str(step.get("uses", "")).startswith(APPROVED_ALIAS_ACTION):
+                    continue
+                examined += 1
+                assert deciders, (
+                    f"{path.name}: job {job_name!r} moves Git aliases without deciding "
+                    f"from the tag set whether they may advance. The action compares "
+                    f"nothing; the refusal is the workflow's (F4)."
+                )
+                condition = str(step.get("if", "")).replace(" ", "")
+                assert any(
+                    f"steps.{decider}.outputs.advance-major" in condition
+                    for decider in deciders
+                ), (
+                    f"{path.name}: job {job_name!r} runs {APPROVED_ALIAS_ACTION} without "
+                    f"gating on the ordering decision ({sorted(deciders)}); releasing an "
+                    f"older patch would drag the major alias backwards (F4)"
+                )
+                inputs = step.get("with") or {}
+                # The action's own input spelling. `update-minor:` and
+                # `ignore-prerelease:` are silently ignored -- the defaults then leave
+                # the minor alias unmoved, which no test of the workflow would notice.
+                assert inputs.get("updateMinor") == "true", (
+                    f"{path.name}: {job_name!r} does not ask for the minor alias"
+                )
+                assert inputs.get("ignorePrerelease") == "true", (
+                    f"{path.name}: {job_name!r} does not skip prereleases"
+                )
+                # And its OUTPUT names, for the same reason the inputs are asserted:
+                # `majorTag`/`minorTag` are camelCase too, and a wrong one renders
+                # `none` in the summary on a fully successful move -- the same silent
+                # failure the input spelling would have caused, one step further on.
+                consumed = json.dumps(_jobs(_load_workflow(path))[job_name])
+                for output in ("majorTag", "minorTag"):
+                    assert f"steps.{step['id']}.outputs.{output}" in consumed, (
+                        f"{path.name}: {job_name!r} never reads the alias action's "
+                        f"{output!r} output, so a successful move is reported as none"
+                    )
+    assert examined, "no workflow moves a Git alias; this guard examined nothing"
+
+
+def test_the_release_carries_the_whole_verified_bundle_and_is_traceable(
+    tmp_path: Path,
+) -> None:
+    """ADR-0010 and CI-AR41.
+
+    Four files, because two of them are what makes the other two checkable: the wheel
+    and the sdist are the distributions, `SHA256SUMS` and `build-manifest.json` are how
+    someone reading the Release proves the attached wheel is the one the verifier saw.
+
+    Every path is resolved through the revalidated bundle's own step -- found by the
+    action it calls, not by a hand-kept step name -- so attaching a distribution from
+    anywhere else fails here. And the Release's identity outputs must reach the run
+    summary: a Release nobody can find from the run is evidence that does not exist.
+    """
+    examined = 0
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        document = _load_workflow(path)
+        for job_name, job in _jobs(document).items():
+            steps = job.get("steps", []) or []
+            release_steps = [
+                step
+                for step in steps
+                if str(step.get("uses", "")).startswith(APPROVED_RELEASE_ACTION)
+            ]
+            if not release_steps:
+                continue
+            assert len(release_steps) == 1, f"{path.name}: {job_name!r} releases twice"
+            step = release_steps[0]
+            examined += 1
+            assert str(step["uses"]).endswith("@v2"), (
+                f"{path.name}: {APPROVED_RELEASE_ACTION} must be pinned @v2; @v2.0 is "
+                f"stale and a patch tag forfeits the floating-major guarantee (ADR-0010)"
+            )
+            bundle = next(
+                (
+                    str(candidate["id"])
+                    for candidate in steps
+                    if str(candidate.get("uses", "")).endswith("/verified-bundle")
+                    and candidate.get("id")
+                ),
+                None,
+            )
+            assert bundle, (
+                f"{path.name}: {job_name!r} attaches a Release without revalidating the "
+                f"bundle first, so the distributions were never proven to be the ones "
+                f"the verifier saw"
+            )
+            artifacts = str((step.get("with") or {}).get("artifacts", ""))
+            attached = [
+                entry.strip() for entry in artifacts.split(",") if entry.strip()
+            ]
+            for required in (
+                f"steps.{bundle}.outputs.wheel-filename",
+                f"steps.{bundle}.outputs.sdist-filename",
+                "SHA256SUMS",
+                "build-manifest.json",
+            ):
+                assert any(required in entry for entry in attached), (
+                    f"{path.name}: the Release does not attach {required!r}; the "
+                    f"evidence half of the bundle is what makes the distributions "
+                    f"checkable (ADR-0010, CI-AR41)"
+                )
+            # Every entry, not merely one of them: a wheel taken from `dist/` beside a
+            # bundle-path sdist satisfies "the bundle appears somewhere" while shipping
+            # a distribution the revalidation never saw.
+            for entry in attached:
+                assert f"steps.{bundle}.outputs.bundle-path" in entry, (
+                    f"{path.name}: the Release attaches {entry!r} from outside the "
+                    f"revalidated bundle"
+                )
+
+            # Recorded twice, because the two readers are different: the job output is
+            # what the aggregator surfaces, and the step `env:` is what reaches this
+            # job's own summary. Asserting only that the expression appears *somewhere*
+            # in the file lets the summary row degrade to a literal while the job output
+            # keeps the guard green -- which is exactly what the planted violation did.
+            job_outputs = json.dumps(job.get("outputs") or {})
+            step_environments = json.dumps(
+                [candidate.get("env") or {} for candidate in steps]
+            )
+            for output in ("html-url", "assets"):
+                reference = f"steps.{step['id']}.outputs.{output}"
+                assert reference in job_outputs, (
+                    f"{path.name}: the Release's {output!r} is not a job output, so the "
+                    f"run aggregator cannot report it (CI-AR41)"
+                )
+                assert reference in step_environments, (
+                    f"{path.name}: the Release's {output!r} never reaches this job's "
+                    f"run summary (CI-AR41)"
+                )
+            # And the alias outcome beside it: a run that moved nothing and a run that
+            # moved everything must not look the same in the summary.
+            decider = next(
+                (
+                    str(candidate["id"])
+                    for candidate in steps
+                    if candidate.get("id")
+                    and "--alias-plan" in _uncommented(str(candidate.get("run", "")))
+                ),
+                None,
+            )
+            assert decider, (
+                f"{path.name}: {job_name!r} creates a Release without deciding which "
+                f"aliases the tag set permits, so the run summary cannot say what "
+                f"moved (F4, CI-AR41)"
+            )
+            summaries = "\n".join(
+                _uncommented(str(candidate.get("run", ""))) for candidate in steps
+            )
+            assert "GITHUB_STEP_SUMMARY" in summaries, (
+                f"{path.name}: {job_name!r} writes no run summary"
+            )
+            for advance in ("advance-major", "advance-minor"):
+                reference = f"steps.{decider}.outputs.{advance}"
+                assert reference in step_environments, (
+                    f"{path.name}: {job_name!r} never records {advance!r}, so a release "
+                    f"that moved no alias reads exactly like one that moved every alias"
+                )
+                assert reference in job_outputs, (
+                    f"{path.name}: {advance!r} is not a job output, so the image alias "
+                    f"job cannot consume the same decision (F4)"
+                )
+    assert examined, "no workflow creates a Release; this guard examined nothing"
+
+
+def test_every_refusal_a_finalizer_makes_precedes_everything_it_writes() -> None:
+    """The story's central invariant, and the one every other finalizer guard assumed.
+
+    Each of the four refusals -- the enabled-set gate, the `vX.Y.Z` immutability
+    re-check, the alias-ordering decision, the development channel's just-in-time head
+    proof -- is asserted *present* elsewhere, and its behaviour is executed. Nothing
+    asserted it runs **first**. Moving the gate step to the end of `finalize` left every
+    guard green while a release with an enabled destination missing would get its
+    Release, its `vMAJOR`, its `latest` and its `dev`, and only then go red: strictly
+    worse than not gating at all, because the run is now half-finalized and the Release
+    has to be deleted by hand before it can be retried.
+
+    Both sets are derived -- writes from the approved actions and the alias commands,
+    refusals from the mechanisms that perform them -- so a new way to write, or a new
+    refusal, is ordered by this guard without an edit here.
+    """
+    examined = 0
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name in sorted(_finalizers(path)):
+            job = _jobs(_load_workflow(path))[job_name]
+            writes = _writing_steps(job)
+            if not writes:
+                continue
+            examined += 1
+            refusals = _refusing_steps(job)
+            assert refusals, (
+                f"{path.name}: finalizer {job_name!r} writes without refusing anything "
+                f"first; the gate, the tag re-check and the ordering decision are what "
+                f"make the write conditional"
+            )
+            assert max(refusals) < min(writes), (
+                f"{path.name}: finalizer {job_name!r} performs a refusal at step "
+                f"{max(refusals)} but has already written at step {min(writes)}. A "
+                f"refusal after the write reports the damage instead of preventing it."
+            )
+    assert examined, "no finalizer writes anything; this guard examined nothing"
+
+
+def test_a_finalizer_never_leaves_a_credential_in_the_workspace() -> None:
+    """`persist-credentials: false` is a repository-wide invariant, and a job that needs
+    to push has to supply the credential some other way. Writing it into `.git/config`
+    -- a remote URL carrying userinfo, or an `http.*.extraheader` -- defeats the
+    invariant rather than working within it: the token then outlives the step that
+    needed it, and on the reused `act_runner` workspace E009 targets it outlives the
+    job. git's own `GIT_CONFIG_COUNT`/`KEY`/`VALUE` protocol scopes it to one process
+    environment, which is what a job-scoped grant means.
+    """
+    persisted = (
+        r"git\s+remote\s+(?:set-url|add)[^\n]*\$\{?[A-Za-z_]*(?:TOKEN|PASSWORD)",
+        r"git\s+config[^\n]*extraheader",
+        r"credential\.helper\s+store",
+    )
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            for step in job.get("steps", []) or []:
+                command = _uncommented(str(step.get("run", "")))
+                for pattern in persisted:
+                    assert not re.search(pattern, command), (
+                        f"{path.name}: job {job_name!r} writes a credential into the "
+                        f"workspace's git configuration, where it outlives the step "
+                        f"that needed it. Pass it through GIT_CONFIG_* on the step "
+                        f"instead."
+                    )
+
+
+def test_a_disabled_docker_hub_is_addressed_by_no_alias_step() -> None:
+    """CI-AR40's "no credentials **or requests**", at the second place it now has to
+    hold.
+
+    `test_a_disabled_docker_hub_receives_no_alias_request` executes the bash with an
+    empty repository supplied by the test, which proves the bash copes -- not that the
+    workflow ever produces an empty value. Deleting the login step's `if:`, or making
+    the `DOCKERHUB_REPOSITORY` expression unconditional, left every guard green; the
+    runtime was safe only because the plan job happens to emit an empty
+    `dockerhub-repository` when the toggle is off, which is two independently-edited
+    derivations agreeing by luck.
+
+    The step set is derived -- anything mentioning Docker Hub in a job that moves an
+    alias -- so a third way of addressing that destination is covered without an edit.
+    """
+    examined = 0
+    for path, job_name in sorted(_alias_moving_jobs()):
+        job = _jobs(_load_workflow(WORKFLOWS / path))[job_name]
+        for step in job.get("steps", []) or []:
+            body = json.dumps({k: v for k, v in step.items() if k != "run"})
+            if not re.search(r"docker\.io|DOCKERHUB", body):
+                continue
+            examined += 1
+            condition = str(step.get("if", ""))
+            assert (
+                "enabled-destinations" in condition or "enabled-destinations" in body
+            ), (
+                f"{path}: job {job_name!r} addresses Docker Hub from a step that never "
+                f"consults the enabled set, so a run with the destination disabled "
+                f"would still send it credentials or requests (CI-AR40, ADR-0011)"
+            )
+    assert examined, "no alias step addresses Docker Hub; this guard examined nothing"
+
+
+def test_a_failing_registry_write_still_reports_which_names_moved(
+    tmp_path: Path,
+) -> None:
+    """H2: `set -e` aborts the step at the first failing `imagetools create`, and a
+    summary written after the loop is then written never -- leaving a partially aliased
+    registry with no record of which names moved, in exactly the situation an operator
+    needs that record to reconcile by hand (CI-AR41)."""
+    directory = tmp_path / "bin"
+    directory.mkdir()
+    log = tmp_path / "docker.log"
+    stub = directory / "docker"
+    # Succeeds for the forge registry, fails for Docker Hub: the ordinary transient
+    # registry error, half way through the fan-out.
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        f'printf "%s\\n" "$*" >> "{log}"\n'
+        'case "$*" in *docker.io*) exit 1 ;; esac\n',
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    summary = tmp_path / "summary.md"
+    summary.touch()
+    step = _step_with_id(RELEASE_WORKFLOW, "image-alias")
+    completed, _ = _run_step(
+        str(step["run"]),
+        {
+            "PATH": f"{directory}:{os.environ['PATH']}",
+            "GITHUB_STEP_SUMMARY": str(summary),
+            "ADVANCE_MAJOR": "true",
+            "ADVANCE_MINOR": "true",
+            "DOCKERHUB_REPOSITORY": "docker.io/owner/name",
+            "IMAGE_DIGEST": DIGEST,
+            "IMAGE_REPOSITORY": "ghcr.io/owner/name",
+            "MAJOR_ALIAS": "v1",
+            "MINOR_ALIAS": "v1.3",
+        },
+        cwd=tmp_path,
+    )
+    assert completed.returncode != 0, "a failing registry write finished green"
+    rendered = summary.read_text(encoding="utf-8")
+    assert "ghcr.io/owner/name:latest" in rendered, (
+        f"the aliases that DID move are unreported: {rendered!r}"
+    )
+    assert "docker.io/owner/name" not in rendered, (
+        "an alias that failed is reported as moved"
+    )
+
+
+def test_the_release_is_idempotent_for_the_identity_it_already_created() -> None:
+    """M3: the Release is the FIRST irreversible write and every alias move comes after
+    it, so the one step that cannot be retried is the one that runs first.
+
+    With `allow-updates: false` a re-run of the finalizer -- after a transient registry
+    error, an expired token, anything at all in the alias fan-out -- dies at the Release
+    step, and the operator has to delete the Release from the forge UI before the run
+    can be resumed. Updating is safe for this identity and only this one:
+    `refs/tags/vX.Y.Z` is immutable (ADR-0006) and the step immediately before re-proves
+    that the tag still peels to this commit, so a second run of this job is the same
+    release by construction rather than a different one wearing the same name.
+    """
+    examined = 0
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            for step in job.get("steps", []) or []:
+                if not str(step.get("uses", "")).startswith(APPROVED_RELEASE_ACTION):
+                    continue
+                examined += 1
+                inputs = step.get("with") or {}
+                assert inputs.get("allow-updates") == "true", (
+                    f"{path.name}: {job_name!r} cannot re-create the Release for an "
+                    f"identity it already published, so any failure in the alias moves "
+                    f"that follow strands the run until someone deletes the Release by "
+                    f"hand (ADR-0006)"
+                )
+                # Idempotent is not the same as permissive: the identity re-check has to
+                # still be in front of it, or "update the existing Release" becomes
+                # "overwrite whatever is at that tag now".
+                refusals = _refusing_steps(job)
+                writes = _writing_steps(job)
+                assert refusals and max(refusals) < min(writes), (
+                    f"{path.name}: {job_name!r} updates an existing Release without "
+                    f"re-proving the tag still names this commit first"
+                )
+    assert examined, "no workflow creates a Release; this guard examined nothing"

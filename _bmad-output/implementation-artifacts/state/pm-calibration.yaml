@@ -75,6 +75,7 @@ scope:
       - 0.144
       - 0.4982
       - 0.3188
+      - 0.4783
     man_hours:
       samples:
       - 0.9333
@@ -83,6 +84,7 @@ scope:
       - 1.2
       - 2.667
       - 1.6002
+      - 2.2669
     hitl_hours:
       samples:
       - 0.0
@@ -154,8 +156,8 @@ fix:
       samples: 1
   complex:
     reworked:
-      mean_man_hours: 32.0
-      samples: 2
+      mean_man_hours: 32.6667
+      samples: 3
 orchestration:
   sprint:
     elapsed_hours:

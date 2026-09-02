@@ -67,8 +67,9 @@ from "someone turned it off deliberately" (gate finding F28).
 
 ### 3. The finalizer evaluates results; it does not depend selectively
 
-One finalizer per workflow. It `needs:` **every** publisher in its file, statically, and runs
-under `if: ${{ !cancelled() }}` — the alternative GitHub documents for `always()`, and correct
+One finalization *stage* per workflow — implemented as two jobs in the stable channel, so that
+ref authority and registry authority are never held together; see "Implemented" below. It
+`needs:` **every** publisher in its file, statically, and runs under `if: ${{ !cancelled() }}` — the alternative GitHub documents for `always()`, and correct
 here because a cancelled run must never move aliases over a half-published set.
 
 It then reads `needs.<job>.result` against the **enabled set emitted once by the plan job** as a
@@ -98,6 +99,36 @@ a repository-owned schema. It revives neither retired CI-AR22 (publication plan)
   Hub outage or an expired token would then block a release that is otherwise sound. Rejected:
   the cost is one extra conditional, and the release path should not be hostage to an optional
   destination.
+
+## Implemented (E008-S01-003), and one guard amended to match the rule it states
+
+The decision table above is `scripts/finalizer_gate.py`, called from one step in each channel's
+finalizer. It is a module rather than an `if:` expression because it is a decision, and a
+decision spelled as a workflow expression is testable only by reading it: the two mandatory
+anchors are asserted by executing the real `run:` body with the job results substituted into the
+step's real `env:`, so renaming a publisher breaks the render rather than silently supplying the
+old value.
+
+**Finalization is split across two jobs in the stable channel, and that split forced an amendment
+to `test_publisher_credentials_stay_disjoint_between_destinations`.** `finalize` writes refs and
+the Release and holds no registry credential; `finalize-image-aliases` moves registry aliases and
+holds no `contents: write`. Neither can do the other's damage. But the alias job and the image
+publisher address *the same registry*, so they necessarily present the same credential to it --
+and the guard's pairwise-across-every-publisher comparison encoded "one publisher per
+destination", which had stopped being true. It rejected the correct arrangement while the rule
+its docstring states was satisfied.
+
+The comparison is now per **destination class**, derived from what each job does. That is a
+narrowing in one direction, so it was paid for in two others, both proven by planted violation:
+
+- a publisher must belong to exactly **one** destination class, so a job that both logs into a
+  registry and uploads a package now fails rather than being compared only against itself;
+- a package publisher may not declare `packages: write`, which is the only way the automatic
+  forge token becomes a registry credential -- and the reason that token can be excluded from the
+  comparison at all. Its authority is set per job by `permissions:`, which
+  `test_ref_writing_and_registry_alias_privileges_never_meet` audits directly.
+
+The original planted violation -- a registry credential on the package job -- still fails.
 
 ## Consequences
 

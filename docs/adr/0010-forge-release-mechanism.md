@@ -94,6 +94,26 @@ This complements ADR-0006's `RELEASE_FINALIZER_JOBS` registry, which governs *wh
 write; this governs *how* it writes. Per gate finding F6 the registry must become
 `(workflow, job)` pairs before its first entry, since bare job names match across every workflow.
 
+## Implemented (E008-S01-003)
+
+`release.yaml`'s `finalize` job creates the Release with `LiquidLogicLabs/git-action-release@v2`.
+Confirmed against the published `action.yml` rather than assumed:
+
+- `token` defaults to `${{ github.token }}`; it is passed explicitly so the job's capability is
+  visible in the parsed job rather than implied by an action default.
+- `artifacts` is a comma-delimited path list, and it carries all four files -- wheel, sdist,
+  `SHA256SUMS`, `build-manifest.json` -- every one of them addressed through the *revalidated*
+  bundle's own step output. `test_the_release_carries_the_whole_verified_bundle_and_is_traceable`
+  asserts every entry resolves through that step, not merely that one of them does: the planted
+  violation attached the wheel from `dist/` beside a bundle-path sdist, which the weaker form
+  accepted.
+- `html-url` and `assets` are recorded twice, and the guard requires both: as job outputs, which
+  is what the run aggregator reports, and in the finalizer's own summary step `env:`. The planted
+  violation degraded the summary row to a literal while leaving the job output intact -- green
+  under the single-reader form.
+- `using: node24` is confirmed. ADR-0006's alias action is `node20`; E009's pinned `act_runner`
+  tuple needs both.
+
 ## Consequences
 
 - Positive: one implementation, one step, no forge branch — CI-AR2 stays clean and E009 inherits

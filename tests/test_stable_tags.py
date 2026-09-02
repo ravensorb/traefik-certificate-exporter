@@ -240,3 +240,185 @@ def test_the_cli_refuses_a_tag_that_does_not_name_the_commit(repository: Path) -
         )
         == 0
     )
+
+
+# ---------------------------------------------------------------------------
+# Alias ordering (story E008-S01-003, gate finding F4). The Git tag set is the only
+# authority: `git-action-tag-floating-version` moves an alias unconditionally, so the
+# comparison it does not make has to be made here.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def released(repository: Path) -> Path:
+    for content, tags in (
+        ("one", ("v0.9.0",)),
+        ("two", ("v1.2.3",)),
+        ("three", ("v1.2.10",)),
+        ("four", ("v1.3.0", "v1.4.0-rc1")),
+        ("five", ()),
+    ):
+        if content != "one":
+            _commit(repository, content)
+        for tag in tags:
+            _git(repository, "tag", "-a", tag, "-m", tag)
+    _git(repository, "tag", "v2.0.0-lightweight")
+    return repository
+
+
+def test_the_tag_order_is_gits_version_order_not_a_lexicographic_one(
+    released: Path,
+) -> None:
+    """`v1.2.10` sorts BELOW `v1.2.3` under every string comparison and above it under
+    git's `v:refname`. That single pair is the whole reason this delegates."""
+    assert stable_tags.stable_tag_order(released) == [
+        "v0.9.0",
+        "v1.2.3",
+        "v1.2.10",
+        "v1.3.0",
+    ]
+
+
+def test_the_newest_release_may_advance_both_aliases(released: Path) -> None:
+    plan = stable_tags.alias_plan("v1.3.0", released)
+    assert plan["advance-major"] == "true"
+    assert plan["advance-minor"] == "true"
+    assert plan["major-alias"] == "v1"
+    assert plan["minor-alias"] == "v1.3"
+    assert plan["greatest-stable"] == "v1.3.0"
+
+
+def test_a_back_port_may_advance_its_minor_but_never_the_major(released: Path) -> None:
+    plan = stable_tags.alias_plan("v1.2.10", released)
+    assert plan["advance-major"] == "false"
+    assert plan["advance-minor"] == "true"
+
+
+def test_a_superseded_patch_advances_nothing(released: Path) -> None:
+    plan = stable_tags.alias_plan("v1.2.3", released)
+    assert plan["advance-major"] == "false"
+    assert plan["advance-minor"] == "false"
+
+
+def test_the_first_release_of_a_new_major_advances_its_own_aliases(
+    released: Path,
+) -> None:
+    """A major with exactly one release is greatest within itself and, here, greatest
+    overall -- the case a "compare against the previous tag" implementation gets wrong
+    because there is no previous tag in that major."""
+    _commit(released, "six")
+    _git(released, "tag", "-a", "v2.0.0", "-m", "v2.0.0")
+    plan = stable_tags.alias_plan("v2.0.0", released)
+    assert plan == {
+        "major-alias": "v2",
+        "minor-alias": "v2.0",
+        "advance-major": "true",
+        "advance-minor": "true",
+        "greatest-stable": "v2.0.0",
+    }
+
+
+def test_a_neighbouring_minor_is_not_mistaken_for_this_one(released: Path) -> None:
+    """`v1.2.` cannot prefix `v1.20.x` only because the spelling forbids leading zeros.
+    Asserted rather than assumed: a `startswith` that was one character short would make
+    `v1.2.3` the greatest "within its minor" while `v1.20.0` existed."""
+    _commit(released, "seven")
+    _git(released, "tag", "-a", "v1.20.0", "-m", "v1.20.0")
+    assert stable_tags.alias_plan("v1.2.10", released)["advance-minor"] == "true"
+    assert stable_tags.alias_plan("v1.20.0", released)["advance-minor"] == "true"
+    assert stable_tags.alias_plan("v1.20.0", released)["advance-major"] == "true"
+
+
+@pytest.mark.parametrize(
+    "tag", ["v1.4.0-rc1", "v2.0.0-lightweight", "v1.2", "1.2.3", "v01.2.3"]
+)
+def test_no_alias_may_point_at_anything_but_an_exact_stable_release(
+    released: Path, tag: str
+) -> None:
+    with pytest.raises(SystemExit):
+        stable_tags.alias_plan(tag, released)
+
+
+def test_a_stable_tag_that_is_not_in_this_repository_is_refused(
+    released: Path,
+) -> None:
+    """Ordering is decided from the tag set, so a tag absent from it has no position in
+    that set -- and answering "greatest" for a tag git has never seen would be a
+    decision made from the caller's input rather than from the repository."""
+    with pytest.raises(SystemExit):
+        stable_tags.alias_plan("v7.7.7", released)
+
+
+def test_the_cli_emits_the_alias_plan_only_alongside_an_expected_tag(
+    released: Path, tmp_path: Path
+) -> None:
+    output = tmp_path / "github-output"
+    output.touch()
+    commit = _git(released, "rev-parse", "v1.3.0^{commit}")
+    assert (
+        stable_tags.main(
+            [
+                "--commit",
+                commit,
+                "--repository",
+                str(released),
+                "--expect-tag",
+                "v1.3.0",
+                "--alias-plan",
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    emitted = dict(
+        line.split("=", 1)
+        for line in output.read_text(encoding="utf-8").splitlines()
+        if line
+    )
+    assert emitted["advance-major"] == "true"
+    assert emitted["minor-alias"] == "v1.3"
+
+    with pytest.raises(SystemExit):
+        stable_tags.main(
+            ["--commit", commit, "--repository", str(released), "--alias-plan"]
+        )
+
+
+def test_a_tag_that_never_reached_the_default_branch_is_not_in_the_order(
+    released: Path,
+) -> None:
+    """Publication is limited to the protected default branch, so the ordering question
+    is "greatest among the tags this project actually released".
+
+    Counting an unreachable tag is not merely untidy: one annotated `v9.9.9` left on an
+    abandoned release attempt makes every later release the *second* greatest forever.
+    `advance-major` is then permanently `false`, so `vMAJOR`, `latest` and both image
+    aliases silently stop advancing while every run finishes green -- discovered months
+    later by a user, not by CI.
+    """
+    _git(released, "checkout", "-b", "abandoned")
+    _commit(released, "abandoned")
+    _git(released, "tag", "-a", "v9.9.9", "-m", "abandoned release attempt")
+    _git(released, "checkout", "main")
+
+    assert "v9.9.9" in stable_tags.stable_tag_order(released)
+    assert "v9.9.9" not in stable_tags.stable_tag_order(released, "main")
+
+    unscoped = stable_tags.alias_plan("v1.3.0", released)
+    assert unscoped["advance-major"] == "false"
+    scoped = stable_tags.alias_plan("v1.3.0", released, "main")
+    assert scoped["advance-major"] == "true"
+    assert scoped["greatest-stable"] == "v1.3.0"
+
+
+def test_a_release_that_is_not_on_the_scoped_branch_has_no_alias_plan(
+    released: Path,
+) -> None:
+    _git(released, "checkout", "-b", "abandoned")
+    _commit(released, "abandoned")
+    _git(released, "tag", "-a", "v9.9.9", "-m", "abandoned release attempt")
+    _git(released, "checkout", "main")
+    with pytest.raises(SystemExit) as raised:
+        stable_tags.alias_plan("v9.9.9", released, "main")
+    assert "main" in str(raised.value)

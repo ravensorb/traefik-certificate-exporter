@@ -469,6 +469,133 @@ jobs:
       registry_username: ${{ github.actor }}
       registry_password: ${{ secrets.GITHUB_TOKEN }}
 
+  # -------------------------------------------------------------------------
+  # Finalization (story E008-S01-003). The development channel has one alias --
+  # the `dev` image tag -- and no Git ref moves here at all: `vMAJOR` and
+  # `vMAJOR.MINOR` point at released identities, and a development candidate is
+  # not one. This job is registered in `RELEASE_FINALIZER_JOBS` as a
+  # `(workflow, job)` pair because it moves an alias, which is the grant, and
+  # bare names would have granted the same name in release.yaml (gate F6).
+  # -------------------------------------------------------------------------
+  finalize-dev-alias:
+    name: Advance the development alias to the published digest
+    needs:
+      - plan
+      - verify
+      - stable-tag-guard
+      - publish-package-forge
+      - publish-package-testpypi
+      - publish-image
+    # `!cancelled()` rather than `always()` (ADR-0011), and the suppression
+    # conclusion as well: a commit carrying an exact stable tag publishes
+    # nothing here, so there is nothing for `dev` to point at.
+    if: >-
+      ${{ !cancelled() && needs.stable-tag-guard.outputs.suppressed == 'false' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # The just-in-time proof that the candidate is still the head of the
+      # protected default branch. Concurrency already cancels a superseded run,
+      # but cancellation is not instantaneous and the two events are unordered,
+      # so the head is re-read here -- through an authenticated checkout rather
+      # than an unauthenticated `git fetch`, because `persist-credentials: false`
+      # removes the credential the moment the clone finishes.
+      - name: Fetch the protected default branch head just in time
+        id: head
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          # The protected default branch as the forge reports it, not a literal
+          # restating what `on: push: branches:` already says.
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Halt unless the candidate is still that head
+        id: recheck-head
+        env:
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          head_commit="$(git rev-parse HEAD)"
+          if [[ "$head_commit" != "$SOURCE_SHA" ]]; then
+            echo "development candidate ${SOURCE_SHA} is no longer the head of the" >&2
+            echo "protected default branch (${head_commit}); refusing to move 'dev'" >&2
+            exit 2
+          fi
+          echo "Candidate \`${SOURCE_SHA}\` is still the default-branch head." \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      # F16 again, and for the same reason the step publishers carry it: the
+      # suppression job's conclusion was taken before the verifier finished, and
+      # a tag that lands after it must still stop `dev` from advancing. The
+      # freshness comes from the authenticated checkout above.
+      - name: Re-check the stable tag set before the alias is moved
+        env:
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          conclusion="$(python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" --commit "$SOURCE_SHA" --output "")"
+          echo "$conclusion"
+          if ! grep -qx 'suppressed=false' <<<"$conclusion"; then
+            echo "a stable tag appeared after the guard job; refusing to move 'dev' onto a release commit" >&2
+            exit 2
+          fi
+
+      - name: Refuse to finalize unless every enabled destination delivered
+        id: gate
+        env:
+          ENABLED_DESTINATIONS: ${{ needs.plan.outputs.enabled-destinations }}
+          PUBLISHER_RESULTS: >-
+            {"image-forge":"${{ needs.publish-image.result }}",
+             "package-forge":"${{ needs.publish-package-forge.result }}",
+             "package-testpypi":"${{ needs.publish-package-testpypi.result }}"}
+          REQUIRED_RESULTS: >-
+            {"verify":"${{ needs.verify.result }}",
+             "stable-tag-guard":"${{ needs.stable-tag-guard.result }}"}
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/scripts/finalizer_gate.py"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the forge container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ needs.plan.outputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Point the development alias at the published digest
+        id: image-alias
+        env:
+          IMAGE_DIGEST: ${{ needs.publish-image.outputs.digest }}
+          IMAGE_REPOSITORY: ${{ needs.plan.outputs.image-repository }}
+        run: |
+          set -euo pipefail
+          # An absent digest halts rather than moving a name.
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "no published index digest to alias: '${IMAGE_DIGEST}'" >&2
+            exit 2
+          fi
+          if [[ -z "$IMAGE_REPOSITORY" ]]; then
+            echo "no image repository to alias" >&2
+            exit 2
+          fi
+          # A digest copy of an index that already exists. No build runs in a
+          # finalizer, and no registry is read to decide anything.
+          docker buildx imagetools create \
+            --tag "${IMAGE_REPOSITORY}:dev" "${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+          {
+            echo "### Development alias"
+            echo
+            echo "- Digest: \`${IMAGE_DIGEST}\`"
+            echo "- Moved: \`${IMAGE_REPOSITORY}:dev\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   development-evidence:
     name: Record development run evidence
     needs:
@@ -478,6 +605,7 @@ jobs:
       - publish-package-forge
       - publish-package-testpypi
       - publish-image
+      - finalize-dev-alias
     # `!cancelled()` rather than `always()`: a legitimately absent destination must not
     # hide the run summary, but a cancelled run must not report one either (ADR-0011).
     if: ${{ !cancelled() }}
@@ -502,6 +630,7 @@ jobs:
           SUPPRESSED: ${{ needs.stable-tag-guard.outputs.suppressed }}
           TESTPYPI_RESULT: ${{ needs.publish-package-testpypi.result }}
           VERIFIER_RESULT: ${{ needs.verify.result }}
+          DEV_ALIAS_RESULT: ${{ needs.finalize-dev-alias.result }}
         run: |
           set -euo pipefail
           {
@@ -523,4 +652,5 @@ jobs:
             echo "| Image digest | \`${IMAGE_DIGEST}\` |"
             echo "| Image reference | \`${IMAGE_REFERENCE}\` |"
             echo "| Image platforms | \`${IMAGE_PLATFORMS}\` |"
+            echo "| Development alias | \`${DEV_ALIAS_RESULT}\` |"
           } >> "$GITHUB_STEP_SUMMARY"

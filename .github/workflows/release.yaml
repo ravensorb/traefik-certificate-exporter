@@ -57,12 +57,17 @@ jobs:
       python-version: ${{ steps.identity.outputs.python-version }}
       source-sha: ${{ steps.identity.outputs.source-sha }}
       release-tag: ${{ steps.tag.outputs.tag }}
+      default-branch-ref: ${{ steps.tag.outputs.default-branch-ref }}
       forge: ${{ steps.forge.outputs.forge }}
       registry: ${{ steps.forge.outputs.registry }}
       image-repository: ${{ steps.forge.outputs.image-repository }}
       image-tags: ${{ steps.meta.outputs.tags }}
       package-index-url: ${{ steps.forge.outputs.package-index-url }}
       enabled-destinations: ${{ steps.destinations.outputs.enabled-destinations }}
+      # Composed once, beside the toggle that enables it, so the finalizer names
+      # the same Docker Hub repository the publisher pushed to rather than
+      # composing a second one from the same parts.
+      dockerhub-repository: ${{ steps.destinations.outputs.dockerhub-repository }}
     steps:
       # Full history and every tag. Peeling an annotated tag object and answering
       # "is this commit reachable from the protected default branch" are both git
@@ -171,6 +176,11 @@ jobs:
             echo "tag=$tag"
             echo "version=${tag#v}"
             echo "tag-commit=$source_commit"
+            # The reachability authority this run used, emitted so the finalizer scopes
+            # its alias ordering to exactly the branch this job proved the release
+            # against. Two literals that agree until one is edited is the drift the
+            # single-producer rule exists to prevent.
+            echo "default-branch-ref=$DEFAULT_BRANCH_REF"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up pinned Python and read the committed version
@@ -550,6 +560,360 @@ jobs:
       dockerhub_username: ${{ fromJSON(needs.plan.outputs.enabled-destinations)['image-dockerhub'] == 'enabled' && secrets.DOCKERHUB_USERNAME || '' }}
       dockerhub_password: ${{ fromJSON(needs.plan.outputs.enabled-destinations)['image-dockerhub'] == 'enabled' && secrets.DOCKERHUB_TOKEN || '' }}
 
+  # -------------------------------------------------------------------------
+  # Finalization (story E008-S01-003). Split in two on purpose: the job that
+  # writes refs and the Release holds `contents: write` and NO registry
+  # credential, and the job that moves registry aliases holds registry
+  # credentials and NO `contents:` write. Neither can do the other's damage,
+  # and both are registered in `RELEASE_FINALIZER_JOBS` as `(workflow, job)`
+  # pairs -- that registration is what grants them at all (ADR-0006).
+  # -------------------------------------------------------------------------
+  finalize:
+    name: Create the Release and advance stable Git aliases
+    # Every publisher, statically. `needs:` is resolved when the graph is built
+    # and takes neither an expression nor a computed list, so "depend only on
+    # what is enabled" cannot be written -- the finalizer depends on all of them
+    # and then *evaluates* their results against the enabled set (ADR-0011).
+    needs:
+      - plan
+      - verify
+      - publish-package-forge
+      - publish-package-pypi
+      - publish-image
+    # `!cancelled()`, never `always()`. Without a condition at all this job is
+    # skipped the moment any optional publisher is skipped -- the release
+    # finishes green with no Release and no aliases, and nothing reports it.
+    # With `always()` it would run on a cancelled fan-out and advance aliases
+    # over a half-published set. Both failures are guarded (ADR-0011).
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      # The single grant ADR-0006 governs. No `packages:` scope: image aliases
+      # are the next job's, and a registry credential here would make the
+      # ref-writing job a registry writer too.
+      contents: write
+    outputs:
+      release-url: ${{ steps.release.outputs.html-url }}
+      release-assets: ${{ steps.release.outputs.assets }}
+      advance-major: ${{ steps.aliases.outputs.advance-major }}
+      advance-minor: ${{ steps.aliases.outputs.advance-minor }}
+      major-alias: ${{ steps.aliases.outputs.major-alias }}
+      minor-alias: ${{ steps.aliases.outputs.minor-alias }}
+      greatest-stable: ${{ steps.aliases.outputs.greatest-stable }}
+    steps:
+      - name: Checkout the released commit with full history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.source-sha }}
+
+      # Before anything is written. A `skipped` destination the enabled set says
+      # was off does not block; one it says should have run does, and so does
+      # any `failure` or `cancelled`. The decision lives in a module because it
+      # is a decision, and because a decision expressed as an `if:` expression
+      # is testable only by reading it.
+      - name: Refuse to finalize unless every enabled destination delivered
+        id: gate
+        env:
+          ENABLED_DESTINATIONS: ${{ needs.plan.outputs.enabled-destinations }}
+          # One entry per destination the plan job can enable, each carrying the
+          # result of the job that ships it. The image publisher ships both
+          # image destinations from one Buildx invocation, so one result answers
+          # for both.
+          PUBLISHER_RESULTS: >-
+            {"image-forge":"${{ needs.publish-image.result }}",
+             "image-dockerhub":"${{ needs.publish-image.result }}",
+             "package-forge":"${{ needs.publish-package-forge.result }}",
+             "package-pypi":"${{ needs.publish-package-pypi.result }}"}
+          REQUIRED_RESULTS: >-
+            {"verify":"${{ needs.verify.result }}"}
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/scripts/finalizer_gate.py"
+
+      # The ordering gate F4 records, and it is the workflow's rather than the
+      # action's: `git-action-tag-floating-version` moves an alias
+      # unconditionally, so releasing v1.2.4 while v1.3.0 exists would drag `v1`
+      # backwards unless this refuses first. The Git tag set is the only
+      # authority consulted -- no registry is read anywhere in this file, which
+      # is why every published-image inspection lives in publish-image.yaml.
+      - name: Re-check the tag and decide which aliases may advance
+        id: aliases
+        env:
+          # The same authority the plan job used, taken from the plan job rather than
+          # restated. Publication is limited to this branch, so the ordering question is
+          # "greatest among the tags this project actually released" -- an annotated
+          # `v9.9.9` abandoned on a side branch would otherwise freeze `vMAJOR` and
+          # `latest` forever, on runs that all finish green.
+          DEFAULT_BRANCH_REF: ${{ needs.plan.outputs.default-branch-ref }}
+          RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" \
+            --commit "$SOURCE_SHA" --expect-tag "$RELEASE_TAG" \
+            --reachable-from "$DEFAULT_BRANCH_REF" --alias-plan
+
+      - name: Revalidate the verified bundle before it is attached
+        id: bundle
+        uses: ./.github/actions/verified-bundle
+        with:
+          python-version: ${{ needs.plan.outputs.python-version }}
+          artifact-name: ${{ needs.verify.outputs.dist-artifact-name }}
+          expected-package-version: ${{ needs.plan.outputs.package-version }}
+          expected-source-sha: ${{ needs.plan.outputs.source-sha }}
+
+      # One action, both forges. It resolves the instance from GITHUB_SERVER_URL
+      # and speaks each forge's own API, so no forge-kind branch appears here and
+      # E009 inherits the Gitea path unchanged (ADR-0010, CI-AR2, CI-AR6).
+      # `platform:` is the documented override if detection ever misfires.
+      - name: Create the forge Release for the exact tag
+        id: release
+        uses: LiquidLogicLabs/git-action-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ needs.plan.outputs.release-tag }}
+          commit: ${{ needs.plan.outputs.source-sha }}
+          # The evidence half of the bundle travels with the distributions:
+          # SHA256SUMS and build-manifest.json are what let someone check the
+          # attached wheel against what the verifier proved.
+          artifacts: >-
+            ${{ steps.bundle.outputs.bundle-path }}/${{ steps.bundle.outputs.wheel-filename }},${{ steps.bundle.outputs.bundle-path }}/${{ steps.bundle.outputs.sdist-filename }},${{ steps.bundle.outputs.bundle-path }}/SHA256SUMS,${{ steps.bundle.outputs.bundle-path }}/build-manifest.json
+          artifact-errors-fail-build: "true"
+          # Idempotent for the same identity, deliberately. The Release is the FIRST
+          # write and every alias move comes after it, so any later failure -- a
+          # transient registry error, an expired token -- strands a run that can only be
+          # resumed by re-running this job. With `allow-updates: false` that re-run dies
+          # here and the operator has to delete the Release by hand. Updating is safe
+          # because `refs/tags/vX.Y.Z` is immutable (ADR-0006) and the step directly
+          # above re-proved that this tag still peels to this commit: a second run of
+          # this job is the same identity by construction, not a different one.
+          allow-updates: "true"
+
+      # The alias action pushes with plain `git` from the workspace and takes no token
+      # input, and every governed checkout is `persist-credentials: false`, so this job
+      # has to supply the credential itself. It supplies it through git's own
+      # `GIT_CONFIG_COUNT`/`KEY`/`VALUE` environment protocol on the action step below,
+      # never by writing it into `.git/config`: a token written there outlives the step
+      # that needed it, and on the reused `act_runner` workspace E009 targets it would
+      # outlive the whole job. This step therefore handles no secret at all -- it only
+      # splits the forge endpoint, which is a function of `github.server_url` and is
+      # forge-neutral for that reason.
+      - name: Resolve the forge push endpoint
+        id: remote
+        env:
+          FORGE_SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          if [[ "$FORGE_SERVER_URL" != *://* ]]; then
+            echo "forge server URL has no scheme: '$FORGE_SERVER_URL'" >&2
+            exit 2
+          fi
+          {
+            echo "scheme=${FORGE_SERVER_URL%%://*}"
+            echo "authority=${FORGE_SERVER_URL#*://}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Both aliases in one invocation, because the action moves the major
+      # unconditionally and offers no way to move only the minor. So the whole
+      # move is gated on the released tag being the greatest annotated stable
+      # tag in the repository: a back-port patch published while a newer stable
+      # tag exists moves no Git alias at all, and the run summary says so.
+      # `refs/tags/vX.Y.Z` is never touched -- only `vMAJOR` and `vMAJOR.MINOR`.
+      - name: Advance the stable major and minor aliases
+        id: floating
+        if: ${{ steps.aliases.outputs.advance-major == 'true' }}
+        uses: LiquidLogicLabs/git-action-tag-floating-version@v1
+        env:
+          # git reads configuration from these three variables, so the credential lives
+          # in this step's environment and nowhere else -- no `.git/config` write, no
+          # teardown step that can be skipped, nothing left in a reused workspace.
+          # `x-access-token` is a fixed placeholder: both forges authenticate on the
+          # token and ignore the username, and `github.actor` is not even a legal URI
+          # userinfo for a bot actor (`github-actions[bot]`).
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: remote.origin.pushurl
+          GIT_CONFIG_VALUE_0: >-
+            ${{ steps.remote.outputs.scheme }}://x-access-token:${{ secrets.GITHUB_TOKEN
+            }}@${{ steps.remote.outputs.authority }}/${{ github.repository }}.git
+        with:
+          tag: ${{ needs.plan.outputs.release-tag }}
+          updateMinor: "true"
+          ignorePrerelease: "true"
+
+      - name: Record the Release and the Git alias outcome
+        env:
+          ADVANCE_MAJOR: ${{ steps.aliases.outputs.advance-major }}
+          ADVANCE_MINOR: ${{ steps.aliases.outputs.advance-minor }}
+          GREATEST_STABLE: ${{ steps.aliases.outputs.greatest-stable }}
+          MAJOR_ALIAS: ${{ steps.aliases.outputs.major-alias }}
+          MINOR_ALIAS: ${{ steps.aliases.outputs.minor-alias }}
+          MOVED_MAJOR: ${{ steps.floating.outputs.majorTag }}
+          MOVED_MINOR: ${{ steps.floating.outputs.minorTag }}
+          RELEASE_ASSETS: ${{ steps.release.outputs.assets }}
+          RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
+          RELEASE_URL: ${{ steps.release.outputs.html-url }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Forge Release and Git aliases"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Release | [\`${RELEASE_TAG}\`](${RELEASE_URL}) |"
+            echo "| Release assets | \`${RELEASE_ASSETS}\` |"
+            echo "| Greatest annotated stable tag on the default branch | \`${GREATEST_STABLE}\` |"
+            echo "| Image aliases eligible | \`${MINOR_ALIAS#v}\` \`${ADVANCE_MINOR}\`, \`${MAJOR_ALIAS#v}\`/\`latest\` \`${ADVANCE_MAJOR}\` |"
+            echo "| Git aliases moved | \`${MOVED_MAJOR:-none}\` \`${MOVED_MINOR:-none}\` |"
+            if [[ "$ADVANCE_MAJOR" != "true" && "$ADVANCE_MINOR" == "true" ]]; then
+              # The one case where the Git and image aliases legitimately diverge, said
+              # out loud rather than left for someone to notice that `git rev-parse
+              # v1.2` and `docker pull ...:1.2` disagree. The alias action moves the
+              # major unconditionally and offers no minor-only mode, so a back-port
+              # moves no Git alias at all (ADR-0006).
+              echo "| \`${MINOR_ALIAS}\` (Git) | not moved -- a newer stable release holds \`${MAJOR_ALIAS}\`, and the alias action cannot move a minor alone (ADR-0006) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  finalize-image-aliases:
+    name: Advance stable image aliases to the published digest
+    needs:
+      - plan
+      - publish-image
+      - finalize
+    # The Release is the gate every alias waits behind, and `finalize` already
+    # evaluated every publisher against the enabled set. `!cancelled()` keeps
+    # this job reachable so a refusal is reported rather than silently skipped.
+    if: ${{ !cancelled() && needs.finalize.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout the released commit with full history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.source-sha }}
+
+      # `refs/tags/vX.Y.Z` is immutable (ADR-0006), so this must still hold. If
+      # it does not, the identity moved under a run that is about to point a
+      # convenient name at it, and refusing is the only safe outcome. The
+      # membership decision is the module's; `set -e` is the refusal.
+      - name: Re-check the tag still names this commit before any alias moves
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" \
+            --commit "$SOURCE_SHA" --expect-tag "$RELEASE_TAG" --output ""
+
+      # Set up only. Every alias below is a digest copy of an index that already
+      # exists in the registry; nothing is built here, and no registry is read
+      # to decide anything (F4, P1).
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the forge container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ needs.plan.outputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: >-
+          ${{ fromJSON(needs.plan.outputs.enabled-destinations)['image-dockerhub'] == 'enabled' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Point every permitted image alias at the published digest
+        id: image-alias
+        env:
+          ADVANCE_MAJOR: ${{ needs.finalize.outputs.advance-major }}
+          ADVANCE_MINOR: ${{ needs.finalize.outputs.advance-minor }}
+          DOCKERHUB_REPOSITORY: >-
+            ${{ fromJSON(needs.plan.outputs.enabled-destinations)['image-dockerhub'] == 'enabled'
+                && format('docker.io/{0}', needs.plan.outputs.dockerhub-repository) || '' }}
+          IMAGE_DIGEST: ${{ needs.publish-image.outputs.digest }}
+          IMAGE_REPOSITORY: ${{ needs.plan.outputs.image-repository }}
+          MAJOR_ALIAS: ${{ needs.finalize.outputs.major-alias }}
+          MINOR_ALIAS: ${{ needs.finalize.outputs.minor-alias }}
+        run: |
+          set -euo pipefail
+          # An absent digest halts rather than moving a name. `imagetools create`
+          # with an empty digest would compose `repo@` and fail obscurely, or --
+          # worse, if the reference degraded to a tag -- copy something else.
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "no published index digest to alias: '${IMAGE_DIGEST}'" >&2
+            exit 2
+          fi
+          if [[ -z "$IMAGE_REPOSITORY" ]]; then
+            echo "no image repository to alias" >&2
+            exit 2
+          fi
+          # The alias names the workflow is permitted to move, decided from the
+          # Git tag set by the finalizer above. `latest` follows `vMAJOR`: both
+          # mean "the newest stable release", so both move together or neither
+          # does.
+          aliases=()
+          if [[ "$ADVANCE_MINOR" == "true" ]]; then
+            aliases+=("${MINOR_ALIAS#v}")
+          fi
+          if [[ "$ADVANCE_MAJOR" == "true" ]]; then
+            aliases+=("${MAJOR_ALIAS#v}" latest)
+          fi
+          if [[ ${#aliases[@]} -eq 0 ]]; then
+            echo "no image alias may advance to ${IMAGE_DIGEST}" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Reported on EVERY exit, including the one where a registry write fails
+          # half way. `set -e` aborts the step at the first failure, and a summary
+          # written after the loop would then be written never -- leaving an operator
+          # with a partially aliased registry and no record of which names moved, which
+          # is precisely the reconciliation CI-AR41's evidence exists for.
+          moved=()
+          report() {
+            {
+              echo "### Stable image aliases"
+              echo
+              echo "- Digest: \`${IMAGE_DIGEST}\`"
+              if [[ ${#moved[@]} -eq 0 ]]; then
+                echo "- Moved: none"
+              else
+                for reference in "${moved[@]}"; do
+                  echo "- Moved: \`${reference}\`"
+                done
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+          }
+          trap report EXIT
+          for repository in "$IMAGE_REPOSITORY" "$DOCKERHUB_REPOSITORY"; do
+            [[ -n "$repository" ]] || continue
+            # One invocation per repository, carrying every alias that repository is
+            # permitted to take. `latest` and `MAJOR` mean the same thing, so they must
+            # not be two writes that can disagree -- and a single `imagetools create`
+            # is the only spelling in which they cannot.
+            tags=()
+            for alias in "${aliases[@]}"; do
+              tags+=(--tag "${repository}:${alias}")
+            done
+            # A digest copy: the index that was published is given another
+            # name. No build, no rebuild, no second image per destination.
+            docker buildx imagetools create \
+              "${tags[@]}" "${repository}@${IMAGE_DIGEST}"
+            for alias in "${aliases[@]}"; do
+              moved+=("${repository}:${alias}")
+            done
+          done
+
   release-evidence:
     name: Record stable run evidence
     needs:
@@ -558,6 +922,8 @@ jobs:
       - publish-package-forge
       - publish-package-pypi
       - publish-image
+      - finalize
+      - finalize-image-aliases
     # `!cancelled()` rather than `always()`: a legitimately absent destination must not
     # hide the run summary, but a cancelled run must not report one either (ADR-0011).
     if: ${{ !cancelled() }}
@@ -574,10 +940,16 @@ jobs:
           IMAGE_REFERENCE: ${{ needs.publish-image.outputs.image-reference }}
           IMAGE_RESULT: ${{ needs.publish-image.result }}
           IMAGE_TAGS: ${{ needs.plan.outputs.image-tags }}
+          IMAGE_ALIAS_RESULT: ${{ needs.finalize-image-aliases.result }}
+          MAJOR_ADVANCED: ${{ needs.finalize.outputs.advance-major }}
+          MINOR_ADVANCED: ${{ needs.finalize.outputs.advance-minor }}
           PACKAGE_FORGE_RESULT: ${{ needs.publish-package-forge.result }}
           PACKAGE_VERSION: ${{ needs.plan.outputs.package-version }}
           PYPI_RESULT: ${{ needs.publish-package-pypi.result }}
+          RELEASE_ASSETS: ${{ needs.finalize.outputs.release-assets }}
+          RELEASE_RESULT: ${{ needs.finalize.result }}
           RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
+          RELEASE_URL: ${{ needs.finalize.outputs.release-url }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
           VERIFIER_RESULT: ${{ needs.verify.result }}
@@ -602,4 +974,8 @@ jobs:
             echo "| Image digest | \`${IMAGE_DIGEST}\` |"
             echo "| Image reference | \`${IMAGE_REFERENCE}\` |"
             echo "| Image platforms | \`${IMAGE_PLATFORMS}\` |"
+            echo "| Release | \`${RELEASE_RESULT}\` [${RELEASE_URL}](${RELEASE_URL}) |"
+            echo "| Release assets | \`${RELEASE_ASSETS}\` |"
+            echo "| Image aliases | \`${IMAGE_ALIAS_RESULT}\` |"
+            echo "| Aliases advanced | major \`${MAJOR_ADVANCED}\` minor \`${MINOR_ADVANCED}\` |"
           } >> "$GITHUB_STEP_SUMMARY"

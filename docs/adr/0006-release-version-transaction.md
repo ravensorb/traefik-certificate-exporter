@@ -122,9 +122,18 @@ HEAD:refs/tags/v9.9.9` step with the permissions block untouched: the permission
 the behavioural check failed.
 
 `RELEASE_FINALIZER_JOBS` is deliberately a hand-kept list rather than a derived scope: it is a
-registry of granted exceptions, and adding a name to it *is* the grant. It is empty until
-Epic 8 registers the stable-release finalizer, which must also depend on the governed verifier
-so that nothing is released that was not first verified.
+registry of granted exceptions, and adding a name to it *is* the grant. Per gate finding F6 it
+holds `(workflow filename, job name)` **pairs**, because a bare name matches across every
+workflow and Epic 8 creates a finalizer in both `dev.yaml` and `release.yaml`.
+
+Story E008-S01-003 filled it with three entries: `("release.yaml", "finalize")`, which creates
+the Release and moves the Git aliases and is the only job in the repository declaring
+`contents: write`; `("release.yaml", "finalize-image-aliases")`; and
+`("dev.yaml", "finalize-dev-alias")`. The last two write no ref -- they are registered because
+they move a *registry* alias, and `test_only_registered_finalizers_move_an_alias` asserts that
+the set of alias-moving jobs, derived from the parsed steps, **equals** this registry. Every
+finalizer depends transitively on the governed verifier, so nothing is released or aliased that
+was not first verified.
 
 ## The transaction as a state machine
 
@@ -207,9 +216,60 @@ identity, which is the harm §5 exists to prevent.
 
 **The mechanism is `LiquidLogicLabs/git-action-tag-floating-version@v1`, not a hand-rolled
 push.** The action extracts the major and optional minor from an exact tag, points the aliases at
-it, performs the non-fast-forward update, and skips prereleases by default
-(`ignore-prerelease: true`). It needs `contents: write`, which is exactly the grant this ADR
-governs, so its use is restricted to a registered finalizer.
+it, performs the non-fast-forward update, and skips prereleases by default. It needs
+`contents: write`, which is exactly the grant this ADR governs, so its use is restricted to a
+registered finalizer.
+
+**Three facts about the action, corrected against `action.yml` at implementation time
+(E008-S01-003) rather than assumed.** Each of them silently changes behaviour if got wrong:
+
+- **Its inputs are camelCase: `updateMinor` and `ignorePrerelease`.** The hyphenated spellings
+  this ADR originally used are not inputs at all -- Actions passes them through as unread
+  `INPUT_*` variables, the action falls back to its defaults, and `updateMinor` defaults to
+  `false`. The visible result is a `vMAJOR.MINOR` alias that silently never moves.
+  `test_the_git_alias_action_runs_only_behind_the_ordering_gate` asserts both spellings; the
+  planted violation is the hyphenated pair.
+- **It declares `using: node20`, not node24.** ADR-0010's Release action is the node24 one. Both
+  belong in E009's pinned `act_runner` tuple; they are not the same requirement.
+- **It takes no token input.** It runs `git tag -f` and `git push origin <alias> --force` in the
+  workspace, so it uses whatever credential the checkout left behind. Every governed channel
+  checkout is `persist-credentials: false`, so the finalizer grants itself a push credential
+  explicitly, on the push URL only, composed from `github.server_url` -- which keeps it
+  forge-neutral and keeps the credential out of every other job.
+
+**Its credential is supplied through git's environment, never through `.git/config`.** The
+finalizer sets `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0` on the action's own
+step, so `remote.origin.pushurl` exists for exactly one process. A `git remote set-url` would
+persist the token in the workspace, where it outlives the step that needed it and -- on the
+reused `act_runner` workspace E009 targets -- the whole job, converting a job-scoped grant into
+a runner-scoped one. The userinfo is the fixed placeholder `x-access-token`: both forges
+authenticate on the token and ignore the username, and `github.actor` is not a legal URI
+userinfo for a bot actor. `test_a_finalizer_never_leaves_a_credential_in_the_workspace` forbids
+the config write in every spelling.
+
+**The ordering read is scoped to the protected default branch.** `stable_tag_order` passes
+`--merged`, from the plan job's `default-branch-ref` output rather than a second literal.
+Without it one annotated tag abandoned on a side branch makes every later release the second
+greatest, and `vMAJOR`, `latest` and both image aliases stop advancing on runs that all finish
+green.
+
+**Recovery, because the first write is the one that cannot be retried.** The Release is created
+before any alias moves, so a failure in the alias fan-out leaves the Release standing. The
+Release step therefore runs with `allow-updates: true`: re-running the finalizer re-creates the
+same Release for the same tag and continues to the aliases. This is safe for this identity and
+only this one -- `refs/tags/vX.Y.Z` is immutable and the step directly before re-proves that the
+tag still peels to this commit -- and it replaces "delete the Release in the forge UI, then
+re-run", which was undocumented tribal knowledge.
+
+**The action decides nothing about ordering, and offers no way to move the minor alone.** It
+moves the major unconditionally whenever it runs. The workflow therefore gates the whole
+invocation on the released tag being the greatest annotated `vX.Y.Z` in the repository. The
+consequence, accepted deliberately: a back-port patch published while a newer stable tag exists
+moves **no Git alias**, even though its own `vMAJOR.MINOR` could legitimately advance. The
+alternative would be hand-rolling the minor move, which this ADR forbids outright. The *image*
+aliases have no such limitation -- the workflow moves those itself, one name at a time -- so
+`MAJOR.MINOR` does advance there while `MAJOR` and `latest` do not. Revisit if the action gains
+a major/minor split.
 
 Unlike ADR-0010's Release action it needs no forge backend: **a tag is a git concept, a Release
 is a forge concept.** The alias action pushes refs with plain git — `using: node24`, no server
