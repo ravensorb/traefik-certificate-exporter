@@ -7,6 +7,7 @@ adapter over this package's ``publication-contract`` console script.
 from __future__ import annotations
 
 from .contract import (
+    ALWAYS_ENABLED_TARGET_NAME,
     CONTRACTS,
     SECRET_FIELD_EXEMPTIONS,
     SECRET_FIELD_RE,
@@ -30,6 +31,7 @@ from .contract import (
 )
 
 __all__ = [
+    "ALWAYS_ENABLED_TARGET_NAME",
     "CONTRACTS",
     "SECRET_FIELD_EXEMPTIONS",
     "SECRET_FIELD_RE",

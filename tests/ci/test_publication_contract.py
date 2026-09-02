@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +46,9 @@ def _steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
     [
         ("build-manifest", "valid-build-manifest.json"),
         ("publication-plan", "valid-publication-plan.json"),
+        ("publication-plan", "valid-dev-publication-plan.json"),
         ("release-receipt", "valid-release-receipt-incomplete.json"),
+        ("release-receipt", "valid-release-receipt-complete.json"),
     ],
 )
 def test_valid_fixtures_round_trip_deterministically(
@@ -465,3 +468,421 @@ def test_manifest_inputs_match_the_image_build_plan() -> None:
     assert inputs["target"] == "runtime"
     assert 'POETRY_VERSION = "2.4.2"' in bake
     assert '"POETRY_VERSION":"2.4.2"' in inputs["build-args-json"]
+
+
+# --------------------------------------------------------------------------
+# Publication plan and release receipt: multi-destination shape (Epic 8)
+# --------------------------------------------------------------------------
+
+STABLE_PLAN = "valid-publication-plan.json"
+DEV_PLAN = "valid-dev-publication-plan.json"
+INCOMPLETE_RECEIPT = "valid-release-receipt-incomplete.json"
+COMPLETE_RECEIPT = "valid-release-receipt-complete.json"
+
+
+def _fixture(name: str) -> Any:
+    return contract.load_json(FIXTURES / name)
+
+
+def _mutated(name: str, mutate: Callable[[Any], None]) -> Any:
+    document = _fixture(name)
+    mutate(document)
+    return document
+
+
+def _plan_target_arrays() -> dict[str, str]:
+    """Map each plan target array to the ``$defs`` name describing its items.
+
+    Derived from the packaged schema rather than enumerated: a third target
+    array added later is covered by every test below on the day it lands.
+    """
+    schema = contract.load_schema("publication-plan")
+    return {
+        name: definition["items"]["$ref"].rsplit("/", 1)[-1]
+        for name, definition in schema["properties"].items()
+        if isinstance(definition, dict)
+        and definition.get("type") == "array"
+        and "contains" in definition
+    }
+
+
+def _receipt_complete_branch() -> dict[str, Any]:
+    (conditional,) = contract.load_schema("release-receipt")["allOf"]
+    assert conditional["if"]["properties"]["status"]["const"] == "complete"
+    branch: dict[str, Any] = conditional["then"]["properties"]
+    return branch
+
+
+def _receipt_destination_arrays() -> list[tuple[str, str]]:
+    """Return the ``(group, array)`` pairs the complete branch pins a forge entry in."""
+    return [
+        (group, array)
+        for group, group_schema in _receipt_complete_branch().items()
+        for array, array_schema in group_schema.get("properties", {}).items()
+        if "contains" in array_schema
+    ]
+
+
+def _forge_index(entries: list[dict[str, Any]]) -> int:
+    return next(
+        index
+        for index, entry in enumerate(entries)
+        if entry["name"] == contract.ALWAYS_ENABLED_TARGET_NAME
+    )
+
+
+def test_the_always_on_forge_rule_is_spelled_from_one_name() -> None:
+    # CI-AR20/CI-AR21a live in two schemas and four arrays. The name is written
+    # once in `contract.py`; this proves every packaged fragment agrees with it,
+    # with the fragment set derived from the schemas rather than listed here.
+    forge = contract.ALWAYS_ENABLED_TARGET_NAME
+    plan = contract.load_schema("publication-plan")
+    arrays = _plan_target_arrays()
+
+    assert set(arrays) == {"package_targets", "image_targets"}
+    for array, definition_name in arrays.items():
+        contains = plan["properties"][array]["contains"]
+        assert contains["properties"]["name"]["const"] == forge, array
+        (conditional, *_rest) = plan["$defs"][definition_name]["allOf"]
+        assert conditional["if"]["properties"]["name"]["const"] == forge
+        assert conditional["then"]["properties"]["enabled"]["const"] is True
+
+    pairs = _receipt_destination_arrays()
+    assert {group for group, _array in pairs} == {"package", "oci"}
+    branch = _receipt_complete_branch()
+    for group, array in pairs:
+        contains = branch[group]["properties"][array]["contains"]
+        assert contains["properties"]["name"]["const"] == forge, group
+
+
+@pytest.mark.parametrize("array", sorted(_plan_target_arrays()))
+def test_every_target_array_must_carry_an_enabled_forge_entry(array: str) -> None:
+    forge = contract.ALWAYS_ENABLED_TARGET_NAME
+
+    def drop_forge(document: Any) -> None:
+        document[array] = [entry for entry in document[array] if entry["name"] != forge]
+
+    def disable_forge(document: Any) -> None:
+        document[array][_forge_index(document[array])]["enabled"] = False
+
+    with pytest.raises(contract.ContractError, match=rf"^\$\.{array}: "):
+        contract.validate_contract(
+            "publication-plan", _mutated(STABLE_PLAN, drop_forge)
+        )
+    index = _forge_index(_fixture(STABLE_PLAN)[array])
+    with pytest.raises(
+        contract.ContractError,
+        match=rf"^\$\.{array}\[{index}\]\.enabled: ",
+    ):
+        contract.validate_contract(
+            "publication-plan", _mutated(STABLE_PLAN, disable_forge)
+        )
+
+
+def _drop_distance(document: Any) -> None:
+    del document["development_distance"]
+
+
+def _add_distance(document: Any) -> None:
+    document["development_distance"] = 3
+
+
+def _short_sha_segment(document: Any) -> None:
+    document["tags"]["immutable"] = ["dev-ddddddddddd"]
+
+
+def _foreign_sha_segment(document: Any) -> None:
+    document["tags"]["immutable"] = ["dev-abcdefabcdef"]
+
+
+def _extra_dev_alias(document: Any) -> None:
+    document["tags"]["aliases"] = ["dev", "edge"]
+
+
+def _image_claims_absent_by_host(document: Any) -> None:
+    document["image_targets"][0]["absent_by_host"] = True
+
+
+def _pypi_claims_absent_by_host(document: Any) -> None:
+    document["package_targets"][1]["absent_by_host"] = True
+
+
+def _absent_by_host_with_endpoint(document: Any) -> None:
+    document["package_targets"][0]["endpoint"] = "https://pypi.example.com/"
+
+
+def _present_forge_without_endpoint(document: Any) -> None:
+    document["package_targets"][0]["endpoint"] = None
+
+
+def _testpypi_on_stable(document: Any) -> None:
+    document["package_targets"].append(
+        {
+            "name": "testpypi",
+            "enabled": True,
+            "endpoint": "https://test.pypi.org/legacy/",
+            "credential_mode": "oidc",
+        }
+    )
+
+
+def _pypi_on_dev(document: Any) -> None:
+    document["package_targets"].append(
+        {
+            "name": "pypi",
+            "enabled": True,
+            "endpoint": "https://upload.pypi.org/legacy/",
+            "credential_mode": "oidc",
+        }
+    )
+
+
+def _drop_git_aliases(document: Any) -> None:
+    del document["git_aliases"]
+
+
+def _drop_forge_release_destination(document: Any) -> None:
+    document["destinations"] = ["package", "oci"]
+
+
+def _drop_run(document: Any) -> None:
+    del document["run"]
+
+
+def _secret_in_run(document: Any) -> None:
+    document["run"]["token"] = "not-a-real-value"
+
+
+def _duplicate_package_target(document: Any) -> None:
+    document["package_targets"].append(dict(document["package_targets"][1]))
+
+
+def _uppercase_registry(document: Any) -> None:
+    document["image_targets"][0]["registry"] = "GHCR.io"
+
+
+def _credentialled_endpoint(document: Any) -> None:
+    document["package_targets"][1]["endpoint"] = "https://u:p@test.pypi.org/legacy/"
+
+
+def _credential_mode_that_names_a_secret(document: Any) -> None:
+    document["image_targets"][1]["credential_mode"] = "password"
+
+
+@pytest.mark.parametrize(
+    ("fixture", "mutate", "field"),
+    [
+        (DEV_PLAN, _drop_distance, "$.development_distance"),
+        (STABLE_PLAN, _add_distance, "$.development_distance"),
+        (DEV_PLAN, _short_sha_segment, "$.tags.immutable[0]"),
+        (DEV_PLAN, _foreign_sha_segment, "$.tags.immutable[0]"),
+        (DEV_PLAN, _extra_dev_alias, "$.tags.aliases"),
+        (
+            STABLE_PLAN,
+            _image_claims_absent_by_host,
+            "$.image_targets[0].absent_by_host",
+        ),
+        (DEV_PLAN, _pypi_claims_absent_by_host, "$.package_targets[1].absent_by_host"),
+        (STABLE_PLAN, _absent_by_host_with_endpoint, "$.package_targets[0].endpoint"),
+        (DEV_PLAN, _present_forge_without_endpoint, "$.package_targets[0].endpoint"),
+        (STABLE_PLAN, _testpypi_on_stable, "$.package_targets[2].name"),
+        (DEV_PLAN, _pypi_on_dev, "$.package_targets[2].name"),
+        (STABLE_PLAN, _drop_git_aliases, "$.git_aliases"),
+        (STABLE_PLAN, _drop_forge_release_destination, "$.destinations"),
+        (STABLE_PLAN, _drop_run, "$.run"),
+        (STABLE_PLAN, _secret_in_run, "$.run.token"),
+        (STABLE_PLAN, _duplicate_package_target, "$.package_targets[2].name"),
+        (STABLE_PLAN, _uppercase_registry, "$.image_targets[0].registry"),
+        (DEV_PLAN, _credentialled_endpoint, "$.package_targets[1].endpoint"),
+        (
+            STABLE_PLAN,
+            _credential_mode_that_names_a_secret,
+            "$.image_targets[1].credential_mode",
+        ),
+    ],
+)
+def test_plan_rejections_are_addressed_at_the_offending_field(
+    fixture: str,
+    mutate: Callable[[Any], None],
+    field: str,
+) -> None:
+    with pytest.raises(contract.ContractError, match=rf"^{re.escape(field)}: "):
+        contract.validate_contract("publication-plan", _mutated(fixture, mutate))
+
+
+def _forge_package_disabled(document: Any) -> None:
+    # An endpoint is supplied so the *only* defect is the disabled outcome: the
+    # always-on destination has no disabled state, whatever else is well formed.
+    document["package"]["destinations"][0].update(
+        {"outcome": "disabled", "endpoint": "https://gitea.example.com/pypi"}
+    )
+
+
+def _forge_image_disabled(document: Any) -> None:
+    document["oci"]["images"][0]["outcome"] = "disabled"
+
+
+def _image_absent_by_host(document: Any) -> None:
+    document["oci"]["images"][0]["outcome"] = "absent-by-host"
+
+
+def _external_package_absent_by_host(document: Any) -> None:
+    document["package"]["destinations"][1].update(
+        {"outcome": "absent-by-host", "endpoint": None, "artifacts": []}
+    )
+
+
+def _absent_by_host_receipt_endpoint(document: Any) -> None:
+    document["package"]["destinations"][0]["endpoint"] = "https://pypi.example.com/"
+
+
+def _drop_receipt_run(document: Any) -> None:
+    del document["run"]
+
+
+def _duplicate_image_destination(document: Any) -> None:
+    document["oci"]["images"].append(dict(document["oci"]["images"][1]))
+
+
+def _published_package_missing_a_file(document: Any) -> None:
+    document["package"]["destinations"][1]["artifacts"].pop()
+
+
+def _published_image_without_a_digest(document: Any) -> None:
+    document["oci"]["images"][0]["digest"] = None
+
+
+@pytest.mark.parametrize(
+    ("fixture", "mutate", "field"),
+    [
+        (
+            INCOMPLETE_RECEIPT,
+            _forge_package_disabled,
+            "$.package.destinations[0].outcome",
+        ),
+        (INCOMPLETE_RECEIPT, _forge_image_disabled, "$.oci.images[0].outcome"),
+        (INCOMPLETE_RECEIPT, _image_absent_by_host, "$.oci.images[0].outcome"),
+        (
+            INCOMPLETE_RECEIPT,
+            _external_package_absent_by_host,
+            "$.package.destinations[1].outcome",
+        ),
+        (
+            INCOMPLETE_RECEIPT,
+            _absent_by_host_receipt_endpoint,
+            "$.package.destinations[0].endpoint",
+        ),
+        (INCOMPLETE_RECEIPT, _drop_receipt_run, "$.run"),
+        (INCOMPLETE_RECEIPT, _duplicate_image_destination, "$.oci.images[2].name"),
+        (
+            COMPLETE_RECEIPT,
+            _published_package_missing_a_file,
+            "$.package.destinations[1].artifacts",
+        ),
+        (COMPLETE_RECEIPT, _published_image_without_a_digest, "$.oci.images[0].digest"),
+    ],
+)
+def test_receipt_rejections_are_addressed_at_the_offending_field(
+    fixture: str,
+    mutate: Callable[[Any], None],
+    field: str,
+) -> None:
+    with pytest.raises(contract.ContractError, match=rf"^{re.escape(field)}: "):
+        contract.validate_contract("release-receipt", _mutated(fixture, mutate))
+
+
+@pytest.mark.parametrize(("group", "array"), _receipt_destination_arrays())
+def test_a_complete_receipt_needs_an_entry_for_every_always_on_destination(
+    group: str,
+    array: str,
+) -> None:
+    forge = contract.ALWAYS_ENABLED_TARGET_NAME
+
+    def drop_forge(document: Any) -> None:
+        document[group][array] = [
+            entry for entry in document[group][array] if entry["name"] != forge
+        ]
+
+    with pytest.raises(contract.ContractError, match=rf"^\$\.{group}\.{array}: "):
+        contract.validate_contract(
+            "release-receipt", _mutated(COMPLETE_RECEIPT, drop_forge)
+        )
+
+
+def _unreconciled_statuses() -> list[str]:
+    """Every reconciliation status that is not `matched`, taken from the schema.
+
+    The enum is what widened; deriving the case list from it is what proves the
+    widening cannot outrun the `complete` conditional that has to reject them.
+    """
+    schema = contract.load_schema("release-receipt")
+    values = schema["$defs"]["reconciliationStatus"]["enum"]
+    return [value for value in values if value != "matched"]
+
+
+def test_the_reconciliation_enum_expresses_the_four_way_classification() -> None:
+    assert set(_unreconciled_statuses()) | {"matched"} == {
+        "failed",
+        "matched",
+        "mismatched",
+        "missing",
+        "pending",
+        "unverifiable",
+    }
+
+
+@pytest.mark.parametrize("alias_array", ["git_aliases", "oci_aliases"])
+@pytest.mark.parametrize("status", _unreconciled_statuses())
+def test_a_complete_receipt_cannot_carry_an_unreconciled_alias(
+    alias_array: str,
+    status: str,
+) -> None:
+    def set_status(document: Any) -> None:
+        document["reconciliation"][alias_array][0]["status"] = status
+
+    with pytest.raises(
+        contract.ContractError,
+        match=rf"^\$\.reconciliation\.{alias_array}\[0\]\.status: ",
+    ):
+        contract.validate_contract(
+            "release-receipt", _mutated(COMPLETE_RECEIPT, set_status)
+        )
+
+
+@pytest.mark.parametrize("status", ["mismatched", "missing", "unverifiable"])
+def test_an_incomplete_receipt_accepts_every_new_reconciliation_status(
+    status: str,
+) -> None:
+    def set_status(document: Any) -> None:
+        document["reconciliation"]["oci_aliases"][0]["status"] = status
+
+    contract.validate_contract(
+        "release-receipt", _mutated(INCOMPLETE_RECEIPT, set_status)
+    )
+
+
+def test_a_run_that_never_reached_the_image_publisher_still_serializes() -> None:
+    def never_attempted(document: Any) -> None:
+        document["oci"]["images"] = []
+
+    contract.validate_contract(
+        "release-receipt", _mutated(INCOMPLETE_RECEIPT, never_attempted)
+    )
+
+
+def test_the_dev_plan_binds_its_immutable_tag_to_the_planned_source_sha() -> None:
+    document = _fixture(DEV_PLAN)
+
+    assert document["tags"]["immutable"] == [f"dev-{document['source_sha'][:12]}"]
+    assert document["tags"]["aliases"] == ["dev"]
+
+
+def test_run_correlation_is_carried_by_the_plan_and_the_receipt_only() -> None:
+    # BL-E007-003: the manifest must stay byte-identical for identical source, so
+    # a run id belongs in the two documents that are allowed to vary per run.
+    correlated = ("publication-plan", "release-receipt")
+    for name in correlated:
+        assert "run" in contract.load_schema(name)["required"], name
+    manifest = contract.load_schema("build-manifest")
+    assert "run" not in manifest["properties"]
+    assert "run" not in manifest["required"]

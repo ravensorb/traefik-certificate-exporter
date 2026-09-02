@@ -40,14 +40,43 @@
           },
           "package": {
             "properties": {
-              "artifacts": {
-                "items": {
+              "destinations": {
+                "contains": {
                   "properties": {
-                    "remote_sha256": {
-                      "$ref": "#/$defs/hash"
+                    "name": {
+                      "const": "forge"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ]
+                },
+                "items": {
+                  "if": {
+                    "properties": {
+                      "outcome": {
+                        "const": "published"
+                      }
                     },
-                    "status": {
-                      "const": "published"
+                    "required": [
+                      "outcome"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "artifacts": {
+                        "items": {
+                          "properties": {
+                            "remote_sha256": {
+                              "$ref": "#/$defs/hash"
+                            },
+                            "status": {
+                              "const": "published"
+                            }
+                          }
+                        },
+                        "minItems": 2
+                      }
                     }
                   }
                 }
@@ -57,6 +86,38 @@
           "oci": {
             "properties": {
               "images": {
+                "contains": {
+                  "properties": {
+                    "name": {
+                      "const": "forge"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ]
+                },
+                "items": {
+                  "if": {
+                    "properties": {
+                      "outcome": {
+                        "const": "published"
+                      }
+                    },
+                    "required": [
+                      "outcome"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "digest": {
+                        "$ref": "#/$defs/digest"
+                      },
+                      "platforms": {
+                        "minItems": 1
+                      }
+                    }
+                  }
+                },
                 "minItems": 1
               }
             }
@@ -165,36 +226,7 @@
       "properties": {
         "images": {
           "items": {
-            "additionalProperties": false,
-            "properties": {
-              "digest": {
-                "$ref": "#/$defs/digest"
-              },
-              "platforms": {
-                "items": {
-                  "pattern": "^linux/[a-z0-9_]+(?:/v[0-9]+)?$",
-                  "type": "string"
-                },
-                "minItems": 1,
-                "type": "array",
-                "uniqueItems": true
-              },
-              "registry": {
-                "minLength": 1,
-                "type": "string"
-              },
-              "repository": {
-                "minLength": 1,
-                "type": "string"
-              }
-            },
-            "required": [
-              "registry",
-              "repository",
-              "digest",
-              "platforms"
-            ],
-            "type": "object"
+            "$ref": "#/$defs/imageDestination"
           },
           "type": "array"
         }
@@ -207,23 +239,15 @@
     "package": {
       "additionalProperties": false,
       "properties": {
-        "artifacts": {
+        "destinations": {
           "items": {
-            "$ref": "#/$defs/remoteArtifact"
+            "$ref": "#/$defs/packageDestination"
           },
-          "minItems": 2,
-          "type": "array",
-          "uniqueItems": true
-        },
-        "endpoint": {
-          "format": "uri",
-          "pattern": "^https://",
-          "type": "string"
+          "type": "array"
         }
       },
       "required": [
-        "endpoint",
-        "artifacts"
+        "destinations"
       ],
       "type": "object"
     },
@@ -309,6 +333,9 @@
       ],
       "type": "object"
     },
+    "run": {
+      "$ref": "#/$defs/run"
+    },
     "schema_version": {
       "const": "release-receipt-v1"
     },
@@ -331,7 +358,8 @@
     "oci",
     "forge_release",
     "reconciliation",
-    "failures"
+    "failures",
+    "run"
   ],
   "title": "Release receipt v1",
   "type": "object",
@@ -340,12 +368,206 @@
       "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"
     },
+    "endpoint": {
+      "format": "uri",
+      "pattern": "^https://",
+      "type": "string"
+    },
     "hash": {
       "pattern": "^[0-9a-f]{64}$",
       "type": "string"
     },
+    "imageDestination": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "name": {
+                "const": "forge"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "then": {
+            "properties": {
+              "outcome": {
+                "not": {
+                  "const": "disabled"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "enum": [
+            "dockerhub",
+            "forge"
+          ]
+        },
+        "outcome": {
+          "$ref": "#/$defs/imageDestinationOutcome"
+        },
+        "platforms": {
+          "items": {
+            "pattern": "^linux/[a-z0-9_]+(?:/v[0-9]+)?$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "registry": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "repository": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "registry",
+        "repository",
+        "digest",
+        "platforms",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "imageDestinationOutcome": {
+      "enum": [
+        "disabled",
+        "failed",
+        "pending",
+        "published"
+      ]
+    },
     "mutationStatus": {
       "enum": [
+        "failed",
+        "pending",
+        "published"
+      ]
+    },
+    "packageDestination": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "properties": {
+              "outcome": {
+                "not": {
+                  "const": "absent-by-host"
+                }
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "name": {
+                "const": "forge"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "then": {
+            "properties": {
+              "outcome": {
+                "not": {
+                  "const": "disabled"
+                }
+              }
+            }
+          }
+        },
+        {
+          "else": {
+            "properties": {
+              "endpoint": {
+                "$ref": "#/$defs/endpoint"
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "absent-by-host"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "maxItems": 0
+              },
+              "endpoint": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/remoteArtifact"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/endpoint"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "enum": [
+            "forge",
+            "pypi",
+            "testpypi"
+          ]
+        },
+        "outcome": {
+          "$ref": "#/$defs/packageDestinationOutcome"
+        }
+      },
+      "required": [
+        "name",
+        "endpoint",
+        "outcome",
+        "artifacts"
+      ],
+      "type": "object"
+    },
+    "packageDestinationOutcome": {
+      "enum": [
+        "absent-by-host",
+        "disabled",
         "failed",
         "pending",
         "published"
@@ -355,7 +577,10 @@
       "enum": [
         "failed",
         "matched",
-        "pending"
+        "mismatched",
+        "missing",
+        "pending",
+        "unverifiable"
       ]
     },
     "remoteArtifact": {
@@ -386,6 +611,35 @@
         "sha256",
         "remote_sha256",
         "status"
+      ],
+      "type": "object"
+    },
+    "run": {
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "type": "string"
+        },
+        "run_attempt": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "run_id": {
+          "pattern": "^[0-9]+$",
+          "type": "string"
+        },
+        "server_url": {
+          "format": "uri",
+          "pattern": "^https://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "server_url",
+        "repository",
+        "run_id",
+        "run_attempt"
       ],
       "type": "object"
     },

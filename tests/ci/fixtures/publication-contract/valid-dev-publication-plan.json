@@ -1,26 +1,25 @@
 {
   "schema_version": "publication-plan-v1",
-  "forge_kind": "github",
-  "channel": "stable",
-  "package_version": "1.2.3",
+  "forge_kind": "gitea",
+  "channel": "dev",
+  "package_version": "1.2.4.dev7",
   "source_sha": "dddddddddddddddddddddddddddddddddddddddd",
+  "development_distance": 7,
   "destinations": [
     "package",
-    "oci",
-    "forge-release"
+    "oci"
   ],
   "package_targets": [
     {
       "name": "forge",
       "enabled": true,
-      "absent_by_host": true,
-      "endpoint": null,
+      "endpoint": "https://gitea.example.com/api/packages/ravensorb/pypi",
       "credential_mode": "job-token"
     },
     {
-      "name": "pypi",
+      "name": "testpypi",
       "enabled": true,
-      "endpoint": "https://upload.pypi.org/legacy/",
+      "endpoint": "https://test.pypi.org/legacy/",
       "credential_mode": "oidc"
     }
   ],
@@ -28,7 +27,7 @@
     {
       "name": "forge",
       "enabled": true,
-      "registry": "ghcr.io",
+      "registry": "gitea.example.com",
       "repository": "ravensorb/traefik-certificate-exporter",
       "credential_mode": "job-token"
     },
@@ -40,18 +39,12 @@
       "credential_mode": "token"
     }
   ],
-  "git_aliases": [
-    "v1",
-    "v1.2"
-  ],
   "tags": {
     "immutable": [
-      "1.2.3"
+      "dev-dddddddddddd"
     ],
     "aliases": [
-      "1",
-      "1.2",
-      "latest"
+      "dev"
     ]
   },
   "run": {
@@ -59,6 +52,5 @@
     "repository": "ravensorb/traefik-certificate-exporter",
     "run_id": "1234567890",
     "run_attempt": 1
-  },
-  "password_hint": "forbidden"
+  }
 }

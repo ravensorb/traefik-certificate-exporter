@@ -1,6 +1,6 @@
 {
   "schema_version": "release-receipt-v1",
-  "status": "incomplete",
+  "status": "complete",
   "package_version": "1.2.3",
   "source_sha": "dddddddddddddddddddddddddddddddddddddddd",
   "package": {
@@ -14,7 +14,7 @@
       {
         "name": "pypi",
         "endpoint": "https://upload.pypi.org/legacy/",
-        "outcome": "failed",
+        "outcome": "published",
         "artifacts": [
           {
             "filename": "traefik_certificate_exporter-1.2.3-py3-none-any.whl",
@@ -25,8 +25,8 @@
           {
             "filename": "traefik_certificate_exporter-1.2.3.tar.gz",
             "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "remote_sha256": null,
-            "status": "failed"
+            "remote_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "status": "published"
           }
         ]
       }
@@ -38,9 +38,12 @@
         "name": "forge",
         "registry": "ghcr.io",
         "repository": "ravensorb/traefik-certificate-exporter",
-        "digest": null,
-        "platforms": [],
-        "outcome": "pending"
+        "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "platforms": [
+          "linux/amd64",
+          "linux/arm64"
+        ],
+        "outcome": "published"
       },
       {
         "name": "dockerhub",
@@ -53,35 +56,49 @@
     ]
   },
   "forge_release": {
-    "id": null,
-    "url": null,
-    "status": "pending",
-    "assets": []
+    "id": "182736455",
+    "url": "https://github.com/ravensorb/traefik-certificate-exporter/releases/tag/v1.2.3",
+    "status": "published",
+    "assets": [
+      {
+        "filename": "traefik_certificate_exporter-1.2.3-py3-none-any.whl",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "remote_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "status": "published"
+      },
+      {
+        "filename": "traefik_certificate_exporter-1.2.3.tar.gz",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "remote_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "status": "published"
+      },
+      {
+        "filename": "SHA256SUMS",
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "remote_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "status": "published"
+      }
+    ]
   },
   "reconciliation": {
     "oci_aliases": [
       {
         "alias": "latest",
         "expected_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "actual_digest": null,
-        "status": "missing"
+        "actual_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "status": "matched"
       }
     ],
     "git_aliases": [
       {
         "alias": "v1",
         "expected_sha": "dddddddddddddddddddddddddddddddddddddddd",
-        "actual_sha": null,
-        "status": "pending"
+        "actual_sha": "dddddddddddddddddddddddddddddddddddddddd",
+        "status": "matched"
       }
     ]
   },
-  "failures": [
-    {
-      "destination": "package",
-      "reason": "sdist upload rejected"
-    }
-  ],
+  "failures": [],
   "run": {
     "server_url": "https://github.com",
     "repository": "ravensorb/traefik-certificate-exporter",
