@@ -2,7 +2,7 @@ key: 'E008-S01-002'
 epic: 'E008'
 sprint: 'S01'
 title: 'Publish Immutable Stable Packages and Images from Exact Tags'
-status: ready-for-dev
+status: done
 classification: complex
 depends_on: ['E008-S01-001']
 estimate:
@@ -24,4 +24,20 @@ estimate:
     output: 18
     cache_write: 105
     cache_read: 175
-updated_at: '2026-09-02T15:33:20Z'
+updated_at: '2026-09-02T17:22:14Z'
+completion_evidence:
+  fix_iterations: 1
+  files_changed: 6
+  test_runs:
+  - command: poetry run pytest -q
+    exit_code: 0
+  - command: pre-commit run actionlint --files .github/workflows/release.yaml
+    exit_code: 0
+  tests_passing: true
+actual:
+  elapsed_hours: 1.6
+  man_hours: 24
+  hitl_hours: 0
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-09-02T17:22:01Z'

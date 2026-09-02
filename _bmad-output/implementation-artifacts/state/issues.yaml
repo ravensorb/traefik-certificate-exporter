@@ -120,3 +120,19 @@ backlog:
   severity: Low
   status: backlog
   description: "publish-package-forge passes user: ${{ github.actor }} alongside secrets.FORGE_PACKAGE_TOKEN. Gitea's basic auth resolves a token supplied as the password regardless of the username, so it works, but the username varies per push and is unrelated to whoever minted the token. Prefer __token__, or a documented vars.FORGE_PACKAGE_USER alongside FORGE_PACKAGE_TOKEN. Raised as LOW-5 in _bmad-output/implementation-artifacts/epic-008/sprint-01/closure/review-E008-S01-001.md."
+- key: BL-E008-003
+  epic: '008'
+  sprint: '01'
+  title: release.yaml pins the protected default branch as origin/main rather than deriving it from the event
+  source: code-review (E008-S01-002) — LOW-1
+  severity: Low
+  status: backlog
+  description: "The stable tag guard passes DEFAULT_BRANCH_REF: origin/main to scripts/stable_tags.py --reachable-from. github.event.repository.default_branch carries the same value from the source of truth, but its availability on Gitea's act_runner is unverified, and an empty interpolation would fail every stable release rather than only a renamed-branch one. Both spellings fail closed; which one is correct is a recorded decision, not a drive-by change. See _bmad-output/implementation-artifacts/epic-008/sprint-01/closure/review-E008-S01-002.md LOW-1."
+- key: BL-E008-004
+  epic: '008'
+  sprint: '01'
+  title: DOCKERHUB_REPOSITORY is a new repository variable introduced by release.yaml and needs an operator decision on its value
+  source: implementation assumption (E008-S01-002)
+  severity: Low
+  status: backlog
+  description: Docker Hub's namespace cannot be derived from the forge owner, so PUBLISH_IMAGE_DOCKERHUB is honoured only alongside a lowercase <namespace>/<repository> in the DOCKERHUB_REPOSITORY repository variable; an enabled toggle without one fails the plan job (fail-closed, as FORGE_REGISTRY does). The variable and its DOCKERHUB_USERNAME/DOCKERHUB_TOKEN secrets are documented in docs/operational.md but have never been set for this repository, so the Docker Hub destination is untested end to end. Story 8.4's cutover should set them or record that the destination stays off.

@@ -166,3 +166,77 @@ def test_the_cli_refuses_a_commit_that_left_the_protected_branch(
 def test_an_unknown_commit_fails_loudly(repository: Path) -> None:
     with pytest.raises(SystemExit):
         stable_tags.stable_tags_at("0" * 40, repository)
+
+
+def test_require_tag_accepts_the_annotated_tag_that_names_the_commit(
+    repository: Path,
+) -> None:
+    head = _git(repository, "rev-parse", "HEAD")
+    _git(repository, "tag", "-a", "v1.2.3", "-m", "release 1.2.3")
+    assert stable_tags.require_tag("v1.2.3", head, repository) == ["v1.2.3"]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["v1.2.4", "v1.2", "v1.2.3-rc1", "1.2.3", "v01.2.3", "", "refs/tags/v1.2.3"],
+)
+def test_require_tag_refuses_anything_that_is_not_that_tag(
+    repository: Path, name: str
+) -> None:
+    """The membership relation lives here, so the publishers' pre-upload refusal is one
+    call rather than a third hand-written copy of it in shell."""
+    head = _git(repository, "rev-parse", "HEAD")
+    _git(repository, "tag", "-a", "v1.2.3", "-m", "release 1.2.3")
+    with pytest.raises(SystemExit):
+        stable_tags.require_tag(name, head, repository)
+
+
+def test_require_tag_refuses_a_lightweight_tag_of_the_right_name(
+    repository: Path,
+) -> None:
+    head = _git(repository, "rev-parse", "HEAD")
+    _git(repository, "tag", "v1.2.3")
+    with pytest.raises(SystemExit):
+        stable_tags.require_tag("v1.2.3", head, repository)
+
+
+def test_require_tag_refuses_a_tag_that_peels_to_another_commit(
+    repository: Path,
+) -> None:
+    _git(repository, "tag", "-a", "v1.2.3", "-m", "release 1.2.3")
+    head = _commit(repository, "two")
+    with pytest.raises(SystemExit):
+        stable_tags.require_tag("v1.2.3", head, repository)
+
+
+def test_the_cli_refuses_a_tag_that_does_not_name_the_commit(repository: Path) -> None:
+    head = _git(repository, "rev-parse", "HEAD")
+    _git(repository, "tag", "-a", "v1.2.3", "-m", "release 1.2.3")
+    with pytest.raises(SystemExit):
+        stable_tags.main(
+            [
+                "--commit",
+                head,
+                "--repository",
+                str(repository),
+                "--expect-tag",
+                "v1.2.4",
+                "--output",
+                "",
+            ]
+        )
+    assert (
+        stable_tags.main(
+            [
+                "--commit",
+                head,
+                "--repository",
+                str(repository),
+                "--expect-tag",
+                "v1.2.3",
+                "--output",
+                "",
+            ]
+        )
+        == 0
+    )

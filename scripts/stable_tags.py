@@ -119,6 +119,25 @@ def suppresses_development(commit: str, repository: Path | None = None) -> bool:
     return bool(stable_tags_at(commit, repository))
 
 
+def require_tag(name: str, commit: str, repository: Path | None = None) -> list[str]:
+    """The stable tags on ``commit``, provided ``name`` is one of them.
+
+    "Is the ref I was handed an annotated exact ``vX.Y.Z`` tag whose peeled commit is
+    this one" is a single question, and this module already owns every part of the
+    answer -- the annotated-object filter, the spelling and the peel. Answering it in a
+    caller's shell means a third copy of the relation, in the one place that has no
+    tests: a publisher's pre-upload refusal. Membership is decided here, and the caller
+    branches on the exit status.
+    """
+    tags = stable_tags_at(commit, repository)
+    if name not in tags:
+        raise GitError(
+            f"{name!r} is not an annotated exact vX.Y.Z tag whose peeled commit is "
+            f"{commit}; annotated stable tags there: {', '.join(tags) or 'none'}"
+        )
+    return tags
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--commit", required=True)
@@ -127,9 +146,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "--reachable-from",
         default=None,
         help=(
-            "Fail unless --commit is reachable from this ref. The development channel "
-            "publishes only from the protected default branch, and a push event whose "
-            "SHA has already left that history must not produce an immutable artifact."
+            "Fail unless --commit is reachable from this ref. Publication is limited to "
+            "the protected default branch on both channels, and an event whose SHA has "
+            "already left that history must not produce an immutable artifact."
+        ),
+    )
+    parser.add_argument(
+        "--expect-tag",
+        default=None,
+        help=(
+            "Fail unless this tag name is one of the annotated exact stable tags whose "
+            "peeled commit is --commit. The stable channel publishes from the tag it "
+            "was handed, and the publishers re-check it immediately before uploading; "
+            "both ask this question, and neither re-derives the answer."
         ),
     )
     parser.add_argument(
@@ -148,9 +177,12 @@ def main(argv: list[str] | None = None) -> int:
     ):
         raise GitError(
             f"{arguments.commit} is not reachable from {arguments.reachable_from}; "
-            f"the development channel publishes only from the protected default branch"
+            f"publication is limited to the protected default branch"
         )
-    tags = stable_tags_at(arguments.commit, repository)
+    if arguments.expect_tag is not None:
+        tags = require_tag(arguments.expect_tag, arguments.commit, repository)
+    else:
+        tags = stable_tags_at(arguments.commit, repository)
     lines = [
         f"suppressed={'true' if tags else 'false'}",
         f"stable-tags={','.join(tags)}",

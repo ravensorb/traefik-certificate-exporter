@@ -168,6 +168,66 @@ the base image is digest-pinned (ADR-0008). Platform coverage of the index itsel
 the published manifest list, filtered on `vnd.docker.reference.type` -- never by counting
 descriptors, since BuildKit emits SLSA provenance whether or not attestations were requested.
 
+## Stable publication (`release.yaml`)
+
+Pushing an annotated `vX.Y.Z` tag runs `.github/workflows/release.yaml`. It accepts the tag,
+resolves the stable identity, calls the governed verifier exactly once for the tagged SHA, and
+publishes the immutable `X.Y.Z` package and image. Unlike the development channel, a stable run is
+never cancelled by a later one: two tag pushes are two distinct immutable identities and run
+independently, and a re-push of the same ref queues rather than superseding. Cancelling a fan-out
+half-way is the state the finalizer must never act on.
+
+### What the tag guard accepts
+
+Only an annotated tag spelled exactly `vX.Y.Z`, whose peeled commit is the event SHA, and whose
+commit is reachable from the protected default branch. A lightweight tag, a floating alias (`v1`,
+`v1.2`), a prerelease (`v1.2.3-rc1`), a malformed version (`1.2.3`, `v01.2.3`), a branch ref, a tag
+pointing at some other commit, and a tag on history the default branch never took are each refused
+**before any credential is used**. The decisions are git's, taken by `scripts/stable_tags.py`; the
+workflow composes them and never re-derives one.
+
+The accepted tag then has to agree with the repository: the version the tag spells, the committed
+Poetry version, and the checked-out commit are compared as a relation before any publisher starts,
+and the verifier proves the lock, the built distribution metadata and the application version
+against that same single value (CI-AR11). The workflow names no version anywhere.
+
+### Destinations, and the two reasons one can be missing
+
+| Destination | Stable | Controlled by |
+|---|---|---|
+| image -> active forge registry | always | nothing; it is the channel |
+| image -> Docker Hub | when enabled | `PUBLISH_IMAGE_DOCKERHUB` **and** `DOCKERHUB_REPOSITORY` |
+| package -> forge Python index | when the host has one | host capability, not a toggle |
+| package -> TestPyPI | never | nothing; that is the development channel |
+| package -> PyPI | when enabled, on GitHub | `PUBLISH_PACKAGE_PYPI`, plus host capability |
+
+`PUBLISH_IMAGE_DOCKERHUB` and `PUBLISH_PACKAGE_PYPI` accept only `true`, `false`, or absence; any
+other value fails the plan job rather than being coerced. Both are read exactly once, by the plan
+job, which emits the enabled set as a job output -- no publisher re-reads a toggle (ADR-0011).
+
+PyPI is reached by trusted publishing, which needs a GitHub OIDC identity. On a Gitea runner there
+is none, so the destination is reported `unsupported` rather than failing a job nobody expected --
+the same situation TestPyPI has in the development channel, for the same reason.
+
+### `DOCKERHUB_REPOSITORY`
+
+Docker Hub is the one destination whose repository cannot be derived: its namespace is unrelated to
+the forge owner. `DOCKERHUB_REPOSITORY` names it as a lowercase `<namespace>/<repository>`.
+Enabling `PUBLISH_IMAGE_DOCKERHUB` without a well-formed value **fails the plan job**; nothing is
+guessed, for the same reason `FORGE_REGISTRY` fails closed. Credentials come from the
+`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets, and reach only the image job.
+
+Exactly one immutable tag per enabled destination is published, from one multi-platform Buildx
+invocation shared with the development channel. Mutable aliases -- `latest`, `vX`, `vX.Y` -- and
+the forge Release are not part of this workflow yet.
+
+### The immutable identity is re-read before each upload
+
+`vX.Y.Z` is immutable (ADR-0006), so both package publishers re-read the tag set immediately before
+their credentialed step and refuse to upload if the tag no longer peels to the commit being
+published. A moved release identity under a run about to publish it is the one case where refusing
+is the only safe outcome -- a version accepted by PyPI can never be withdrawn.
+
 ## Rollback
 
 Pin the previous image tag/PyPI version; there is no migration/state to roll back — the

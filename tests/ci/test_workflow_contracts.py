@@ -1262,25 +1262,39 @@ def test_the_image_publisher_is_reusable_only_like_the_verifier() -> None:
     assert set(document["on"]["workflow_call"]["outputs"]) >= {"digest", "platforms"}
 
 
-def test_every_development_checkout_keeps_full_history_and_tags() -> None:
-    """The development version is a first-parent commit count and suppression peels tag
-    objects. A shallow checkout derives `.dev1` for every commit and sees no tags at
-    all -- and it fails silently, publishing a plausible wrong version.
+def test_every_channel_checkout_keeps_full_history_and_tags() -> None:
+    """The development version is a first-parent commit count, suppression peels tag
+    objects, and the stable guard peels one tag and asks git whether its commit is
+    reachable from the protected default branch. A shallow checkout derives `.dev1` for
+    every commit, sees no tags at all, and has no `origin/main` to be reachable from --
+    and it fails silently, publishing a plausible wrong version.
 
-    Scope is every checkout in the file, derived from the parsed document, so a job
-    added later cannot quietly take a shallow one.
+    Scope is every checkout of every channel workflow, derived from the parsed document
+    and from who calls the image publisher, so neither a job added later nor a channel
+    added later can quietly take a shallow one.
     """
+    channel_workflows = _channel_workflows()
+    assert channel_workflows, "no workflow calls the image publisher"
     checkouts = 0
-    for job_name, job in _jobs(_load_workflow(DEV_WORKFLOW)).items():
-        for step in job.get("steps", []) or []:
-            if not str(step.get("uses", "")).startswith("actions/checkout@"):
-                continue
-            checkouts += 1
-            options = step.get("with") or {}
-            assert options.get("fetch-depth") == "0", f"{job_name}: shallow checkout"
-            assert options.get("fetch-tags") == "true", f"{job_name}: no tags fetched"
-            assert options.get("persist-credentials") == "false", job_name
-    assert checkouts, "dev.yaml checks nothing out; this guard examined nothing"
+    for path in channel_workflows:
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            for step in job.get("steps", []) or []:
+                if not str(step.get("uses", "")).startswith("actions/checkout@"):
+                    continue
+                checkouts += 1
+                options = step.get("with") or {}
+                assert options.get("fetch-depth") == "0", (
+                    f"{path.name}: {job_name}: shallow checkout"
+                )
+                assert options.get("fetch-tags") == "true", (
+                    f"{path.name}: {job_name}: no tags fetched"
+                )
+                assert options.get("persist-credentials") == "false", (
+                    f"{path.name}: {job_name}"
+                )
+    assert checkouts, (
+        "no channel workflow checks anything out; this guard examined nothing"
+    )
 
 
 def test_every_development_publisher_is_gated_on_stable_tag_suppression() -> None:
@@ -1524,20 +1538,28 @@ def test_publisher_credentials_stay_disjoint_between_destinations() -> None:
     fails regardless of where in the job it appears.
     """
     secret_reference = re.compile(r"secrets\.([A-Za-z_][A-Za-z0-9_-]*)")
-    used: dict[str, set[str]] = {}
-    for name, job in _publishers(_load_workflow(DEV_WORKFLOW)).items():
-        used[name] = set(secret_reference.findall(json.dumps(job)))
-    assert used, "dev.yaml has no publishers; this guard examined nothing"
-    assert any(used.values()), "no publisher references a secret; the guard is vacuous"
+    channel_workflows = _channel_workflows()
+    assert channel_workflows, "no workflow calls the image publisher"
+    for path in channel_workflows:
+        used: dict[str, set[str]] = {}
+        for name, job in _publishers(_load_workflow(path)).items():
+            used[name] = set(secret_reference.findall(json.dumps(job)))
+        assert used, f"{path.name} has no publishers; this guard examined nothing"
+        # Per file, never folded across files: pairwise disjointness over a set of
+        # publishers that reference no secret at all proves nothing, and a global
+        # vacuity check lets one channel pass on another's behalf.
+        assert any(used.values()), (
+            f"{path.name}: no publisher references a secret; the guard is vacuous"
+        )
 
-    names = sorted(used)
-    for index, first in enumerate(names):
-        for second in names[index + 1 :]:
-            shared = used[first] & used[second]
-            assert not shared, (
-                f"dev.yaml: publishers {first!r} and {second!r} share credentials "
-                f"{sorted(shared)}; each destination gets only its own (CI-AR24)"
-            )
+        names = sorted(used)
+        for index, first in enumerate(names):
+            for second in names[index + 1 :]:
+                shared = used[first] & used[second]
+                assert not shared, (
+                    f"{path.name}: publishers {first!r} and {second!r} share credentials "
+                    f"{sorted(shared)}; each destination gets only its own (CI-AR24)"
+                )
 
 
 def test_every_sha_pinned_publisher_records_the_date_it_was_reviewed() -> None:
@@ -1642,34 +1664,60 @@ def test_step_based_publishers_re_read_the_tag_set_before_they_upload() -> None:
     green, the runbook still claiming the behaviour, and the window silently back at
     "guard job start -> upload".
 
-    Scope is derived from `_publishers()`, restricted to jobs that HAVE steps: the image
-    publisher is reached through `uses:` and a called workflow takes no caller steps, so
-    it is protected at job granularity and legitimately cannot re-read inline.
+    Scope is derived from `_publishers()` over every channel workflow, restricted to jobs
+    that HAVE steps: the image publisher is reached through `uses:` and a called workflow
+    takes no caller steps, so it is protected at job granularity and legitimately cannot
+    re-read inline. The stable channel is covered by the same rule for a different
+    reason: `vX.Y.Z` is immutable (ADR-0006), so a tag that no longer peels to the
+    commit being published means the identity moved under a run about to publish it.
+
+    The key each file must branch on is derived from the file, never hand-kept: a
+    channel with a suppression job consumes `suppressed`, one without it consumes the
+    tag set itself.
     """
     examined = 0
-    for name, job in _publishers(_load_workflow(DEV_WORKFLOW)).items():
-        steps = job.get("steps") or []
-        if not steps:
-            continue
-        examined += 1
-        upload_at = next(
-            (i for i, step in enumerate(steps) if _is_publishing_step(step)), len(steps)
-        )
-        rechecks = [
-            str(step.get("run", ""))
-            for step in steps[:upload_at]
-            if "scripts/stable_tags.py" in str(step.get("run", ""))
-        ]
-        assert rechecks, (
-            f"dev.yaml: publisher {name!r} never re-reads the tag set before uploading. "
-            f"The job-level gate is the guard job's answer, taken before the verifier "
-            f"finished; F16 requires the re-read immediately before the credentialed "
-            f"step."
-        )
-        assert any("suppressed" in command for command in rechecks), (
-            f"dev.yaml: publisher {name!r} runs the tag check and ignores its output"
-        )
-    assert examined, "dev.yaml has no step-based publisher; this guard examined nothing"
+    for path in _channel_workflows():
+        document = _load_workflow(path)
+        suppressors = {
+            name
+            for name, job in _jobs(document).items()
+            if "suppressed" in (job.get("outputs") or {})
+        }
+        # How the re-read reaches its refusal, derived from the file rather than
+        # hand-kept: a channel with a suppression job branches on that job's
+        # `suppressed` conclusion; one without it hands the whole membership decision
+        # to the tested module, whose non-zero exit is the refusal under `set -e`.
+        # Grepping only for the script name accepts a step that runs it and throws the
+        # answer away, which is the guard-that-cannot-fail shape (F9).
+        refusal = "suppressed" if suppressors else "--expect-tag"
+        for name, job in _publishers(document).items():
+            steps = job.get("steps") or []
+            if not steps:
+                continue
+            examined += 1
+            upload_at = next(
+                (i for i, step in enumerate(steps) if _is_publishing_step(step)),
+                len(steps),
+            )
+            # Uncommented, on both halves. The prose beside a mechanism names it, so a
+            # raw-body check is satisfied by the comment explaining the call that was
+            # deleted -- a guard that reads its own documentation and reports success.
+            rechecks = [
+                _uncommented(str(step.get("run", "")))
+                for step in steps[:upload_at]
+                if "scripts/stable_tags.py" in _uncommented(str(step.get("run", "")))
+            ]
+            assert rechecks, (
+                f"{path.name}: publisher {name!r} never re-reads the tag set before "
+                f"uploading. The job-level gate is the plan or guard job's answer, taken "
+                f"before the verifier finished; F16 requires the re-read immediately "
+                f"before the credentialed step."
+            )
+            assert any(refusal in command for command in rechecks), (
+                f"{path.name}: publisher {name!r} runs the tag check without reaching a "
+                f"refusal from it (expected `{refusal}`)"
+            )
+    assert examined, "no channel workflow has a step-based publisher; nothing examined"
 
 
 def test_every_published_tag_addresses_a_destination_the_run_logged_into() -> None:
@@ -1752,3 +1800,698 @@ def test_every_published_tag_addresses_a_destination_the_run_logged_into() -> No
     ):
         completed, _ = run(malformed)
         assert completed.returncode != 0, f"accepted malformed tag list {malformed!r}"
+
+
+# ---------------------------------------------------------------------------
+# Stable channel (story E008-S01-002). Every guard below was proven by planting
+# the violation it forbids -- rule and scope -- and confirming the guard fails.
+# ---------------------------------------------------------------------------
+
+RELEASE_WORKFLOW = WORKFLOWS / "release.yaml"
+
+
+def _emitted(output: Path) -> dict[str, str]:
+    """Parse a `GITHUB_OUTPUT` file, including the `key<<DELIMITER` heredoc form.
+
+    The stable identity emits a newline-separated tag list, which the flat
+    `line.split("=", 1)` parse silently mangles into three unusable entries.
+    """
+    values: dict[str, str] = {}
+    lines = output.read_text(encoding="utf-8").splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        index += 1
+        if not line:
+            continue
+        name, _, value = line.partition("=")
+        if "<<" in name:
+            name, _, delimiter = name.partition("<<")
+            collected = []
+            while index < len(lines) and lines[index] != delimiter:
+                collected.append(lines[index])
+                index += 1
+            index += 1
+            values[name] = "\n".join(collected)
+            continue
+        values[name] = value
+    return values
+
+
+def _run_step(
+    body: str, environment: dict[str, str], cwd: Path
+) -> tuple[Any, dict[str, str]]:
+    """Execute a workflow step's real `run:` body and return its emitted outputs."""
+    output = Path(tempfile.mkdtemp()) / "github-output"
+    output.touch()
+    completed = subprocess.run(
+        ["bash", "-c", body],
+        cwd=cwd,
+        env={
+            "PATH": os.environ["PATH"],
+            "GITHUB_OUTPUT": str(output),
+            "GITHUB_WORKSPACE": str(PROJECT_ROOT),
+            **environment,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed, _emitted(output)
+
+
+def _executable_text(document: dict[str, Any]) -> str:
+    """Everything a workflow actually executes, with shell comments removed.
+
+    A prohibition read off the raw file cannot tell "this workflow publishes to X" from
+    "this comment explains why it never publishes to X" -- and a guard that fires on the
+    explanation gets deleted rather than fixed.
+    """
+    parts = []
+    for job in _jobs(document).values():
+        parts.append(json.dumps({k: v for k, v in job.items() if k != "steps"}))
+        for step in job.get("steps") or []:
+            parts.append(json.dumps({k: v for k, v in step.items() if k != "run"}))
+            parts.append(_uncommented(str(step.get("run", ""))))
+    return "\n".join(parts)
+
+
+def _step_with_id(path: Path, step_id: str) -> dict[str, Any]:
+    return next(
+        step for step in _steps(_load_workflow(path)) if step.get("id") == step_id
+    )
+
+
+def _git(repository: Path, *arguments: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(repository), *arguments],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return completed.stdout.strip()
+
+
+@pytest.fixture
+def tagged_repository(tmp_path: Path) -> Path:
+    """A real repository carrying every ref shape the stable guard must judge.
+
+    Real git, never a mocked `subprocess`: the whole point of delegating peeling and
+    reachability to git is that git's answers are the authority, and asserting against
+    a fake would test the fake (F9).
+    """
+    root = tmp_path / "repository"
+    root.mkdir()
+    _git(root, "init", "--initial-branch=main")
+    _git(root, "config", "user.email", "test@example.com")
+    _git(root, "config", "user.name", "Test")
+    (root / "file.txt").write_text("one\n", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-m", "one")
+    _git(root, "tag", "-a", "v0.9.0", "-m", "release 0.9.0")
+    (root / "file.txt").write_text("two\n", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-m", "two")
+    for annotated in ("v1.2.3", "v1.2", "v1.2.3-rc1", "1.2.3", "v01.2.3"):
+        _git(root, "tag", "-a", annotated, "-m", f"tag {annotated}")
+    _git(root, "tag", "v9.9.9")
+    # A release tag on history that never reached the protected default branch.
+    _git(root, "checkout", "-b", "sidebranch")
+    (root / "file.txt").write_text("side\n", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-m", "side")
+    _git(root, "tag", "-a", "v2.0.0", "-m", "release 2.0.0")
+    _git(root, "checkout", "main")
+    return root
+
+
+def test_the_stable_channel_owns_exact_tag_pushes() -> None:
+    """The residual left on BL-E008-001: `v*` tag pushes reached nothing.
+
+    `test_any_push_triggered_workflow_verifies_before_it_ships` asserts the conditional
+    invariant and would pass vacuously with no stable workflow at all, exactly as it did
+    before dev.yaml. This one asserts the workflow exists and is shaped as ADR-0011
+    requires, so deleting release.yaml reopens the finding loudly.
+    """
+    document = _load_workflow(RELEASE_WORKFLOW)
+    triggers = document["on"]
+    assert set(triggers) == {"push"}
+    assert set(triggers["push"]) == {"tags"}
+    assert triggers["push"]["tags"] == ["v*"]
+    assert document["permissions"] == {"contents": "read"}
+    # The deliberate difference from dev.yaml: two tag pushes are two distinct immutable
+    # identities, so the second queues rather than cancelling a half-finished fan-out.
+    assert document["concurrency"]["cancel-in-progress"] == "false"
+
+    # Exactly one verifier call for the tagged SHA. Counted from the parsed document, so
+    # a second call added anywhere in the file -- another job, another spelling of the
+    # same `uses:` -- fails here.
+    verifier_calls = [
+        name
+        for name, job in _jobs(document).items()
+        if job.get("uses") == VERIFIER_REFERENCE
+    ]
+    assert verifier_calls == ["verify"]
+    verify = _jobs(document)["verify"]
+    assert verify["with"]["channel"] == "stable"
+    assert verify["with"]["source-sha"] == "${{ needs.plan.outputs.source-sha }}"
+
+    # TestPyPI is development-only, and this is the channel, not a toggle (ADR-0011).
+    # Asserted over what the file EXECUTES -- job configuration, step inputs and
+    # uncommented `run:` bodies -- so the prose explaining why TestPyPI is absent does
+    # not read as the destination being present.
+    executable = _executable_text(document)
+    assert "TESTPYPI" not in executable.upper(), (
+        "release.yaml reaches TestPyPI; that destination is development-only (ADR-0011)"
+    )
+    assert "test.pypi.org" not in executable
+
+
+def test_the_release_tag_fixture_names_the_committed_version() -> None:
+    """The fixture that drives the identity guard must not drift from the repository."""
+    event = _load_fixture("push-tag.json")
+    assert event["event_name"] == "push"
+    assert event["ref"] == f"refs/tags/v{committed_versions.package_version()}"
+    assert event["ref"] == f"refs/tags/{event['ref_name']}"
+    assert re.fullmatch(r"[0-9a-f]{40}", event["sha"])
+
+
+@pytest.mark.parametrize(
+    ("ref", "reason"),
+    [
+        ("refs/tags/v9.9.9", "a lightweight tag is not the release identity"),
+        ("refs/tags/v1.2", "a floating alias is not an exact version"),
+        ("refs/tags/v1.2.3-rc1", "a prerelease is not a stable release"),
+        ("refs/tags/1.2.3", "the stable spelling carries the v prefix"),
+        ("refs/tags/v01.2.3", "a zero-padded component is malformed"),
+        ("refs/heads/main", "a branch ref is not a tag at all"),
+        (
+            "refs/heads/v1.2.3",
+            "a branch that shares a release tag's name is still not the tag",
+        ),
+        ("refs/tags/v0.9.0", "the peeled commit is not the event SHA"),
+    ],
+)
+def test_the_release_guard_rejects_every_ref_that_is_not_an_exact_stable_tag(
+    tagged_repository: Path, ref: str, reason: str
+) -> None:
+    """The ref table, run against the guard's real `run:` body and real git.
+
+    Planted to prove it: dropping the `object_type == "tag"` filter from
+    `stable_tags.annotated_tags` makes the lightweight case pass, and this test fails.
+    """
+    head = _git(tagged_repository, "rev-parse", "HEAD")
+    completed, _ = _run_step(
+        str(_step_with_id(RELEASE_WORKFLOW, "tag")["run"]),
+        {"DEFAULT_BRANCH_REF": "main", "EVENT_REF": ref, "EVENT_OBJECT": head},
+        tagged_repository,
+    )
+    assert completed.returncode != 0, f"{ref} was accepted, but {reason}"
+
+
+def test_the_release_guard_accepts_the_annotated_exact_tag_on_the_event_commit(
+    tagged_repository: Path,
+) -> None:
+    head = _git(tagged_repository, "rev-parse", "HEAD")
+    completed, emitted = _run_step(
+        str(_step_with_id(RELEASE_WORKFLOW, "tag")["run"]),
+        {
+            "DEFAULT_BRANCH_REF": "main",
+            "EVENT_REF": "refs/tags/v1.2.3",
+            "EVENT_OBJECT": head,
+        },
+        tagged_repository,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert emitted["tag"] == "v1.2.3"
+    assert emitted["version"] == "1.2.3"
+    assert emitted["tag-commit"] == head
+
+
+def test_the_release_guard_refuses_a_tag_that_never_reached_the_default_branch(
+    tagged_repository: Path,
+) -> None:
+    """Reachability is git's answer, not a pattern: `v2.0.0` is annotated, exactly
+    spelled, and peels to the event commit. It is still not publishable, because that
+    commit is on history the protected default branch never took."""
+    side = _git(tagged_repository, "rev-parse", "sidebranch")
+    _git(tagged_repository, "checkout", "--detach", side)
+    completed, _ = _run_step(
+        str(_step_with_id(RELEASE_WORKFLOW, "tag")["run"]),
+        {
+            "DEFAULT_BRANCH_REF": "main",
+            "EVENT_REF": "refs/tags/v2.0.0",
+            "EVENT_OBJECT": side,
+        },
+        tagged_repository,
+    )
+    assert completed.returncode != 0, "an unreachable release tag was accepted"
+
+
+def test_the_release_guard_refuses_a_checkout_that_is_not_the_event_commit(
+    tagged_repository: Path,
+) -> None:
+    """The guard peels tags out of the checked-out repository, so a checkout that is not
+    the event commit would have it answering about the wrong history entirely."""
+    ancestor = _git(tagged_repository, "rev-parse", "HEAD~1")
+    completed, _ = _run_step(
+        str(_step_with_id(RELEASE_WORKFLOW, "tag")["run"]),
+        {
+            "DEFAULT_BRANCH_REF": "main",
+            "EVENT_REF": "refs/tags/v0.9.0",
+            "EVENT_OBJECT": ancestor,
+        },
+        tagged_repository,
+    )
+    assert completed.returncode != 0, "a checkout that is not the event commit passed"
+
+
+def _release_identity_environment(**overrides: str) -> dict[str, str]:
+    event = _load_fixture("push-tag.json")
+    version = committed_versions.package_version()
+    environment = {
+        "COMMITTED_VERSION": version,
+        "DOCKERHUB_REPOSITORY": "",
+        "IMAGE_REPOSITORY": f"ghcr.io/{event['repository']}",
+        "RELEASE_TAG": f"v{version}",
+        "RELEASE_VERSION": version,
+        "RESOLVED_PYTHON": "3.14.0",
+        "TAG_COMMIT": event["sha"],
+    }
+    environment.update(overrides)
+    return environment
+
+
+def test_the_stable_identity_is_a_relation_between_fields_never_a_literal(
+    tmp_path: Path,
+) -> None:
+    """CI-AR11, asserted by RUNNING the identity step rather than by reading it.
+
+    The step compares the tag, the version it spells, the committed Poetry version, the
+    peeled tag commit and the event SHA against each other. Nothing in it names a
+    version, which is the property that makes the next release use the same code path as
+    this one -- so the literal check is part of the guard, not a separate style rule.
+    """
+    identity = _step_with_id(RELEASE_WORKFLOW, "identity")
+    body = str(identity["run"])
+    assert not re.search(r"[0-9]+\.[0-9]+\.[0-9]+", _uncommented(body)), (
+        "the stable identity step names a version literal; it must compare fields"
+    )
+
+    completed, emitted = _run_step(body, _release_identity_environment(), tmp_path)
+    assert completed.returncode == 0, completed.stderr
+    version = committed_versions.package_version()
+    event = _load_fixture("push-tag.json")
+    assert emitted["package-version"] == version
+    assert emitted["source-sha"] == event["sha"]
+    assert emitted["python-version"] == "3.14.0"
+    # Exactly one immutable tag per enabled destination, and no alias: `latest`, `vX`
+    # and `vX.Y` all belong to the finalizer story.
+    assert emitted["image-tags"] == f"ghcr.io/{event['repository']}:{version}"
+
+    completed, emitted = _run_step(
+        body,
+        _release_identity_environment(DOCKERHUB_REPOSITORY="acme/exporter"),
+        tmp_path,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert emitted["image-tags"].splitlines() == [
+        f"ghcr.io/{event['repository']}:{version}",
+        f"docker.io/acme/exporter:{version}",
+    ]
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    [
+        {"COMMITTED_VERSION": "9.9.9"},
+        {"RELEASE_TAG": "v9.9.9"},
+        {"RELEASE_VERSION": "9.9.9"},
+        {"TAG_COMMIT": "not-a-sha"},
+        {"TAG_COMMIT": ""},
+        {"RELEASE_TAG": ""},
+        {"RELEASE_VERSION": ""},
+        {"COMMITTED_VERSION": ""},
+        {"RESOLVED_PYTHON": ""},
+        {"IMAGE_REPOSITORY": ""},
+    ],
+)
+def test_one_mismatched_identity_field_stops_the_run_before_any_publisher(
+    tmp_path: Path, mismatch: dict[str, str]
+) -> None:
+    """One field planted per run, because a relation that only fails when everything
+    disagrees is not a relation. Each of these would otherwise publish an artifact whose
+    version identity nobody chose."""
+    completed, _ = _run_step(
+        str(_step_with_id(RELEASE_WORKFLOW, "identity")["run"]),
+        _release_identity_environment(**mismatch),
+        tmp_path,
+    )
+    assert completed.returncode != 0, f"{mismatch} was accepted as a stable identity"
+
+
+def test_every_stable_consumer_reads_the_planned_identity_rather_than_its_own() -> None:
+    """The plan job proves the identity once; everything downstream is handed that value.
+
+    Scope is derived from the parsed jobs -- every job that is not the producer -- so a
+    publisher added later that re-derives a version, or restates one, fails here. That
+    is the scope attack: the rule is trivial, the reach is the whole point.
+    """
+    document = _load_workflow(RELEASE_WORKFLOW)
+    jobs = _jobs(document)
+    producers = {
+        name
+        for name, job in jobs.items()
+        if any("version" in output for output in (job.get("outputs") or {}))
+    }
+    assert producers == {"plan"}, f"the planned identity has {len(producers)} producers"
+
+    # Matched on the lowercased key, and over `env:` as well as `with:`. `env:` is
+    # where a workflow actually carries identity into a `run:` body, so a guard blind to
+    # it would pass a publisher that took `PACKAGE_VERSION` from `github.ref_name` --
+    # the most natural spelling available to whoever adds one.
+    identity_input = re.compile(r"(?:\A|[-_])(?:ref|sha|tags?|version)\Z")
+    examined = 0
+    for name, job in jobs.items():
+        if name in producers:
+            continue
+        blocks = [job.get("with") or {}, job.get("env") or {}]
+        for step in job.get("steps") or []:
+            blocks += [step.get("with") or {}, step.get("env") or {}]
+        for block in blocks:
+            for key, value in block.items():
+                key = str(key).lower()
+                # `fetch-depth` and `fetch-tags` configure git's transport, not the
+                # identity being published; the checkout's `ref:` beside them is the
+                # identity, and it is asserted.
+                if key.startswith("fetch") or not identity_input.search(key):
+                    continue
+                examined += 1
+                assert "needs.plan.outputs." in str(value), (
+                    f"release.yaml: job {name!r} takes {key!r} from {value!r} instead of "
+                    f"the single planned identity (CI-AR11)"
+                )
+    assert examined, (
+        "no downstream job consumes an identity value; nothing was examined"
+    )
+
+
+def test_the_run_evidence_job_blocks_on_every_publisher() -> None:
+    """ADR-0011's finalizer aggregation: a destination that is not in the aggregator's
+    `needs` is a destination whose failure finishes the run green and unreported.
+
+    Both sets are derived from the parsed jobs -- publishers from capability, the
+    aggregator from "depends on a publisher and ships nothing" -- so the planted
+    violation is the scope attack: a new publisher absent from the aggregator's needs
+    fails here without anyone remembering to edit a list.
+    """
+    channel_workflows = _channel_workflows()
+    assert channel_workflows, "no workflow calls the image publisher"
+    for path in channel_workflows:
+        document = _load_workflow(path)
+        jobs = _jobs(document)
+        publishers = set(_publishers(document))
+        assert publishers, f"{path.name} has no publishers; this guard examined nothing"
+        aggregators = {
+            name
+            for name in jobs
+            if name not in publishers and _transitive_needs(jobs, name) & publishers
+        }
+        assert aggregators, (
+            f"{path.name}: no job aggregates the publishers, so a failed destination is "
+            f"reported nowhere (ADR-0011)"
+        )
+        for name in sorted(aggregators):
+            missing = publishers - _transitive_needs(jobs, name)
+            assert not missing, (
+                f"{path.name}: job {name!r} aggregates publication outcomes but does not "
+                f"depend on {sorted(missing)}; their failure would finish the run green "
+                f"and unreported (ADR-0011)"
+            )
+
+
+def test_the_published_index_assertion_rejects_an_index_that_lost_a_platform(
+    tmp_path: Path,
+) -> None:
+    """ADR-0008's platform assertion, run rather than read.
+
+    `test_the_published_index_is_asserted_by_annotation_never_by_descriptor_count`
+    proves the filter is spelled on the annotation. It cannot prove the comparison
+    fires: with the `!=` branch deleted the annotation is still mentioned and that guard
+    stays green. Here the real code judges real indexes -- including the one the story
+    asks to plant, a published index carrying a single platform.
+    """
+    body = str(_step_with_id(PUBLISH_IMAGE_WORKFLOW, "index")["run"])
+    heredoc = re.search(r"<<'PY'[^\n]*\n(.*?)\nPY\n", body, re.DOTALL)
+    assert heredoc, "the index assertion is no longer an inline Python heredoc"
+    script = tmp_path / "assert_index.py"
+    script.write_text(heredoc.group(1), encoding="utf-8")
+
+    def judge(manifests: Any) -> Any:
+        (tmp_path / "published-index.json").write_text(
+            json.dumps({"manifests": manifests}), encoding="utf-8"
+        )
+        return subprocess.run(
+            [sys.executable, str(script)],
+            cwd=tmp_path,
+            env={
+                "PATH": os.environ["PATH"],
+                "PLATFORMS": ",".join(REQUIRED_IMAGE_PLATFORMS),
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def platform(os_name: str, architecture: str) -> dict[str, Any]:
+        return {"platform": {"os": os_name, "architecture": architecture}}
+
+    def attestation(architecture: str) -> dict[str, Any]:
+        entry = platform("unknown", architecture)
+        entry["annotations"] = {
+            "vnd.docker.reference.type": "attestation-manifest",
+        }
+        return entry
+
+    published = [
+        platform("linux", "amd64"),
+        platform("linux", "arm64"),
+        attestation("unknown"),
+        attestation("unknown"),
+    ]
+    completed = judge(published)
+    assert completed.returncode == 0, completed.stderr
+    assert "platforms=linux/amd64,linux/arm64" in completed.stdout
+    # Four descriptors, not two -- reported, never asserted on (ADR-0008 as amended).
+    assert "descriptors=4" in completed.stdout
+
+    # The planted violation: a published index carrying one platform.
+    completed = judge([platform("linux", "amd64"), attestation("unknown")])
+    assert completed.returncode != 0, "an index missing a platform was accepted"
+
+    # And the filter is load-bearing: an attestation manifest must not be counted as the
+    # platform it is annotated for.
+    completed = judge(
+        [
+            platform("linux", "amd64"),
+            {
+                "platform": {"os": "linux", "architecture": "arm64"},
+                "annotations": {
+                    "vnd.docker.reference.type": "attestation-manifest",
+                },
+            },
+        ]
+    )
+    assert completed.returncode != 0, "an attestation manifest was read as a platform"
+
+    completed = judge("not-an-index")
+    assert completed.returncode != 0, "a single-platform reference was accepted"
+
+
+def test_the_release_guard_peels_the_pushed_object_before_comparing_it(
+    tagged_repository: Path,
+) -> None:
+    """A push event reports the ref's new object id, and an annotated tag's ref points
+    at the tag object, not at the commit.
+
+    This channel accepts *only* annotated tags, so a comparison that never peels is a
+    channel that never publishes -- failing closed on the one path it has, and doing it
+    for the first time on a release day. `git rev-parse HEAD` after checking out a tag
+    object is the commit, so the two values differ by construction.
+    """
+    tag_object = _git(tagged_repository, "rev-parse", "v1.2.3")
+    commit = _git(tagged_repository, "rev-parse", "v1.2.3^{commit}")
+    assert tag_object != commit, "v1.2.3 is not annotated; this test proves nothing"
+
+    completed, emitted = _run_step(
+        str(_step_with_id(RELEASE_WORKFLOW, "tag")["run"]),
+        {
+            "DEFAULT_BRANCH_REF": "main",
+            "EVENT_REF": "refs/tags/v1.2.3",
+            "EVENT_OBJECT": tag_object,
+        },
+        tagged_repository,
+    )
+    assert completed.returncode == 0, completed.stderr
+    # And the peeled commit is what flows downstream: every checkout, the verifier and
+    # every bundle revalidation are handed this, never the tag object.
+    assert emitted["tag-commit"] == commit
+
+
+def _release_destinations(**environment: str) -> tuple[Any, dict[str, str]]:
+    defaults = {
+        "DOCKERHUB_REPOSITORY": "",
+        "DOCKERHUB_TOGGLE": "",
+        "FORGE": "github",
+        "PACKAGE_INDEX_SUPPORTED": "false",
+        "PYPI_TOGGLE": "",
+    }
+    defaults.update(environment)
+    return _run_step(
+        str(_step_with_id(RELEASE_WORKFLOW, "destinations")["run"]),
+        defaults,
+        Path(tempfile.mkdtemp()),
+    )
+
+
+def test_the_enabled_destination_set_distinguishes_disabled_from_unsupported() -> None:
+    """ADR-0011 section 2, executed rather than described.
+
+    Every decision this story takes about destinations lives in one step, and the
+    distinction it exists to preserve -- an operator turned it off, versus the host
+    never had it -- is invisible when it regresses: both spellings produce a run that
+    publishes nothing there and reports success.
+    """
+    completed, emitted = _release_destinations()
+    assert completed.returncode == 0, completed.stderr
+    destinations = json.loads(emitted["enabled-destinations"])
+    assert destinations["image-forge"] == "enabled", "the channel is not a toggle"
+    assert destinations["image-dockerhub"] == "disabled"
+    assert destinations["package-pypi"] == "disabled"
+    # GitHub has no forge Python index, and no toggle can create one.
+    assert destinations["package-forge"] == "unsupported"
+    assert emitted["dockerhub-repository"] == ""
+    assert "package-testpypi" not in destinations, "TestPyPI is development-only"
+
+    completed, emitted = _release_destinations(PACKAGE_INDEX_SUPPORTED="true")
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(emitted["enabled-destinations"])["package-forge"] == "enabled"
+
+    # Trusted publishing needs a GitHub OIDC identity; on Gitea there is none, and the
+    # toggle cannot conjure one. `unsupported`, never `disabled`, and never a failed job.
+    completed, emitted = _release_destinations(FORGE="gitea", PYPI_TOGGLE="true")
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(emitted["enabled-destinations"])["package-pypi"] == "unsupported"
+
+    completed, emitted = _release_destinations(PYPI_TOGGLE="true")
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(emitted["enabled-destinations"])["package-pypi"] == "enabled"
+
+
+@pytest.mark.parametrize(
+    "toggle", ["yes", "1", "True", "enabled", "TRUE", " true", "on"]
+)
+def test_a_publication_toggle_is_never_coerced(toggle: str) -> None:
+    """`true`, `false` or absent. Anything else fails the plan job, because the
+    alternative is `PUBLISH_PACKAGE_PYPI=yes` reading as "off" for a year."""
+    completed, _ = _release_destinations(PYPI_TOGGLE=toggle)
+    assert completed.returncode != 0, f"PYPI_TOGGLE={toggle!r} was coerced"
+    completed, _ = _release_destinations(DOCKERHUB_TOGGLE=toggle)
+    assert completed.returncode != 0, f"DOCKERHUB_TOGGLE={toggle!r} was coerced"
+
+
+@pytest.mark.parametrize(
+    "repository",
+    ["", "Foo/Bar", "nonamespace", "a/b/c", "docker.io/acme/exporter", "acme/", "/x"],
+)
+def test_docker_hub_is_never_enabled_without_a_repository_to_publish_to(
+    repository: str,
+) -> None:
+    """The namespace on Docker Hub is unrelated to the forge owner, so it cannot be
+    derived -- and an enabled toggle with a typo would push an *immutable* tag to a
+    namespace nobody chose. Fails closed, exactly as `FORGE_REGISTRY` does."""
+    completed, _ = _release_destinations(
+        DOCKERHUB_TOGGLE="true", DOCKERHUB_REPOSITORY=repository
+    )
+    assert completed.returncode != 0, (
+        f"DOCKERHUB_REPOSITORY={repository!r} was accepted"
+    )
+
+
+def test_docker_hub_enabled_with_a_well_formed_repository_reaches_the_image_job() -> (
+    None
+):
+    completed, emitted = _release_destinations(
+        DOCKERHUB_TOGGLE="true", DOCKERHUB_REPOSITORY="acme/exporter"
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(emitted["enabled-destinations"])["image-dockerhub"] == "enabled"
+    assert emitted["dockerhub-repository"] == "acme/exporter"
+
+
+def test_optional_destination_credentials_are_gated_on_the_enabled_set() -> None:
+    """ "Disabled destinations receive no credentials **or requests**."
+
+    The requests half is publish-image.yaml's permitted-authority check. This is the
+    credentials half: a secret handed to a called workflow is materialised in its
+    context whether or not the destination is enabled.
+
+    Which credentials are optional is read from the CALLEE's own `workflow_call.secrets`
+    declaration -- `required: false` is exactly "this destination may be absent" -- so a
+    new optional destination is covered the day the reusable workflow declares it, with
+    no list here to keep.
+    """
+    examined = 0
+    for path in _channel_workflows():
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            called = str(job.get("uses", ""))
+            if not called.startswith("./.github/workflows/"):
+                continue
+            callee = _load_workflow(PROJECT_ROOT / called.removeprefix("./"))
+            declared = (callee.get("on") or {}).get("workflow_call") or {}
+            optional = {
+                name
+                for name, specification in (declared.get("secrets") or {}).items()
+                if str((specification or {}).get("required", "false")).lower() != "true"
+            }
+            supplied = job.get("secrets")
+            if not isinstance(supplied, dict):
+                continue
+            for name in sorted(optional & set(supplied)):
+                examined += 1
+                assert "enabled-destinations" in str(supplied[name]), (
+                    f"{path.name}: job {job_name!r} hands {name!r} to {called} "
+                    f"unconditionally. A destination the plan job reported disabled "
+                    f"receives no credentials (CI-AR24, ADR-0011)."
+                )
+    assert examined, "no optional destination credential was examined"
+
+
+def test_channel_workflows_surface_the_published_digest_and_platforms() -> None:
+    """The third clause of prep finding P1, which nothing else asserts.
+
+    `test_channel_workflows_consume_image_inspection_rather_than_performing_it` proves
+    the registry read is not in the channel workflow and is in the image publisher. It
+    says nothing about the result being consumed -- so deleting the digest and platform
+    rows from the evidence table satisfies every other guard and CI-AR41's evidence
+    disappears silently.
+    """
+    examined = 0
+    for path in _channel_workflows():
+        document = _load_workflow(path)
+        body = json.dumps(document)
+        image_jobs = [
+            name
+            for name, job in _jobs(document).items()
+            if job.get("uses") == PUBLISH_IMAGE_REFERENCE
+        ]
+        assert image_jobs, f"{path.name}: no image publisher call"
+        for name in image_jobs:
+            for output in ("digest", "platforms"):
+                examined += 1
+                assert f"needs.{name}.outputs.{output}" in body, (
+                    f"{path.name}: the published {output} is never surfaced. One digest "
+                    f"and both inspected platforms are this channel's evidence, "
+                    f"consumed from the image publisher's outputs (CI-AR41, P1)."
+                )
+    assert examined, "no channel workflow consumes the image publisher's outputs"

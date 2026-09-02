@@ -1,0 +1,529 @@
+name: Stable publication
+
+# The stable channel, and the sibling of dev.yaml. `dev.yaml` is always development and
+# this file is always stable, so the channel distinction costs no runtime condition at
+# all -- it is which file you are in (ADR-0011). Docker Hub and PyPI are therefore
+# reachable only from here, and TestPyPI is unreachable from here by construction rather
+# than by an `if:` someone has to keep correct.
+#
+# Everything shared with the development channel is *called*, never restated: the forge
+# coordinates action, the verified-bundle action, the governed verifier and the reusable
+# image publisher are all story E008-S01-001's surface (gate finding F8). A second
+# implementation of any of them in this file is the duplication F8 exists to prevent.
+#
+# This is also the workflow that closes the residual left on BL-E008-001: `v*` tag pushes
+# reached nothing after the legacy publish path was deleted, so a pushed release tag
+# published no artifact anywhere.
+
+on:
+  push:
+    tags:
+      # Every `v`-shaped ref reaches the guard, and only an annotated exact `vX.Y.Z`
+      # whose peeled commit is the event SHA survives it. Filtering harder here would
+      # make a mis-spelled release tag succeed silently by never starting a run, which
+      # is the failure a release maintainer is least likely to notice.
+      - "v*"
+
+permissions:
+  contents: read
+
+# A stable run is never cancelled by a later one. Two tag pushes are two distinct
+# immutable identities and run independently; a re-push of the same ref queues rather
+# than superseding, because cancelling a fan-out half-way is exactly the state ADR-0011
+# keeps the finalizer away from. This is the deliberate difference from dev.yaml, whose
+# candidates supersede.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Same interpreter pin the verifier's non-matrix jobs use.
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  plan:
+    name: Resolve stable identity and enabled destinations
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      package-version: ${{ steps.identity.outputs.package-version }}
+      python-version: ${{ steps.identity.outputs.python-version }}
+      source-sha: ${{ steps.identity.outputs.source-sha }}
+      release-tag: ${{ steps.tag.outputs.tag }}
+      forge: ${{ steps.forge.outputs.forge }}
+      registry: ${{ steps.forge.outputs.registry }}
+      image-repository: ${{ steps.forge.outputs.image-repository }}
+      image-tags: ${{ steps.identity.outputs.image-tags }}
+      package-index-url: ${{ steps.forge.outputs.package-index-url }}
+      enabled-destinations: ${{ steps.destinations.outputs.enabled-destinations }}
+    steps:
+      # Full history and every tag. Peeling an annotated tag object and answering
+      # "is this commit reachable from the protected default branch" are both git
+      # questions, and a shallow checkout has neither the tag objects nor the branch.
+      - name: Checkout the tagged commit with full history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Derive forge coordinates
+        id: forge
+        uses: ./.github/actions/forge-coordinates
+        with:
+          registry-override: ${{ vars.FORGE_REGISTRY }}
+
+      - name: Accept only an annotated exact stable tag on this commit
+        id: tag
+        env:
+          # The protected default branch, as a remote-tracking ref. The checkout above
+          # fetched every branch, so this is answered from the local commit graph.
+          DEFAULT_BRANCH_REF: origin/main
+          EVENT_OBJECT: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          # Every semantic decision below belongs to scripts/stable_tags.py, which git
+          # answers for it: peeling an annotated tag object, the exact `vX.Y.Z`
+          # spelling, and reachability. Re-deriving any of them here would be a second
+          # implementation of the release identity rule, tested only by grepping this
+          # file for its own regex (F9).
+          if [[ "$EVENT_REF" != refs/tags/* ]]; then
+            echo "stable publication requires a tag ref; got $EVENT_REF" >&2
+            exit 2
+          fi
+          tag="${EVENT_REF#refs/tags/}"
+          if [[ -z "$tag" ]]; then
+            echo "stable publication requires a tag name; got $EVENT_REF" >&2
+            exit 2
+          fi
+          if [[ ! "$EVENT_OBJECT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "event object must be a full lowercase Git SHA" >&2
+            exit 2
+          fi
+          # A push event reports the ref's new object id, and an annotated tag's ref
+          # points at the tag object rather than at the commit. Peeling is the
+          # dereference for a tag object and a no-op for a commit, so one spelling is
+          # correct wherever this runs -- and it is git's dereference, including the
+          # chain of nested tags git permits, never a comparison that quietly never
+          # matches.
+          source_commit="$(git rev-parse --verify "${EVENT_OBJECT}^{commit}")"
+          head_commit="$(git rev-parse HEAD)"
+          if [[ "$head_commit" != "$source_commit" ]]; then
+            echo "checked-out source $head_commit is not the event object $EVENT_OBJECT" >&2
+            exit 2
+          fi
+          # Fails unless the tag pushed is an annotated exact `vX.Y.Z` whose peeled
+          # commit is this commit, and unless that commit is reachable from the
+          # protected default branch. Both are the module's decisions: the
+          # annotated-object filter, the spelling and the peel are one relation with one
+          # implementation, and re-deriving the membership half here would be a copy of
+          # it in the one place nothing tests (F9).
+          python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" \
+            --commit "$source_commit" --expect-tag "$tag" \
+            --reachable-from "$DEFAULT_BRANCH_REF" --output ""
+          {
+            echo "tag=$tag"
+            echo "version=${tag#v}"
+            echo "tag-commit=$source_commit"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up pinned Python and read the committed version
+        id: setup
+        uses: ./.github/actions/setup-poetry-python
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          poetry: "false"
+          dependencies: none
+
+      - name: Emit the enabled destination set
+        id: destinations
+        env:
+          # The ONLY reader of a PUBLISH_* toggle in this file. Every publisher consumes
+          # the set below; two readers of one truth is how the static job graph and the
+          # runtime set drift apart (ADR-0011). A contract test enforces it.
+          DOCKERHUB_REPOSITORY: ${{ vars.DOCKERHUB_REPOSITORY }}
+          DOCKERHUB_TOGGLE: ${{ vars.PUBLISH_IMAGE_DOCKERHUB }}
+          FORGE: ${{ steps.forge.outputs.forge }}
+          PACKAGE_INDEX_SUPPORTED: ${{ steps.forge.outputs.package-index-supported }}
+          PYPI_TOGGLE: ${{ vars.PUBLISH_PACKAGE_PYPI }}
+        run: |
+          set -euo pipefail
+          for toggle in "${DOCKERHUB_TOGGLE:-}" "${PYPI_TOGGLE:-}"; do
+            case "$toggle" in
+              ""|true|false) ;;
+              *) echo "PUBLISH_* toggles must be 'true', 'false', or absent" >&2; exit 2 ;;
+            esac
+          done
+          # "Disabled by toggle" and "absent by host capability" are recorded distinctly:
+          # conflating them makes "the forge silently stopped publishing packages"
+          # indistinguishable from "someone turned it off" (ADR-0011 section 2).
+          if [[ "$PACKAGE_INDEX_SUPPORTED" == "true" ]]; then
+            package_forge="enabled"
+          else
+            package_forge="unsupported"
+          fi
+          # PyPI is reached by trusted publishing, which needs a GitHub OIDC identity.
+          # On a Gitea runner there is none, so the destination is absent by host
+          # capability and the toggle cannot conjure it -- reported as `unsupported`,
+          # not as a failed job nobody expected. Exactly TestPyPI's situation in the
+          # development channel, for exactly the same reason.
+          if [[ "$FORGE" != "github" ]]; then
+            package_pypi="unsupported"
+          elif [[ "${PYPI_TOGGLE:-false}" == "true" ]]; then
+            package_pypi="enabled"
+          else
+            package_pypi="disabled"
+          fi
+          # Docker Hub is the one destination whose repository cannot be derived: the
+          # namespace there is unrelated to the forge owner, and guessing it means
+          # pushing an immutable tag somewhere nobody chose -- the failure CI-AR6 fails
+          # closed on for registries. So the toggle alone is not enough; it is enabled
+          # only alongside a well-formed DOCKERHUB_REPOSITORY, and a toggle without one
+          # fails the run rather than publishing to a guess.
+          dockerhub_repository=""
+          if [[ "${DOCKERHUB_TOGGLE:-false}" == "true" ]]; then
+            if [[ ! "${DOCKERHUB_REPOSITORY:-}" =~ ^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$ ]]; then
+              echo "PUBLISH_IMAGE_DOCKERHUB is enabled but DOCKERHUB_REPOSITORY is not a" >&2
+              echo "lowercase <namespace>/<repository>: '${DOCKERHUB_REPOSITORY:-}'" >&2
+              exit 2
+            fi
+            image_dockerhub="enabled"
+            dockerhub_repository="$DOCKERHUB_REPOSITORY"
+          else
+            image_dockerhub="disabled"
+          fi
+          # `image-forge` is always enabled in this channel -- it is the channel, not a
+          # toggle -- so the key is evidence rather than a gate.
+          {
+            printf 'enabled-destinations={"image-forge":"enabled","image-dockerhub":"%s","package-forge":"%s","package-pypi":"%s"}\n' \
+              "$image_dockerhub" "$package_forge" "$package_pypi"
+            echo "dockerhub-repository=$dockerhub_repository"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the immutable stable identity
+        id: identity
+        env:
+          # The committed tool.poetry.version comes from scripts/committed_versions.py
+          # through the setup action and nowhere else. This job derives no version of
+          # its own (F12); it only proves the tag and the repository agree.
+          COMMITTED_VERSION: ${{ steps.setup.outputs.package-version }}
+          DOCKERHUB_REPOSITORY: ${{ steps.destinations.outputs.dockerhub-repository }}
+          IMAGE_REPOSITORY: ${{ steps.forge.outputs.image-repository }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
+          RESOLVED_PYTHON: ${{ steps.setup.outputs.python-version }}
+          TAG_COMMIT: ${{ steps.tag.outputs.tag-commit }}
+        run: |
+          set -euo pipefail
+          # CI-AR11 as a relation between fields, never a literal version. The three
+          # remaining legs -- the lock, the built distribution metadata and the
+          # application version -- are the governed verifier's, which is handed the
+          # single value proven here; the publishers then revalidate the same value
+          # against the bundle. One planned identity, compared everywhere, restated
+          # nowhere.
+          for field in RELEASE_TAG RELEASE_VERSION COMMITTED_VERSION RESOLVED_PYTHON IMAGE_REPOSITORY; do
+            if [[ -z "${!field}" ]]; then
+              echo "release identity: $field resolved empty" >&2
+              exit 2
+            fi
+          done
+          # The commit the accepted tag peels to, proven against the event object by git
+          # in the guard step above. Everything downstream -- the verifier, every
+          # checkout, every bundle revalidation -- is handed this one value.
+          if [[ ! "$TAG_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release identity: tag commit must be a full lowercase Git SHA" >&2
+            exit 2
+          fi
+          if [[ "$RELEASE_TAG" != "v$RELEASE_VERSION" ]]; then
+            echo "release identity: tag $RELEASE_TAG does not spell version $RELEASE_VERSION" >&2
+            exit 2
+          fi
+          if [[ "$RELEASE_VERSION" != "$COMMITTED_VERSION" ]]; then
+            echo "release identity: tag $RELEASE_TAG does not match the committed version $COMMITTED_VERSION" >&2
+            exit 2
+          fi
+          # Exactly one immutable tag per enabled destination. Every mutable alias --
+          # `latest`, `vX`, `vX.Y` -- belongs to the finalizer story, not here.
+          image_tags="$IMAGE_REPOSITORY:$RELEASE_VERSION"
+          if [[ -n "$DOCKERHUB_REPOSITORY" ]]; then
+            image_tags="$image_tags"$'\n'"docker.io/$DOCKERHUB_REPOSITORY:$RELEASE_VERSION"
+          fi
+          {
+            echo "package-version=$RELEASE_VERSION"
+            echo "python-version=$RESOLVED_PYTHON"
+            echo "source-sha=$TAG_COMMIT"
+            echo "image-tags<<STABLE_IMAGE_TAGS"
+            echo "$image_tags"
+            echo "STABLE_IMAGE_TAGS"
+          } >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Run governed verifier
+    needs: plan
+    permissions:
+      contents: read
+    # Exactly one verifier call for the tagged SHA. The verifier is secret-free by
+    # construction (ADR-0007 invariant 2), so no `secrets:` is passed to it.
+    uses: ./.github/workflows/verify-build.yaml
+    with:
+      channel: stable
+      package-version: ${{ needs.plan.outputs.package-version }}
+      source-sha: ${{ needs.plan.outputs.source-sha }}
+
+  publish-package-forge:
+    name: Publish the stable package to the forge index
+    needs:
+      - plan
+      - verify
+    if: >-
+      ${{ fromJSON(needs.plan.outputs.enabled-destinations)['package-forge'] == 'enabled' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout with full history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.source-sha }}
+      - name: Re-check the tag still names this commit before the first credentialed step
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          # The plan job's answer was taken before the verifier ran. `vX.Y.Z` is
+          # immutable by ADR-0006, so this must still hold -- and if it does not, the
+          # identity moved under a run that is about to publish it, which is the one
+          # case where refusing to upload is the only safe outcome. The freshness comes
+          # from the authenticated checkout directly above, never from an
+          # unauthenticated `git fetch`.
+          # The membership decision is the module's, exactly as it is in the plan job:
+          # `--expect-tag` exits non-zero unless the tag still peels here, and this
+          # step's `set -e` is the refusal. A shell re-derivation of it would be the
+          # third copy of one relation, in front of an upload that cannot be undone.
+          python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" \
+            --commit "$SOURCE_SHA" --expect-tag "$RELEASE_TAG" --output ""
+      - name: Revalidate the verified bundle before any credential is used
+        id: bundle
+        uses: ./.github/actions/verified-bundle
+        with:
+          python-version: ${{ needs.plan.outputs.python-version }}
+          artifact-name: ${{ needs.verify.outputs.dist-artifact-name }}
+          expected-package-version: ${{ needs.plan.outputs.package-version }}
+          expected-source-sha: ${{ needs.plan.outputs.source-sha }}
+      - name: Stage only the verified wheel and sdist for upload
+        env:
+          BUNDLE_PATH: ${{ steps.bundle.outputs.bundle-path }}
+          SDIST_FILENAME: ${{ steps.bundle.outputs.sdist-filename }}
+          WHEEL_FILENAME: ${{ steps.bundle.outputs.wheel-filename }}
+        run: |
+          set -euo pipefail
+          # The publisher receives the two distributions and nothing else -- the bundle
+          # also carries SHA256SUMS and build-manifest.json, which are evidence, not
+          # distributions.
+          mkdir upload-set
+          cp -- "$BUNDLE_PATH/$WHEEL_FILENAME" "upload-set/$WHEEL_FILENAME"
+          cp -- "$BUNDLE_PATH/$SDIST_FILENAME" "upload-set/$SDIST_FILENAME"
+      # Pinned to a reviewed full commit SHA rather than @release/v1, because whoever can
+      # move that branch can exfiltrate this credential on the next run (ADR-0009,
+      # CI-AR38). SHA dc37677 is the head of release/v1, tagged v1.14.2, committed
+      # 2026-07-28; reviewed 2026-09-02.
+      - name: Upload the verified distributions to the forge index
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
+        with:
+          packages-dir: upload-set
+          repository-url: ${{ needs.plan.outputs.package-index-url }}
+          user: ${{ github.actor }}
+          password: ${{ secrets.FORGE_PACKAGE_TOKEN }}
+      - name: Record forge package publication evidence
+        env:
+          BUILD_MANIFEST_SHA256: ${{ steps.bundle.outputs.build-manifest-sha256 }}
+          PACKAGE_INDEX_URL: ${{ needs.plan.outputs.package-index-url }}
+          PACKAGE_VERSION: ${{ needs.plan.outputs.package-version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WHEEL_SHA256: ${{ steps.bundle.outputs.wheel-sha256 }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Forge package index"
+            echo
+            echo "- Run: [${GITHUB_RUN_ID}](${RUN_URL})"
+            echo "- Version: \`${PACKAGE_VERSION}\`"
+            echo "- Index: \`${PACKAGE_INDEX_URL}\`"
+            echo "- Wheel SHA-256: \`${WHEEL_SHA256}\`"
+            echo "- Build manifest SHA-256: \`${BUILD_MANIFEST_SHA256}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-package-pypi:
+    name: Publish the stable package to PyPI
+    needs:
+      - plan
+      - verify
+    if: >-
+      ${{ fromJSON(needs.plan.outputs.enabled-destinations)['package-pypi'] == 'enabled' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      # Trusted publishing (CI-AR25). This job holds an OIDC identity and no registry
+      # credential; the image job holds registry credentials and no OIDC identity. The
+      # two credential sets are disjoint by construction (CI-AR24, CI-AR40).
+      id-token: write
+    steps:
+      - name: Checkout with full history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.source-sha }}
+      - name: Re-check the tag still names this commit before the first credentialed step
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          # PyPI is the one destination from which nothing can ever be withdrawn: a
+          # version number is spent the moment it is accepted. So the identity is
+          # re-read immediately before the credentialed step rather than trusted from
+          # the plan job, exactly as the forge index job does.
+          # The membership decision is the module's, exactly as it is in the plan job:
+          # `--expect-tag` exits non-zero unless the tag still peels here, and this
+          # step's `set -e` is the refusal. A shell re-derivation of it would be the
+          # third copy of one relation, in front of an upload that cannot be undone.
+          python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" \
+            --commit "$SOURCE_SHA" --expect-tag "$RELEASE_TAG" --output ""
+      - name: Revalidate the verified bundle before any credential is used
+        id: bundle
+        uses: ./.github/actions/verified-bundle
+        with:
+          python-version: ${{ needs.plan.outputs.python-version }}
+          artifact-name: ${{ needs.verify.outputs.dist-artifact-name }}
+          expected-package-version: ${{ needs.plan.outputs.package-version }}
+          expected-source-sha: ${{ needs.plan.outputs.source-sha }}
+      - name: Stage only the verified wheel and sdist for upload
+        env:
+          BUNDLE_PATH: ${{ steps.bundle.outputs.bundle-path }}
+          SDIST_FILENAME: ${{ steps.bundle.outputs.sdist-filename }}
+          WHEEL_FILENAME: ${{ steps.bundle.outputs.wheel-filename }}
+        run: |
+          set -euo pipefail
+          mkdir upload-set
+          cp -- "$BUNDLE_PATH/$WHEEL_FILENAME" "upload-set/$WHEEL_FILENAME"
+          cp -- "$BUNDLE_PATH/$SDIST_FILENAME" "upload-set/$SDIST_FILENAME"
+      # Same reviewed pin as the forge index job; see ADR-0009. SHA dc37677 is the head
+      # of release/v1, tagged v1.14.2, committed 2026-07-28; reviewed 2026-09-02.
+      - name: Upload the verified distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
+        with:
+          packages-dir: upload-set
+      - name: Record PyPI publication evidence
+        env:
+          BUILD_MANIFEST_SHA256: ${{ steps.bundle.outputs.build-manifest-sha256 }}
+          PACKAGE_VERSION: ${{ needs.plan.outputs.package-version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WHEEL_SHA256: ${{ steps.bundle.outputs.wheel-sha256 }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### PyPI"
+            echo
+            echo "- Run: [${GITHUB_RUN_ID}](${RUN_URL})"
+            echo "- Version: \`${PACKAGE_VERSION}\`"
+            echo "- Wheel SHA-256: \`${WHEEL_SHA256}\`"
+            echo "- Build manifest SHA-256: \`${BUILD_MANIFEST_SHA256}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-image:
+    name: Publish the stable image
+    needs:
+      - plan
+      - verify
+    permissions:
+      contents: read
+      packages: write
+    # One Buildx invocation for every enabled destination, in the shared reusable
+    # publisher. Every read of the *published* image lives there, which moves no alias;
+    # this file consumes its digest and platforms as outputs. Story 003 adds an alias
+    # finalizer here, and from that moment a registry read in any job of this file would
+    # fail `test_alias_ordering_is_decided_from_git_never_from_a_registry` (story
+    # E008-S01-001, prep finding P1).
+    uses: ./.github/workflows/publish-image.yaml
+    with:
+      channel: stable
+      package-version: ${{ needs.plan.outputs.package-version }}
+      source-sha: ${{ needs.plan.outputs.source-sha }}
+      python-version: ${{ needs.plan.outputs.python-version }}
+      artifact-name: ${{ needs.verify.outputs.dist-artifact-name }}
+      registry: ${{ needs.plan.outputs.registry }}
+      tags: ${{ needs.plan.outputs.image-tags }}
+      # The enabled set decides, and it was produced once by the plan job. This file
+      # never re-reads PUBLISH_IMAGE_DOCKERHUB (ADR-0011).
+      dockerhub: ${{ fromJSON(needs.plan.outputs.enabled-destinations)['image-dockerhub'] == 'enabled' }}
+    secrets:
+      registry_username: ${{ github.actor }}
+      registry_password: ${{ secrets.GITHUB_TOKEN }}
+      # A disabled destination receives no credentials and no requests. The requests
+      # half is publish-image.yaml's permitted-authority check; this is the credentials
+      # half, gated on the same single enabled set every other consumer reads.
+      dockerhub_username: ${{ fromJSON(needs.plan.outputs.enabled-destinations)['image-dockerhub'] == 'enabled' && secrets.DOCKERHUB_USERNAME || '' }}
+      dockerhub_password: ${{ fromJSON(needs.plan.outputs.enabled-destinations)['image-dockerhub'] == 'enabled' && secrets.DOCKERHUB_TOKEN || '' }}
+
+  release-evidence:
+    name: Record stable run evidence
+    needs:
+      - plan
+      - verify
+      - publish-package-forge
+      - publish-package-pypi
+      - publish-image
+    # `!cancelled()` rather than `always()`: a legitimately absent destination must not
+    # hide the run summary, but a cancelled run must not report one either (ADR-0011).
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Summarise identity, destinations and outcomes
+        env:
+          ENABLED_DESTINATIONS: ${{ needs.plan.outputs.enabled-destinations }}
+          FORGE: ${{ needs.plan.outputs.forge }}
+          IMAGE_DIGEST: ${{ needs.publish-image.outputs.digest }}
+          IMAGE_PLATFORMS: ${{ needs.publish-image.outputs.platforms }}
+          IMAGE_REFERENCE: ${{ needs.publish-image.outputs.image-reference }}
+          IMAGE_RESULT: ${{ needs.publish-image.result }}
+          IMAGE_TAGS: ${{ needs.plan.outputs.image-tags }}
+          PACKAGE_FORGE_RESULT: ${{ needs.publish-package-forge.result }}
+          PACKAGE_VERSION: ${{ needs.plan.outputs.package-version }}
+          PYPI_RESULT: ${{ needs.publish-package-pypi.result }}
+          RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+          VERIFIER_RESULT: ${{ needs.verify.result }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Stable publication"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Run | [${GITHUB_RUN_ID}](${RUN_URL}) |"
+            echo "| Forge | \`${FORGE}\` |"
+            echo "| Tag | \`${RELEASE_TAG}\` |"
+            echo "| Source | \`${SOURCE_SHA}\` |"
+            echo "| Version | \`${PACKAGE_VERSION}\` |"
+            echo "| Enabled destinations | \`${ENABLED_DESTINATIONS}\` |"
+            echo "| Verifier | \`${VERIFIER_RESULT}\` |"
+            echo "| Forge package index | \`${PACKAGE_FORGE_RESULT}\` |"
+            echo "| PyPI | \`${PYPI_RESULT}\` |"
+            echo "| Image | \`${IMAGE_RESULT}\` |"
+            echo "| Image tags | \`${IMAGE_TAGS//$'\n'/, }\` |"
+            echo "| Image digest | \`${IMAGE_DIGEST}\` |"
+            echo "| Image reference | \`${IMAGE_REFERENCE}\` |"
+            echo "| Image platforms | \`${IMAGE_PLATFORMS}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
