@@ -61,7 +61,12 @@ SECRET_FREE_WORKFLOWS = (CI_WORKFLOW, VERIFY_WORKFLOW)
 # and the exact vX.Y.Z tag are chosen only by the local guarded transaction. A finalizer
 # attaching a Release, its assets, or moving aliases to an identity already decided is not
 # a second version authority. Empty until Epic 8 registers one.
-RELEASE_FINALIZER_JOBS: frozenset[str] = frozenset()
+# `(workflow filename, job name)` pairs, NOT bare job names. A bare-name registry matches
+# across every workflow, so granting `finalize` for release.yaml would silently grant the
+# same name in dev.yaml -- and Epic 8 creates a finalizer in both files (gate finding F6).
+# Widened before the first entry is added, while the set is still empty and the change is
+# free.
+RELEASE_FINALIZER_JOBS: frozenset[tuple[str, str]] = frozenset()
 
 # `release` and `tag` as verbs in an action name -- the ref-writing ones. `publish` is
 # deliberately absent so pypa/gh-action-pypi-publish and image pushes, which write no ref,
@@ -163,6 +168,22 @@ def _external_action_references(path: Path) -> list[str]:
         for reference in _action_references(path)
         if not reference.startswith("./")
     ]
+
+
+def _is_credential_bearing(job: dict[str, Any]) -> bool:
+    """A job that holds, or can hold, a publication credential.
+
+    Derived from capability rather than from job name or shape: any `secrets.*`
+    expression anywhere in the job, or a permission that lets it push somewhere.
+    """
+    permissions = job.get("permissions")
+    if isinstance(permissions, dict):
+        for scope in ("packages", "id-token", "attestations"):
+            if permissions.get(scope) == "write":
+                return True
+    if job.get("secrets") is not None:
+        return True
+    return "secrets." in json.dumps(job)
 
 
 def _transitive_needs(jobs: dict[str, Any], job_name: str) -> set[str]:
@@ -353,18 +374,37 @@ def test_the_committed_version_authority_has_one_implementation() -> None:
     """ci.yaml's plan job used to be a third `tool.poetry.version` reader, inline, on an
     unpinned interpreter. Scope is derived from disk -- every `plan` job in every workflow
     -- so an orchestrator added later is covered without editing this test."""
+    # Keyed on what the job DOES, not what it is called (gate finding F12). Keying on the
+    # name `plan` meant a dev.yaml whose version job was called `identity` or `resolve`
+    # was silently ungoverned and free to re-implement version derivation.
     plans = 0
     for path in sorted(WORKFLOWS.glob("*.yaml")):
-        jobs = _jobs(_load_workflow(path))
-        if "plan" not in jobs:
-            continue
-        plans += 1
-        plan = jobs["plan"]
-        assert SETUP_ACTION_REFERENCE in [x.get("uses") for x in plan["steps"]], path
-        commands = "\n".join(str(x.get("run", "")) for x in plan["steps"])
-        assert "tomllib" not in commands, path
-        assert not re.search(r"^\s*import\s", commands, re.MULTILINE), path
-    assert plans, "no plan job found; the version authority is unasserted"
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            outputs = job.get("outputs") or {}
+            if "package-version" not in outputs:
+                continue
+            plans += 1
+            steps = job.get("steps", []) or []
+            assert SETUP_ACTION_REFERENCE in [x.get("uses") for x in steps], (
+                f"{path}: job {job_name!r} emits package-version without the setup action"
+            )
+            commands = "\n".join(str(x.get("run", "")) for x in steps)
+            # Targeted at version DERIVATION, not at inline Python generally. Widening the
+            # scope from `plan`-named jobs caught verify-build.yaml's `distribution` job,
+            # which also emits package-version but as a pass-through, and which uses
+            # heredocs legitimately for checksum and artifact validation. A blanket
+            # "no import" rule would have failed it for the wrong reason.
+            # `poetry version` is deliberately NOT here: verify-build.yaml's distribution
+            # job reads it to cross-check, and applies the planned version into a
+            # disposable checkout. That consumes the authority, it does not become one.
+            # The original defect was an inline tomllib parse of pyproject.toml.
+            for reimplementation in ("tomllib", "tool.poetry.version"):
+                assert reimplementation not in commands, (
+                    f"{path}: job {job_name!r} derives the committed version inline "
+                    f"({reimplementation!r}); it comes from committed_versions.py via "
+                    f"the setup action and nowhere else"
+                )
+    assert plans, "no job emits package-version; the version authority is unasserted"
 
     # The plan jobs consume the version through the composite action's output, so the
     # single implementation is asserted where it actually lives.
@@ -403,12 +443,19 @@ def test_any_push_triggered_workflow_verifies_before_it_ships() -> None:
             continue
         jobs = _jobs(document)
         called = {name: job.get("uses") for name, job in jobs.items()}
+        # A publisher is anything that ships or can ship -- derived from capability, not
+        # from shape (gate finding F15). Recognising only "calls another local workflow"
+        # made this pass vacuously over Epic 8's dev.yaml, whose publishers are ordinary
+        # step-based jobs holding registry credentials.
         publishers = {
             name
-            for name, used in called.items()
-            if isinstance(used, str)
-            and used.startswith("./.github/workflows/")
-            and used != VERIFIER_REFERENCE
+            for name, job in jobs.items()
+            if (
+                isinstance(called.get(name), str)
+                and called[name].startswith("./.github/workflows/")
+                and called[name] != VERIFIER_REFERENCE
+            )
+            or _is_credential_bearing(job)
         }
         if not publishers:
             continue
@@ -418,6 +465,56 @@ def test_any_push_triggered_workflow_verifies_before_it_ships() -> None:
             assert verifiers <= _transitive_needs(jobs, publisher), (
                 f"{path.name}: job {publisher!r} does not depend on the governed verifier"
             )
+
+
+def test_no_workflow_exposes_a_secret_at_workflow_scope() -> None:
+    """A `secrets.*` expression in workflow-level `env:` or `defaults:` is visible to
+    every job in the file, including ones that must not see it.
+
+    This is the cheapest possible form of the scope failure a per-job secret audit is
+    meant to prevent, and a per-job audit is structurally blind to it (gate finding F10).
+    Per-job `env:` is the correct pattern: it keeps the blast radius of a compromised
+    step to the job that actually needs the credential.
+    """
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        document = _load_workflow(path)
+        for scope in ("env", "defaults"):
+            block = document.get(scope)
+            if block is None:
+                continue
+            assert "secrets." not in json.dumps(block), (
+                f"{path.name}: workflow-level `{scope}:` references a secret, exposing it "
+                f"to every job in the file. Scope it to the job that needs it."
+            )
+
+
+def test_no_publisher_queries_a_destination_before_uploading() -> None:
+    """Retired CI-AR26 was remote identity reconciliation, and the retirement spec forbids
+    reviving it. The tempting reading of "halt on an immutable conflict" is "check whether
+    this version already exists before uploading" -- which is exactly that, under a new
+    name (gate finding F17).
+
+    Detection is the destination action's own failure: pypa's action rejects a duplicate,
+    a registry rejects an immutable tag. The halt is operator-mediated via the runbook.
+    """
+    remote_probes = (
+        r"\bpip\s+index\s+versions\b",
+        r"\bcurl\b[^\n]*/pypi/[^\n]*/json",
+        r"\bdocker\s+manifest\s+inspect\b",
+        r"\bbuildx\s+imagetools\s+inspect\b",
+    )
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            if not _is_credential_bearing(job):
+                continue
+            for step in job.get("steps", []) or []:
+                command = str(step.get("run", ""))
+                for probe in remote_probes:
+                    assert not re.search(probe, command), (
+                        f"{path.name}: publisher {job_name!r} queries a destination "
+                        f"before uploading, reviving retired CI-AR26. Let the "
+                        f"destination reject the duplicate and halt on its failure."
+                    )
 
 
 def test_no_workflow_calls_a_local_workflow_or_action_that_does_not_exist() -> None:
@@ -447,7 +544,7 @@ def test_no_workflow_holds_github_token_write_access_to_contents() -> None:
                 continue
             if permissions.get("contents") != "write":
                 continue
-            assert job_name in RELEASE_FINALIZER_JOBS, (
+            assert (path.name, job_name) in RELEASE_FINALIZER_JOBS, (
                 f"{path.name}: `contents: write` makes CI a writer of repository "
                 "contents; version identity goes through `just release` (ADR-0006)"
             )
@@ -463,7 +560,7 @@ def test_no_workflow_writes_refs_or_releases_outside_a_finalizer() -> None:
     )
     for path in sorted(WORKFLOWS.glob("*.yaml")):
         for job_name, job in _load_workflow(path).get("jobs", {}).items():
-            if job_name in RELEASE_FINALIZER_JOBS:
+            if (path.name, job_name) in RELEASE_FINALIZER_JOBS:
                 continue
             for step in job.get("steps", []) or []:
                 command = str(step.get("run", ""))
@@ -657,13 +754,22 @@ def test_artifact_actions_remain_on_the_both_forge_v4_pair() -> None:
 
     Revisit when Gitea's runner supports a newer artifact protocol.
     """
-    references = _external_action_references(VERIFY_WORKFLOW)
-    for action in ARTIFACT_ACTIONS:
-        assert all(
-            reference == f"{action}@v4"
-            for reference in references
-            if reference.startswith(f"{action}@")
-        )
+    # Scope is every governed definition, not just the verifier (gate finding F11).
+    # dev.yaml and release.yaml will use actions/download-artifact, and tier one happily
+    # accepts @v7 -- so the Gitea pin could be broken in the new workflows with every test
+    # green, surfacing only in Epic 9.
+    examined = 0
+    for path in GOVERNED_DEFINITIONS:
+        for reference in _external_action_references(path):
+            for action in ARTIFACT_ACTIONS:
+                if not reference.startswith(f"{action}@"):
+                    continue
+                examined += 1
+                assert reference == f"{action}@v4", (
+                    f"{path}: {reference} drops Gitea's act_runner, which implements the "
+                    f"v4 artifact protocol only"
+                )
+    assert examined, "no artifact action references were examined"
 
 
 def test_dependabot_protects_the_artifact_pin_it_would_otherwise_undo() -> None:
