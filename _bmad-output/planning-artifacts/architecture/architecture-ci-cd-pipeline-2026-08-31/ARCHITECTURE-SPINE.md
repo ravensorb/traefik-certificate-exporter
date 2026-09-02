@@ -60,6 +60,12 @@ The `CI-AR` identifiers remain stable traceability keys.
   version and build-evidence validation.
 - **CI-AR4 — Action version policy.** Approved first-party and LiquidLogicLabs actions use a
   documented floating major when available; other third-party actions require a reviewed SHA.
+  **The classification is per action, not per owner:** an action handed a publication credential
+  requires a reviewed full commit SHA even when its owner is approved, because a floating major
+  is a moving ref and whoever can move it can exfiltrate the credential. Registered in
+  `SHA_PINNED_ACTIONS` (`tests/ci/test_workflow_contracts.py`); see ADR-0009. This is what
+  reconciles CI-AR4 with CI-AR38, which previously contradicted it for
+  `pypa/gh-action-pypi-publish`.
 - **CI-AR5 — Stable topology.** The pipeline consists of `ci.yaml`, `dev.yaml`, `release.yaml`,
   and reusable `verify-build.yaml`.
 - **CI-AR6 — Host-neutral coordinates.** Repository, API, server, and registry coordinates come

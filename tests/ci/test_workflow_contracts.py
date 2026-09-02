@@ -90,6 +90,20 @@ APPROVED_ACTION_OWNERS = {
 # is the same guarantee spelled differently. A pinned patch tag is not an alias.
 FLOATING_MAJOR_ALIAS = re.compile(r"\A(?:release/)?v[0-9]+\Z")
 
+# The exception to the floating-major default, and a registry of granted exceptions
+# rather than a derived scope: adding an entry here IS the grant, and each needs an ADR.
+#
+# A floating major is a *moving* ref. For most actions that is the right trade -- a
+# security fix ships without a manifest edit. For an action handed a publication
+# credential it inverts: whoever can move the branch can exfiltrate the token on the next
+# run. CI-AR4 sets floating-major as the default for approved owners; CI-AR38 requires a
+# reviewed full commit SHA for the PyPI publisher. Both hold, because they are answering
+# different questions -- convenience of upgrade versus blast radius of compromise -- and
+# the split is per action, not per owner. `pypa` stays an approved owner; only this one
+# action of theirs is pinned harder.
+SHA_PINNED_ACTIONS = frozenset({"pypa/gh-action-pypi-publish"})
+REVIEWED_COMMIT_SHA = re.compile(r"\A[0-9a-f]{40}\Z")
+
 
 def _load_document(path: Path) -> dict[str, Any]:
     # BaseLoader keeps GitHub's `on` key as a string instead of applying YAML 1.1's
@@ -195,11 +209,65 @@ def test_tier_one_actions_use_approved_owners_and_floating_major_aliases() -> No
             assert owner in APPROVED_ACTION_OWNERS, (
                 f"{path}: {owner} requires an approved ADR or architecture update"
             )
-            assert FLOATING_MAJOR_ALIAS.fullmatch(version), (
-                f"{path}: {reference} must use the maintained floating major alias"
-            )
+            if action in SHA_PINNED_ACTIONS:
+                assert REVIEWED_COMMIT_SHA.fullmatch(version), (
+                    f"{path}: {reference} is handed a publication credential, so it must "
+                    f"be pinned to a reviewed full 40-character commit SHA (CI-AR38), not "
+                    f"a floating alias whose branch can be moved under it"
+                )
+            else:
+                assert FLOATING_MAJOR_ALIAS.fullmatch(version), (
+                    f"{path}: {reference} must use the maintained floating major alias"
+                )
     assert examined, "no external action references were examined"
 
+
+def test_credential_handling_publishers_are_registered_as_sha_pinned() -> None:
+    # The reach half of the rule above. That test only fires on actions already in
+    # SHA_PINNED_ACTIONS, so a *new* credential-handling publisher added to a workflow
+    # would take the floating-major branch and never be noticed. This derives the
+    # candidate set from the workflows instead: any action whose name says it publishes a
+    # package must be registered, or explicitly recorded as not credential-handling.
+    publisher_verb = re.compile(r"(?:\A|[-/])(?:pypi|publish)(?:[-/]|\Z)")
+    not_credential_handling: frozenset[str] = frozenset()
+
+    for path in GOVERNED_DEFINITIONS:
+        for reference in _external_action_references(path):
+            action, _, _ = reference.rpartition("@")
+            if not publisher_verb.search(action.split("/", 1)[-1]):
+                continue
+            assert action in SHA_PINNED_ACTIONS or action in not_credential_handling, (
+                f"{path}: {action} looks like a package publisher but is neither "
+                f"SHA-pinned nor recorded as not credential-handling; decide which, "
+                f"with an ADR (CI-AR38)"
+            )
+
+
+
+def test_no_caller_hands_the_verifier_any_secret() -> None:
+    """The secret-free property belongs to the call graph, not to one file.
+
+    `test_tier_two_verifier_pair_holds_no_publisher_capability` reads the *callee's*
+    text, so it proves the verifier never writes `secrets:` itself. It says nothing about
+    what a caller passes in. `dev.yaml` and `release.yaml` are the first callers that will
+    hold publisher credentials, and `secrets: inherit` on their verify job would hand the
+    verifier every one of them with that test still green -- ADR-0007 invariant 2 defeated
+    from the outside.
+
+    Scope is derived from disk, so a caller added later is covered without editing this.
+    """
+    verifier_callers = 0
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            if job.get("uses") != VERIFIER_REFERENCE:
+                continue
+            verifier_callers += 1
+            assert "secrets" not in job, (
+                f"{path.name}: job {job_name!r} passes `secrets` to the verifier. The "
+                f"verifier is secret-free by construction (ADR-0007 invariant 2); a "
+                f"caller may not hand it credentials from the outside."
+            )
+    assert verifier_callers, "no job calls the verifier; this guard examined nothing"
 
 def test_tier_one_forbids_expression_interpolated_action_references() -> None:
     for path in GOVERNED_DEFINITIONS:
