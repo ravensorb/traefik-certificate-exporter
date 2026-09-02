@@ -1,10 +1,10 @@
-key: 'E008-S01-003'
+key: 'E008-S01-002'
 epic: 'E008'
 sprint: 'S01'
-title: 'Create the Forge Release and Finalize All Aliases Last'
-status: backlog
+title: 'Publish Immutable Stable Packages and Images from Exact Tags'
+status: ready-for-dev
 classification: complex
-depends_on: ['E008-S01-001', 'E008-S01-002']
+depends_on: ['E008-S01-001']
 estimate:
   man_hours: 16.87
   hitl_hours: 0.0
@@ -24,4 +24,4 @@ estimate:
     output: 18
     cache_write: 105
     cache_read: 175
-updated_at: '2026-09-02T00:30:24Z'
+updated_at: '2026-09-02T15:33:20Z'

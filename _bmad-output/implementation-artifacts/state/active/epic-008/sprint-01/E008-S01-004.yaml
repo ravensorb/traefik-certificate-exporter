@@ -2,7 +2,7 @@ key: 'E008-S01-004'
 epic: 'E008'
 sprint: 'S01'
 title: 'Cut Over the Workflow Topology and Document Failed-Jobs-Only Recovery'
-status: backlog
+status: ready-for-dev
 classification: standard
 depends_on: ['E008-S01-003']
 estimate:
@@ -24,4 +24,4 @@ estimate:
     output: 9
     cache_write: 53
     cache_read: 88
-updated_at: '2026-09-02T00:30:25Z'
+updated_at: '2026-09-02T15:33:21Z'

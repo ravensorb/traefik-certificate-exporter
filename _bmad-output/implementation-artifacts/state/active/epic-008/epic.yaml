@@ -1,11 +1,11 @@
 _lock:
-  session_id: l3io-pm-20260902T130915Z-e008c
-  claimed_at: '2026-09-02T13:09:26Z'
+  session_id: l3io-pm-20260902T152801Z-e008x
+  claimed_at: '2026-09-02T15:28:01Z'
   ttl_minutes: 30
 key: 'E008'
 title: 'Epic 008 — Action-Based Multi-Channel Delivery'
 goal: 'Publish verified development and stable artifacts through normal destination actions, then advance aliases only after required jobs succeed.'
-status: backlog
+status: in-progress
 depends_on: ['E007']
 estimate:
   man_hours_low: 74.6
@@ -30,4 +30,4 @@ estimate:
   cost_high: 7.43
   model: claude-opus-5
   confidence: medium
-updated_at: '2026-09-02T00:30:28Z'
+updated_at: '2026-09-02T15:28:01Z'
