@@ -142,3 +142,5 @@
 {"epic": "E007", "event": "status", "from": "backlog", "key": "E007", "node": "epic", "session": null, "sprint": null, "to": "done", "ts": "2026-09-01T22:40:44Z"}
 {"agent": "l3io-arch-review", "epic": "E008", "event": "dispatch_open", "session": "l3io-pm-20260902T012541Z-e89", "ts": "2026-09-02T01:25:42Z"}
 {"agent": "l3io-arch-review", "epic": "E008", "event": "dispatch_close", "session": "l3io-pm-20260902T012541Z-e89", "ts": "2026-09-02T01:38:26Z"}
+{"agent": "l3io-arch-review", "epic": "E008", "event": "dispatch_open", "session": "l3io-pm-20260902T130915Z-e008c", "ts": "2026-09-02T13:33:08Z"}
+{"agent": "l3io-arch-review", "epic": "E008", "event": "dispatch_close", "session": "l3io-pm-20260902T130915Z-e008c", "ts": "2026-09-02T13:56:23Z"}

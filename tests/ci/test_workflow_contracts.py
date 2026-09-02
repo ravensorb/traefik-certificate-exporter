@@ -170,6 +170,20 @@ def _external_action_references(path: Path) -> list[str]:
     ]
 
 
+def _is_publishing_step(step: dict[str, Any]) -> bool:
+    """The step that actually ships. Everything before it is 'pre-upload'."""
+    uses = str(step.get("uses", ""))
+    if uses.startswith(("pypa/gh-action-pypi-publish", APPROVED_RELEASE_ACTION)):
+        return True
+    command = str(step.get("run", ""))
+    return bool(
+        re.search(
+            r"(?:buildx\s+bake|docker\s+push|buildx\s+build[^\n]*--push|twine\s+upload)",
+            command,
+        )
+    )
+
+
 def _is_credential_bearing(job: dict[str, Any]) -> bool:
     """A job that holds, or can hold, a publication credential.
 
@@ -381,7 +395,11 @@ def test_the_committed_version_authority_has_one_implementation() -> None:
     for path in sorted(WORKFLOWS.glob("*.yaml")):
         for job_name, job in _jobs(_load_workflow(path)).items():
             outputs = job.get("outputs") or {}
-            if "package-version" not in outputs:
+            # Any version-shaped output, not the one literal name. Re-keying from the job
+            # name `plan` to the output name `package-version` swapped one hand-kept
+            # string for another: a job emitting `dev-version` and re-deriving with
+            # tomllib passed, while the docstring claimed it was keyed on behaviour.
+            if not any("version" in name for name in outputs):
                 continue
             plans += 1
             steps = job.get("steps", []) or []
@@ -439,7 +457,10 @@ def test_any_push_triggered_workflow_verifies_before_it_ships() -> None:
         document = _load_workflow(path)
         triggers = document["on"]
         events = set(triggers) if not isinstance(triggers, str) else {triggers}
-        if "push" not in events:
+        # Any trigger that can ship, not `push` alone. Filtering to push let a publisher
+        # on `on: release:` -- with no verifier anywhere in the file -- pass untouched,
+        # which is the shipping path this guard exists to gate.
+        if not (events & {"push", "release", "workflow_dispatch", "schedule"}):
             continue
         jobs = _jobs(document)
         called = {name: job.get("uses") for name, job in jobs.items()}
@@ -503,17 +524,28 @@ def test_no_publisher_queries_a_destination_before_uploading() -> None:
         r"\bdocker\s+manifest\s+inspect\b",
         r"\bbuildx\s+imagetools\s+inspect\b",
     )
+    # "Before uploading" is the whole rule, and the first version of this guard did not
+    # encode it -- it rejected the probe anywhere in the job. That made the post-push
+    # platform inspection ADR-0008 and CI-AR39 *mandate* into a test failure, so story
+    # 001 was unbuildable: a required mechanism rejected by a shipped guard. Position
+    # relative to the upload is the distinction, so the guard has to find the upload.
     for path in sorted(WORKFLOWS.glob("*.yaml")):
         for job_name, job in _jobs(_load_workflow(path)).items():
             if not _is_credential_bearing(job):
                 continue
-            for step in job.get("steps", []) or []:
+            steps = job.get("steps", []) or []
+            upload_at = next(
+                (i for i, step in enumerate(steps) if _is_publishing_step(step)),
+                len(steps),
+            )
+            for step in steps[:upload_at]:
                 command = str(step.get("run", ""))
                 for probe in remote_probes:
                     assert not re.search(probe, command), (
                         f"{path.name}: publisher {job_name!r} queries a destination "
                         f"before uploading, reviving retired CI-AR26. Let the "
-                        f"destination reject the duplicate and halt on its failure."
+                        f"destination reject the duplicate and halt on its failure. "
+                        f"(Inspecting what you just published is fine -- after the push.)"
                     )
 
 
@@ -529,12 +561,21 @@ def test_a_job_gating_on_publishers_uses_not_cancelled_never_always() -> None:
     for path in sorted(WORKFLOWS.glob("*.yaml")):
         for job_name, job in _jobs(_load_workflow(path)).items():
             condition = str(job.get("if", ""))
-            if "always()" not in condition:
-                continue
-            assert not job.get("needs"), (
+            assert "always()" not in condition or not job.get("needs"), (
                 f"{path.name}: job {job_name!r} gates on other jobs with `always()`. Use "
                 f"`!cancelled()` -- `always()` also runs on cancellation, which would let "
                 f"a finalizer act on a half-published set (ADR-0011)."
+            )
+            # Forbidding always() is only half of it. A finalizer with NO `if:` at all is
+            # skipped the moment any publisher is skipped -- which is ADR-0011's exact
+            # failure: green run, aliases unmoved, no alert. So the condition is required,
+            # not merely constrained.
+            if (path.name, job_name) not in RELEASE_FINALIZER_JOBS:
+                continue
+            assert "!cancelled()" in condition.replace(" ", ""), (
+                f"{path.name}: finalizer {job_name!r} has no `!cancelled()` condition, so "
+                f"a legitimately skipped optional destination skips it too -- the release "
+                f"finishes green with aliases unmoved and nothing reported (ADR-0011)."
             )
 
 
@@ -581,9 +622,14 @@ def test_alias_ordering_is_decided_from_git_never_from_a_registry() -> None:
     for path in sorted(WORKFLOWS.glob("*.yaml")):
         for job_name, job in _jobs(_load_workflow(path)).items():
             steps = job.get("steps", []) or []
+            # Scope is the whole workflow, not the alias job. Restricting it to the job
+            # holding the action let a `skopeo inspect` in the plan job decide ordering and
+            # hand the answer downstream -- the same remote-state read, one job earlier.
+            # Only files that move aliases are examined, so unrelated workflows are free.
             moves_aliases = any(
                 str(step.get("uses", "")).startswith(APPROVED_ALIAS_ACTION)
-                for step in steps
+                for candidate in _jobs(_load_workflow(path)).values()
+                for step in (candidate.get("steps", []) or [])
             )
             if not moves_aliases:
                 continue
@@ -694,9 +740,44 @@ def test_releases_are_created_only_through_the_approved_action() -> None:
 APPROVED_ALIAS_ACTION = "LiquidLogicLabs/git-action-tag-floating-version"
 
 # Any spelling of a non-fast-forward ref write. Hand-rolling one is what this forbids.
+# Every spelling, because ADR-0006 claims "under any spelling" and a guard that only
+# matched `--force` made that claim false. `-f` is the one an implementer reaches for, and
+# delete-and-recreate (`push origin :ref`) does not contain the word "force" at all.
 FORCED_REF_WRITE = re.compile(
-    r"(?:git\s+push[^\n]*--force|\+refs/|\bforce\s*[:=]\s*true)", re.IGNORECASE
+    r"(?:"
+    r"git\s+push[^\n]*(?:--force\b|--force-with-lease|\s-f\b)"
+    r"|git\s+push[^\n]*\s:refs?/"  # delete-and-recreate
+    r"|git\s+push[^\n]*\s\+refs/"  # forced refspec
+    r"|\bforce\s*[:=]\s*true"  # API force
+    r"|git\s+tag\s+-d\b"  # local delete preceding a recreate
+    r")",
+    re.IGNORECASE,
 )
+
+
+def test_no_third_party_action_creates_a_release() -> None:
+    """`APPROVED_RELEASE_ACTION` was a dead constant -- defined, named in an error
+    message, and asserted nowhere. So `actions/create-release@v1` in a finalizer passed
+    every guard, silently losing the Gitea path ADR-0010 exists to secure: that action
+    speaks GitHub's API only, and E009's premise is that the same YAML works on Gitea.
+
+    Forbidding the hand-rolled `curl` was never enough. The likelier shortcut is a
+    different action, and it fails in exactly the place nobody is testing yet.
+    """
+    release_shaped = re.compile(r"(?:^|[-/])release(?:[-/]|$)", re.IGNORECASE)
+    for path in GOVERNED_DEFINITIONS:
+        for reference in _external_action_references(path):
+            action, _, _ = reference.rpartition("@")
+            if action.startswith(APPROVED_RELEASE_ACTION):
+                continue
+            # The changelog builder is release-shaped but creates nothing.
+            if action.startswith(f"{APPROVED_RELEASE_ACTION}-changelog-builder"):
+                continue
+            assert not release_shaped.search(action.split("/", 1)[-1]), (
+                f"{path}: {action} is release-creating. Releases go through "
+                f"{APPROVED_RELEASE_ACTION}@v2, which speaks both GitHub's and Gitea's "
+                f"APIs from one step (ADR-0010). A GitHub-only action loses E009."
+            )
 
 
 def test_alias_moves_go_through_the_approved_action() -> None:
