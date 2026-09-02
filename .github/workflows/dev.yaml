@@ -1,0 +1,476 @@
+name: Development publication
+
+# The development channel. `dev.yaml` is always development and `release.yaml` always
+# stable, so the channel distinction costs no runtime condition at all -- it is which
+# file you are in (ADR-0011). Development images therefore reach the active forge
+# registry only; `PUBLISH_IMAGE_DOCKERHUB` is inert here by construction rather than by
+# an `if:` someone has to keep correct.
+#
+# This is also the workflow that closes BL-E008-001: since the legacy publish path was
+# deleted nothing reacted to `push`, so every commit on the protected default branch was
+# unverified.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Supersede a stale candidate rather than racing it. Two pushes in quick succession must
+# not both reach the registry; the newer one wins and the older is cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Same interpreter pin the verifier's non-matrix jobs use.
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  plan:
+    name: Resolve development identity and enabled destinations
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      package-version: ${{ steps.identity.outputs.package-version }}
+      python-version: ${{ steps.identity.outputs.python-version }}
+      source-sha: ${{ steps.identity.outputs.source-sha }}
+      short-sha: ${{ steps.identity.outputs.short-sha }}
+      development-distance: ${{ steps.distance.outputs.development-distance }}
+      forge: ${{ steps.forge.outputs.forge }}
+      registry: ${{ steps.forge.outputs.registry }}
+      image-repository: ${{ steps.forge.outputs.image-repository }}
+      image-tags: ${{ steps.identity.outputs.image-tags }}
+      package-index-url: ${{ steps.forge.outputs.package-index-url }}
+      enabled-destinations: ${{ steps.destinations.outputs.enabled-destinations }}
+    steps:
+      # Full history and every tag. The development version is the first-parent commit
+      # distance, and stable-tag suppression needs the tag objects to peel -- a shallow
+      # checkout silently derives `.dev1` for every commit and sees no tags at all.
+      - name: Checkout the pushed commit with full history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Derive forge coordinates
+        id: forge
+        uses: ./.github/actions/forge-coordinates
+        with:
+          registry-override: ${{ vars.FORGE_REGISTRY }}
+
+      - name: Count the first-parent development distance
+        id: distance
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "event source SHA must be a full lowercase Git SHA" >&2
+            exit 2
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
+            echo "checked-out source does not match the pushed SHA" >&2
+            exit 2
+          fi
+          echo "development-distance=$(git rev-list --count --first-parent HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up pinned Python and resolve the development version
+        id: setup
+        uses: ./.github/actions/setup-poetry-python
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          poetry: "false"
+          dependencies: none
+          development-distance: ${{ steps.distance.outputs.development-distance }}
+
+      - name: Resolve the immutable development identity
+        id: identity
+        env:
+          # X.Y.(Z+1).devN comes from scripts/committed_versions.py through the setup
+          # action and nowhere else. This job derives no version of its own (F12).
+          DEVELOPMENT_VERSION: ${{ steps.setup.outputs.development-version }}
+          IMAGE_REPOSITORY: ${{ steps.forge.outputs.image-repository }}
+          RESOLVED_PYTHON: ${{ steps.setup.outputs.python-version }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$DEVELOPMENT_VERSION" ]]; then
+            echo "development version resolved empty" >&2
+            exit 2
+          fi
+          short_sha="${SOURCE_SHA:0:12}"
+          {
+            echo "package-version=$DEVELOPMENT_VERSION"
+            echo "python-version=$RESOLVED_PYTHON"
+            echo "source-sha=$SOURCE_SHA"
+            echo "short-sha=$short_sha"
+            echo "image-tags=$IMAGE_REPOSITORY:dev-$short_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Emit the enabled destination set
+        id: destinations
+        env:
+          # The ONLY reader of a PUBLISH_* toggle in this file. Every publisher consumes
+          # the set below; two readers of one truth is how the static job graph and the
+          # runtime set drift apart (ADR-0011). A contract test enforces it.
+          FORGE: ${{ steps.forge.outputs.forge }}
+          PACKAGE_INDEX_SUPPORTED: ${{ steps.forge.outputs.package-index-supported }}
+          TESTPYPI_TOGGLE: ${{ vars.PUBLISH_PACKAGE_TESTPYPI }}
+        run: |
+          set -euo pipefail
+          case "${TESTPYPI_TOGGLE:-}" in
+            ""|true|false) ;;
+            *) echo "PUBLISH_PACKAGE_TESTPYPI: must be 'true', 'false', or absent" >&2; exit 2 ;;
+          esac
+          # "Disabled by toggle" and "absent by host capability" are recorded distinctly:
+          # conflating them makes "the forge silently stopped publishing packages"
+          # indistinguishable from "someone turned it off" (ADR-0011 section 2).
+          if [[ "$PACKAGE_INDEX_SUPPORTED" == "true" ]]; then
+            package_forge="enabled"
+          else
+            package_forge="unsupported"
+          fi
+          # TestPyPI is reached by trusted publishing, which needs a GitHub OIDC
+          # identity. On a Gitea runner there is none, so the destination is absent by
+          # host capability and the toggle cannot conjure it -- reported as
+          # `unsupported`, not as a failed job nobody expected.
+          if [[ "$FORGE" != "github" ]]; then
+            package_testpypi="unsupported"
+          elif [[ "${TESTPYPI_TOGGLE:-false}" == "true" ]]; then
+            package_testpypi="enabled"
+          else
+            package_testpypi="disabled"
+          fi
+          # `image-forge` is always enabled in this channel -- it is the channel, not a
+          # toggle -- so the key is evidence rather than a gate, and the image job's
+          # `if:` reads only the suppression conclusion.
+          printf 'enabled-destinations={"image-forge":"enabled","package-forge":"%s","package-testpypi":"%s"}\n' \
+            "$package_forge" "$package_testpypi" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Run governed verifier
+    needs: plan
+    permissions:
+      contents: read
+    # Exactly one verifier call for the event SHA. The verifier is secret-free by
+    # construction (ADR-0007 invariant 2), so no `secrets:` is passed to it.
+    uses: ./.github/workflows/verify-build.yaml
+    with:
+      channel: dev
+      package-version: ${{ needs.plan.outputs.package-version }}
+      source-sha: ${{ needs.plan.outputs.source-sha }}
+
+  stable-tag-guard:
+    name: Suppress development publication for a stable release commit
+    # Deliberately after the verifier, so the tag set is read as late as possible before
+    # the first credentialed job starts. `just release` pushes the branch and the
+    # annotated tag atomically and the forge guarantees no ordering between the two
+    # events, so this race is narrowed, not closed -- and that acceptance is a recorded
+    # decision, not an oversight (story E008-S01-001, F16). If a tag lands after this
+    # check the run publishes an immutable, unretractable dev version for a release
+    # commit; the recovery is a new development version.
+    needs:
+      - plan
+      - verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      suppressed: ${{ steps.guard.outputs.suppressed }}
+      stable-tags: ${{ steps.guard.outputs.stable-tags }}
+    steps:
+      - name: Checkout with full history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.source-sha }}
+      - name: Look for an exact annotated stable tag on the pushed commit
+        id: guard
+        env:
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          # No `git fetch` here. The checkout immediately above is authenticated and has
+          # already fetched full history and every tag; a follow-up `git fetch origin`
+          # would run without credentials, because `persist-credentials: false` removes
+          # them after cloning -- fine on a public GitHub repository and a first-run
+          # failure on the private Gitea deployment CI-AR6 exists to support.
+          python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" --commit "$SOURCE_SHA"
+      - name: Record the suppression conclusion
+        env:
+          STABLE_TAGS: ${{ steps.guard.outputs.stable-tags }}
+          SUPPRESSED: ${{ steps.guard.outputs.suppressed }}
+        run: |
+          set -euo pipefail
+          if [[ "$SUPPRESSED" == "true" ]]; then
+            echo "Development publication suppressed: the pushed commit carries ${STABLE_TAGS}." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No exact stable tag on the pushed commit; development publication proceeds." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  publish-package-forge:
+    name: Publish the development package to the forge index
+    needs:
+      - plan
+      - verify
+      - stable-tag-guard
+    if: >-
+      ${{ needs.stable-tag-guard.outputs.suppressed == 'false'
+      && fromJSON(needs.plan.outputs.enabled-destinations)['package-forge'] == 'enabled' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout with full history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.source-sha }}
+      - name: Re-check the stable tag set before the first credentialed step
+        env:
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          # The cheap hardening F16 names: re-read the tag set immediately before the
+          # first credentialed step, shrinking the window from "guard job start ->
+          # upload" to "check -> upload". It does not close the race, and failing here
+          # is the correct outcome -- an immutable dev version published for a release
+          # commit cannot be withdrawn. The freshness comes from the authenticated
+          # checkout directly above, never from an unauthenticated `git fetch`.
+          conclusion="$(python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" --commit "$SOURCE_SHA" --output "")"
+          echo "$conclusion"
+          if ! grep -qx 'suppressed=false' <<<"$conclusion"; then
+            echo "a stable tag appeared after the guard job; refusing to publish a development version for a release commit" >&2
+            exit 2
+          fi
+      - name: Revalidate the verified bundle before any credential is used
+        id: bundle
+        uses: ./.github/actions/verified-bundle
+        with:
+          python-version: ${{ needs.plan.outputs.python-version }}
+          artifact-name: ${{ needs.verify.outputs.dist-artifact-name }}
+          expected-package-version: ${{ needs.plan.outputs.package-version }}
+          expected-source-sha: ${{ needs.plan.outputs.source-sha }}
+      - name: Stage only the verified wheel and sdist for upload
+        id: upload-set
+        env:
+          BUNDLE_PATH: ${{ steps.bundle.outputs.bundle-path }}
+          SDIST_FILENAME: ${{ steps.bundle.outputs.sdist-filename }}
+          WHEEL_FILENAME: ${{ steps.bundle.outputs.wheel-filename }}
+        run: |
+          set -euo pipefail
+          # The publisher receives the two distributions and nothing else -- the bundle
+          # also carries SHA256SUMS and build-manifest.json, which are evidence, not
+          # distributions.
+          mkdir upload-set
+          cp -- "$BUNDLE_PATH/$WHEEL_FILENAME" "upload-set/$WHEEL_FILENAME"
+          cp -- "$BUNDLE_PATH/$SDIST_FILENAME" "upload-set/$SDIST_FILENAME"
+      # Pinned to a reviewed full commit SHA rather than @release/v1, because whoever can
+      # move that branch can exfiltrate this credential on the next run (ADR-0009,
+      # CI-AR38). SHA dc37677 is the head of release/v1, tagged v1.14.2, committed
+      # 2026-07-28; reviewed 2026-09-02.
+      - name: Upload the verified distributions to the forge index
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
+        with:
+          packages-dir: upload-set
+          repository-url: ${{ needs.plan.outputs.package-index-url }}
+          user: ${{ github.actor }}
+          password: ${{ secrets.FORGE_PACKAGE_TOKEN }}
+      - name: Record forge package publication evidence
+        env:
+          BUILD_MANIFEST_SHA256: ${{ steps.bundle.outputs.build-manifest-sha256 }}
+          PACKAGE_INDEX_URL: ${{ needs.plan.outputs.package-index-url }}
+          PACKAGE_VERSION: ${{ needs.plan.outputs.package-version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WHEEL_SHA256: ${{ steps.bundle.outputs.wheel-sha256 }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Forge package index"
+            echo
+            echo "- Run: [${GITHUB_RUN_ID}](${RUN_URL})"
+            echo "- Version: \`${PACKAGE_VERSION}\`"
+            echo "- Index: \`${PACKAGE_INDEX_URL}\`"
+            echo "- Wheel SHA-256: \`${WHEEL_SHA256}\`"
+            echo "- Build manifest SHA-256: \`${BUILD_MANIFEST_SHA256}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-package-testpypi:
+    name: Publish the development package to TestPyPI
+    needs:
+      - plan
+      - verify
+      - stable-tag-guard
+    if: >-
+      ${{ needs.stable-tag-guard.outputs.suppressed == 'false'
+      && fromJSON(needs.plan.outputs.enabled-destinations)['package-testpypi'] == 'enabled' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      # Trusted publishing (CI-AR25). This job holds an OIDC identity and no registry
+      # credential; the image job holds a registry credential and no OIDC identity. The
+      # two credential sets are disjoint by construction (CI-AR24, CI-AR40).
+      id-token: write
+    steps:
+      - name: Checkout with full history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.source-sha }}
+      - name: Re-check the stable tag set before the first credentialed step
+        env:
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          # The cheap hardening F16 names: re-read the tag set immediately before the
+          # first credentialed step, shrinking the window from "guard job start ->
+          # upload" to "check -> upload". It does not close the race, and failing here
+          # is the correct outcome -- an immutable dev version published for a release
+          # commit cannot be withdrawn. The freshness comes from the authenticated
+          # checkout directly above, never from an unauthenticated `git fetch`.
+          conclusion="$(python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" --commit "$SOURCE_SHA" --output "")"
+          echo "$conclusion"
+          if ! grep -qx 'suppressed=false' <<<"$conclusion"; then
+            echo "a stable tag appeared after the guard job; refusing to publish a development version for a release commit" >&2
+            exit 2
+          fi
+      - name: Revalidate the verified bundle before any credential is used
+        id: bundle
+        uses: ./.github/actions/verified-bundle
+        with:
+          python-version: ${{ needs.plan.outputs.python-version }}
+          artifact-name: ${{ needs.verify.outputs.dist-artifact-name }}
+          expected-package-version: ${{ needs.plan.outputs.package-version }}
+          expected-source-sha: ${{ needs.plan.outputs.source-sha }}
+      - name: Stage only the verified wheel and sdist for upload
+        env:
+          BUNDLE_PATH: ${{ steps.bundle.outputs.bundle-path }}
+          SDIST_FILENAME: ${{ steps.bundle.outputs.sdist-filename }}
+          WHEEL_FILENAME: ${{ steps.bundle.outputs.wheel-filename }}
+        run: |
+          set -euo pipefail
+          mkdir upload-set
+          cp -- "$BUNDLE_PATH/$WHEEL_FILENAME" "upload-set/$WHEEL_FILENAME"
+          cp -- "$BUNDLE_PATH/$SDIST_FILENAME" "upload-set/$SDIST_FILENAME"
+      # Same reviewed pin as the forge index job; see ADR-0009. SHA dc37677 is the head
+      # of release/v1, tagged v1.14.2, committed 2026-07-28; reviewed 2026-09-02.
+      - name: Upload the verified distributions to TestPyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
+        with:
+          packages-dir: upload-set
+          repository-url: https://test.pypi.org/legacy/
+      - name: Record TestPyPI publication evidence
+        env:
+          BUILD_MANIFEST_SHA256: ${{ steps.bundle.outputs.build-manifest-sha256 }}
+          PACKAGE_VERSION: ${{ needs.plan.outputs.package-version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WHEEL_SHA256: ${{ steps.bundle.outputs.wheel-sha256 }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### TestPyPI"
+            echo
+            echo "- Run: [${GITHUB_RUN_ID}](${RUN_URL})"
+            echo "- Version: \`${PACKAGE_VERSION}\`"
+            echo "- Wheel SHA-256: \`${WHEEL_SHA256}\`"
+            echo "- Build manifest SHA-256: \`${BUILD_MANIFEST_SHA256}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-image:
+    name: Publish the development image
+    needs:
+      - plan
+      - verify
+      - stable-tag-guard
+    if: ${{ needs.stable-tag-guard.outputs.suppressed == 'false' }}
+    permissions:
+      contents: read
+      packages: write
+    # Every read of the published image lives in publish-image.yaml, which moves no
+    # alias; this file consumes its digest and platforms as outputs. Story 003 adds an
+    # alias finalizer here, and from that moment a registry read in any job of this file
+    # would fail `test_alias_ordering_is_decided_from_git_never_from_a_registry`
+    # (story E008-S01-001, prep finding P1).
+    uses: ./.github/workflows/publish-image.yaml
+    with:
+      channel: dev
+      package-version: ${{ needs.plan.outputs.package-version }}
+      source-sha: ${{ needs.plan.outputs.source-sha }}
+      python-version: ${{ needs.plan.outputs.python-version }}
+      artifact-name: ${{ needs.verify.outputs.dist-artifact-name }}
+      registry: ${{ needs.plan.outputs.registry }}
+      tags: ${{ needs.plan.outputs.image-tags }}
+      # Development images never reach Docker Hub. That is the channel, not a toggle:
+      # PUBLISH_IMAGE_DOCKERHUB is inert in this file (ADR-0011).
+      dockerhub: false
+    secrets:
+      registry_username: ${{ github.actor }}
+      registry_password: ${{ secrets.GITHUB_TOKEN }}
+
+  development-evidence:
+    name: Record development run evidence
+    needs:
+      - plan
+      - verify
+      - stable-tag-guard
+      - publish-package-forge
+      - publish-package-testpypi
+      - publish-image
+    # `!cancelled()` rather than `always()`: a legitimately absent destination must not
+    # hide the run summary, but a cancelled run must not report one either (ADR-0011).
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Summarise identity, destinations and outcomes
+        env:
+          ENABLED_DESTINATIONS: ${{ needs.plan.outputs.enabled-destinations }}
+          FORGE: ${{ needs.plan.outputs.forge }}
+          IMAGE_DIGEST: ${{ needs.publish-image.outputs.digest }}
+          IMAGE_FORGE_RESULT: ${{ needs.publish-image.result }}
+          IMAGE_PLATFORMS: ${{ needs.publish-image.outputs.platforms }}
+          IMAGE_REFERENCE: ${{ needs.publish-image.outputs.image-reference }}
+          IMAGE_TAGS: ${{ needs.plan.outputs.image-tags }}
+          PACKAGE_FORGE_RESULT: ${{ needs.publish-package-forge.result }}
+          PACKAGE_VERSION: ${{ needs.plan.outputs.package-version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+          STABLE_TAGS: ${{ needs.stable-tag-guard.outputs.stable-tags }}
+          SUPPRESSED: ${{ needs.stable-tag-guard.outputs.suppressed }}
+          TESTPYPI_RESULT: ${{ needs.publish-package-testpypi.result }}
+          VERIFIER_RESULT: ${{ needs.verify.result }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Development publication"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Run | [${GITHUB_RUN_ID}](${RUN_URL}) |"
+            echo "| Forge | \`${FORGE}\` |"
+            echo "| Source | \`${SOURCE_SHA}\` |"
+            echo "| Version | \`${PACKAGE_VERSION}\` |"
+            echo "| Suppressed by stable tag | \`${SUPPRESSED}\` \`${STABLE_TAGS}\` |"
+            echo "| Enabled destinations | \`${ENABLED_DESTINATIONS}\` |"
+            echo "| Verifier | \`${VERIFIER_RESULT}\` |"
+            echo "| Forge package index | \`${PACKAGE_FORGE_RESULT}\` |"
+            echo "| TestPyPI | \`${TESTPYPI_RESULT}\` |"
+            echo "| Forge image | \`${IMAGE_FORGE_RESULT}\` |"
+            echo "| Image tags | \`${IMAGE_TAGS}\` |"
+            echo "| Image digest | \`${IMAGE_DIGEST}\` |"
+            echo "| Image reference | \`${IMAGE_REFERENCE}\` |"
+            echo "| Image platforms | \`${IMAGE_PLATFORMS}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

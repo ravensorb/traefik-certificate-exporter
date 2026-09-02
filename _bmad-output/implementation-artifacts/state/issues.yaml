@@ -109,5 +109,14 @@ backlog:
   title: 'No workflow reacts to push: main and v* tags are unverified until E008-S8.1 lands dev.yaml'
   source: legacy cutover
   severity: High
-  status: backlog
+  status: resolved
+  resolution: 'Closed by E008-S01-001: .github/workflows/dev.yaml reacts to pushes on the protected default branch and calls verify-build.yaml exactly once for the event SHA, with every publisher transitively gated on it. test_any_push_triggered_workflow_verifies_before_it_ships is no longer vacuous -- it now examines a real push workflow -- and it was not weakened to get there. Residual, tracked by its own stories rather than by this item: pushes of v* tags are still unverified until release.yaml lands (E008-S01-002 / E008-S01-003).'
   description: Deleting build.yaml with the rest of the legacy publish path removed the only push-triggered workflow. ci.yaml is pull_request-only, so pushes to main and v* tags now run nothing. This is the same exposure the deleted test.yaml left behind, reintroduced deliberately as part of the cutover rather than by accident, because the workflow doing the verifying could not succeed. It closes when E008-S01-001 adds .github/workflows/dev.yaml and the stable-release orchestrator lands, both calling verify-build.yaml as thin adapters. test_any_push_triggered_workflow_verifies_before_it_ships was reshaped to assert the conditional invariant -- any push-triggered workflow must reach the verifier before anything that ships -- so it passes vacuously now and bites the moment a push workflow reappears. Do NOT close this by weakening that test; close it by landing dev.yaml.
+- key: BL-E008-002
+  epic: '008'
+  sprint: '01'
+  title: dev.yaml pairs the pusher's github.actor with the forge package token, coupling the credential to whoever pushed
+  source: code-review (E008-S01-001)
+  severity: Low
+  status: backlog
+  description: "publish-package-forge passes user: ${{ github.actor }} alongside secrets.FORGE_PACKAGE_TOKEN. Gitea's basic auth resolves a token supplied as the password regardless of the username, so it works, but the username varies per push and is unrelated to whoever minted the token. Prefer __token__, or a documented vars.FORGE_PACKAGE_USER alongside FORGE_PACKAGE_TOKEN. Raised as LOW-5 in _bmad-output/implementation-artifacts/epic-008/sprint-01/closure/review-E008-S01-001.md."

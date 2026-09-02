@@ -110,6 +110,64 @@ or adding an archival branch such as `git branch archive/release-v1.2.4 HEAD`. T
 prescribe deleting tags, resetting a branch, or rewriting history; any later cleanup should be a
 separate maintainer decision made after the refs are understood and preserved.
 
+## Development publication (`dev.yaml`)
+
+Every push to the protected default branch runs `.github/workflows/dev.yaml`. It resolves the
+development identity, calls the governed verifier exactly once for the pushed SHA, and then
+publishes an immutable `X.Y.(Z+1).devN` package and a `dev-<12sha>` image. Concurrency supersedes a
+stale candidate: a newer push cancels an in-flight one.
+
+### Destinations, and the two reasons one can be missing
+
+| Destination | Development | Controlled by |
+|---|---|---|
+| image -> active forge registry | always | nothing; it is the channel |
+| image -> Docker Hub | never | nothing. `PUBLISH_IMAGE_DOCKERHUB` is **inert** here |
+| package -> forge Python index | when the host has one | host capability, not a toggle |
+| package -> TestPyPI | when enabled | `PUBLISH_PACKAGE_TESTPYPI` |
+| package -> PyPI | never | nothing; that is the stable channel |
+
+"Disabled by toggle" and "absent by host capability" are reported as different words in the run
+summary on purpose. GitHub has no forge Python index, and no toggle can create one; a destination
+reported `unsupported` is not one somebody switched off.
+
+`PUBLISH_PACKAGE_TESTPYPI` accepts only `true`, `false`, or absence. Any other value fails the plan
+job rather than being coerced.
+
+### `FORGE_REGISTRY`
+
+Registry coordinates are derived from action context. `FORGE_REGISTRY` is the one documented
+override, for a Gitea deployment whose registry answers on a different port from its web UI. It
+accepts a bare `host[:port]` on the same forge and nothing else -- a scheme, userinfo, path, query,
+fragment or a foreign host is rejected rather than stripped. An unrecognised forge fails closed: no
+registry is guessed, because a guess publishes an immutable artifact somewhere nobody chose.
+
+### The accepted tag race
+
+`just release` pushes the branch and the annotated tag atomically, so one operation fires a `push`
+event on the default branch *and* a tag event, and the forge guarantees no ordering between them.
+`dev.yaml` suppresses development publication when the pushed commit carries an exact annotated
+`vX.Y.Z` tag, and **the two package publishers** re-read the tag set immediately before their
+upload. The image publisher is reached through `uses:` and a called workflow takes no caller steps,
+so it cannot re-read inline; it is protected at job granularity by the guard job's conclusion, and
+its window remains "guard job start -> push". Either way the race is narrowed, not closed. **This
+is a recorded decision, not a defect:** serialising the two events would mean giving up the atomic
+two-ref push ADR-0006 exists to provide.
+
+If the tag is still invisible when the checks run, an immutable, unretractable `X.Y.(Z+1).devN` is
+published for the release commit. It cannot be withdrawn. The recovery is to publish a new
+development version; the stable release itself is unaffected.
+
+### What the published-image smoke test does and does not cover
+
+After the push, `publish-image.yaml` pulls the published index **by digest**, resolves the
+descriptor matching the runner's own architecture, and starts that container. Only the native
+descriptor is executed. The other platform is covered by provenance rather than execution: the
+wheel is `py3-none-any`, so the same file with the same SHA-256 is installed into both images, and
+the base image is digest-pinned (ADR-0008). Platform coverage of the index itself is asserted from
+the published manifest list, filtered on `vnd.docker.reference.type` -- never by counting
+descriptors, since BuildKit emits SLSA provenance whether or not attestations were requested.
+
 ## Rollback
 
 Pin the previous image tag/PyPI version; there is no migration/state to roll back — the

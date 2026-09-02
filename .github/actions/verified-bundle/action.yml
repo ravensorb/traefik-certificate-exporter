@@ -1,0 +1,122 @@
+name: Consume the verified distribution bundle
+description: >-
+  Boundary revalidation for every publisher (CI-AR36). Downloads verified-dist-v1,
+  rechecks SHA256SUMS, revalidates build-manifest.json, matches the source SHA and
+  package version the caller believes it is publishing, and proves the wheel on disk is
+  byte-for-byte the wheel the image plan declares. All of it happens before the caller
+  reaches a login or an upload, which is the property that makes the trust boundary real
+  rather than nominal.
+
+  Shared by dev.yaml and release.yaml so the two channels cannot drift apart on what
+  "verified" means (story E008-S01-001, gate finding F8).
+
+inputs:
+  python-version:
+    description: Exact interpreter version for the contract validator.
+    required: true
+  artifact-name:
+    description: Name of the verified distribution artifact to download.
+    required: false
+    default: verified-dist-v1
+  path:
+    description: Directory the bundle is downloaded into.
+    required: false
+    default: verified-dist-v1
+  expected-source-sha:
+    description: Full lowercase source SHA the caller is publishing.
+    required: true
+  expected-package-version:
+    description: Normalized PEP 440 package version the caller is publishing.
+    required: true
+
+outputs:
+  bundle-path:
+    description: Directory holding the revalidated bundle.
+    value: ${{ inputs.path }}
+  package-version:
+    description: Package version proven by the revalidated manifest.
+    value: ${{ steps.manifest.outputs.package-version }}
+  source-sha:
+    description: Source SHA proven by the revalidated manifest.
+    value: ${{ steps.manifest.outputs.source-sha }}
+  build-manifest-sha256:
+    description: SHA-256 of the revalidated build manifest.
+    value: ${{ steps.manifest.outputs.file-sha256 }}
+  wheel-filename:
+    description: Root-level wheel filename inside the bundle.
+    value: ${{ steps.manifest.outputs.wheel-filename }}
+  wheel-sha256:
+    description: SHA-256 of the wheel, matched against the declared image input.
+    value: ${{ steps.manifest.outputs.wheel-sha256 }}
+  sdist-filename:
+    description: Root-level sdist filename inside the bundle.
+    value: ${{ steps.manifest.outputs.sdist-filename }}
+  image-plan-fingerprint:
+    description: Fingerprint covering every image-plan identity input.
+    value: ${{ steps.manifest.outputs.image-plan-fingerprint }}
+
+runs:
+  using: composite
+  steps:
+    # v4 remains the GitHub/Gitea conformance baseline paired with
+    # actions/upload-artifact@v4 until both-forge validation approves a new pair.
+    - name: Download the verified distribution bundle
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.path }}
+
+    - name: Set up the pinned interpreter for the contract validator
+      uses: ./.github/actions/setup-poetry-python
+      with:
+        python-version: ${{ inputs.python-version }}
+        dependencies: build-only
+
+    - name: Recheck the bundle checksums
+      uses: ./.github/actions/publication-contract
+      with:
+        operation: verify-checksums
+        artifact-directory: ${{ inputs.path }}
+        input-file: ${{ inputs.path }}/SHA256SUMS
+
+    - name: Revalidate the build manifest against the bundle
+      id: manifest
+      uses: ./.github/actions/publication-contract
+      with:
+        operation: validate
+        contract: build-manifest
+        input-file: ${{ inputs.path }}/build-manifest.json
+        artifact-directory: ${{ inputs.path }}
+
+    - name: Match identity and the exact wheel this bundle declares
+      shell: bash
+      env:
+        BUNDLE_PATH: ${{ inputs.path }}
+        EXPECTED_PACKAGE_VERSION: ${{ inputs.expected-package-version }}
+        EXPECTED_SOURCE_SHA: ${{ inputs.expected-source-sha }}
+        MANIFEST_PACKAGE_VERSION: ${{ steps.manifest.outputs.package-version }}
+        MANIFEST_SOURCE_SHA: ${{ steps.manifest.outputs.source-sha }}
+        MANIFEST_WHEEL_FILENAME: ${{ steps.manifest.outputs.wheel-filename }}
+        MANIFEST_WHEEL_SHA256: ${{ steps.manifest.outputs.wheel-sha256 }}
+      run: |
+        set -euo pipefail
+        if [[ "$MANIFEST_SOURCE_SHA" != "$EXPECTED_SOURCE_SHA" ]]; then
+          echo "verified bundle: manifest source $MANIFEST_SOURCE_SHA is not the source being published ($EXPECTED_SOURCE_SHA)" >&2
+          exit 2
+        fi
+        if [[ "$MANIFEST_PACKAGE_VERSION" != "$EXPECTED_PACKAGE_VERSION" ]]; then
+          echo "verified bundle: manifest version $MANIFEST_PACKAGE_VERSION is not the version being published ($EXPECTED_PACKAGE_VERSION)" >&2
+          exit 2
+        fi
+        # A belt-and-braces third hash. The contract validator already hashes the wheel
+        # on disk against `distributions.wheel.sha256` and binds
+        # `image_plan.build_args.WHEEL_SHA256` to it through the fingerprint, and
+        # verify-checksums hashes it again -- so this adds redundancy, not reach. The
+        # genuinely new check in this step is the IDENTITY match above: the validator
+        # cannot know which source or version the caller believes it is publishing.
+        actual_sha256="$(sha256sum "$BUNDLE_PATH/$MANIFEST_WHEEL_FILENAME" | awk '{print $1}')"
+        if [[ "$actual_sha256" != "$MANIFEST_WHEEL_SHA256" ]]; then
+          echo "verified bundle: wheel on disk hashes to $actual_sha256, declared $MANIFEST_WHEEL_SHA256" >&2
+          exit 2
+        fi
+        echo "verified bundle: $MANIFEST_WHEEL_FILENAME matches the declared image input" >&2

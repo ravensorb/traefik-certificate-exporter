@@ -1,0 +1,60 @@
+name: Derive forge coordinates
+description: >-
+  Single owner of host-neutral forge coordinates (CI-AR6). Derives the forge kind, its
+  container registry, the image repository and whether this host offers a Python package
+  index, from action context alone. FORGE_REGISTRY is the one documented override, for
+  the Gitea deployment whose registry answers on a different port from its web UI.
+  Unknown forges fail closed: guessing a registry means publishing an immutable artifact
+  somewhere nobody chose.
+
+inputs:
+  registry-override:
+    description: >-
+      Optional FORGE_REGISTRY value. A bare host[:port] on this same forge; a scheme,
+      userinfo, path, query or fragment is rejected rather than stripped. Empty means
+      absent, because that is what an unset repository variable interpolates to.
+    required: false
+    default: ""
+
+outputs:
+  forge:
+    description: Forge kind -- github or gitea.
+    value: ${{ steps.coordinates.outputs.forge }}
+  server-host:
+    description: Host (with port, if any) of the forge web server.
+    value: ${{ steps.coordinates.outputs.server-host }}
+  registry:
+    description: Container registry authority for this forge.
+    value: ${{ steps.coordinates.outputs.registry }}
+  image-repository:
+    description: Fully qualified lowercase image repository on the forge registry.
+    value: ${{ steps.coordinates.outputs.image-repository }}
+  package-index-supported:
+    description: >-
+      Whether this host offers a forge Python index at all. "false" here means absent by
+      host capability, which no toggle can override -- distinct from disabled by an
+      operator's toggle (ADR-0011 section 2).
+    value: ${{ steps.coordinates.outputs.package-index-supported }}
+  package-index-url:
+    description: Forge Python index upload URL, empty when unsupported.
+    value: ${{ steps.coordinates.outputs.package-index-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Derive and validate forge coordinates
+      id: coordinates
+      shell: bash
+      env:
+        FORGE_REGISTRY_OVERRIDE: ${{ inputs.registry-override }}
+        FORGE_REPOSITORY: ${{ github.repository }}
+        FORGE_SERVER_URL: ${{ github.server_url }}
+      run: |
+        set -euo pipefail
+        # Standard-library only, so it runs on the interpreter every runner image
+        # already ships. The interpreter pin belongs to setup-poetry-python and is not
+        # needed to parse a URL.
+        python3 "$GITHUB_WORKSPACE/scripts/forge_coordinates.py" \
+          --server-url "$FORGE_SERVER_URL" \
+          --repository "$FORGE_REPOSITORY" \
+          --registry-override "$FORGE_REGISTRY_OVERRIDE"

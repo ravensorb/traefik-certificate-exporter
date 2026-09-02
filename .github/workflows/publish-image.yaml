@@ -1,0 +1,371 @@
+name: Publish image
+
+# Reusable only -- no event triggers of its own, exactly as verify-build.yaml is. It is
+# the second reusable workflow, and becomes the fifth workflow file once release.yaml
+# lands; story E008-S01-004's topology assertion expects those five (prep finding P2).
+#
+# It owns every read of a *published* image: the raw index fetch, the filtered-platform
+# assertion, the digest resolution and the pulled-by-digest smoke test. That placement is
+# load-bearing, not incidental. `test_alias_ordering_is_decided_from_git_never_from_a_registry`
+# forbids a registry read in ANY job of a file that moves an alias, and story 003 puts an
+# alias finalizer into dev.yaml and release.yaml. This file moves no alias, so the reads
+# live here and the callers consume `digest` and `platforms` as outputs (prep finding P1).
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        description: Publication channel (dev or stable).
+        required: true
+        type: string
+      package-version:
+        description: Normalized PEP 440 version being published.
+        required: true
+        type: string
+      source-sha:
+        description: Full lowercase 40-character Git source SHA.
+        required: true
+        type: string
+      python-version:
+        description: Exact interpreter version for the contract validator.
+        required: true
+        type: string
+      registry:
+        description: Forge container registry authority, from the forge-coordinates action.
+        required: true
+        type: string
+      tags:
+        description: >-
+          Newline-separated complete image references to publish. Every one of them is
+          applied by a single Buildx invocation; there is no per-registry rebuild
+          (CI-AR39).
+        required: true
+        type: string
+      artifact-name:
+        description: Verified distribution artifact to consume.
+        required: false
+        default: verified-dist-v1
+        type: string
+      platforms:
+        description: Comma-separated platform list for the one multi-platform build.
+        required: false
+        default: linux/amd64,linux/arm64
+        type: string
+      dockerhub:
+        description: >-
+          Whether Docker Hub is one of the enabled destinations for this run. Always
+          false in the development channel: development images never reach a public
+          registry (ADR-0011). The caller decides from the plan job's enabled set; this
+          workflow never reads a toggle.
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      registry_username:
+        description: Username for the forge container registry.
+        required: true
+      registry_password:
+        description: Password or token for the forge container registry.
+        required: true
+      dockerhub_username:
+        description: Docker Hub username, required only when dockerhub is true.
+        required: false
+      dockerhub_password:
+        description: Docker Hub token, required only when dockerhub is true.
+        required: false
+    outputs:
+      digest:
+        description: Published multi-platform index digest.
+        value: ${{ jobs.image.outputs.digest }}
+      platforms:
+        description: Platforms carried by the published index, attestations excluded.
+        value: ${{ jobs.image.outputs.platforms }}
+      image-reference:
+        description: Immutable digest reference of the published index.
+        value: ${{ jobs.image.outputs.image-reference }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    name: Publish multi-platform image
+    runs-on: ubuntu-24.04
+    # 12-15 minutes on a 4 vCPU hosted runner, measured by the F13 spike: linux/amd64
+    # alone is 50s, both platforms under QEMU 436s, and 80% of that is `apk add gcc
+    # cargo` plus `poetry install` on the emulated arm64 leg. Recorded in ADR-0008.
+    timeout-minutes: 45
+    outputs:
+      digest: ${{ steps.published.outputs.digest }}
+      platforms: ${{ steps.index.outputs.platforms }}
+      image-reference: ${{ steps.published.outputs.image-reference }}
+    steps:
+      - name: Checkout the exact published source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ inputs.source-sha }}
+
+      - name: Revalidate the verified bundle before any login
+        id: bundle
+        uses: ./.github/actions/verified-bundle
+        with:
+          python-version: ${{ inputs.python-version }}
+          artifact-name: ${{ inputs.artifact-name }}
+          expected-package-version: ${{ inputs.package-version }}
+          expected-source-sha: ${{ inputs.source-sha }}
+
+      - name: Stage the exact verified wheel at its declared image path
+        env:
+          BUNDLE_PATH: ${{ steps.bundle.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          # Same export the verifier performs, from the same revalidated manifest, so
+          # the published image is built from the identical image plan (ADR-0008). The
+          # copy is hashed here rather than in a following step: a `GITHUB_ENV` write
+          # takes effect only in later steps, so re-reading WHEEL_SHA256 from the shell
+          # would compare the staged file against an empty string.
+          poetry run python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import shutil
+          from pathlib import Path
+
+          bundle = Path(os.environ["BUNDLE_PATH"])
+          manifest = json.loads((bundle / "build-manifest.json").read_text())
+          build_args = manifest["image_plan"]["build_args"]
+          wheel_path = Path(build_args["WHEEL_PATH"])
+          source = bundle / manifest["distributions"]["wheel"]["filename"]
+          wheel_path.parent.mkdir(parents=True, exist_ok=True)
+          shutil.copyfile(source, wheel_path)
+          staged = hashlib.sha256(wheel_path.read_bytes()).hexdigest()
+          if staged != build_args["WHEEL_SHA256"]:
+              raise SystemExit(
+                  f"staged wheel hashes to {staged}, declared {build_args['WHEEL_SHA256']}"
+              )
+          values = {
+              "LABELS_JSON": json.dumps(
+                  manifest["image_plan"]["labels"], separators=(",", ":"), sort_keys=True
+              ),
+              "REVISION": manifest["source_sha"],
+              "VERSION": manifest["package_version"],
+              "WHEEL_PATH": str(wheel_path),
+              "WHEEL_SHA256": build_args["WHEEL_SHA256"],
+          }
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as stream:
+              for name, value in values.items():
+                  if "\n" in value or "\r" in value:
+                      raise SystemExit(f"manifest value for {name} contains a newline")
+                  stream.write(f"{name}={value}\n")
+          PY
+
+      - name: Compose the single Buildx tag list
+        id: plan
+        env:
+          DOCKERHUB_ENABLED: ${{ inputs.dockerhub }}
+          IMAGE_TAGS: ${{ inputs.tags }}
+          PLATFORMS: ${{ inputs.platforms }}
+          REGISTRY: ${{ inputs.registry }}
+        run: |
+          set -euo pipefail
+          # Buildx parses an env override of a `list(string)` variable as CSV, so a tag
+          # containing a comma would silently split into two tags. Rejected rather than
+          # quoted: an image reference has no business carrying one.
+          #
+          # Every tag is also checked against the destinations this run logs into. Buildx
+          # pushes whatever it is handed, so a Docker Hub tag passed with dockerhub:false
+          # would issue a request to a destination the run declared disabled -- and
+          # "disabled destinations receive no credentials or requests" is the whole rule.
+          permitted="$REGISTRY"
+          if [[ "$DOCKERHUB_ENABLED" == "true" ]]; then
+            permitted="$permitted docker.io index.docker.io"
+          fi
+          tags=""
+          primary=""
+          while IFS= read -r tag; do
+            tag="$(echo "$tag" | tr -d '[:space:]')"
+            if [[ -z "$tag" ]]; then
+              continue
+            fi
+            case "$tag" in
+              *,*) echo "image tag must not contain a comma: $tag" >&2; exit 2 ;;
+            esac
+            repository="${tag%:*}"
+            if [[ "$repository" == "$tag" || "$repository" != *"/"* ]]; then
+              echo "image tag must be <registry>/<repository>:<tag>: $tag" >&2
+              exit 2
+            fi
+            authority="${tag%%/*}"
+            if [[ "$authority" != *.* && "$authority" != *:* ]]; then
+              authority="docker.io"
+            fi
+            if [[ " $permitted " != *" $authority "* ]]; then
+              echo "image tag addresses $authority, which this run did not log in to: $tag" >&2
+              exit 2
+            fi
+            tags="${tags:+$tags,}$tag"
+            primary="${primary:-$repository}"
+          done <<< "$IMAGE_TAGS"
+          if [[ -z "$tags" ]]; then
+            echo "no image tags were supplied" >&2
+            exit 2
+          fi
+          {
+            echo "tags=$tags"
+            echo "primary=$primary"
+            echo "platforms=$PLATFORMS"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU for the emulated platform leg
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the forge container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.registry_username }}
+          password: ${{ secrets.registry_password }}
+
+      - name: Log in to Docker Hub
+        if: ${{ inputs.dockerhub }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.dockerhub_username }}
+          password: ${{ secrets.dockerhub_password }}
+
+      - name: Build and push every tag in one multi-platform invocation
+        id: build
+        env:
+          PLATFORMS: ${{ steps.plan.outputs.platforms }}
+          TAGS: ${{ steps.plan.outputs.tags }}
+        run: |
+          set -euo pipefail
+          # One invocation, every tag, both platforms. A second `bake` per registry would
+          # produce a different image for each destination, which is the defect CI-AR39
+          # forbids and the reason nothing here loops over registries.
+          docker buildx bake --file docker-bake.hcl image --push \
+            --metadata-file image-metadata.json
+
+      - name: Resolve the published index digest
+        id: published
+        env:
+          PRIMARY_REPOSITORY: ${{ steps.plan.outputs.primary }}
+        run: |
+          set -euo pipefail
+          digest="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          metadata = json.loads(Path("image-metadata.json").read_text())
+          target = metadata.get("image", metadata)
+          digest = target.get("containerimage.digest")
+          if not isinstance(digest, str) or not digest.startswith("sha256:"):
+              raise SystemExit(f"buildx reported no index digest: {metadata!r}")
+          print(digest)
+          PY
+          )"
+          {
+            echo "digest=$digest"
+            echo "image-reference=$PRIMARY_REPOSITORY@$digest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Inspect the published index and assert its platforms
+        id: index
+        env:
+          IMAGE_REFERENCE: ${{ steps.published.outputs.image-reference }}
+          PLATFORMS: ${{ steps.plan.outputs.platforms }}
+        run: |
+          set -euo pipefail
+          # After the push, never before: querying a destination beforehand would revive
+          # retired CI-AR26. `imagetools inspect --raw` returns the manifest list itself,
+          # one level below an OCI-layout index.json -- iterating the wrong level reads
+          # nothing useful.
+          docker buildx imagetools inspect --raw "$IMAGE_REFERENCE" > published-index.json
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          from pathlib import Path
+
+          index = json.loads(Path("published-index.json").read_text())
+          manifests = index.get("manifests")
+          if not isinstance(manifests, list):
+              raise SystemExit("published reference is not a multi-platform index")
+          # Keyed on the authoritative annotation, never on a descriptor count.
+          # ATTESTATIONS=[] does NOT disable attestations: BuildKit emits SLSA
+          # provenance mode=min regardless, so this index carries four descriptors --
+          # two platforms plus two attestation manifests. A count assertion is wrong in
+          # three directions (ADR-0008, as amended).
+          platforms = {
+              f"{entry['platform']['os']}/{entry['platform']['architecture']}"
+              for entry in manifests
+              if entry.get("annotations", {}).get("vnd.docker.reference.type")
+              != "attestation-manifest"
+          }
+          expected = set(os.environ["PLATFORMS"].split(","))
+          if platforms != expected:
+              raise SystemExit(
+                  f"published index carries {sorted(platforms)}, expected {sorted(expected)}"
+              )
+          print(f"platforms={','.join(sorted(platforms))}")
+          print(f"descriptors={len(manifests)}")
+          PY
+
+      - name: Pull the published index by digest for the native platform
+        id: pulled
+        env:
+          IMAGE_REFERENCE: ${{ steps.published.outputs.image-reference }}
+        run: |
+          set -euo pipefail
+          # The verifier smoke-tested a single-platform --load-ed image; this is a
+          # different build. Inspection proves the manifest exists, not that the
+          # container starts, so the published artifact is started here (F14).
+          docker pull --quiet "$IMAGE_REFERENCE"
+          docker tag "$IMAGE_REFERENCE" traefik-certificate-exporter:published
+          native="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' traefik-certificate-exporter:published)"
+          echo "native-platform=$native" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test the published image that was actually shipped
+        uses: LiquidLogicLabs/git-action-docker-test@v2
+        with:
+          image: traefik-certificate-exporter:published
+          required-services: svc-traefik-certificate-exporter
+
+      - name: Record image publication evidence
+        env:
+          BUILD_MANIFEST_SHA256: ${{ steps.bundle.outputs.build-manifest-sha256 }}
+          CHANNEL: ${{ inputs.channel }}
+          DESCRIPTORS: ${{ steps.index.outputs.descriptors }}
+          DIGEST: ${{ steps.published.outputs.digest }}
+          IMAGE_TAGS: ${{ steps.plan.outputs.tags }}
+          NATIVE_PLATFORM: ${{ steps.pulled.outputs.native-platform }}
+          PLATFORMS: ${{ steps.index.outputs.platforms }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WHEEL_FILENAME: ${{ steps.bundle.outputs.wheel-filename }}
+          WHEEL_SHA256: ${{ steps.bundle.outputs.wheel-sha256 }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Image publication (${CHANNEL})"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Run | [${GITHUB_RUN_ID}](${RUN_URL}) |"
+            echo "| Digest | \`${DIGEST}\` |"
+            echo "| Tags | \`${IMAGE_TAGS}\` |"
+            echo "| Platforms | \`${PLATFORMS}\` (${DESCRIPTORS} index descriptors) |"
+            echo "| Smoke-tested platform | \`${NATIVE_PLATFORM}\` (native descriptor only) |"
+            echo "| Wheel | \`${WHEEL_FILENAME}\` |"
+            echo "| Wheel SHA-256 | \`${WHEEL_SHA256}\` |"
+            echo "| Build manifest SHA-256 | \`${BUILD_MANIFEST_SHA256}\` |"
+            echo
+            echo "Only the native descriptor is executed. The other platform is covered by"
+            echo "provenance rather than execution: the wheel is \`py3-none-any\`, so the same"
+            echo "file with the same SHA-256 is installed into both images, and the base is"
+            echo "digest-pinned (ADR-0008)."
+          } >> "$GITHUB_STEP_SUMMARY"

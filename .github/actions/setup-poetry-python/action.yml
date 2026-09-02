@@ -19,6 +19,15 @@ inputs:
       (poetry install --no-root --no-directory), or "none".
     required: false
     default: "all"
+  development-distance:
+    description: >-
+      First-parent commit distance for a development build. When supplied, the
+      normalized PEP 440 development version is resolved from the same committed-version
+      authority as `package-version` and emitted as `development-version`. Empty means
+      "not a development build" and emits nothing, so no caller has to know how a
+      development version is spelled.
+    required: false
+    default: ""
 
 outputs:
   package-version:
@@ -27,6 +36,11 @@ outputs:
   poetry-version:
     description: Pinned Poetry version read from pyproject.toml's dev group.
     value: ${{ steps.committed.outputs.poetry-version }}
+  development-version:
+    description: >-
+      Normalized X.Y.(Z+1).devN development version for the supplied distance, empty
+      when no distance was supplied.
+    value: ${{ steps.committed.outputs.development-version }}
   python-version:
     description: Interpreter version actually resolved by actions/setup-python.
     value: ${{ steps.python.outputs.python-version }}
@@ -45,6 +59,7 @@ runs:
       shell: bash
       env:
         DEPENDENCIES: ${{ inputs.dependencies }}
+        DEVELOPMENT_DISTANCE: ${{ inputs.development-distance }}
         POETRY_ENABLED: ${{ inputs.poetry }}
       run: |
         set -euo pipefail
@@ -70,6 +85,17 @@ runs:
           echo "package-version=$(python "$versions" package-version)"
           echo "poetry-version=$(python "$versions" poetry-version)"
         } >> "$GITHUB_OUTPUT"
+        # The development version derives from the same authority, so no plan job has to
+        # re-implement "next patch, .devN" -- the ordering rule that a restore silently
+        # regressed once already.
+        if [[ -n "$DEVELOPMENT_DISTANCE" ]]; then
+          if [[ ! "$DEVELOPMENT_DISTANCE" =~ ^[0-9]+$ ]]; then
+            echo "development-distance: must be a non-negative integer, got '$DEVELOPMENT_DISTANCE'" >&2
+            exit 2
+          fi
+          development="$(python "$versions" development-version --distance "$DEVELOPMENT_DISTANCE")"
+          echo "development-version=$development" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Install the committed Poetry pin
       if: ${{ inputs.poetry == 'true' }}
