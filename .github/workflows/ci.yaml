@@ -45,7 +45,7 @@ jobs:
         id: source
         env:
           # scripts/committed_versions.py is the single implementation of the committed
-          # version authority, shared with build.yaml's plan job. This job never
+          # version authority, shared with every plan job. This job never
           # re-reads pyproject.toml itself.
           COMMITTED_VERSION: ${{ steps.setup.outputs.package-version }}
           SOURCE_SHA: ${{ github.event.pull_request.head.sha }}

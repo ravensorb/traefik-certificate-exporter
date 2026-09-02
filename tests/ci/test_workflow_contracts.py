@@ -560,6 +560,13 @@ def test_a_job_gating_on_publishers_uses_not_cancelled_never_always() -> None:
     """
     for path in sorted(WORKFLOWS.glob("*.yaml")):
         for job_name, job in _jobs(_load_workflow(path)).items():
+            # Steps too: a job-level `!cancelled()` with a step-level `always()` inside it
+            # reintroduces exactly what the job-level check forbids, one level down.
+            for step in job.get("steps", []) or []:
+                assert "always()" not in str(step.get("if", "")), (
+                    f"{path.name}: job {job_name!r} has a step using `always()`. It runs "
+                    f"on cancellation too; use `!cancelled()` (ADR-0011)."
+                )
             condition = str(job.get("if", ""))
             assert "always()" not in condition or not job.get("needs"), (
                 f"{path.name}: job {job_name!r} gates on other jobs with `always()`. Use "
@@ -590,8 +597,14 @@ def test_the_enabled_destination_set_has_one_producer() -> None:
     for path in sorted(WORKFLOWS.glob("*.yaml")):
         for job_name, job in _jobs(_load_workflow(path)).items():
             outputs = job.get("outputs") or {}
-            if "enabled-destinations" in outputs or "package-version" in outputs:
-                continue  # the plan job is the producer
+            # The producer is a job that PLANS -- it emits the set and ships nothing. A
+            # publisher that also declares `enabled-destinations` used to escape by
+            # naming the output, which is the guard reading a label instead of a role.
+            produces = "enabled-destinations" in outputs or any(
+                "version" in name for name in outputs
+            )
+            if produces and not _is_credential_bearing(job):
+                continue
             body = json.dumps(job)
             assert not toggle.search(body), (
                 f"{path.name}: job {job_name!r} reads a PUBLISH_* toggle directly. The "

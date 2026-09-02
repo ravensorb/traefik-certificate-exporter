@@ -90,7 +90,8 @@ def development_version(distance: int, metadata: dict[str, Any] | None = None) -
 
     ``distance`` is the first-parent commit count, which makes the version unique per
     commit. No arithmetic is performed on the committed version itself: the release
-    number is owned by ``scripts/release_version.py`` and release-please, and a
+    number is owned by ``scripts/release_version.py`` alone -- release-please was
+    retired by ADR-0006 and is forbidden by contract test -- and a
     development build must never invent one.
     """
     if distance < 0:
