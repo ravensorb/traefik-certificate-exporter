@@ -50,7 +50,9 @@ The following are invariants:
    ```
 
    Broad refspecs, `--tags`, force, separate pushes, destructive rollback, and non-atomic fallback
-   are prohibited.
+   are prohibited **in this transaction**. That scope is deliberate and is not a blanket ban on
+   forced writes anywhere in the project — see "Alias tags move, and moving one is a forced write"
+   below.
 6. A failed push preserves the local commit and tag. Resume accepts only one direct unpushed release
    commit, exactly one matching annotated tag, an equal Poetry version, the unchanged remote parent,
    and an absent remote exact tag. It repeats the existing atomic push without bumping, committing,
@@ -179,6 +181,43 @@ behind. The `Unconfirmed` state is deliberately terminal until a human runs the 
 automatic retry could double-publish, and an automatic rollback could delete a tag other
 machines have already fetched.
 
+
+## Alias tags move, and moving one is a forced write (amendment, 2026-09-02)
+
+**Requirement, not a trade-off: once a valid release exists, the major alias floats.** `vMAJOR`
+and `vMAJOR.MINOR` must advance to the newest compatible stable release. That is the point of
+publishing them.
+
+Moving a tag is a **non-fast-forward ref update**. There is no non-forced spelling of it —
+`git push --force`, delete-and-recreate, and `PATCH .../git/refs` with `force: true` are the same
+operation with different syntax. So §5's prohibition and this requirement cannot both be read
+broadly, and it is §5 that is narrow: it governs **the release transaction's own atomic push**,
+where force would let a botched run overwrite a published identity. It was never a statement
+about alias refs, which did not exist when it was written.
+
+The identity-versus-artifacts split already drawn above decides this cleanly:
+
+| Ref | Mutability | Who writes it | Force |
+|---|---|---|---|
+| `refs/tags/vX.Y.Z` | **immutable** — this *is* the identity | local guarded transaction only | **never**, under any spelling |
+| `refs/tags/vMAJOR`, `refs/tags/vMAJOR.MINOR` | **mutable by design** — pointers to an identity already chosen | the registered CI finalizer only | **required**, with `--force-with-lease` |
+
+An alias does not choose a version; it points at one. Forcing it therefore cannot corrupt an
+identity, which is the harm §5 exists to prevent.
+
+**Constraints on the forced write**, all mechanically checked:
+
+- `--force-with-lease` with an expected-old-ref, never a bare `--force`. A blind force would
+  silently clobber a concurrent alias move; the lease turns that race into a failed push.
+- Never `--tags`, and never a broad refspec — the target ref is named explicitly.
+- Never against `refs/tags/vX.Y.Z`. The pattern permitted is `refs/tags/v\d+(\.\d+)?$`, which
+  matches `v1` and `v1.2` and cannot match `v1.2.3`.
+- Only from a job registered in `RELEASE_FINALIZER_JOBS`, which per the amendment above is a
+  `(workflow, job)` pair.
+
+Enforced by `test_forced_ref_writes_target_only_alias_tags_from_a_finalizer`, verified with three
+planted violations: a bare `--force`, a forced write against an exact `vX.Y.Z` identity, and an
+alias force from an unregistered job.
 
 ## Consequences
 

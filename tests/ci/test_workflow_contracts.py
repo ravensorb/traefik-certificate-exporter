@@ -607,6 +607,57 @@ def test_releases_are_created_only_through_the_approved_action() -> None:
                     )
 
 
+# A forced ref update is what moving a floating major *is*: `git push --force`,
+# delete-and-recreate, and `PATCH .../git/refs` with force are one operation spelled three
+# ways. Permitted only against an alias -- `v1`, `v1.2` -- never `v1.2.3`, which is the
+# immutable identity ADR-0006 protects.
+ALIAS_TAG_REF = re.compile(r"refs/tags/v[0-9]+(?:\.[0-9]+)?$")
+FORCED_REF_WRITE = re.compile(
+    r"(?:--force\b|--force-with-lease|\+refs/|\bforce\s*[:=]\s*true)", re.IGNORECASE
+)
+
+
+def test_forced_ref_writes_target_only_alias_tags_from_a_finalizer() -> None:
+    """Once a valid release exists the major alias floats -- a hard requirement -- and
+    moving a tag is a non-fast-forward write. ADR-0006 permits it, narrowly: alias refs
+    only, from a registered finalizer only, with a lease.
+
+    The three ways this goes wrong are a bare `--force` (which silently clobbers a
+    concurrent alias move instead of failing), a force against `refs/tags/vX.Y.Z` (which
+    would overwrite a published identity -- the harm the prohibition exists to prevent),
+    and an alias force from a job nobody granted.
+    """
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            for step in job.get("steps", []) or []:
+                command = str(step.get("run", ""))
+                if not FORCED_REF_WRITE.search(command):
+                    continue
+
+                assert (path.name, job_name) in RELEASE_FINALIZER_JOBS, (
+                    f"{path.name}: job {job_name!r} forces a ref update but is not a "
+                    f"registered finalizer (ADR-0006)"
+                )
+                assert "--force-with-lease" in command, (
+                    f"{path.name}: job {job_name!r} uses a bare --force. An alias move "
+                    f"needs an expected-old-ref, or a concurrent move is clobbered "
+                    f"silently instead of failing the push."
+                )
+                assert "--tags" not in command, (
+                    f"{path.name}: job {job_name!r} forces with --tags; name the ref"
+                )
+                targets = re.findall(r"refs/tags/[^\s:'\"]+", command)
+                assert targets, (
+                    f"{path.name}: job {job_name!r} forces a write naming no refs/tags ref"
+                )
+                for target in targets:
+                    assert ALIAS_TAG_REF.search(target), (
+                        f"{path.name}: job {job_name!r} forces {target}, which is not an "
+                        f"alias. `vX.Y.Z` is the immutable identity and is chosen only by "
+                        f"the local guarded transaction (ADR-0006)."
+                    )
+
+
 def test_no_workflow_delegates_versioning_to_an_external_release_bot() -> None:
     for path in sorted(WORKFLOWS.glob("*.yaml")):
         assert "release-please" not in path.read_text(encoding="utf-8"), (

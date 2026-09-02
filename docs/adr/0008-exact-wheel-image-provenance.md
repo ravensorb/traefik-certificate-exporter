@@ -167,7 +167,8 @@ rather than by convention.
   platforms = {
       f"{m['platform']['os']}/{m['platform']['architecture']}"
       for m in index["manifests"]
-      if m.get("annotations", {}).get("vnd.docker.reference.type") != "attestation-manifest"
+      if m.get("annotations", {}).get("vnd.docker.reference.type")
+      != "attestation-manifest"
   }
   assert platforms == {"linux/amd64", "linux/arm64"}
   ```
