@@ -25,18 +25,8 @@ PACKAGE = "publication_contract"
 SCHEMA_DIRECTORY = "schemas"
 SCHEMA_FILENAMES: Final[Mapping[str, str]] = {
     "build-manifest": "build-manifest-v1.schema.json",
-    "publication-plan": "publication-plan-v1.schema.json",
-    "release-receipt": "release-receipt-v1.schema.json",
 }
 CONTRACTS: Final[tuple[str, ...]] = tuple(sorted(SCHEMA_FILENAMES))
-
-# The owning forge is never an optional destination (CI-AR20, CI-AR21a): it is
-# always present in both `package_targets` and `image_targets`, on both channels,
-# with `enabled` fixed at the constant `true`. The entry's name is written down
-# exactly once, here; `tests/ci/test_publication_contract.py` derives the schema
-# fragments it asserts against from this value rather than from a hand-kept list,
-# so a renamed or dropped conditional fails there instead of passing unnoticed.
-ALWAYS_ENABLED_TARGET_NAME: Final[str] = "forge"
 
 # The "no secret-bearing fields in evidence" rule is expressed exactly once, here.
 # A field name is forbidden when any of its underscore-delimited components is one
@@ -45,17 +35,13 @@ ALWAYS_ENABLED_TARGET_NAME: Final[str] = "forge"
 # `tests/ci/test_publication_contract.py` proves the checked-in schemas carry
 # nothing but that generated fragment, so the two cannot drift.
 SECRET_FIELD_TERMS: Final[tuple[str, ...]] = (
-    "credential_hint",
-    "credential_value",
+    "credential",
     "key",
     "passwd",
     "password",
     "secret",
     "token",
 )
-# `credential_mode` names which credential mechanism a publication uses; it carries
-# no credential material and is therefore the one allowed `credential_*` field.
-SECRET_FIELD_EXEMPTIONS: Final[frozenset[str]] = frozenset({"credential_mode"})
 SECRET_FIELD_RE: Final[re.Pattern[str]] = re.compile(
     rf"(?:^|_)(?:{'|'.join(SECRET_FIELD_TERMS)})(?:_|$)",
     re.IGNORECASE,
@@ -93,18 +79,11 @@ SECRET_FIELD_SCHEMA_PATTERN: Final[str] = (
 
 def secret_field_name_schema() -> dict[str, Any]:
     """Return the JSON Schema fragment equivalent to :func:`is_secret_field`."""
-    return {
-        "anyOf": [
-            {"enum": sorted(SECRET_FIELD_EXEMPTIONS)},
-            {"not": {"pattern": SECRET_FIELD_SCHEMA_PATTERN}},
-        ]
-    }
+    return {"not": {"pattern": SECRET_FIELD_SCHEMA_PATTERN}}
 
 
 def is_secret_field(name: str) -> bool:
     """Return whether ``name`` is a forbidden secret-bearing evidence field."""
-    if name in SECRET_FIELD_EXEMPTIONS:
-        return False
     return SECRET_FIELD_RE.search(name) is not None
 
 
@@ -318,71 +297,6 @@ def _validate_build_manifest(
             )
 
 
-def _require_unique_target_names(entries: Sequence[Any], path: str) -> None:
-    """Reject two entries describing one destination.
-
-    A duplicate name is not merely redundant: two entries for the same
-    destination can disagree about enablement or coordinates, and nothing
-    downstream would say which of them the publisher obeyed.
-    """
-    seen: set[str] = set()
-    for index, entry in enumerate(entries):
-        name = entry["name"]
-        if name in seen:
-            _fail(f"{path}[{index}].name", f"duplicate destination {name!r}")
-        seen.add(name)
-
-
-def _require_safe_endpoints(entries: Sequence[Any], path: str) -> None:
-    for index, entry in enumerate(entries):
-        endpoint = entry["endpoint"]
-        if endpoint is not None:
-            _require_safe_url(endpoint, f"{path}[{index}].endpoint")
-
-
-def _validate_publication_plan(document: Mapping[str, Any]) -> None:
-    _require_normalized_version(document["package_version"], "$.package_version")
-
-    package_targets = document["package_targets"]
-    _require_unique_target_names(package_targets, "$.package_targets")
-    _require_safe_endpoints(package_targets, "$.package_targets")
-
-    image_targets = document["image_targets"]
-    _require_unique_target_names(image_targets, "$.image_targets")
-    for index, target in enumerate(image_targets):
-        for field in ("registry", "repository"):
-            if target[field] != target[field].lower():
-                _fail(
-                    f"$.image_targets[{index}].{field}",
-                    "must be lowercase normalized coordinates",
-                )
-
-    immutable = document["tags"]["immutable"]
-    aliases = document["tags"]["aliases"]
-    overlap = sorted(set(immutable) & set(aliases))
-    if overlap:
-        _fail("$.tags", f"immutable and alias tag sets overlap: {', '.join(overlap)}")
-
-    if document["channel"] == "dev":
-        # The schema pins the shape; only the plan knows the source SHA the
-        # twelve-character segment has to be taken from.
-        expected = f"dev-{document['source_sha'][:12]}"
-        if immutable[0] != expected:
-            _fail("$.tags.immutable[0]", f"must be {expected!r}")
-
-
-def _validate_release_receipt(document: Mapping[str, Any]) -> None:
-    _require_normalized_version(document["package_version"], "$.package_version")
-
-    destinations = document["package"]["destinations"]
-    _require_unique_target_names(destinations, "$.package.destinations")
-    _require_safe_endpoints(destinations, "$.package.destinations")
-    _require_unique_target_names(document["oci"]["images"], "$.oci.images")
-
-    if document["forge_release"]["url"] is not None:
-        _require_safe_url(document["forge_release"]["url"], "$.forge_release.url")
-
-
 def validate_contract(
     contract: str,
     document: Any,
@@ -404,10 +318,6 @@ def validate_contract(
 
     if contract == "build-manifest":
         _validate_build_manifest(document, artifact_root)
-    elif contract == "publication-plan":
-        _validate_publication_plan(document)
-    elif contract == "release-receipt":
-        _validate_release_receipt(document)
 
 
 def _write_atomically(payload: bytes, output: Path) -> None:

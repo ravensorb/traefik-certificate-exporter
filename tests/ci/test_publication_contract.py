@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 import re
-from collections.abc import Callable
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -14,11 +14,16 @@ from jsonschema import Draft202012Validator
 from packaging.specifiers import SpecifierSet
 
 import publication_contract as contract
+from publication_contract import cli
+from publication_contract.contract import SCHEMA_FILENAMES
 
 PROJECT_ROOT = Path(__file__).parents[2]
 FIXTURES = Path(__file__).parent / "fixtures" / "publication-contract"
 VERIFY_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "verify-build.yaml"
 DOCKER_BAKE = PROJECT_ROOT / "docker-bake.hcl"
+CONTRACT_ACTION = (
+    PROJECT_ROOT / ".github" / "actions" / "publication-contract" / "action.yml"
+)
 SOURCE_SHA = "d" * 40
 BASE_DIGEST = f"sha256:{'c' * 64}"
 
@@ -45,10 +50,6 @@ def _steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
     ("contract_name", "fixture"),
     [
         ("build-manifest", "valid-build-manifest.json"),
-        ("publication-plan", "valid-publication-plan.json"),
-        ("publication-plan", "valid-dev-publication-plan.json"),
-        ("release-receipt", "valid-release-receipt-incomplete.json"),
-        ("release-receipt", "valid-release-receipt-complete.json"),
     ],
 )
 def test_valid_fixtures_round_trip_deterministically(
@@ -82,8 +83,7 @@ def test_valid_fixtures_round_trip_deterministically(
             "invalid-hash-build-manifest.json",
             "$.distributions.wheel.sha256",
         ),
-        ("publication-plan", "invalid-missing-schema-version.json", "$.schema_version"),
-        ("publication-plan", "invalid-schema-publication-plan.json", "$.password_hint"),
+        ("build-manifest", "invalid-missing-schema-version.json", "$.schema_version"),
     ],
 )
 def test_invalid_fixtures_fail_with_field_specific_errors(
@@ -102,12 +102,45 @@ def test_unsupported_contract_is_named_before_any_schema_is_loaded() -> None:
         contract.validate_contract("not-a-contract", {})
 
 
+@pytest.mark.parametrize("retired", ["publication-plan", "release-receipt"])
+def test_retired_contracts_fail_clearly_in_package_cli_and_action_definition(
+    retired: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(
+        contract.ContractError, match=rf"unsupported contract {retired!r}"
+    ):
+        contract.validate_contract(retired, {})
+    with pytest.raises(SystemExit) as raised:
+        cli.main(["validate", "--contract", retired, "--input", "unused.json"])
+    assert raised.value.code == 2
+    diagnostic = capsys.readouterr().err
+    assert retired in diagnostic
+    assert "invalid choice" in diagnostic
+
+    action = _load_workflow(CONTRACT_ACTION)
+    assert action["inputs"]["contract"]["description"].startswith("build-manifest")
+    assert retired not in json.dumps(action, sort_keys=True)
+    run = action["runs"]["steps"][0]["run"]
+    assert '[[ "$PC_CONTRACT" != "build-manifest" ]]' in run
+    assert "supported contract: build-manifest" in run
+
+
 def test_every_declared_contract_ships_a_valid_packaged_schema() -> None:
-    assert set(contract.CONTRACTS) == {
-        "build-manifest",
-        "publication-plan",
-        "release-receipt",
-    }
+    expected_resources = {"build-manifest-v1.schema.json"}
+    source_schema_directory = PROJECT_ROOT / "src" / "publication_contract" / "schemas"
+    packaged_schema_directory = resources.files("publication_contract").joinpath(
+        "schemas"
+    )
+
+    assert set(contract.CONTRACTS) == {"build-manifest"}
+    assert set(SCHEMA_FILENAMES.values()) == expected_resources
+    assert {
+        path.name for path in source_schema_directory.iterdir() if path.is_file()
+    } == expected_resources
+    assert {
+        path.name for path in packaged_schema_directory.iterdir() if path.is_file()
+    } == expected_resources
     for name in contract.CONTRACTS:
         schema = contract.load_schema(name)
         Draft202012Validator.check_schema(schema)
@@ -115,13 +148,13 @@ def test_every_declared_contract_ships_a_valid_packaged_schema() -> None:
 
 def test_duplicate_json_key_is_rejected_at_the_field() -> None:
     with pytest.raises(contract.ContractError, match=r"^\$\.source_sha: duplicate"):
-        contract.load_json(FIXTURES / "invalid-duplicate-publication-plan.json")
+        contract.load_json(FIXTURES / "invalid-duplicate-build-manifest.json")
 
 
 def test_malformed_json_reports_its_source_location() -> None:
-    fixture = FIXTURES / "invalid-malformed-publication-plan.json"
+    fixture = FIXTURES / "invalid-malformed-build-manifest.json"
     with pytest.raises(
-        contract.ContractError, match=r"invalid-malformed-publication-plan\.json:4:1"
+        contract.ContractError, match=r"invalid-malformed-build-manifest\.json:4:1"
     ):
         contract.load_json(fixture)
 
@@ -233,20 +266,12 @@ def test_checksum_revalidation_detects_distribution_mutation(tmp_path: Path) -> 
     assert observed.read_bytes() != expected.read_bytes()
 
 
-def test_complete_receipt_cannot_hide_pending_mutations() -> None:
-    document = contract.load_json(FIXTURES / "valid-release-receipt-incomplete.json")
-    document["status"] = "complete"
-
-    with pytest.raises(contract.ContractError):
-        contract.validate_contract("release-receipt", document)
-
-
 def test_secret_derived_hint_is_rejected() -> None:
-    document = contract.load_json(FIXTURES / "valid-publication-plan.json")
+    document = contract.load_json(FIXTURES / "valid-build-manifest.json")
     document["credential_hint"] = "derived"
 
     with pytest.raises(contract.ContractError, match="credential_hint"):
-        contract.validate_contract("publication-plan", document)
+        contract.validate_contract("build-manifest", document)
 
 
 def test_secret_guard_fires_on_call_rather_than_on_exhaustion() -> None:
@@ -259,7 +284,15 @@ def test_secret_guard_fires_on_call_rather_than_on_exhaustion() -> None:
         contract.reject_secret_fields({"a": [{}, {"api_token": "x"}]})
 
 
-def test_both_guards_reject_a_secret_bearing_build_arg(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("unsafe_field", "unsafe_value"),
+    [("REGISTRY_TOKEN", "s3cret"), ("credential_mode", "oidc")],
+)
+def test_both_guards_reject_a_secret_bearing_build_arg(
+    tmp_path: Path,
+    unsafe_field: str,
+    unsafe_value: str,
+) -> None:
     inputs = _manifest_inputs(tmp_path)
     _distributions(tmp_path)
     inputs["build_args_json"] = json.dumps(
@@ -267,7 +300,7 @@ def test_both_guards_reject_a_secret_bearing_build_arg(tmp_path: Path) -> None:
             "POETRY_VERSION": "2.4.2",
             "REVISION": SOURCE_SHA,
             "VERSION": "1.2.3",
-            "REGISTRY_TOKEN": "s3cret",
+            unsafe_field: unsafe_value,
         }
     )
     document, root = contract.build_manifest(**inputs)
@@ -278,10 +311,7 @@ def test_both_guards_reject_a_secret_bearing_build_arg(tmp_path: Path) -> None:
     # ... and the Python guard rejects it on its own, at the exact field.
     with pytest.raises(
         contract.ContractError,
-        match=(
-            r"^\$\.image_plan\.build_args\.REGISTRY_TOKEN: "
-            r"secret-bearing fields are forbidden"
-        ),
+        match=rf"^\$\.image_plan\.build_args\.{unsafe_field}: secret-bearing fields are forbidden",
     ):
         contract.reject_secret_fields(document)
 
@@ -339,6 +369,10 @@ def test_schema_fragment_and_python_guard_agree_field_by_field(name: str) -> Non
     validator = Draft202012Validator(contract.secret_field_name_schema())
 
     assert contract.is_secret_field(name) is not validator.is_valid(name), name
+
+
+def test_credential_mode_has_no_global_exemption() -> None:
+    assert contract.is_secret_field("credential_mode")
 
 
 def test_verify_workflow_interface_is_minimal_and_credential_free() -> None:
@@ -422,6 +456,7 @@ def test_verify_workflow_exposes_only_one_canonical_promotable_set() -> None:
     assert (
         sum("ORIGINAL_CHECKSUMS_SHA256" in step.get("env", {}) for step in steps) == 2
     )
+    assert sum("expected_contract_schemas" in run for run in runs) == 2
 
 
 def test_verify_matrix_exactly_matches_declared_supported_python_range() -> None:
@@ -468,421 +503,3 @@ def test_manifest_inputs_match_the_image_build_plan() -> None:
     assert inputs["target"] == "runtime"
     assert 'POETRY_VERSION = "2.4.2"' in bake
     assert '"POETRY_VERSION":"2.4.2"' in inputs["build-args-json"]
-
-
-# --------------------------------------------------------------------------
-# Publication plan and release receipt: multi-destination shape (Epic 8)
-# --------------------------------------------------------------------------
-
-STABLE_PLAN = "valid-publication-plan.json"
-DEV_PLAN = "valid-dev-publication-plan.json"
-INCOMPLETE_RECEIPT = "valid-release-receipt-incomplete.json"
-COMPLETE_RECEIPT = "valid-release-receipt-complete.json"
-
-
-def _fixture(name: str) -> Any:
-    return contract.load_json(FIXTURES / name)
-
-
-def _mutated(name: str, mutate: Callable[[Any], None]) -> Any:
-    document = _fixture(name)
-    mutate(document)
-    return document
-
-
-def _plan_target_arrays() -> dict[str, str]:
-    """Map each plan target array to the ``$defs`` name describing its items.
-
-    Derived from the packaged schema rather than enumerated: a third target
-    array added later is covered by every test below on the day it lands.
-    """
-    schema = contract.load_schema("publication-plan")
-    return {
-        name: definition["items"]["$ref"].rsplit("/", 1)[-1]
-        for name, definition in schema["properties"].items()
-        if isinstance(definition, dict)
-        and definition.get("type") == "array"
-        and "contains" in definition
-    }
-
-
-def _receipt_complete_branch() -> dict[str, Any]:
-    (conditional,) = contract.load_schema("release-receipt")["allOf"]
-    assert conditional["if"]["properties"]["status"]["const"] == "complete"
-    branch: dict[str, Any] = conditional["then"]["properties"]
-    return branch
-
-
-def _receipt_destination_arrays() -> list[tuple[str, str]]:
-    """Return the ``(group, array)`` pairs the complete branch pins a forge entry in."""
-    return [
-        (group, array)
-        for group, group_schema in _receipt_complete_branch().items()
-        for array, array_schema in group_schema.get("properties", {}).items()
-        if "contains" in array_schema
-    ]
-
-
-def _forge_index(entries: list[dict[str, Any]]) -> int:
-    return next(
-        index
-        for index, entry in enumerate(entries)
-        if entry["name"] == contract.ALWAYS_ENABLED_TARGET_NAME
-    )
-
-
-def test_the_always_on_forge_rule_is_spelled_from_one_name() -> None:
-    # CI-AR20/CI-AR21a live in two schemas and four arrays. The name is written
-    # once in `contract.py`; this proves every packaged fragment agrees with it,
-    # with the fragment set derived from the schemas rather than listed here.
-    forge = contract.ALWAYS_ENABLED_TARGET_NAME
-    plan = contract.load_schema("publication-plan")
-    arrays = _plan_target_arrays()
-
-    assert set(arrays) == {"package_targets", "image_targets"}
-    for array, definition_name in arrays.items():
-        contains = plan["properties"][array]["contains"]
-        assert contains["properties"]["name"]["const"] == forge, array
-        (conditional, *_rest) = plan["$defs"][definition_name]["allOf"]
-        assert conditional["if"]["properties"]["name"]["const"] == forge
-        assert conditional["then"]["properties"]["enabled"]["const"] is True
-
-    pairs = _receipt_destination_arrays()
-    assert {group for group, _array in pairs} == {"package", "oci"}
-    branch = _receipt_complete_branch()
-    for group, array in pairs:
-        contains = branch[group]["properties"][array]["contains"]
-        assert contains["properties"]["name"]["const"] == forge, group
-
-
-@pytest.mark.parametrize("array", sorted(_plan_target_arrays()))
-def test_every_target_array_must_carry_an_enabled_forge_entry(array: str) -> None:
-    forge = contract.ALWAYS_ENABLED_TARGET_NAME
-
-    def drop_forge(document: Any) -> None:
-        document[array] = [entry for entry in document[array] if entry["name"] != forge]
-
-    def disable_forge(document: Any) -> None:
-        document[array][_forge_index(document[array])]["enabled"] = False
-
-    with pytest.raises(contract.ContractError, match=rf"^\$\.{array}: "):
-        contract.validate_contract(
-            "publication-plan", _mutated(STABLE_PLAN, drop_forge)
-        )
-    index = _forge_index(_fixture(STABLE_PLAN)[array])
-    with pytest.raises(
-        contract.ContractError,
-        match=rf"^\$\.{array}\[{index}\]\.enabled: ",
-    ):
-        contract.validate_contract(
-            "publication-plan", _mutated(STABLE_PLAN, disable_forge)
-        )
-
-
-def _drop_distance(document: Any) -> None:
-    del document["development_distance"]
-
-
-def _add_distance(document: Any) -> None:
-    document["development_distance"] = 3
-
-
-def _short_sha_segment(document: Any) -> None:
-    document["tags"]["immutable"] = ["dev-ddddddddddd"]
-
-
-def _foreign_sha_segment(document: Any) -> None:
-    document["tags"]["immutable"] = ["dev-abcdefabcdef"]
-
-
-def _extra_dev_alias(document: Any) -> None:
-    document["tags"]["aliases"] = ["dev", "edge"]
-
-
-def _image_claims_absent_by_host(document: Any) -> None:
-    document["image_targets"][0]["absent_by_host"] = True
-
-
-def _pypi_claims_absent_by_host(document: Any) -> None:
-    document["package_targets"][1]["absent_by_host"] = True
-
-
-def _absent_by_host_with_endpoint(document: Any) -> None:
-    document["package_targets"][0]["endpoint"] = "https://pypi.example.com/"
-
-
-def _present_forge_without_endpoint(document: Any) -> None:
-    document["package_targets"][0]["endpoint"] = None
-
-
-def _testpypi_on_stable(document: Any) -> None:
-    document["package_targets"].append(
-        {
-            "name": "testpypi",
-            "enabled": True,
-            "endpoint": "https://test.pypi.org/legacy/",
-            "credential_mode": "oidc",
-        }
-    )
-
-
-def _pypi_on_dev(document: Any) -> None:
-    document["package_targets"].append(
-        {
-            "name": "pypi",
-            "enabled": True,
-            "endpoint": "https://upload.pypi.org/legacy/",
-            "credential_mode": "oidc",
-        }
-    )
-
-
-def _drop_git_aliases(document: Any) -> None:
-    del document["git_aliases"]
-
-
-def _drop_forge_release_destination(document: Any) -> None:
-    document["destinations"] = ["package", "oci"]
-
-
-def _drop_run(document: Any) -> None:
-    del document["run"]
-
-
-def _secret_in_run(document: Any) -> None:
-    document["run"]["token"] = "not-a-real-value"
-
-
-def _duplicate_package_target(document: Any) -> None:
-    document["package_targets"].append(dict(document["package_targets"][1]))
-
-
-def _uppercase_registry(document: Any) -> None:
-    document["image_targets"][0]["registry"] = "GHCR.io"
-
-
-def _credentialled_endpoint(document: Any) -> None:
-    document["package_targets"][1]["endpoint"] = "https://u:p@test.pypi.org/legacy/"
-
-
-def _credential_mode_that_names_a_secret(document: Any) -> None:
-    document["image_targets"][1]["credential_mode"] = "password"
-
-
-@pytest.mark.parametrize(
-    ("fixture", "mutate", "field"),
-    [
-        (DEV_PLAN, _drop_distance, "$.development_distance"),
-        (STABLE_PLAN, _add_distance, "$.development_distance"),
-        (DEV_PLAN, _short_sha_segment, "$.tags.immutable[0]"),
-        (DEV_PLAN, _foreign_sha_segment, "$.tags.immutable[0]"),
-        (DEV_PLAN, _extra_dev_alias, "$.tags.aliases"),
-        (
-            STABLE_PLAN,
-            _image_claims_absent_by_host,
-            "$.image_targets[0].absent_by_host",
-        ),
-        (DEV_PLAN, _pypi_claims_absent_by_host, "$.package_targets[1].absent_by_host"),
-        (STABLE_PLAN, _absent_by_host_with_endpoint, "$.package_targets[0].endpoint"),
-        (DEV_PLAN, _present_forge_without_endpoint, "$.package_targets[0].endpoint"),
-        (STABLE_PLAN, _testpypi_on_stable, "$.package_targets[2].name"),
-        (DEV_PLAN, _pypi_on_dev, "$.package_targets[2].name"),
-        (STABLE_PLAN, _drop_git_aliases, "$.git_aliases"),
-        (STABLE_PLAN, _drop_forge_release_destination, "$.destinations"),
-        (STABLE_PLAN, _drop_run, "$.run"),
-        (STABLE_PLAN, _secret_in_run, "$.run.token"),
-        (STABLE_PLAN, _duplicate_package_target, "$.package_targets[2].name"),
-        (STABLE_PLAN, _uppercase_registry, "$.image_targets[0].registry"),
-        (DEV_PLAN, _credentialled_endpoint, "$.package_targets[1].endpoint"),
-        (
-            STABLE_PLAN,
-            _credential_mode_that_names_a_secret,
-            "$.image_targets[1].credential_mode",
-        ),
-    ],
-)
-def test_plan_rejections_are_addressed_at_the_offending_field(
-    fixture: str,
-    mutate: Callable[[Any], None],
-    field: str,
-) -> None:
-    with pytest.raises(contract.ContractError, match=rf"^{re.escape(field)}: "):
-        contract.validate_contract("publication-plan", _mutated(fixture, mutate))
-
-
-def _forge_package_disabled(document: Any) -> None:
-    # An endpoint is supplied so the *only* defect is the disabled outcome: the
-    # always-on destination has no disabled state, whatever else is well formed.
-    document["package"]["destinations"][0].update(
-        {"outcome": "disabled", "endpoint": "https://gitea.example.com/pypi"}
-    )
-
-
-def _forge_image_disabled(document: Any) -> None:
-    document["oci"]["images"][0]["outcome"] = "disabled"
-
-
-def _image_absent_by_host(document: Any) -> None:
-    document["oci"]["images"][0]["outcome"] = "absent-by-host"
-
-
-def _external_package_absent_by_host(document: Any) -> None:
-    document["package"]["destinations"][1].update(
-        {"outcome": "absent-by-host", "endpoint": None, "artifacts": []}
-    )
-
-
-def _absent_by_host_receipt_endpoint(document: Any) -> None:
-    document["package"]["destinations"][0]["endpoint"] = "https://pypi.example.com/"
-
-
-def _drop_receipt_run(document: Any) -> None:
-    del document["run"]
-
-
-def _duplicate_image_destination(document: Any) -> None:
-    document["oci"]["images"].append(dict(document["oci"]["images"][1]))
-
-
-def _published_package_missing_a_file(document: Any) -> None:
-    document["package"]["destinations"][1]["artifacts"].pop()
-
-
-def _published_image_without_a_digest(document: Any) -> None:
-    document["oci"]["images"][0]["digest"] = None
-
-
-@pytest.mark.parametrize(
-    ("fixture", "mutate", "field"),
-    [
-        (
-            INCOMPLETE_RECEIPT,
-            _forge_package_disabled,
-            "$.package.destinations[0].outcome",
-        ),
-        (INCOMPLETE_RECEIPT, _forge_image_disabled, "$.oci.images[0].outcome"),
-        (INCOMPLETE_RECEIPT, _image_absent_by_host, "$.oci.images[0].outcome"),
-        (
-            INCOMPLETE_RECEIPT,
-            _external_package_absent_by_host,
-            "$.package.destinations[1].outcome",
-        ),
-        (
-            INCOMPLETE_RECEIPT,
-            _absent_by_host_receipt_endpoint,
-            "$.package.destinations[0].endpoint",
-        ),
-        (INCOMPLETE_RECEIPT, _drop_receipt_run, "$.run"),
-        (INCOMPLETE_RECEIPT, _duplicate_image_destination, "$.oci.images[2].name"),
-        (
-            COMPLETE_RECEIPT,
-            _published_package_missing_a_file,
-            "$.package.destinations[1].artifacts",
-        ),
-        (COMPLETE_RECEIPT, _published_image_without_a_digest, "$.oci.images[0].digest"),
-    ],
-)
-def test_receipt_rejections_are_addressed_at_the_offending_field(
-    fixture: str,
-    mutate: Callable[[Any], None],
-    field: str,
-) -> None:
-    with pytest.raises(contract.ContractError, match=rf"^{re.escape(field)}: "):
-        contract.validate_contract("release-receipt", _mutated(fixture, mutate))
-
-
-@pytest.mark.parametrize(("group", "array"), _receipt_destination_arrays())
-def test_a_complete_receipt_needs_an_entry_for_every_always_on_destination(
-    group: str,
-    array: str,
-) -> None:
-    forge = contract.ALWAYS_ENABLED_TARGET_NAME
-
-    def drop_forge(document: Any) -> None:
-        document[group][array] = [
-            entry for entry in document[group][array] if entry["name"] != forge
-        ]
-
-    with pytest.raises(contract.ContractError, match=rf"^\$\.{group}\.{array}: "):
-        contract.validate_contract(
-            "release-receipt", _mutated(COMPLETE_RECEIPT, drop_forge)
-        )
-
-
-def _unreconciled_statuses() -> list[str]:
-    """Every reconciliation status that is not `matched`, taken from the schema.
-
-    The enum is what widened; deriving the case list from it is what proves the
-    widening cannot outrun the `complete` conditional that has to reject them.
-    """
-    schema = contract.load_schema("release-receipt")
-    values = schema["$defs"]["reconciliationStatus"]["enum"]
-    return [value for value in values if value != "matched"]
-
-
-def test_the_reconciliation_enum_expresses_the_four_way_classification() -> None:
-    assert set(_unreconciled_statuses()) | {"matched"} == {
-        "failed",
-        "matched",
-        "mismatched",
-        "missing",
-        "pending",
-        "unverifiable",
-    }
-
-
-@pytest.mark.parametrize("alias_array", ["git_aliases", "oci_aliases"])
-@pytest.mark.parametrize("status", _unreconciled_statuses())
-def test_a_complete_receipt_cannot_carry_an_unreconciled_alias(
-    alias_array: str,
-    status: str,
-) -> None:
-    def set_status(document: Any) -> None:
-        document["reconciliation"][alias_array][0]["status"] = status
-
-    with pytest.raises(
-        contract.ContractError,
-        match=rf"^\$\.reconciliation\.{alias_array}\[0\]\.status: ",
-    ):
-        contract.validate_contract(
-            "release-receipt", _mutated(COMPLETE_RECEIPT, set_status)
-        )
-
-
-@pytest.mark.parametrize("status", ["mismatched", "missing", "unverifiable"])
-def test_an_incomplete_receipt_accepts_every_new_reconciliation_status(
-    status: str,
-) -> None:
-    def set_status(document: Any) -> None:
-        document["reconciliation"]["oci_aliases"][0]["status"] = status
-
-    contract.validate_contract(
-        "release-receipt", _mutated(INCOMPLETE_RECEIPT, set_status)
-    )
-
-
-def test_a_run_that_never_reached_the_image_publisher_still_serializes() -> None:
-    def never_attempted(document: Any) -> None:
-        document["oci"]["images"] = []
-
-    contract.validate_contract(
-        "release-receipt", _mutated(INCOMPLETE_RECEIPT, never_attempted)
-    )
-
-
-def test_the_dev_plan_binds_its_immutable_tag_to_the_planned_source_sha() -> None:
-    document = _fixture(DEV_PLAN)
-
-    assert document["tags"]["immutable"] == [f"dev-{document['source_sha'][:12]}"]
-    assert document["tags"]["aliases"] == ["dev"]
-
-
-def test_run_correlation_is_carried_by_the_plan_and_the_receipt_only() -> None:
-    # BL-E007-003: the manifest must stay byte-identical for identical source, so
-    # a run id belongs in the two documents that are allowed to vary per run.
-    correlated = ("publication-plan", "release-receipt")
-    for name in correlated:
-        assert "run" in contract.load_schema(name)["required"], name
-    manifest = contract.load_schema("build-manifest")
-    assert "run" not in manifest["properties"]
-    assert "run" not in manifest["required"]

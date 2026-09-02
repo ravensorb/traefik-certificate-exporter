@@ -70,7 +70,7 @@ backlog:
   source: post-restore audit (E007)
   severity: High
   status: backlog
-  description: "ARCHITECTURE-SPINE.md requires publishers to promote the verified artifact and never rebuild the Python package. verify-build.yaml does its half correctly: it revalidates SHA256SUMS and the manifest, builds via docker buildx bake from the manifest's own values, uploads verified-dist-v1 and exposes dist-artifact-name, build-manifest-sha256, package-version and source-sha as workflow_call outputs. The legacy publishers that violated this (build-container.yaml rebuilding from context '.', build-package.yaml running poetry build from source) are now deleted, so nothing violates it today -- but nothing consumes the artifact either. E007's provenance chain terminates inside the verifier. Closed by E008-S01-002 and S01-004, whose stories already forbid rebuilding and specify consuming the artifact."
+  description: "ARCHITECTURE-SPINE.md requires publishers to promote verified-dist-v1 rather than rebuild the Python package. verify-build.yaml revalidates SHA256SUMS and build-manifest.json, performs native image smoke from the exact wheel, uploads verified-dist-v1, and exposes its identity outputs. The deleted legacy publishers no longer violate the rule, but no active publisher consumes the bundle yet. This closes through E008-S01-001 and E008-S01-002, which implement development and stable publication from the exact retained distributions and one image build per channel run."
 - key: BL-E007-002
   epic: '007'
   sprint: ''
@@ -82,11 +82,11 @@ backlog:
 - key: BL-E007-003
   epic: '007'
   sprint: ''
-  title: No evidence artifact carries run correlation identity
+  title: Workflow-native run correlation evidence is not yet implemented
   source: post-restore audit (E007)
   severity: Medium
   status: backlog
-  description: 'build-manifest-v1 and release-receipt-v1 record source_sha and image_plan.fingerprint -- what was built -- but never which execution built it, so a promoted artifact set cannot be traced to its pipeline run. The tension is real: the canonical manifest must stay byte-deterministic, and a run id would break that. The elaborated E008 stories resolve it by putting correlation in publication-plan-v1 and release-receipt-v1 only, leaving build-manifest.json deterministic. Tracked here because both schemas need extending and neither has been.'
+  description: 'build-manifest.json intentionally stays deterministic and records source/version, distribution hashes, image inputs, and the image-plan fingerprint; it must not gain run identity or publication outcomes. E008-S01-001/002/003 and E009-S01-002 close this operational gap by emitting the workflow run ID/URL, manifest and artifact hashes, published image digest and inspected platforms, Release URL, and alias outcomes through action/workflow outputs and the workflow run summary. Close only after GitHub and the pinned Gitea tuple both retain and expose that correlation evidence; no publication-plan or release-receipt schema is required.'
 - key: BL-E007-004
   epic: '007'
   sprint: ''

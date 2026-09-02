@@ -1,16 +1,16 @@
 key: 'S01'
 epic: 'E008'
-title: 'Sprint 01 — Multi-Channel Package and Image Delivery'
+title: 'Sprint 01 — Action-Based Multi-Channel Delivery'
 status: backlog
 estimate:
-  man_hours_low: 119.89
-  man_hours_high: 147.9
-  hitl_hours_low: 0.0
-  hitl_hours_high: 0.0
-  elapsed_hours_low: 3.43
-  elapsed_hours_high: 3.61
-  tokens_k_min: 2310
-  tokens_k_max: 2625
+  man_hours_low: 65.11
+  man_hours_high: 80.32
+  hitl_hours_low: 0.16
+  hitl_hours_high: 0.17
+  elapsed_hours_low: 2.73
+  elapsed_hours_high: 2.88
+  tokens_k_min: 1349
+  tokens_k_max: 1532
   closure_ratios:
     man_hours: 1.8449
     hitl_hours: 0.4461
@@ -21,8 +21,8 @@ estimate:
     hitl_hours: 0
     elapsed_hours: 0
     tokens_k: 0
-  cost_low: 9.54
-  cost_high: 10.83
+  cost_low: 5.55
+  cost_high: 6.33
   model: claude-opus-5
   confidence: medium
-updated_at: '2026-09-01T22:44:21Z'
+updated_at: '2026-09-02T00:30:27Z'

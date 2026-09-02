@@ -378,6 +378,7 @@ jobs:
           import email
           import importlib.metadata
           import importlib.resources
+          import importlib.util
           import sys
           from pathlib import Path
           from zipfile import ZipFile
@@ -410,6 +411,23 @@ jobs:
               resource = package.joinpath(resource_name)
               if not resource.is_file() or not resource.read_bytes():
                   raise SystemExit(f"missing or empty packaged resource: {resource_name}")
+
+          expected_contract_schemas = {"build-manifest-v1.schema.json"}
+          contract_spec = importlib.util.find_spec("publication_contract")
+          if contract_spec is None or contract_spec.submodule_search_locations is None:
+              raise SystemExit("installed wheel is missing publication_contract")
+          contract_root = Path(next(iter(contract_spec.submodule_search_locations)))
+          actual_contract_schemas = {
+              item.name
+              for item in (contract_root / "schemas").iterdir()
+              if item.is_file()
+          }
+          if actual_contract_schemas != expected_contract_schemas:
+              raise SystemExit(
+                  "installed wheel publication_contract/schemas mismatch: "
+                  f"expected={sorted(expected_contract_schemas)!r}, "
+                  f"actual={sorted(actual_contract_schemas)!r}"
+              )
           PY
           .artifact-smoke/wheel/bin/traefik-certificate-exporter --help >/dev/null
       - name: Smoke test sdist in a separate clean locked environment
@@ -428,7 +446,9 @@ jobs:
           .artifact-smoke/sdist/bin/python - "$EXPECTED_VERSION" <<'PY'
           import importlib.metadata
           import importlib.resources
+          import importlib.util
           import sys
+          from pathlib import Path
 
           expected_version = sys.argv[1]
           installed_version = importlib.metadata.version(
@@ -447,6 +467,23 @@ jobs:
               resource = package.joinpath(resource_name)
               if not resource.is_file() or not resource.read_bytes():
                   raise SystemExit(f"missing or empty packaged resource: {resource_name}")
+
+          expected_contract_schemas = {"build-manifest-v1.schema.json"}
+          contract_spec = importlib.util.find_spec("publication_contract")
+          if contract_spec is None or contract_spec.submodule_search_locations is None:
+              raise SystemExit("installed sdist is missing publication_contract")
+          contract_root = Path(next(iter(contract_spec.submodule_search_locations)))
+          actual_contract_schemas = {
+              item.name
+              for item in (contract_root / "schemas").iterdir()
+              if item.is_file()
+          }
+          if actual_contract_schemas != expected_contract_schemas:
+              raise SystemExit(
+                  "installed sdist publication_contract/schemas mismatch: "
+                  f"expected={sorted(expected_contract_schemas)!r}, "
+                  f"actual={sorted(actual_contract_schemas)!r}"
+              )
           PY
           .artifact-smoke/sdist/bin/traefik-certificate-exporter --help >/dev/null
       - name: Recheck distribution checksums before Docker

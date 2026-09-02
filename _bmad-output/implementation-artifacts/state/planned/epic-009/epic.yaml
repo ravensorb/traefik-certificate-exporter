@@ -1,17 +1,17 @@
 key: 'E009'
-title: 'Epic 009 — Certified Gitea Portability'
-goal: 'Certify the shared workflow and publication system on an isolated, private-CA-capable, pinned Gitea runner baseline before repository-owner migration.'
+title: 'Epic 009 — Practical Gitea Certification'
+goal: 'Certify the shared workflow on a pinned, isolated, private-CA-capable Gitea runner tuple before repository-owner migration.'
 status: backlog
 depends_on: ['E008']
 estimate:
-  man_hours_low: 34.73
-  man_hours_high: 36.04
-  hitl_hours_low: 0.33
-  hitl_hours_high: 0.35
-  elapsed_hours_low: 2.74
-  elapsed_hours_high: 2.83
-  tokens_k_min: 908
-  tokens_k_max: 1031
+  man_hours_low: 28.81
+  man_hours_high: 29.9
+  hitl_hours_low: 0.17
+  hitl_hours_high: 0.18
+  elapsed_hours_low: 1.67
+  elapsed_hours_high: 1.73
+  tokens_k_min: 680
+  tokens_k_max: 773
   closure_ratios:
     man_hours: 0.2587
     hitl_hours: 0.3481
@@ -22,8 +22,8 @@ estimate:
     hitl_hours: 0
     elapsed_hours: 0
     tokens_k: 0
-  cost_low: 3.73
-  cost_high: 4.26
+  cost_low: 2.81
+  cost_high: 3.2
   model: claude-opus-5
   confidence: medium
-updated_at: '2026-09-01T22:44:36Z'
+updated_at: '2026-09-02T00:30:29Z'

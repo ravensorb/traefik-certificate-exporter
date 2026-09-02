@@ -1,7 +1,7 @@
 key: 'E008-S01-003'
 epic: 'E008'
 sprint: 'S01'
-title: 'Validate, Plan, and Preflight a Stable Release'
+title: 'Create the Forge Release and Finalize All Aliases Last'
 status: backlog
 classification: complex
 depends_on: ['E008-S01-001', 'E008-S01-002']
@@ -24,4 +24,4 @@ estimate:
     output: 18
     cache_write: 105
     cache_read: 175
-updated_at: '2026-09-01T22:44:20Z'
+updated_at: '2026-09-02T00:30:24Z'

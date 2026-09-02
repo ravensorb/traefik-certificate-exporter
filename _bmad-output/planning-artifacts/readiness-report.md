@@ -1,67 +1,53 @@
 # Readiness Report
 
-Generated: 2026-09-01T19:57:30Z
+Generated: 2026-09-02T00:30:00Z
 
 Gate result: green
 
-Work type: MIXED
+Work type: CONFIG
 
-Stories checked: 14
+Stories checked: 6
 
 ## Scope
 
-This readiness run covers the recovered CI/CD initiative only:
+This readiness run covers the replacement CI/CD backlog:
 
-- E007 — Reproducible Build and Verification
-- E008 — Multi-Channel Package and Image Delivery
-- E009 — Certified Gitea Portability
+- E008 — Action-Based Multi-Channel Delivery
+- E009 — Practical Gitea Certification
 
-Epics E001–E006 are archived and were used only to validate dependency/history boundaries.
+E001–E007 remain archived. E007 supplies the retained verifier, manifest/checksum evidence,
+guarded release versioning, exact-wheel provenance, and native image-smoke foundation; Epic 8
+implements multi-platform OCI publication.
 
 ## Findings
 
-Each row aggregates the five l3io readiness checks: recognized classification, technical
-acceptance criteria, estimate block, valid/cycle-free `depends_on`, and sprint assignment.
+| Story | Classification | Estimate | Dependencies | Sprint | Result |
+|---|---|---|---|---|---|
+| E008-S01-001 | complex | present | valid | S01 | green |
+| E008-S01-002 | complex | present | valid | S01 | green |
+| E008-S01-003 | complex | present | valid | S01 | green |
+| E008-S01-004 | standard | present | valid | S01 | green |
+| E009-S01-001 | complex | present | valid | S01 | green |
+| E009-S01-002 | complex | present | valid | S01 | green |
 
-| Story | Classification | Technical ACs | Estimate | Dependencies | Sprint | Result |
-|---|---|---|---|---|---|---|
-| E007-S01-001 | complex | interfaces/data/errors/security/tests | present | none | S01 | green |
-| E007-S01-002 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
-| E007-S01-003 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
-| E007-S01-004 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
-| E007-S01-005 | standard | interfaces/data/errors/security/tests | present | valid | S01 | green |
-| E008-S01-001 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
-| E008-S01-002 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
-| E008-S01-003 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
-| E008-S01-004 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
-| E008-S01-005 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
-| E008-S01-006 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
-| E009-S01-001 | standard | interfaces/data/errors/security/tests | present | valid | S01 | green |
-| E009-S01-002 | standard | interfaces/data/errors/security/tests | present | valid | S01 | green |
-| E009-S01-003 | complex | interfaces/data/errors/security/tests | present | valid | S01 | green |
+Technical-acceptance readiness is not a gate for CONFIG work. All six story files nevertheless
+define implementation guards, security boundaries, negative tests, evidence, and completion criteria.
 
-## Traceability and Architecture Gate
+## Traceability
 
-- CI-AR1–CI-AR35 are defined in the CI/CD architecture spine and mapped into `epics.md`.
-- Every CI architecture requirement has at least one implementing story; no story is orphaned
-  from the report/architecture intent.
-- The epic graph is acyclic and ordered `E007 -> E008 -> E009`.
-- Story-level dependencies exist and are acyclic.
-- All stories have detailed implementation documents. No automatic elaboration was required.
-- No UX artifact is required because the scope is CI/CD, CLI, and operator documentation.
-
-## Estimate Note
-
-`pm-status.py` generated story and roll-up estimates using the repository calibration and the
-`claude-opus-5` rate card. Confidence is medium at epic level. The tool reported that sprint and
-epic orchestration overhead is under-calibrated (fewer than three samples), so the ranges are
-known-low for orchestration overhead; this is non-blocking and explicitly retained in state.
+- CI-AR1–CI-AR35 retain stable historical meanings in the revised spine; retired CI-AR22/23/26/27/30
+  point to the archive. Active lean publication requirements use CI-AR36–CI-AR41.
+- The active story set requires only `build-manifest.json` (schema/version `build-manifest-v1`),
+  `SHA256SUMS`, exact-wheel provenance, normal publisher actions, and workflow-native evidence.
+- The epic graph remains acyclic: `E007 -> E008 -> E009`.
+- Story dependencies are present and acyclic.
+- E008/E009 contain six stories instead of the retired nine-story backlog.
 
 ## Summary
 
-- Green checks: 70
-- Amber checks: 0
-- Red checks: 0
-- Stories elaborated during this run: 0
+- Green: 24
+- Amber: 0
+- Red: 0
 
-The plan can be implemented without inventing unrecorded product or architecture decisions.
+The replacement plan can be implemented without reviving retired schemas or custom remote-state
+logic.

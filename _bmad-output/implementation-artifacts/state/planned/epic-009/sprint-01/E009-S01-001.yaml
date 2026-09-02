@@ -1,10 +1,10 @@
 key: 'E009-S01-001'
 epic: 'E009'
 sprint: 'S01'
-title: 'Establish a Pinned and Isolated Gitea Runner Baseline'
+title: 'Pin Gitea Runners, Bootstrap Trust, and Isolate Credentials'
 status: backlog
-classification: standard
-depends_on: ['E007-S01-005']
+classification: complex
+depends_on: ['E008-S01-004']
 estimate:
   man_hours: 4.36
   hitl_hours: 0.15
@@ -24,4 +24,4 @@ estimate:
     output: 9
     cache_write: 53
     cache_read: 88
-updated_at: '2026-09-01T22:44:34Z'
+updated_at: '2026-09-02T00:30:26Z'

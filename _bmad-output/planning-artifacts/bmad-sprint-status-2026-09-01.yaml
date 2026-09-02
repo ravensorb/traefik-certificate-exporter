@@ -28,66 +28,63 @@
 # - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
-generated: 09-01-2026 12:00
-last_updated: 09-01-2026 16:01
+generated: 09-01-2026 20:53
+last_updated: 09-01-2026 20:53
 project: traefik-certificate-exporter
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 development_status:
-  epic-1: backlog
-  1-1-redact-secrets-from-debug-logs: backlog
-  1-2-fail-loudly-on-missing-or-invalid-data-path: backlog
-  1-3-automated-regression-tests-for-certificate-export-core: backlog
+  epic-1: done
+  1-1-redact-secrets-from-debug-logs: done
+  1-2-fail-loudly-on-missing-or-invalid-data-path: done
+  1-3-automated-regression-tests-for-certificate-export-core: done
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-declare-the-missing-cryptography-dependency: backlog
-  2-2-build-the-docker-image-from-locked-dependencies: backlog
-  2-3-upgrade-and-pin-the-container-base-image: backlog
-  2-4-repair-the-ci-release-pipeline-wiring: backlog
-  2-5-run-ci-identically-across-github-gitea-and-local-act: backlog
+  epic-2: done
+  2-1-declare-the-missing-cryptography-dependency: done
+  2-2-build-the-docker-image-from-locked-dependencies: done
+  2-3-upgrade-and-pin-the-container-base-image: done
+  2-4-repair-the-ci-release-pipeline-wiring: done
+  2-5-run-ci-identically-across-github-gitea-and-local-act: done
   epic-2-retrospective: optional
 
-  epic-3: backlog
-  3-1-fix-domain-include-exclude-across-all-config-surfaces: backlog
-  3-2-add-and-document-a-pkcs12-passphrase-setting: backlog
+  epic-3: done
+  3-1-fix-domain-include-exclude-across-all-config-surfaces: done
+  3-2-add-and-document-a-pkcs12-passphrase-setting: done
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-1-seed-a-working-config-on-first-container-boot: backlog
-  4-2-emit-structured-logs-for-file-output: backlog
+  epic-4: done
+  4-1-seed-a-working-config-on-first-container-boot: done
+  4-2-emit-structured-logs-for-file-output: done
   epic-4-retrospective: optional
 
-  epic-5: backlog
-  5-1-support-a-configurable-post-export-command: backlog
+  epic-5: done
+  5-1-support-a-configurable-post-export-command: done
   epic-5-retrospective: optional
 
-  epic-6: backlog
-  6-1-add-security-disclosure-and-contribution-governance-files: backlog
-  6-2-align-github-actions-versions-and-enable-dependabot: backlog
-  6-3-remove-dead-code-and-disabled-tooling-references: backlog
+  epic-6: done
+  6-1-add-security-disclosure-and-contribution-governance-files: done
+  6-2-align-github-actions-versions-and-enable-dependabot: done
+  6-3-remove-dead-code-and-disabled-tooling-references: done
   epic-6-retrospective: optional
 
-  epic-7: backlog
-  7-1-establish-the-reproducible-local-package-and-image-workflow: backlog
-  7-2-execute-a-guarded-semantic-release-transaction: backlog
-  7-3-define-contracts-and-run-secret-free-quality-verification: backlog
-  7-4-build-and-prove-one-promotable-artifact-set: backlog
-  7-5-integrate-pull-requests-local-act-and-workflow-governance: backlog
+  epic-7: done
+  7-1-establish-the-reproducible-local-package-and-image-workflow: done
+  7-2-execute-a-guarded-semantic-release-transaction: done
+  7-3-define-build-evidence-and-run-secret-free-quality-verification: done
+  7-4-build-and-prove-one-promotable-artifact-set: done
+  7-5-integrate-pull-requests-local-act-and-workflow-governance: done
   epic-7-retrospective: optional
 
   epic-8: backlog
-  8-1-plan-preflight-and-publish-a-development-package: backlog
-  8-2-publish-and-advance-verified-development-images: backlog
-  8-3-validate-plan-and-preflight-a-stable-release: backlog
-  8-4-publish-stable-packages-and-immutable-images: backlog
-  8-5-create-the-forge-release-and-finalize-stable-aliases: backlog
-  8-6-recover-partial-releases-and-cut-over-atomically: backlog
+  8-1-publish-immutable-development-packages-and-images: backlog
+  8-2-publish-immutable-stable-packages-and-images-from-exact-tags: backlog
+  8-3-create-the-forge-release-and-finalize-all-aliases-last: backlog
+  8-4-cut-over-the-workflow-topology-and-document-failed-jobs-only-recovery: backlog
   epic-8-retrospective: optional
 
   epic-9: backlog
-  9-1-establish-a-pinned-and-isolated-gitea-runner-baseline: backlog
-  9-2-configure-private-ca-trust-and-gitea-destinations: backlog
-  9-3-certify-end-to-end-gitea-delivery-and-migration: backlog
+  9-1-pin-gitea-runners-bootstrap-trust-and-isolate-credentials: backlog
+  9-2-certify-gitea-staging-and-gate-migration: backlog
   epic-9-retrospective: optional

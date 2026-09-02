@@ -1,27 +1,27 @@
 key: 'E009-S01-002'
 epic: 'E009'
 sprint: 'S01'
-title: 'Configure Private-CA Trust and Gitea Destinations'
+title: 'Certify Gitea Staging and Gate Migration'
 status: backlog
-classification: standard
+classification: complex
 depends_on: ['E009-S01-001']
 estimate:
-  man_hours: 4.36
-  hitl_hours: 0.15
-  elapsed_hours: 0.98
-  cost: 0.73
+  man_hours: 16.87
+  hitl_hours: 0.0
+  elapsed_hours: 0.55
+  cost: 1.45
   model: claude-opus-5
   fix_factor: 1.25
   scope_ratios:
-    man_hours: 0.5818
-    hitl_hours: 0.3466
-    elapsed_hours: 0.3926
+    man_hours: 1.1248
+    hitl_hours: 0.0
+    elapsed_hours: 0.1096
     tokens_k: 1.0
   confidence: medium
   tokens_k:
-    total: 176
-    input: 26
-    output: 9
-    cache_write: 53
-    cache_read: 88
-updated_at: '2026-09-01T22:44:35Z'
+    total: 350
+    input: 52
+    output: 18
+    cache_write: 105
+    cache_read: 175
+updated_at: '2026-09-02T00:30:26Z'

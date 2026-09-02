@@ -1,10 +1,10 @@
 key: 'E008-S01-001'
 epic: 'E008'
 sprint: 'S01'
-title: 'Plan, Preflight, and Publish a Development Package'
+title: 'Publish Immutable Development Packages and Images'
 status: backlog
 classification: complex
-depends_on: ['E007-S01-005']
+depends_on: []
 estimate:
   man_hours: 16.87
   hitl_hours: 0.0
@@ -24,4 +24,4 @@ estimate:
     output: 18
     cache_write: 105
     cache_read: 175
-updated_at: '2026-09-01T22:44:19Z'
+updated_at: '2026-09-02T00:30:23Z'

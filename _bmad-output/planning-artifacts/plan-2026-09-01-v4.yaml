@@ -1,0 +1,54 @@
+generated: "2026-09-02T00:31:00Z"
+plan_version: 4
+readiness: green
+stories_elaborated: 0
+total_epics_in_scope: 2
+
+phases:
+  - phase: 1
+    parallel: true
+    epics: ["E008"]
+    dependencies: ["E007"]
+    estimate:
+      estimates_as_of: "2026-09-02T00:31:00Z"
+      wall_clock_hours_low: 2.87
+      wall_clock_hours_high: 2.97
+      man_hours_low: 74.6
+      man_hours_high: 77.42
+      hitl_hours_low: 0.17
+      hitl_hours_high: 0.18
+      tokens_k_min: 1585
+      tokens_k_max: 1801
+      cost_low: 6.54
+      cost_high: 7.43
+      confidence: medium
+  - phase: 2
+    parallel: false
+    epics: ["E009"]
+    dependencies: ["E008"]
+    estimate:
+      estimates_as_of: "2026-09-02T00:31:00Z"
+      wall_clock_hours_low: 1.67
+      wall_clock_hours_high: 1.73
+      man_hours_low: 28.81
+      man_hours_high: 29.9
+      hitl_hours_low: 0.17
+      hitl_hours_high: 0.18
+      tokens_k_min: 680
+      tokens_k_max: 773
+      cost_low: 2.81
+      cost_high: 3.2
+      confidence: medium
+
+readiness_detail:
+  - key: "E008"
+    status: green
+    gaps: []
+  - key: "E009"
+    status: green
+    gaps: []
+
+arch_gate_summary:
+  ran: false
+  reviewers: []
+  findings: []

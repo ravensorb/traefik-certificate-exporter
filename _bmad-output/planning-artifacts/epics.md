@@ -586,24 +586,34 @@ story traceability.
   three-adapter/one-verifier topology.
 - CI-AR7–CI-AR12: a `just` local interface, one committed version authority, guarded SemVer
   release transaction, exact stable-tag agreement, and next-patch `.devN` identities.
-- CI-AR13–CI-AR18: one wheel/sdist set, exact-wheel image provenance, build evidence,
-  `linux/amd64` + `linux/arm64`, immutable identities, and verify-before-mutation.
-- CI-AR19–CI-AR31: strict destination toggles, TestPyPI/PyPI channel routing, planned and
-  preflighted publication, least-privilege credentials, immutable-first fan-out, forge Release,
-  forward-only aliases, receipts, and 30-day evidence.
+- CI-AR13–CI-AR18: one wheel/sdist set, exact-wheel image provenance, precise build evidence,
+  Epic 8 multi-platform publication, immutable identities, and verify-before-mutation.
+- CI-AR19–CI-AR21, CI-AR24–CI-AR25, CI-AR28–CI-AR29, and CI-AR31: active destination,
+  privilege, Release, forward-only alias, and retention requirements.
+- CI-AR22, CI-AR23, CI-AR26, CI-AR27, and CI-AR30: retired historical requirements preserved
+  only on `archive/publication-transaction-v1` at the recorded archive commit.
 - CI-AR32–CI-AR35: secret-free pull requests, safe local `act`, isolated pinned Gitea runners,
   and an evidence-backed Gitea migration gate.
+- CI-AR36–CI-AR41: boundary revalidation, destination-local failure, maintained-action recovery,
+  one-build image fan-out, required-job/credential isolation, and workflow-native run evidence.
 
 ### CI/CD Coverage Map
 
 | Requirement group | Primary stories |
 |---|---|
-| CI-AR1–CI-AR6 | 7.3, 7.5, 9.1, 9.3 |
-| CI-AR7–CI-AR12 | 7.1, 7.2, 8.1, 8.3 |
-| CI-AR13–CI-AR18 | 7.3, 7.4, 7.5 |
-| CI-AR19–CI-AR25 | 8.1, 8.2, 8.3, 8.4, 9.2 |
-| CI-AR26–CI-AR31 | 8.1, 8.2, 8.4, 8.5, 8.6 |
-| CI-AR32–CI-AR35 | 7.5, 9.1, 9.2, 9.3 |
+| CI-AR1–CI-AR6 | 7.3, 7.5, 8.1, 8.2, 9.1, 9.2 |
+| CI-AR7–CI-AR12 | 7.1, 7.2, 8.1, 8.2 |
+| CI-AR13–CI-AR18 | 7.3, 7.4, 7.5, 8.1, 8.2 |
+| CI-AR19–CI-AR21 | 8.1, 8.2 |
+| CI-AR22, CI-AR23, CI-AR26, CI-AR27, CI-AR30 | retired; archive branch only |
+| CI-AR24–CI-AR25 | 8.1, 8.2, 9.1 |
+| CI-AR28–CI-AR29 | 8.3, 9.2 |
+| CI-AR31 | 7.4, 8.4, 9.2 |
+| CI-AR32–CI-AR35 | 7.5, 9.1, 9.2 |
+| CI-AR36–CI-AR37 | 8.1, 8.2, 8.3 |
+| CI-AR38 | 8.1, 8.2, 8.4, 9.2 |
+| CI-AR39–CI-AR40 | 8.1, 8.2, 8.3, 9.2 |
+| CI-AR41 | 8.1, 8.2, 8.3, 8.4, 9.2 |
 
 ## Epic 7: Reproducible Build and Verification
 
@@ -699,12 +709,11 @@ branch and exact tag (CI-AR8–CI-AR10)
 - Workflow contract tests prove stable CI is triggered by the exact tag and contains no code
   that chooses or bumps the stable version.
 
-### Story 7.3: Define Contracts and Run Secret-Free Quality Verification
+### Story 7.3: Define Build Evidence and Run Secret-Free Quality Verification
 
 As a pipeline maintainer,
-I want version, build-manifest, publication-plan, and release-receipt contracts plus a reusable
-secret-free verifier,
-So that every adapter agrees on inputs, outputs, error handling, and evidence.
+I want version and build-manifest contracts plus a reusable secret-free verifier,
+So that every adapter agrees on immutable build inputs, outputs, error handling, and evidence.
 
 **Acceptance Criteria:**
 
@@ -718,15 +727,14 @@ permission (CI-AR5, CI-AR18, CI-AR32)
 **When** version validation runs
 **Then** the verifier fails before building or uploading an artifact (CI-AR11)
 
-**Given** a manifest, plan, or receipt is created or consumed
+**Given** a build manifest is created or consumed
 **When** its composite action validates it
 **Then** it conforms to the checked-in versioned JSON schema, rejects unknown unsafe fields,
-and contains no secret value, secret length, or secret-derived hash (CI-AR15, CI-AR22, CI-AR30)
+and contains no secret value, secret length, or secret-derived hash (CI-AR15, CI-AR36)
 
 **Technical Acceptance Criteria:**
 
-- Checked-in JSON schemas define `build-manifest-v1`, `publication-plan-v1`, and
-  `release-receipt-v1`; schemas are strict and versioned without embedding credentials.
+- A checked-in JSON schema defines strict, versioned `build-manifest-v1` without credentials.
 - A single committed-version reader serves local and CI callers and validates Poetry metadata,
   package metadata, and strict `vMAJOR.MINOR.PATCH` tags.
 - Reusable workflow outputs expose only artifact names and non-sensitive identifiers.
@@ -737,12 +745,11 @@ and contains no secret value, secret length, or secret-derived hash (CI-AR15, CI
 - Workflow tests parse every YAML file and prove job-level least privilege, secret-free verifier
   calls, and no publisher job can run without the verifier in its transitive `needs` graph.
 
-### Story 7.4: Build and Prove One Promotable Artifact Set
+### Story 7.4: Build and Prove One Native-Verified Artifact Set
 
 As a release maintainer,
-I want one verified wheel/sdist and one matching multi-architecture image manifest,
-So that every destination receives artifacts proven to originate from the same source and
-dependency lock.
+I want one verified wheel/sdist set and a native image smoke result from the exact wheel,
+So that later publishers receive artifacts proven to originate from the same source.
 
 **Acceptance Criteria:**
 
@@ -752,9 +759,9 @@ dependency lock.
 wheel in an empty environment, and proves the CLI reports the planned version (CI-AR13)
 
 **Given** the package evidence is valid
-**When** the image build runs
-**Then** Buildx creates `linux/amd64` and `linux/arm64` outputs from the exact verified wheel
-**And** the final OCI index contains both platform descriptors (CI-AR14, CI-AR16)
+**When** the verifier's image build runs
+**Then** it performs native image smoke from the exact verified wheel (CI-AR14, CI-AR18)
+**And** multi-platform OCI publication and descriptor inspection remain Epic 8 work (CI-AR16)
 
 **Given** container smoke tests inspect either platform
 **When** the installed Python distribution is queried
@@ -768,12 +775,13 @@ wheel in an empty environment, and proves the CLI reports the planned version (C
 
 - The verifier checks out the requested full SHA with persisted Git credentials disabled.
 - Build outputs have an explicit directory layout and 30-day artifact retention (CI-AR31).
-- `build-manifest-v1.json` records source SHA, channel, version, filenames/hashes, lock hash,
-  requested platforms, and observed image/index digest.
+- `build-manifest.json` uses schema/version identifier `build-manifest-v1` and records only source
+  SHA, package version, optional development distance, filenames/hashes, image inputs/labels, and
+  their fingerprint; channel, platforms, lock hash, and observed digest are not manifest fields.
 - BuildKit cache is performance-only; cache hits cannot bypass hash, platform, package-install,
   or smoke validation.
-- Tests inject a changed wheel, missing sdist, wrong source SHA, single-platform index, and
-  wrong installed version and require hard failures.
+- Tests inject a changed wheel, missing sdist, wrong source SHA, and wrong installed version and
+  require hard failures; Epic 8 tests enforce the two-platform published index.
 - Any provenance/SBOM output references the same manifest digest and is evidence, not an
   alternate identity source.
 
@@ -821,229 +829,236 @@ pipeline (CI-AR5)
 - Contract tests prove trigger exclusivity: PR owns verification, main push owns development,
   and exact stable tag owns stable publication.
 
-## Epic 8: Multi-Channel Package and Image Delivery
+## Epic 8: Action-Based Multi-Channel Delivery
 
-Maintainers can publish development and stable artifacts to their enabled package and image
-destinations as one planned, preflighted, immutable-first transaction with safe aliases and
-recoverable evidence.
+Maintainers can publish verified development and stable packages and images through ordinary
+destination jobs, then advance mutable aliases only after the required jobs succeed.
 
 **Dependencies:** Epic 7.
 
-### Story 8.1: Plan, Preflight, and Publish a Development Package
+### Story 8.1: Publish Immutable Development Packages and Images
 
 As a maintainer,
-I want one deterministic development plan that validates destinations and optionally publishes
-to TestPyPI,
-So that default-branch packages are unique, verified, and fail closed before mutation.
+I want default-branch artifacts published from the verified bundle,
+So that development delivery creates immutable identities without rebuilding.
 
-**Technical acceptance summary:** derive next-patch `X.Y.(Z+1).devN` once from first-parent
-history; strictly normalize toggles; create and retain a schema-valid publication plan; suppress
-development publication when an exact stable tag owns the commit; preflight every enabled
-target; publish the verified wheel/sdist to TestPyPI using GitHub OIDC or protected Gitea token;
-identity-match reruns and block all later aliases on failure (CI-AR12, CI-AR19–CI-AR27).
+**Acceptance Criteria:**
 
-The full functional, interface, data-model, error-handling, observability, security, and test
-acceptance criteria are in
-`_bmad-output/implementation-artifacts/epic-008/sprint-01/stories/E008-S01-001.md`.
+**Given** a push to the protected default branch
+**When** `dev.yaml` runs
+**Then** it fails closed on an unknown forge, fetches full history/tags once, derives the
+next-patch `.devN` version, suppresses dev publication when the source has an exact stable tag,
+and calls `verify-build.yaml` once
+**And** each required or enabled publisher downloads and validates `SHA256SUMS` and
+`build-manifest.json` before login or upload (CI-AR36)
 
-### Story 8.2: Publish and Advance Verified Development Images
+**Given** the active forge and optional external destinations
+**When** development publishers run
+**Then** the forge image is required, the Gitea package index is required when hosted on Gitea,
+TestPyPI and Docker Hub obey strict booleans, and each credential is job-scoped
 
-As a maintainer,
-I want the same verified multi-architecture image published to Docker Hub and/or the active
-forge registry,
-So that development consumers can use immutable images and a safe floating `dev` pointer.
+**Given** image publication runs
+**When** the immutable `dev-<12sha>` image is published
+**Then** one Buildx multi-platform invocation consumes the exact wheel and applies tags for the
+required forge registry plus optional Docker Hub, with no per-registry rebuild
+**And** digest/platform inspection is emitted as workflow outputs and run summary (CI-AR39,
+CI-AR41)
 
-**Technical acceptance summary:** fan out immutable `dev-<12sha>` tags to every enabled image
-target; prove each target exposes the planned multi-arch digest; map credentials only into its
-publisher; allow Docker Hub and active forge together; advance `dev` only after TestPyPI and all
-enabled image targets are complete; emit receipt outcomes without secrets (CI-AR16, CI-AR17,
-CI-AR20, CI-AR24–CI-AR27, CI-AR30).
+**Technical Acceptance Criteria:**
 
-The complete criteria are in
-`_bmad-output/implementation-artifacts/epic-008/sprint-01/stories/E008-S01-002.md`.
+- Use approved maintained actions for artifact download, registry login, metadata, and image
+  publication. Package upload uses
+  `pypa/gh-action-pypi-publish@<reviewed-full-commit-sha>` and implementation records the reviewed
+  actual SHA (CI-AR3, CI-AR38).
+- Publish the exact wheel/sdist and exact-wheel image inputs recorded by the verifier; no
+  publisher rebuilds the Python package (CI-AR13–CI-AR18).
+- Validate `FORGE_REGISTRY` as same-forge `host[:port]` only, with no userinfo, path, query, or
+  fragment. The image job gets only enabled image credentials; package credentials stay isolated.
+- Workflow contract tests prove guards, strict toggles, secret isolation, one image invocation,
+  and two-platform inspection. Story 8.3 alone owns the `dev` alias finalizer.
+- Full criteria live in
+  `_bmad-output/implementation-artifacts/epic-008/sprint-01/stories/E008-S01-001.md`.
 
-### Story 8.3: Validate, Plan, and Preflight a Stable Release
-
-As a release maintainer,
-I want an exact deliberate tag validated and all stable destinations preflighted,
-So that CI cannot publish a version that disagrees with the application or enter a release it
-cannot finish.
-
-**Technical acceptance summary:** trigger only on strict exact tags; prove tag/source/Poetry/
-lock/built metadata agreement; reject prerelease or floating tags; strictly normalize stable
-toggles; derive active forge without a second mode switch; produce a stable publication plan;
-validate every enabled endpoint and credential mode before any authentication or mutation
-(CI-AR1, CI-AR10, CI-AR11, CI-AR19–CI-AR25).
-
-The complete criteria are in
-`_bmad-output/implementation-artifacts/epic-008/sprint-01/stories/E008-S01-003.md`.
-
-### Story 8.4: Publish Stable Packages and Immutable Images
+### Story 8.2: Publish Stable Packages and Images from Exact Tags
 
 As a release maintainer,
-I want the verified stable package and image identities published to every enabled destination,
-So that all immutable release objects are consistent before public aliases move.
+I want an exact deliberate tag to publish the verified stable distributions and images,
+So that PyPI, the active forge, and optional Docker Hub receive one version identity.
 
-**Technical acceptance summary:** publish exact wheel/sdist only to PyPI and the same
-`linux/amd64`/`linux/arm64` digest to Docker Hub and/or the active forge registry; run enabled
-destinations after aggregate preflight; reconcile exact remote hashes/digests on rerun; treat
-mismatch as fatal; never advance aliases in an immutable publisher (CI-AR13–CI-AR17,
-CI-AR21–CI-AR27).
+**Acceptance Criteria:**
 
-The complete criteria are in
-`_bmad-output/implementation-artifacts/epic-008/sprint-01/stories/E008-S01-004.md`.
+**Given** an exact `vX.Y.Z` tag
+**When** `release.yaml` starts
+**Then** it fails closed on an unknown forge and requires an annotated tag whose peeled commit is
+the event SHA and reachable from the protected default branch
+**And** tag, Poetry metadata, lock, built package, application version, and source SHA agree before
+publisher jobs receive credentials
 
-### Story 8.5: Create the Forge Release and Finalize Stable Aliases
+**Given** the verified stable bundle
+**When** publisher jobs run
+**Then** PyPI obeys `PUBLISH_PACKAGE_PYPI`, the active forge image is required, the Gitea package
+index is required on Gitea, and Docker Hub obeys `PUBLISH_IMAGE_DOCKERHUB`
+
+**Given** an invalid toggle, tag mismatch, checksum failure, manifest failure, or publisher error
+**When** the workflow evaluates the run
+**Then** it fails clearly and no alias-finalization job runs
+
+**Technical Acceptance Criteria:**
+
+- The reviewed-full-SHA package action and the one image job consume only the verifier artifact
+  with job-scoped permissions/credentials (CI-AR24, CI-AR36, CI-AR38–CI-AR40).
+- One Buildx invocation publishes both `linux/amd64` and `linux/arm64` under exact immutable tags
+  for every enabled registry and records digest/platform outputs (CI-AR39, CI-AR41).
+- Workflow tests prove exact-tag ownership, channel routing, and absence of any CI version bump.
+- Full criteria live in
+  `_bmad-output/implementation-artifacts/epic-008/sprint-01/stories/E008-S01-002.md`.
+
+### Story 8.3: Create the Forge Release and Finalize All Aliases Last
 
 As a release maintainer,
-I want one active-forge Release and forward-only stable aliases finalized after publication,
-So that human-facing release records and convenient pointers never lead immutable artifacts.
+I want the forge Release and every development/stable alias finalized after publication,
+So that human-facing records and convenient tags never lead the immutable artifacts.
 
-**Technical acceptance summary:** reconcile the exact-tag forge Release and evidence; invoke
-the LiquidLogicLabs release/floating-tag action where compatible; advance Git `vX`/`vX.Y` and
-image `X`/`X.Y`/`latest` only after all immutable destinations succeed; reject regression and
-prerelease alias moves; write the release receipt (CI-AR3, CI-AR28–CI-AR31).
+**Acceptance Criteria:**
 
-The complete criteria are in
-`_bmad-output/implementation-artifacts/epic-008/sprint-01/stories/E008-S01-005.md`.
+**Given** all required stable publishers succeeded
+**When** the release job runs
+**Then** it creates the exact-tag forge Release and attaches wheel, sdist, `SHA256SUMS`, and
+`build-manifest.json`
 
-### Story 8.6: Recover Partial Releases and Cut Over Atomically
+**Given** the forge Release succeeds
+**When** finalization runs
+**Then** approved actions move Git aliases `vX`/`vX.Y` and digest-copy operations move image
+aliases `X`/`X.Y`/`latest`
+**And** prereleases or failed/skipped required jobs never move stable aliases
+
+**Given** all required development publishers succeeded
+**When** `dev` finalization becomes eligible
+**Then** workflow concurrency has prevented an obsolete finalizer and a just-in-time fetch proves
+the candidate remains the protected default-branch head
+**And** a stale candidate leaves `dev` unchanged
+
+**Technical Acceptance Criteria:**
+
+- Release and alias jobs have only the permissions they need and are the only CI jobs allowed to
+  write repository Release/ref state (CI-AR24, CI-AR28–CI-AR29, CI-AR40).
+- Image aliases copy the published manifest by digest rather than rebuilding it.
+- Stable aliases are forward-only; Story 8.3 is the sole owner of both dev and stable finalizers.
+- Workflow outputs/summaries retain Release URL, digest/platforms, head check, and alias outcomes
+  (CI-AR41).
+- Full criteria live in
+  `_bmad-output/implementation-artifacts/epic-008/sprint-01/stories/E008-S01-003.md`.
+
+### Story 8.4: Cut Over the Workflow Topology and Document Failed-Jobs-Only Recovery
 
 As an operator,
-I want deterministic recovery and an atomic workflow cutover,
-So that interrupted releases can finish safely and the obsolete pipeline cannot publish in
-parallel.
+I want one production workflow topology and a failed-jobs-only recovery procedure,
+So that old publishers cannot race the new paths and recovery is understandable.
 
-**Technical acceptance summary:** detect each planned remote object and identity-match it;
-resume only missing safe operations; never delete or overwrite immutable objects; keep aliases
-unchanged until recovery completes; retain plan/build/receipt evidence for 30 days; prove a
-failure-injection matrix; remove obsolete workflows only after a shadow/cutover drill and trigger
-exclusivity check (CI-AR5, CI-AR26–CI-AR31).
+**Acceptance Criteria:**
 
-The complete criteria are in
-`_bmad-output/implementation-artifacts/epic-008/sprint-01/stories/E008-S01-006.md`.
+**Given** development and stable staging runs are green
+**When** cutover completes
+**Then** `ci.yaml`, `dev.yaml`, `release.yaml`, and `verify-build.yaml` are the only pipeline
+workflows and their triggers are mutually owned
 
-## Epic 9: Certified Gitea Portability
+**Given** a destination job fails after another destination succeeds
+**When** an operator follows the runbook
+**Then** only failed jobs rerun against retained verifier evidence, successful immutable package
+uploads are not repeated, and aliases remain blocked until success
 
-Operators can move repository ownership from GitHub.com to a supported self-hosted Gitea
-installation while retaining the same verified build and publication behavior, with explicit
-runner isolation, private trust, and staging evidence.
+**Given** failed-jobs-only rerun is unsupported, evidence expired, or immutable identity conflicts
+**When** recovery is evaluated
+**Then** the run halts and escalates, using a new development version where appropriate
+**And** whole-workflow rerun, overwrite, force update, and deletion are never normal recovery
+
+**Technical Acceptance Criteria:**
+
+- The runbook documents exact GitHub and supported Gitea failed-jobs-only operations and covers
+  invalid toggles, missing credentials, service failure, immutable conflicts, expiry, alias
+  failure, and escalation (CI-AR38).
+- Workflow/test evidence is retained for 30 days (CI-AR31).
+- Run correlation is workflow-native output/summary evidence, not a new schema (CI-AR41).
+- Contract tests prove there are no dangling local workflow/action references after cutover.
+- Full criteria live in
+  `_bmad-output/implementation-artifacts/epic-008/sprint-01/stories/E008-S01-004.md`.
+
+## Epic 9: Practical Gitea Certification
+
+Operators can certify the shared workflows on one pinned, isolated, private-CA-capable Gitea
+runner tuple before moving repository ownership.
 
 **Dependencies:** Epic 8.
 
-### Story 9.1: Establish a Pinned and Isolated Gitea Runner Baseline
+### Story 9.1: Pin Gitea Runners, Bootstrap Trust, and Isolate Credentials
 
 As a Gitea operator,
-I want a documented and pinned Gitea Actions runner baseline with separate trust pools,
-So that portable workflow syntax does not hide runner or security differences.
+I want a pinned runner baseline with explicit bootstrap/downstream trust and scoped credentials,
+So that the shared workflows have a secure, reproducible host environment.
 
 **Acceptance Criteria:**
 
-**Given** the project declares Gitea support
-**When** the support matrix is inspected
-**Then** it records the tested Gitea server, act-runner, runner image, action-major aliases, and
-known compatibility exceptions (CI-AR34)
+**Given** the supported Gitea environment
+**When** its support matrix is inspected
+**Then** server, act-runner, runner image, action majors, artifact protocol exceptions, and
+upgrade/recertification rules are pinned
 
-**Given** an untrusted pull request and a protected publisher job
-**When** runner labels are resolved
-**Then** they cannot execute on the same persistent trust pool or share credentials/workspace
-state
+**Given** untrusted verification and protected publication
+**When** runner labels and mounts are inspected
+**Then** they use separate pools, ephemeral workspaces, and no shared publisher credentials
 
-**Given** an untrusted job executes
-**When** its container/host configuration is inspected
-**Then** it has no publisher secrets, no protected environment, no broad host filesystem mount,
-and no unrestricted Docker socket exposure
+**Given** private-CA Gitea
+**When** a runner is provisioned
+**Then** runner-host bootstrap trust exists before registration, forge/action resolution, or job
+startup; a first job step never claims to establish trust needed to start itself
 
-**Technical Acceptance Criteria:**
-
-- Runner configuration uses pinned versions/digests and documented labels for verifier and
-  publisher pools; `latest` is not a support contract.
-- Ephemeral workspaces are destroyed between jobs, and caches are namespaced so untrusted runs
-  cannot poison protected publisher inputs.
-- Network policy permits source/dependency access required for verification while blocking
-  protected registry/API destinations from the untrusted pool.
-- The publisher pool accepts only protected/tag-owned jobs and receives job-scoped credentials.
-- A runner smoke workflow proves action download, checkout, artifact upload/download, Docker
-  Buildx/QEMU, and cleanup without publication.
-- Operational documentation includes upgrade/re-certification rules and a rollback procedure.
-
-### Story 9.2: Configure Private-CA Trust and Gitea Destinations
-
-As a Gitea operator,
-I want private-CA trust and host-derived registry/release coordinates configured before network
-operations,
-So that the shared workflows authenticate safely without GitHub-specific assumptions.
-
-**Acceptance Criteria:**
-
-**Given** Gitea uses a private certificate authority
-**When** a workflow begins
-**Then** the approved CA action installs trust before checkout, action download where supported,
-registry login, artifact, or API calls
-
-**Given** the repository is owned by Gitea
-**When** publication planning derives the forge target
-**Then** `PUBLISH_IMAGE_FORGE=true` selects that Gitea registry and release API, never GHCR,
-and uses `FORGE_REGISTRY` only when safe derivation is impossible (CI-AR1, CI-AR6, CI-AR20)
-
-**Given** PyPI/TestPyPI publishing runs on Gitea
-**When** credentials are selected
-**Then** a scoped protected token is used instead of GitHub OIDC, and the secret is mapped only
-to the applicable publisher (CI-AR24, CI-AR25)
+**Given** a running job contacts a downstream private-CA endpoint
+**When** job-level trust is needed
+**Then** the approved CA import action installs that separate downstream trust before the request
+**And** each scoped credential reaches only its own package, image, or Release job
 
 **Technical Acceptance Criteria:**
 
-- CA input is validated, masked, written only to an ephemeral path, and never stored in plans,
-  manifests, receipts, caches, or artifacts.
-- Forge derivation normalizes scheme/host/owner/repository and rejects unsafe override values,
-  embedded credentials, path traversal, and cross-forge destinations.
-- Registry and API probes distinguish TLS, authentication, authorization, repository-not-found,
-  and unsupported-capability failures without logging tokens.
-- Gitea token scopes are documented for container push, release create/update, and artifact/API
-  access; separate tokens are used where least privilege requires it.
-- Contract tests cover public CA, private CA, missing CA, wrong CA, derived host, override host,
-  disabled destination, and credential-mode selection.
-- Rotation and revocation procedures identify every protected environment/secret reference.
+- Document bootstrap versus downstream CA, minimal scopes, labels, network access, cache isolation,
+  rotation, and rollback (CI-AR24, CI-AR25, CI-AR34).
+- Unknown forges fail closed; `FORGE_REGISTRY` is same-forge `host[:port]` only with no userinfo,
+  path, query, or fragment.
+- A smoke workflow proves checkout, artifacts, Poetry, QEMU/Buildx, CA trust, and cleanup without
+  publishing.
+- Full criteria live in
+  `_bmad-output/implementation-artifacts/epic-009/sprint-01/stories/E009-S01-001.md`.
 
-### Story 9.3: Certify End-to-End Gitea Delivery and Migration
+### Story 9.2: Certify Gitea Staging and Gate Migration
 
 As an operator,
-I want a repeatable Gitea conformance suite and migration runbook,
-So that ownership moves only after pull-request, development, and stable delivery are proven.
+I want a focused staging checklist and migration runbook,
+So that ownership moves only after the exact production workflow graph is proven.
 
 **Acceptance Criteria:**
 
-**Given** the pinned Gitea staging environment
-**When** the conformance suite executes
-**Then** it proves secret-free PR verification, default-branch development planning, optional
-TestPyPI publication, stable PyPI publication, Docker Hub plus Gitea registry fan-out, active-
-forge Release creation, and `amd64`/`arm64` manifests (CI-AR35)
+**Given** the pinned Gitea staging tuple
+**When** certification runs
+**Then** it proves fork-safe PR verification, dev and stable package/image destinations,
+private CA boundaries, artifacts, the one-build two-platform image flow, forge Release,
+forward-only aliases, and one failed-jobs-only rerun
 
-**Given** failures are injected before preflight, during one immutable publisher, before alias
-finalization, and after forge Release creation
-**When** recovery reruns
-**Then** immutable identities are reconciled, mismatches fail, and mutable aliases never expose
-an incomplete release
+**Given** the pinned Gitea tuple cannot rerun only failed jobs
+**When** recovery certification is evaluated
+**Then** certification fails and migration remains blocked rather than accepting a whole-workflow
+rerun that repeats successful immutable package uploads
 
-**Given** all conformance evidence is green
-**When** the migration runbook is followed
-**Then** GitHub publication is disabled, the repository owner moves, Gitea protected variables/
-secrets are validated, one shadow verification runs, and production publication is enabled with
-a tested rollback point
+**Given** certification is green
+**When** the migration checklist runs
+**Then** owners validate variables/secrets, disable the old owner, move the repository, run one
+shadow verification, enable production publication, and retain a tested rollback point
 
 **Technical Acceptance Criteria:**
 
-- The conformance harness records workflow/run identifiers, source/tag, target coordinates,
-  package hashes, image digest/platforms, release URL, alias before/after values, and cleanup
-  outcome without credentials.
-- Assertions exercise Gitea action URL resolution and every LiquidLogicLabs/official action used
-  by the production graph; unsupported behavior has a documented portable replacement rather
-  than an `ACT` or forge-mode branch.
-- A negative suite proves forked/untrusted code cannot select publisher runners, obtain secrets,
-  write packages, create releases, or poison artifacts/caches consumed by a protected job.
-- The migration checklist defines go/no-go owners, maintenance window, DNS/registry namespace
-  considerations, token/CA rotation, observability, rollback triggers, and evidence retention.
-- Final certification links the exact pinned tuple and completed receipt/evidence artifacts and
-  expires when a tuple component changes.
-- Workflow contract tests still prove one code path, one active forge, and the exact four-file
-  topology after migration (CI-AR2, CI-AR5).
+- Evidence records the pinned tuple, workflow/run IDs, source/tag, build-manifest/checksum hashes,
+  image digest/platforms, Release URL, alias job conclusion, and cleanup result without secrets.
+- A negative suite proves untrusted code cannot select protected runners, obtain credentials, or
+  mutate a package, image, Release, or alias, and a stale dev candidate cannot move `dev`
+  (CI-AR29, CI-AR32–CI-AR35, CI-AR38–CI-AR41).
+- Certification expires when any pinned tuple component changes.
+- Full criteria live in
+  `_bmad-output/implementation-artifacts/epic-009/sprint-01/stories/E009-S01-002.md`.

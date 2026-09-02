@@ -6,7 +6,7 @@ inputs:
     description: validate, write, build-manifest, checksums, or verify-checksums
     required: true
   contract:
-    description: publication-plan, build-manifest, or release-receipt
+    description: build-manifest (for validate and write operations)
     required: false
   input-file:
     description: Candidate contract or canonical checksum file to validate
@@ -108,6 +108,14 @@ runs:
         # --no-root --no-directory, so a console script alone would not resolve there.
         export PYTHONPATH="$GITHUB_WORKSPACE/src${PYTHONPATH:+:$PYTHONPATH}"
         command=(poetry run python -m publication_contract)
+        case "$PC_OPERATION" in
+          validate|write)
+            if [[ "$PC_CONTRACT" != "build-manifest" ]]; then
+              echo "publication contract error: unsupported contract '$PC_CONTRACT'; supported contract: build-manifest" >&2
+              exit 2
+            fi
+            ;;
+        esac
         case "$PC_OPERATION" in
           validate)
             command+=(validate --contract "$PC_CONTRACT" --input "$PC_INPUT_FILE")

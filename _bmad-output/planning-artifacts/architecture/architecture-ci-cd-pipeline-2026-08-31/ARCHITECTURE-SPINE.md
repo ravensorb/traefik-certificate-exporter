@@ -1,10 +1,10 @@
 ---
 title: CI/CD Pipeline Architecture Spine
 project: traefik-certificate-exporter
-date: 2026-08-31
+date: 2026-09-01
 status: approved-for-implementation
 source_report: docs/ci/codex-assesment.md
-recovered_on: 2026-09-01
+revision: lean-action-publication
 ---
 
 # CI/CD Pipeline Architecture Spine
@@ -12,14 +12,13 @@ recovered_on: 2026-09-01
 ## Purpose
 
 This spine defines the invariants for building, verifying, packaging, and publishing
-`traefik-certificate-exporter`. It supports GitHub.com and one self-hosted Gitea installation
-as alternative repository owners, Docker Hub as an additional image destination, TestPyPI for
-development packages, and PyPI for stable packages.
+`traefik-certificate-exporter`. The complete earlier design remains inspectable at commit
+`dbc991c7595d087edc1a2f91e763d0418209116e` on
+`archive/publication-transaction-v1`; it is not an active implementation dependency.
 
-The pipeline is designed around one rule: build once, verify once, and publish the exact same
-artifact set everywhere. GitHub Actions-compatible YAML is the orchestration format; local
-developer commands are exposed through `just` and invoke the same underlying tools and
-contracts.
+The active design follows one rule: build once, validate the manifest and checksums at every
+publisher boundary, and use ordinary maintained actions for each destination. Mutable aliases
+move only after the required publishers succeed.
 
 ## System Context
 
@@ -35,158 +34,159 @@ git repository (GitHub OR Gitea)
    +-- main branch -----------> dev.yaml ---------+--> verify-build.yaml
    |                                             |       |
    +-- exact vX.Y.Z tag ------> release.yaml -----+       +-- wheel + sdist
-                                                         +-- multi-arch image
-                                                         +-- manifest + checksums
-                                                                 |
-                  +------------------ immutable publish <---------+
-                  |                  |                  |
-               PyPI/TestPyPI     Docker Hub       active forge registry
-                  |                                     |
-                  +--------------- aliases/release <----+
+                                                         +-- SHA256SUMS
+                                                         +-- build-manifest.json
+                                                         +-- native image smoke evidence
+                                                                  |
+                              destination action jobs <------------+
+                                   |             |
+                            packages      one multi-platform image job
+                                   |
+                            aliases-last finalizer
 ```
 
 ## Architecture Requirements
 
-The `CI-AR` identifiers are stable traceability keys. Stories and tests refer to them directly.
+The `CI-AR` identifiers remain stable traceability keys.
 
 ### Forge and portability
 
-- **CI-AR1 — Single active forge.** The repository owner is either GitHub.com or self-hosted
-  Gitea for a run. The active forge is derived from `github.server_url` and repository context;
-  the pipeline does not publish across both forges in one run.
+- **CI-AR1 — Single active forge.** A run belongs to GitHub.com or one self-hosted Gitea
+  instance, derived from action context. It does not publish across both forges.
 - **CI-AR2 — One workflow implementation.** GitHub Actions, Gitea Actions, and local `act`
-  execute the same workflow graph. No step branches on the `ACT` environment variable.
-- **CI-AR3 — Action-first composition.** Prefer maintained actions over repository shell
-  scripts. Use LiquidLogicLabs actions where their documented contract fits; retain scripts
-  only for project-specific validation or atomic transactions that no suitable action owns.
-- **CI-AR4 — Version policy for actions.** Approved first-party and LiquidLogicLabs actions
-  use a documented floating major alias when available; unfamiliar third-party actions are
-  pinned to a reviewed commit SHA. Dependabot keeps action references current.
-- **CI-AR5 — Stable workflow topology.** The post-cutover workflow set is exactly
-  `ci.yaml`, `dev.yaml`, `release.yaml`, and reusable `verify-build.yaml`. Publishing adapters
-  call the verifier rather than duplicate its build logic.
-- **CI-AR6 — Host-neutral context.** Repository, owner, API, server, and registry coordinates
-  come from action context and a minimal documented override when Gitea cannot derive a value.
+  execute the same workflow graph; no step branches on `ACT`.
+- **CI-AR3 — Action-first composition.** Maintained actions own standard checkout, artifact,
+  registry, package-index, and release integrations. Repository Python owns only project-specific
+  version and build-evidence validation.
+- **CI-AR4 — Action version policy.** Approved first-party and LiquidLogicLabs actions use a
+  documented floating major when available; other third-party actions require a reviewed SHA.
+- **CI-AR5 — Stable topology.** The pipeline consists of `ci.yaml`, `dev.yaml`, `release.yaml`,
+  and reusable `verify-build.yaml`.
+- **CI-AR6 — Host-neutral coordinates.** Repository, API, server, and registry coordinates come
+  from action context, with only a documented Gitea override where safe derivation is impossible.
 
-### Local developer interface and version ownership
+### Local interface and version ownership
 
-- **CI-AR7 — `just` is the local interface.** A root `justfile` exposes at least `setup`,
-  `lint`, `test`, `test-local`, `package`, `image`, `build`, `verify`, and `release PART`.
-- **CI-AR8 — One committed version.** Poetry project metadata is the committed version
-  authority. Application/package metadata and release tags must agree with it.
-- **CI-AR9 — Guarded release preconditions.** `just release PART` accepts only `major`,
-  `minor`, or `patch`; requires a clean worktree on the default branch, an up-to-date upstream,
-  a green local verification run, and an unused target version/tag.
-- **CI-AR10 — Atomic deliberate tag.** The release recipe bumps SemVer, refreshes the lock if
-  required, commits `release: vX.Y.Z`, creates annotated tag `vX.Y.Z`, then atomically pushes
-  the commit and exact tag. CI never invents the stable version.
-- **CI-AR11 — Stable agreement gate.** A stable workflow rejects any mismatch among the exact
-  tag, committed Poetry version, built package metadata, lock state, and application-reported
-  version.
-- **CI-AR12 — Development identity.** Default-branch builds calculate the next patch PEP 440
-  identity `X.Y.(Z+1).devN`, where `N` is the first-parent distance from `vX.Y.Z`; they do not
-  commit, bump, or tag the repository.
+- **CI-AR7 — `just` is the local interface.** The root `justfile` exposes `setup`, `lint`,
+  `test`, `test-local`, `package`, `image`, `build`, `verify`, and `release PART`.
+- **CI-AR8 — One committed version.** Poetry project metadata is the committed version authority.
+- **CI-AR9 — Guarded release preconditions.** `just release PART` accepts only `major`, `minor`,
+  or `patch` and requires a clean, current default branch plus green local verification.
+- **CI-AR10 — Atomic exact tag.** The release command updates metadata, commits
+  `release: vX.Y.Z`, creates annotated tag `vX.Y.Z`, and atomically pushes commit and tag.
+- **CI-AR11 — Stable agreement.** Stable CI rejects mismatch among tag, committed version,
+  package metadata, lock state, and application-reported version.
+- **CI-AR12 — Development identity.** Default-branch builds use next-patch
+  `X.Y.(Z+1).devN`, where `N` is first-parent distance, without committing or tagging.
 
 ### Build and verification
 
-- **CI-AR13 — One distribution set.** A run creates one wheel and one sdist, records their
-  names and SHA-256 hashes, and passes those exact files to every package publisher.
-- **CI-AR14 — Exact-wheel image provenance.** The container image installs the verified wheel
-  produced by the run. It does not rebuild the Python project or independently resolve
-  dependencies inside the image job.
-- **CI-AR15 — Reproducible build manifest.** `build-manifest-v1.json` records source SHA,
-  package version, channel, artifact hashes, image platforms, and image digest without secrets
-  or run-specific fields that would make identical source produce different evidence.
-- **CI-AR16 — Multi-architecture image.** The supported image platforms are
-  `linux/amd64,linux/arm64`. QEMU and Buildx produce one OCI manifest list, and verification
-  proves both platform descriptors exist.
-- **CI-AR17 — Immutable identities.** Development images first publish as
-  `dev-<12-character-source-sha>`; stable images first publish as exact `X.Y.Z`/`vX.Y.Z`
-  according to the repository naming contract. Package versions are inherently immutable.
-- **CI-AR18 — Verify before mutation.** Linting, unit/integration tests, package metadata
-  checks, install smoke tests, container smoke tests, workflow contract tests, and artifact
-  checksum verification finish before any external publisher authenticates or mutates state.
+- **CI-AR13 — One distribution set.** A run creates exactly one wheel and one sdist and records
+  their filenames and SHA-256 hashes.
+- **CI-AR14 — Exact-wheel image provenance.** The image installs the verified wheel; it does not
+  rebuild the project or resolve an independent application dependency set.
+- **CI-AR15 — Reproducible evidence.** `build-manifest.json`, whose schema/version identifier is
+  `build-manifest-v1`, records only source SHA, normalized package version, optional development
+  distance, wheel/sdist filenames and hashes, image inputs and labels, and their fingerprint. It
+  never records channel, platforms, lock hash, observed image digest, credentials, or run identity.
+- **CI-AR16 — Multi-architecture image.** Supported platforms are
+  `linux/amd64,linux/arm64`; verification proves both descriptors exist.
+- **CI-AR17 — Immutable first names.** Development images first publish under
+  `dev-<12sha>` and stable images under exact version tags. Package versions are immutable.
+- **CI-AR18 — Verify before publishing.** Lint, tests, metadata checks, clean-wheel install,
+  native image smoke tests, workflow contracts, manifest validation, and checksum validation
+  finish before a publisher can mutate its destination. Epic 8 adds the multi-platform Buildx
+  publication and inspects both published descriptors before finalization.
 
-### Destination and publication contracts
+### Destination action jobs
 
-- **CI-AR19 — Strict toggles.** Publication variables accept only case-normalized `true` or
-  `false`; absent means false; any other value fails planning. Shell truthiness is forbidden.
-- **CI-AR20 — Image destinations.** *(amended 2026-09-01.)* The owning forge's registry —
-  GHCR on GitHub, the local registry on Gitea — is **always** a destination and has no
-  toggle; `PUBLISH_IMAGE_FORGE` is removed. `PUBLISH_IMAGE_DOCKERHUB` independently enables
-  Docker Hub. There are no separate GHCR and Gitea booleans.
-- **CI-AR21 — Package channels.** *(amended 2026-09-01. The original read "Forge package
-  publication is intentionally out of scope"; that is superseded.)* The owning forge's
-  package registry is **always** a destination where the forge provides a Python index, and
-  has no toggle. In practice that means Gitea: GitHub Packages has no PyPI registry (its
-  registries are npm, RubyGems, Maven, Gradle, Docker and NuGet), so on GitHub.com the
-  destination does not exist. That absence is a *derived host fact* recorded in the plan —
-  not a disabled destination and not a planning failure — and the forge Release assets carry
-  the distribution there. Reconciliation must represent "this host has no Python index"
-  distinctly from "a publish failed", or recovery cannot tell a correct state from a broken
-  one. External channels stay optional: development to TestPyPI under
-  `PUBLISH_PACKAGE_TESTPYPI`, stable to PyPI under `PUBLISH_PACKAGE_PYPI`.
-- **CI-AR21a — The owning forge is never optional.** *(added 2026-09-01.)* Toggles exist for
-  external destinations only. Publishing to the forge that owns the repository is where the
-  artifacts belong, so it is not a choice; a missing forge credential fails planning rather
-  than silently downgrading the destination to "disabled".
-- **CI-AR22 — Publication plan.** Before publishing, the workflow emits schema-validated
-  `publication-plan-v1.json` with channel, version, source SHA, enabled targets, non-secret
-  coordinates, immutable tags, aliases, credential modes, and run correlation.
-- **CI-AR23 — Aggregate preflight.** Every enabled destination is validated before the first
-  login, OIDC request, upload, image push, release creation, or alias mutation. A failure blocks
-  the complete fan-out.
-- **CI-AR24 — Least privilege.** Each publisher receives only its destination's credentials
-  and job-level permissions. Disabled destinations map no secrets, request no OIDC identity,
-  perform no login, and contact no endpoint.
-- **CI-AR25 — Credential modes.** GitHub.com uses PyPI/TestPyPI trusted publishing where
-  configured. Gitea uses protected API tokens for PyPI/TestPyPI. Docker Hub and Gitea registry
-  use scoped tokens; GHCR uses the repository token with package-write permission.
-- **CI-AR26 — Idempotent immutable publication.** A rerun accepts a remote object only when
-  filenames, hashes, or manifest digest match the local manifest. Mismatch is a hard failure;
-  immutable objects are never overwritten or silently skipped.
-- **CI-AR27 — Immutable-first fan-out.** Enabled package and image destinations publish in
-  parallel only after aggregate preflight and verification. Mutable aliases never advance
-  until all enabled immutable publications have succeeded or been identity-matched.
-- **CI-AR28 — Stable forge release.** A stable run creates or reconciles one release on the
-  active forge for the exact tag and attaches checksums/evidence; no release is created for a
-  development build.
+- **CI-AR19 — Strict toggles.** Optional publication variables accept only case-normalized
+  `true` or `false`; absent means false and any other value fails the owning job.
+- **CI-AR20 — Image destinations.** The active forge registry is always required. Docker Hub is
+  independently enabled by `PUBLISH_IMAGE_DOCKERHUB`.
+- **CI-AR21 — Package channels.** Development uses optional TestPyPI; stable uses optional PyPI.
+  Gitea's owning-forge Python index is always required. GitHub has no forge Python index, so this
+  destination is absent by host capability and Release assets carry the distributions.
+- **CI-AR22 — Retired: publication plan.** The original requirement introduced
+  `publication-plan-v1.json`. It is intentionally retired and has no active replacement schema;
+  see `archive/publication-transaction-v1` at
+  `dbc991c7595d087edc1a2f91e763d0418209116e`.
+- **CI-AR23 — Retired: aggregate preflight.** The original all-destination preflight barrier is
+  intentionally retired; see `archive/publication-transaction-v1` at
+  `dbc991c7595d087edc1a2f91e763d0418209116e` for its historical meaning.
+- **CI-AR24 — Least privilege.** Each publisher receives only its destination's credentials and
+  job permissions. Disabled external targets receive no secret and make no endpoint request.
+- **CI-AR25 — Credential modes.** GitHub uses trusted publishing for PyPI/TestPyPI, GHCR uses
+  the repository token, and Gitea/Docker Hub use scoped protected tokens.
+- **CI-AR26 — Retired: idempotent immutable publication.** The original custom remote-identity
+  reconciliation requirement is intentionally retired; see `archive/publication-transaction-v1`
+  at `dbc991c7595d087edc1a2f91e763d0418209116e`.
+- **CI-AR27 — Retired: immutable-first fan-out.** The original transaction fan-out requirement
+  is intentionally retired; see `archive/publication-transaction-v1` at
+  `dbc991c7595d087edc1a2f91e763d0418209116e`.
+- **CI-AR28 — Stable forge Release.** A stable run creates one active-forge Release for the exact
+  tag and attaches wheel, sdist, checksums, and build manifest. Development creates no Release.
 - **CI-AR29 — Forward-only aliases.** Stable image aliases `X.Y`, `X`, and `latest`, plus Git
   tags `vX.Y` and `vX`, may advance only to a newer compatible stable version. `dev` advances
-  only after the whole development fan-out succeeds. Prereleases never advance stable aliases.
-- **CI-AR30 — Release receipt.** `release-receipt-v1.json` records planned and observed
-  identities, destination outcomes, image digests, package hashes, release URL, and alias
-  movements. It contains no credentials.
-- **CI-AR31 — Evidence retention.** Distribution artifacts, manifests, plans, receipts, and
-  test evidence used for recovery are retained for 30 days and stay inside the originating
-  workflow run.
+  only after the whole development fan-out succeeds and a just-in-time remote check proves the
+  candidate remains the protected default-branch head. Prereleases never advance stable aliases.
+  Workflow concurrency prevents stale dev finalizers, and all alias jobs copy the already-published
+  digest without rebuilding.
+- **CI-AR30 — Retired: release receipt.** The original requirement introduced
+  `release-receipt-v1.json`. It is intentionally retired and has no active replacement schema;
+  see `archive/publication-transaction-v1` at
+  `dbc991c7595d087edc1a2f91e763d0418209116e`.
+- **CI-AR31 — Evidence retention.** Distribution artifacts, checksums, build manifest, and test
+  evidence remain attached to the originating workflow for 30 days.
 
 ### Trust boundaries and Gitea certification
 
-- **CI-AR32 — Secret-free pull requests.** Pull-request workflows receive read-only contents
-  permission, no publisher secrets, no OIDC write permission, and never execute publication
-  jobs, including for forked pull requests.
-- **CI-AR33 — Safe local `act`.** `just test-local` runs the selected workflow against a
-  disposable clone/worktree so checkout and cleanup behavior cannot rewrite the developer's
-  working tree. It uses synthetic/local-only secrets and never production publisher tokens.
-- **CI-AR34 — Pinned isolated Gitea runners.** The supported Gitea/runner/action tuple is
-  documented and pinned. Untrusted verification and protected publishing use isolated runner
-  labels/pools, ephemeral job environments, minimal host mounts, and restricted network access.
-- **CI-AR35 — Gitea conformance gate.** Migration to Gitea requires a staging run proving PR,
-  development, stable, multi-arch, private-CA, token, registry, artifact, release, retry, and
-  recovery behaviors. The evidence is recorded before changing the production owner.
+- **CI-AR32 — Secret-free pull requests.** Pull requests receive read-only contents permission,
+  no publisher secrets, and no publication jobs, including forked requests.
+- **CI-AR33 — Safe local `act`.** Local workflow testing uses a disposable clone/worktree and
+  synthetic local inputs; it never rewrites the developer worktree or accepts production tokens.
+- **CI-AR34 — Pinned isolated Gitea runners.** The supported Gitea server, act-runner, runner
+  image, and action-major tuple are recorded. Untrusted verification and protected publication
+  use separate pools with ephemeral workspaces and minimal mounts.
+- **CI-AR35 — Practical conformance gate.** Migration requires staging proof of PR verification,
+  dev/stable destinations, private CA, artifacts, multi-arch images, forge Release, aliases-last,
+  one failed-jobs-only rerun, and rollback steps for the pinned tuple.
+
+### Lean publication requirements
+
+- **CI-AR36 — Boundary revalidation.** Every publisher downloads the verified bundle, checks
+  `SHA256SUMS`, validates `build-manifest.json`, matches source/version, and for image publication
+  proves the exact wheel hash is the declared image input before any login or upload.
+- **CI-AR37 — Destination-local failure.** Package, image, and forge Release jobs report their
+  own actionable failures without a repository-specific all-destination protocol.
+- **CI-AR38 — Maintained action behavior.** Standard actions own upload behavior. Package upload
+  uses `pypa/gh-action-pypi-publish@<reviewed-full-commit-sha>`; implementation must resolve,
+  review, and record the real full commit SHA. Operators rerun failed jobs only. If the forge
+  cannot do that, evidence expired, or an immutable conflict exists, publication halts and is
+  escalated (using a new development version where appropriate); a whole-workflow rerun is not
+  the normal recovery path.
+- **CI-AR39 — One-build image fan-out.** One channel-run image job consumes the exact verified
+  wheel and performs one Buildx multi-platform invocation for `linux/amd64,linux/arm64`, tagging
+  the required forge registry and optional Docker Hub in that invocation. There is no per-registry
+  rebuild. The job exports the published digest and inspected platforms as action/workflow outputs.
+- **CI-AR40 — Required fan-out.** Required and enabled destination jobs may run independently
+  after verification; aggregate success gates the Story 8.3 finalizer. The image job receives
+  only enabled image-registry credentials, while package credentials stay isolated in package jobs.
+- **CI-AR41 — Workflow-native run evidence.** Run ID/URL, manifest and artifact hashes, published
+  image digest/platform inspection, Release URL, and alias outcomes are emitted as job outputs and
+  workflow run summaries. They are not added to a repository-owned schema.
 
 ## Workflow Responsibilities
 
 | Workflow | Trigger | Secrets | Mutation |
 |---|---|---|---|
-| `ci.yaml` | pull request; optional manual | none | none |
-| `dev.yaml` | push to protected default branch | enabled destination jobs only | optional TestPyPI/images; `dev` alias last |
-| `release.yaml` | exact `vX.Y.Z` tag | enabled destination jobs only | PyPI/images/forge release; stable aliases last |
-| `verify-build.yaml` | `workflow_call`, `workflow_dispatch` | none | workflow artifacts only |
+| `ci.yaml` | pull request | none | none |
+| `dev.yaml` | protected default-branch push | destination jobs only | immutable dev packages/images; Story 8.3 moves `dev` |
+| `release.yaml` | exact `vX.Y.Z` tag | destination jobs only | stable packages/images/Release; aliases last |
+| `verify-build.yaml` | reusable call or dispatch | none | workflow artifacts only |
 
 `verify-build.yaml` accepts only channel, package version, and source SHA. Publisher adapters
-own destination planning, preflight, authentication, and mutation.
+consume its single evidence bundle.
 
 ## Configuration Contract
 
@@ -194,81 +194,84 @@ own destination planning, preflight, authentication, and mutation.
 
 | Variable | Meaning | Default |
 |---|---|---|
-| `PUBLISH_IMAGE_DOCKERHUB` | Publish image to Docker Hub | `false` |
-| *(none)* | Forge image and forge package are always on — see CI-AR20/21a | n/a |
-| `PUBLISH_PACKAGE_TESTPYPI` | Publish development package to TestPyPI | `false` |
-| `PUBLISH_PACKAGE_PYPI` | Publish stable package to PyPI | `false` |
-| `FORGE_REGISTRY` | Gitea registry override only when host derivation is unsafe | derived |
+| `PUBLISH_IMAGE_DOCKERHUB` | additionally publish to Docker Hub | `false` |
+| `PUBLISH_PACKAGE_TESTPYPI` | publish development distributions to TestPyPI | `false` |
+| `PUBLISH_PACKAGE_PYPI` | publish stable distributions to PyPI | `false` |
+| `FORGE_REGISTRY` | Gitea `host[:port]` override only; same forge, no userinfo/path/query/fragment | derived |
 | `DOCKERHUB_REPOSITORY` | Docker Hub namespace/repository | required when enabled |
 
-The package toggles are intentionally channel-specific. The image toggles are destination-
-specific because a release may fan out to Docker Hub and the active forge registry together.
+The active forge registry is always required. The Gitea package index is always required on
+Gitea; GitHub has no equivalent Python index.
 
-### Secrets and protected environments
+### Protected credentials
 
 | Target | GitHub.com | Gitea |
 |---|---|---|
-| TestPyPI/PyPI | OIDC trusted publishing, protected environment | scoped token, protected environment |
-| GHCR | repository token, `packages: write` | N/A |
-| Gitea registry | N/A | scoped registry token |
-| Docker Hub | username + scoped access token | username + scoped access token |
-| Private CA | optional CA bundle input | protected CA bundle input |
+| TestPyPI/PyPI | OIDC trusted publishing | scoped token |
+| forge image | repository token to GHCR | scoped registry token |
+| forge package | unavailable | scoped package token |
+| Docker Hub | username + scoped token | username + scoped token |
+| runner bootstrap CA | runner-host trust before registration/action resolution | runner-host trust before registration/action resolution |
+| downstream private CA | optional job-level bundle | protected bundle imported only for downstream endpoints |
 
-## Publication State Machine
+## Publication Flow
 
 ```text
-PLAN
-  -> VERIFY
-  -> PREFLIGHT_ALL_ENABLED_TARGETS
-  -> PUBLISH_IMMUTABLES
-  -> RECONCILE_FORGE_RELEASE (stable only)
+VERIFY
+  -> DOWNLOAD_AND_VALIDATE_EVIDENCE in each destination job
+  -> PUBLISH_PACKAGES + ONE_MULTI_PLATFORM_IMAGE_BUILD_TO_ALL_ENABLED_REGISTRIES
+  -> CREATE_FORGE_RELEASE (stable only)
   -> ADVANCE_ALIASES
-  -> WRITE_RECEIPT
 
-Any failure before ADVANCE_ALIASES leaves the previous mutable pointers intact.
-Recovery reruns PLAN and verifies existing immutable identities before continuing.
+A failed or skipped required destination prevents ADVANCE_ALIASES.
+Only failed jobs are rerun with retained build-manifest/checksum evidence. If that path is not
+supported or the evidence is no longer valid, halt and escalate rather than rerun everything.
 ```
 
-## Local Release Transaction
+## Trigger and Coordinate Guards
 
-`just release patch` (or `minor`/`major`) owns the deliberate release transaction:
+- Unknown forge identity fails closed before a destination or credential is selected.
+- Development checkout fetches full history and tags once for first-parent distance, and suppresses
+  publication when the source commit has an exact stable tag.
+- Stable publication requires an annotated exact `vX.Y.Z` tag whose peeled commit equals the event
+  SHA and is reachable from the protected default branch.
+- `FORGE_REGISTRY` is validated as `host[:port]` only: no user information, path, query, or fragment,
+  and it must satisfy the active-forge same-host policy.
+- Development workflows use source/ref-scoped concurrency. Story 8.3 rechecks the protected
+  default-branch head immediately before moving `dev`; stale candidates halt without alias movement.
 
-1. Verify the requested part and required tools.
-2. Require a clean default-branch worktree and a non-detached `HEAD`.
-3. Fetch tags and prove local default branch equals its upstream.
-4. Run the same local verification interface used by CI.
-5. Read the committed version once and calculate the SemVer target.
-6. Update Poetry metadata and lock consistency.
-7. Re-run the version and package checks.
-8. Commit `release: vX.Y.Z` and create annotated `vX.Y.Z`.
-9. Use `git push --atomic <remote> <default-branch> vX.Y.Z`.
-10. On any failure before push, leave a clearly reported, recoverable local state; never force
-    or delete a remote tag.
+## Guarded Local Release
 
-Floating Git tags are intentionally created by the stable CI finalizer with
-`LiquidLogicLabs/git-action-tag-floating-version@v1`, after immutable publication succeeds.
+`just release patch` (or `minor`/`major`) remains the deliberate release interface:
 
-## Verification and Test Anchors
+1. Validate input and required tools.
+2. Require a clean, attached, current default branch.
+3. Fetch tags and reject an existing target tag.
+4. Run the local verification interface.
+5. Calculate and apply the SemVer target through Poetry.
+6. Recheck lock, package metadata, and application version.
+7. Commit `release: vX.Y.Z` and create annotated `vX.Y.Z`.
+8. Atomically push the branch and exact tag; never force or delete a remote tag.
 
-- Unit tests for SemVer calculation, strict booleans, channel routing, forge derivation,
-  schemas, alias ordering, and idempotency decisions.
-- Workflow contract tests parse YAML and prove permissions, triggers, reusable-workflow edges,
-  secret isolation, and verify-before-publish dependencies.
+Floating Git tags are moved by the stable finalizer only after publication succeeds.
+
+## Verification Anchors
+
+- Contract tests cover deterministic JSON, duplicate keys, forbidden secret fields, schema
+  strictness, exact artifact hashes, image inputs, and checksum revalidation.
+- Workflow tests prove permissions, triggers, action ownership/version policy, secret isolation,
+  verifier dependencies, required destination fan-out, and aliases-last ordering.
 - Package smoke tests install the wheel in an empty environment and invoke the CLI.
-- Image tests inspect both `linux/amd64` and `linux/arm64`, start the container, and prove its
-  installed distribution hash/version matches the wheel manifest.
-- Failure injection tests cover missing credentials, one registry unavailable, partial remote
-  state, alias finalizer failure, rerun, tag/version mismatch, and cancelled verification.
-- Gitea staging conformance runs the same contract suite under the pinned runner tuple.
+- Current verifier image tests prove native image smoke and installed version/wheel provenance.
+  Epic 8 publication tests inspect both required platforms from the single published index.
+- Gitea certification records the pinned tuple and run/build identifiers without credentials.
 
 ## Implementation Sequence
 
-1. **Epic 7 — Reproducible Build and Verification:** local interface, version transaction,
-   contracts, one artifact set, PR/act governance.
-2. **Epic 8 — Multi-Channel Package and Image Delivery:** development and stable publication,
-   multi-registry fan-out, aliases, receipts, recovery.
-3. **Epic 9 — Certified Gitea Portability:** pinned runners, private CA and credentials,
-   end-to-end conformance and migration.
+1. **Epic 7 — Reproducible Build and Verification:** complete and archived; retain it.
+2. **Epic 8 — Action-Based Multi-Channel Delivery:** dev jobs, stable jobs, Release/aliases-last,
+   then topology cutover and operator runbook.
+3. **Epic 9 — Practical Gitea Certification:** runner/CA/credential setup, then staging proof and
+   migration.
 
-This sequence is deliberately serial at epic level: publication depends on verified artifacts,
-and Gitea certification depends on the complete publication system it certifies.
+Epic ordering remains `E007 -> E008 -> E009`.

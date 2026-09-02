@@ -1,17 +1,17 @@
 key: 'E008'
-title: 'Epic 008 — Multi-Channel Package and Image Delivery'
-goal: 'Publish development and stable artifacts to enabled package and image destinations as one planned, preflighted, immutable-first, recoverable transaction.'
+title: 'Epic 008 — Action-Based Multi-Channel Delivery'
+goal: 'Publish verified development and stable artifacts through normal destination actions, then advance aliases only after required jobs succeed.'
 status: backlog
 depends_on: ['E007']
 estimate:
-  man_hours_low: 137.36
-  man_hours_high: 142.55
-  hitl_hours_low: 0.0
-  hitl_hours_high: 0.0
-  elapsed_hours_low: 3.6
-  elapsed_hours_high: 3.72
-  tokens_k_min: 2714
-  tokens_k_max: 3084
+  man_hours_low: 74.6
+  man_hours_high: 77.42
+  hitl_hours_low: 0.17
+  hitl_hours_high: 0.18
+  elapsed_hours_low: 2.87
+  elapsed_hours_high: 2.97
+  tokens_k_min: 1585
+  tokens_k_max: 1801
   closure_ratios:
     man_hours: 0.2587
     hitl_hours: 0.3481
@@ -22,8 +22,8 @@ estimate:
     hitl_hours: 0
     elapsed_hours: 0
     tokens_k: 0
-  cost_low: 11.2
-  cost_high: 12.72
+  cost_low: 6.54
+  cost_high: 7.43
   model: claude-opus-5
   confidence: medium
-updated_at: '2026-09-01T22:44:22Z'
+updated_at: '2026-09-02T00:30:28Z'
