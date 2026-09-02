@@ -559,6 +559,43 @@ def test_the_enabled_destination_set_has_one_producer() -> None:
             )
 
 
+def test_alias_ordering_is_decided_from_git_never_from_a_registry() -> None:
+    """ADR-0011 / gate finding F4: the Git tag set is the only ordering authority.
+
+    `git-action-tag-floating-version` moves an alias **unconditionally** -- it performs
+    the move, it does not decide whether the move is correct. Tag `v1.2.4` after `v1.3.0`
+    exists and it will drag `v1` backwards. So the *decision* is the workflow's, and it
+    must come from the tag set: an alias advances only if the released tag is the greatest
+    annotated `vX.Y.Z` (and for `vX.Y`, the greatest within its minor).
+
+    Reading a registry to answer it -- "what does `latest` point at?" -- is a
+    per-destination remote-state read, one refactor from retired CI-AR26, and wrong on its
+    own terms: the registry is a publication side effect, not the version authority.
+    """
+    registry_reads = (
+        r"\bdocker\s+manifest\s+inspect\b",
+        r"\bbuildx\s+imagetools\s+inspect\b",
+        r"\bskopeo\s+(?:inspect|list-tags)\b",
+        r"\bcrane\s+(?:ls|digest|manifest)\b",
+    )
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            steps = job.get("steps", []) or []
+            moves_aliases = any(
+                str(step.get("uses", "")).startswith(APPROVED_ALIAS_ACTION)
+                for step in steps
+            )
+            if not moves_aliases:
+                continue
+            for step in steps:
+                command = str(step.get("run", ""))
+                for probe in registry_reads:
+                    assert not re.search(probe, command), (
+                        f"{path.name}: job {job_name!r} moves aliases and reads a "
+                        f"registry. Ordering comes from the Git tag set alone (F4)."
+                    )
+
+
 def test_no_workflow_calls_a_local_workflow_or_action_that_does_not_exist() -> None:
     # Deleting the legacy workflows left every `uses:` pointing at them dangling. GitHub
     # fails such a call at run time, not at lint time, so nothing else here catches it.
