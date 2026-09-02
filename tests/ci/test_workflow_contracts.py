@@ -102,6 +102,11 @@ FLOATING_MAJOR_ALIAS = re.compile(r"\A(?:release/)?v[0-9]+\Z")
 # the split is per action, not per owner. `pypa` stays an approved owner; only this one
 # action of theirs is pinned harder.
 SHA_PINNED_ACTIONS = frozenset({"pypa/gh-action-pypi-publish"})
+
+# The one action permitted to create a forge Release (ADR-0010). It speaks GitHub's and
+# Gitea's release APIs from a single step, so `release.yaml` carries no forge branch and
+# E009 inherits the Gitea path unchanged. Pinned `@v2` -- never `@v2.0`, which is stale.
+APPROVED_RELEASE_ACTION = "LiquidLogicLabs/git-action-release"
 REVIEWED_COMMIT_SHA = re.compile(r"\A[0-9a-f]{40}\Z")
 
 
@@ -243,7 +248,6 @@ def test_credential_handling_publishers_are_registered_as_sha_pinned() -> None:
             )
 
 
-
 def test_no_caller_hands_the_verifier_any_secret() -> None:
     """The secret-free property belongs to the call graph, not to one file.
 
@@ -268,6 +272,7 @@ def test_no_caller_hands_the_verifier_any_secret() -> None:
                 f"caller may not hand it credentials from the outside."
             )
     assert verifier_callers, "no job calls the verifier; this guard examined nothing"
+
 
 def test_tier_one_forbids_expression_interpolated_action_references() -> None:
     for path in GOVERNED_DEFINITIONS:
@@ -472,6 +477,37 @@ def test_no_workflow_writes_refs_or_releases_outside_a_finalizer() -> None:
                     f"{path.name}: job {job_name!r} uses a release/tag-writing action "
                     f"({name}); register it in RELEASE_FINALIZER_JOBS with an ADR"
                 )
+
+
+def test_releases_are_created_only_through_the_approved_action() -> None:
+    """ADR-0010: one multi-platform action creates the Release on GitHub and on Gitea.
+
+    Without this the ADR is prose. The cheapest way to ship a Release under deadline is a
+    two-line `curl` against the forge API, which works on exactly one forge, and nothing
+    would notice until E009 tried the other one. Gitea is GitHub-*shaped* but not
+    GitHub-compatible -- asset upload was multipart-only before 1.22 and asset deletion
+    still uses a different path -- so a hand-rolled client is a maintenance liability,
+    not a shortcut.
+
+    This governs *how* a Release is created; ADR-0006's RELEASE_FINALIZER_JOBS governs
+    *which job* may create one.
+    """
+    hand_rolled = (
+        r"\bgh\s+release\s+create\b",
+        r"\bgh\s+api\b[^\n]*\breleases\b",
+        r"\bcurl\b[^\n]*/api/v1/repos/[^\n]*/releases",
+        r"\bcurl\b[^\n]*/repos/[^\n]*/releases",
+    )
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            for step in job.get("steps", []) or []:
+                command = str(step.get("run", ""))
+                for pattern in hand_rolled:
+                    assert not re.search(pattern, command), (
+                        f"{path.name}: job {job_name!r} creates a Release by hand. Use "
+                        f"{APPROVED_RELEASE_ACTION}@v2, which speaks both GitHub's and "
+                        f"Gitea's APIs from one step (ADR-0010)."
+                    )
 
 
 def test_no_workflow_delegates_versioning_to_an_external_release_bot() -> None:

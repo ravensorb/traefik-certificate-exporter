@@ -240,6 +240,39 @@ certification checklist contains a row that no implementation can satisfy.
 - **MINOR (10):** F21–F30 — defer to backlog, except F22 and F28, which are one line each in a
   story that has not been written yet and are cheapest to fold in now.
 
+## F3 — resolved, and its premise was wrong (2026-09-02)
+
+F3 asserted that "the approved owner set … contains no release-creating action" and offered to
+*build* `LiquidLogicLabs/git-action-forge-release@v1`. **It already exists**, under a different
+name and major: `LiquidLogicLabs/git-action-release@v2` — repository description "Multi-platform
+release action (GitHub, Gitea, self-hosted Gitea)", verified against github.com. So F3 was a
+discovery gap, not a capability gap, and nothing needs to be built.
+
+- Owner is already approved; `v2` already matches `FLOATING_MAJOR_ALIAS`. **No change to
+  `APPROVED_ACTION_OWNERS` or the pin policy.**
+- `v2` and `v2.0.3` both resolve to `3db5b5dd6bf0`; `main` is ahead at `7acfef55e6ff`, which is
+  normal for a floating major tracking the latest release. `v2.0` is stale at `90d0e4f4` — pin
+  `v2`, never `v2.0`.
+- There is **no `base-url` input**; the instance URL derives from `GITHUB_SERVER_URL`, which is
+  better for CI-AR6 than an override would be. Any document claiming a `base-url` input is wrong.
+- Option (b), a forge-conditional step pair, is rejected: Gitea is GitHub-*shaped* but not
+  GitHub-compatible (asset upload was multipart-only before 1.22; asset deletion still uses a
+  different path), so that option commits the project to hand-writing an API client — the
+  hand-rolling anti-pattern the engineering rules exist to prevent.
+- `gh release create` is confirmed GitHub-only: `gh` hardcodes `/api/v3/` and `/api/graphql` for
+  GHES, while Gitea serves `/api/v1`. `GH_HOST` does not change the prefix.
+
+Recorded as ADR-0010, which also names `softprops/action-gh-release@v3.0.2+` (SHA-pinned, with
+the allowlist cost stated) as the fallback if E009 staging fails certification.
+
+**Carried into E009's pinned tuple** (per F18): the action runs `using: node24`, so the pinned
+`act_runner` must accept node24 — already load-bearing, since this repo uses
+`actions/checkout@v7` and `actions/setup-python@v7`. Whether the action's platform auto-detection
+succeeds behind a private CA is **unverified** and must be proven empirically in E009 staging;
+its detector is distributed from a private npm registry and could not be inspected.
+
+---
+
 ## Recommended ADRs
 
 1. **Forge Release and alias mechanism across GitHub and Gitea** (F3, F5) — the host-neutral

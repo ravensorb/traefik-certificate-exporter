@@ -87,11 +87,16 @@ vendor preference). Several are directly applicable to open findings in this rep
   Gitea, and local `act`. Adopted in [build-container.yaml](../.github/workflows/build-container.yaml)'s
   `Docker meta` steps for semver/major/minor/sha/beta/latest image tagging.
 
-Other `LiquidLogicLabs` actions (`git-action-release`, `git-action-release-changelog-builder`,
+`git-action-release@v2` is **selected**, not a candidate: it creates Releases on GitHub and on
+self-hosted Gitea from one step, resolving the instance from `GITHUB_SERVER_URL` (ADR-0010). It
+lands with `release.yaml` in Epic 8 — that workflow does not currently exist, having been deleted
+along with the rest of the legacy publish path in `9e43b90`, and `release-please` was retired by
+ADR-0006 rather than merely disabled.
+
+Other `LiquidLogicLabs` actions (`git-action-release-changelog-builder`,
 `git-action-tag-validate-version`, `git-action-tag-floating-version`, `git-action-docker-test`,
-`git-action-docker-cleanup`) are candidates for [release.yaml](../.github/workflows/release.yaml)
-(currently entirely commented-out, see PRD backlog item on dead code) precisely because they
-are multi-platform, unlike the disabled `googleapis/release-please-action` (GitHub-only) — but
+`git-action-docker-cleanup`) remain candidates for the same workflow precisely because they
+are multi-platform — but
 adopting them is a separate implementation decision, not bundled into this vendor-preference fix.
 
 ## 7. One pipeline, three runners — no `ACT` env var dependency
