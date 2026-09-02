@@ -50,9 +50,9 @@ Stable publication accepts only an annotated exact `vX.Y.Z` tag. Its peeled comm
 event SHA and be reachable from the protected default branch; tag, committed Poetry version, built
 metadata, lock, and application version must agree before credentials are available.
 
-Forge detection fails closed for unknown hosts. A Gitea `FORGE_REGISTRY` override is valid only as
-`host[:port]`: no user information, path, query, or fragment, and it must satisfy the same-forge
-policy.
+Forge detection fails closed for unknown hosts. There is no registry override: every coordinate is
+a projection of `github.server_url` and `github.repository`, so no operator value participates and
+there is nothing to validate.
 
 ## Destination Model
 

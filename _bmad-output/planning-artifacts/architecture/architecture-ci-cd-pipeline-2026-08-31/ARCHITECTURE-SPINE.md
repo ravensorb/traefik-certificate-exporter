@@ -211,11 +211,19 @@ consume its single evidence bundle.
 | `PUBLISH_IMAGE_DOCKERHUB` | additionally publish to Docker Hub; **stable channel only, inert in `dev.yaml`** | `false` |
 | `PUBLISH_PACKAGE_TESTPYPI` | publish development distributions to TestPyPI | `false` |
 | `PUBLISH_PACKAGE_PYPI` | publish stable distributions to PyPI | `false` |
-| `FORGE_REGISTRY` | Gitea `host[:port]` override only; same forge, no userinfo/path/query/fragment | derived |
 | `DOCKERHUB_REPOSITORY` | Docker Hub namespace/repository | required when enabled |
 
 The active forge registry is always required. The Gitea package index is always required on
 Gitea; GitHub has no equivalent Python index.
+
+**`FORGE_REGISTRY` is retired (spec change).** It was specified as an operator-supplied
+`host[:port]` override for a Gitea deployment whose registry answers on a different port from its
+web UI. There is no such value: the registry authority *is* `github.server_url`'s host, so the
+override could only ever restate what is already derived, and validating a restatement cost a
+235-line module, a 60-line composite action and 240 lines of tests to produce six template
+expressions over action context. A Gitea deployment that genuinely splits the two ports is
+unrepresented until someone runs one; the replacement then is a new variable specified against
+that deployment, not this one restored.
 
 ### Protected credentials
 
@@ -249,8 +257,9 @@ supported or the evidence is no longer valid, halt and escalate rather than reru
   publication when the source commit has an exact stable tag.
 - Stable publication requires an annotated exact `vX.Y.Z` tag whose peeled commit equals the event
   SHA and is reachable from the protected default branch.
-- `FORGE_REGISTRY` is validated as `host[:port]` only: no user information, path, query, or fragment,
-  and it must satisfy the active-forge same-host policy.
+- Forge coordinates are a projection of `github.server_url` and `github.repository` alone -- forge
+  kind, registry authority, image repository, and whether the host offers a Python index. No
+  operator value participates, so there is nothing to validate and no override to reject.
 - Development workflows use source/ref-scoped concurrency. Story 8.3 rechecks the protected
   default-branch head immediately before moving `dev`; stale candidates halt without alias movement.
 

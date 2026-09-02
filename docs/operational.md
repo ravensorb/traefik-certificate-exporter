@@ -134,13 +134,19 @@ reported `unsupported` is not one somebody switched off.
 `PUBLISH_PACKAGE_TESTPYPI` accepts only `true`, `false`, or absence. Any other value fails the plan
 job rather than being coerced.
 
-### `FORGE_REGISTRY`
+### Forge coordinates
 
-Registry coordinates are derived from action context. `FORGE_REGISTRY` is the one documented
-override, for a Gitea deployment whose registry answers on a different port from its web UI. It
-accepts a bare `host[:port]` on the same forge and nothing else -- a scheme, userinfo, path, query,
-fragment or a foreign host is rejected rather than stripped. An unrecognised forge fails closed: no
-registry is guessed, because a guess publishes an immutable artifact somewhere nobody chose.
+There is no registry variable. Every coordinate -- the forge kind, the container registry, the
+image repository, and whether the host offers a Python package index -- is a projection of
+`github.server_url` and `github.repository`, derived in the plan job of each channel workflow. On
+GitHub the registry is `ghcr.io`; on Gitea it is the forge's own host and port. `FORGE_REGISTRY`
+was specified as an override for a Gitea deployment whose registry answers on a different port
+from its web UI; no such deployment exists here, so the variable is retired and setting it does
+nothing.
+
+An unrecognised forge -- neither `github.com` nor a runner setting `GITEA_ACTIONS=true` -- fails
+the plan job. No registry is guessed, because a guess publishes an immutable artifact somewhere
+nobody chose.
 
 ### The accepted tag race
 
@@ -214,7 +220,7 @@ the same situation TestPyPI has in the development channel, for the same reason.
 Docker Hub is the one destination whose repository cannot be derived: its namespace is unrelated to
 the forge owner. `DOCKERHUB_REPOSITORY` names it as a lowercase `<namespace>/<repository>`.
 Enabling `PUBLISH_IMAGE_DOCKERHUB` without a well-formed value **fails the plan job**; nothing is
-guessed, for the same reason `FORGE_REGISTRY` fails closed. Credentials come from the
+guessed, for the same reason an unrecognised forge fails closed. Credentials come from the
 `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets, and reach only the image job.
 
 Exactly one immutable tag per enabled destination is published, from one multi-platform Buildx

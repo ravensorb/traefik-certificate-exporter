@@ -43,7 +43,7 @@ jobs:
       forge: ${{ steps.forge.outputs.forge }}
       registry: ${{ steps.forge.outputs.registry }}
       image-repository: ${{ steps.forge.outputs.image-repository }}
-      image-tags: ${{ steps.identity.outputs.image-tags }}
+      image-tags: ${{ steps.meta.outputs.tags }}
       package-index-url: ${{ steps.forge.outputs.package-index-url }}
       enabled-destinations: ${{ steps.destinations.outputs.enabled-destinations }}
     steps:
@@ -58,11 +58,46 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
 
+      # Host-neutral forge coordinates (CI-AR6), from action context alone. Every value
+      # below is a projection of `github.server_url` and `github.repository`, so there is
+      # no operator-supplied input to validate and nothing to parse -- `GITEA_ACTIONS` is
+      # set by Gitea's act_runner and by nothing else, and the host is the authority
+      # segment of the server URL. Unknown forges fail closed: guessing a registry means
+      # publishing an immutable artifact somewhere nobody chose.
       - name: Derive forge coordinates
         id: forge
-        uses: ./.github/actions/forge-coordinates
-        with:
-          registry-override: ${{ vars.FORGE_REGISTRY }}
+        env:
+          FORGE_REPOSITORY: ${{ github.repository }}
+          FORGE_SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          server_host="${FORGE_SERVER_URL#*://}"
+          server_host="${server_host%%/*}"
+          # Registry references are lowercase; a forge owner or repository need not be.
+          repository="$(printf '%s' "$FORGE_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          owner="${repository%%/*}"
+          if [[ "${GITEA_ACTIONS:-}" == "true" ]]; then
+            forge=gitea
+            registry="$server_host"
+            package_index_supported=true
+            package_index_url="${FORGE_SERVER_URL%/}/api/packages/$owner/pypi"
+          elif [[ "$server_host" == "github.com" ]]; then
+            forge=github
+            registry=ghcr.io
+            package_index_supported=false
+            package_index_url=""
+          else
+            echo "unknown forge for server $FORGE_SERVER_URL: expected github.com or a" >&2
+            echo "Gitea runner setting GITEA_ACTIONS=true" >&2
+            exit 2
+          fi
+          {
+            echo "forge=$forge"
+            echo "registry=$registry"
+            echo "image-repository=$registry/$repository"
+            echo "package-index-supported=$package_index_supported"
+            echo "package-index-url=$package_index_url"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Count the first-parent development distance
         id: distance
@@ -95,7 +130,6 @@ jobs:
           # X.Y.(Z+1).devN comes from scripts/committed_versions.py through the setup
           # action and nowhere else. This job derives no version of its own (F12).
           DEVELOPMENT_VERSION: ${{ steps.setup.outputs.development-version }}
-          IMAGE_REPOSITORY: ${{ steps.forge.outputs.image-repository }}
           RESOLVED_PYTHON: ${{ steps.setup.outputs.python-version }}
           SOURCE_SHA: ${{ github.sha }}
         run: |
@@ -110,7 +144,7 @@ jobs:
             echo "python-version=$RESOLVED_PYTHON"
             echo "source-sha=$SOURCE_SHA"
             echo "short-sha=$short_sha"
-            echo "image-tags=$IMAGE_REPOSITORY:dev-$short_sha"
+            echo "image-tag-value=dev-$short_sha"
           } >> "$GITHUB_OUTPUT"
 
       - name: Emit the enabled destination set
@@ -152,6 +186,21 @@ jobs:
           # `if:` reads only the suppression conclusion.
           printf 'enabled-destinations={"image-forge":"enabled","package-forge":"%s","package-testpypi":"%s"}\n' \
             "$package_forge" "$package_testpypi" >> "$GITHUB_OUTPUT"
+
+      # Tags and labels for the image, from the fork of docker/metadata-action that
+      # carries no GitHub API dependency and therefore behaves identically on Gitea
+      # (docs/guidelines.md section 6). It renders references; it does not decide them --
+      # `type=raw` is handed the value the identity step proved, so this step is not a
+      # second version authority, and `latest=false` keeps every mutable alias with the
+      # finalizer story. It has no registry input: `images:` is the fully qualified
+      # repository the forge coordinates already derived.
+      - name: Render the image reference set
+        id: meta
+        uses: LiquidLogicLabs/git-action-docker-metadata@v6
+        with:
+          images: ${{ steps.forge.outputs.image-repository }}
+          flavor: latest=false
+          tags: type=raw,value=${{ steps.identity.outputs.image-tag-value }}
 
   verify:
     name: Run governed verifier

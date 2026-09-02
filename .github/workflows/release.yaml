@@ -6,10 +6,16 @@ name: Stable publication
 # reachable only from here, and TestPyPI is unreachable from here by construction rather
 # than by an `if:` someone has to keep correct.
 #
-# Everything shared with the development channel is *called*, never restated: the forge
-# coordinates action, the verified-bundle action, the governed verifier and the reusable
-# image publisher are all story E008-S01-001's surface (gate finding F8). A second
-# implementation of any of them in this file is the duplication F8 exists to prevent.
+# Everything shared with the development channel is *called*, never restated: the
+# verified-bundle action, the governed verifier and the reusable image publisher are all
+# story E008-S01-001's surface (gate finding F8). A second implementation of any of them
+# in this file is the duplication F8 exists to prevent.
+#
+# The one deliberate exception is the forge-coordinate derivation, which F8 also named.
+# It is now six template expressions over action context, and the composite action that
+# held them existed only to validate an operator override that does not exist. Both
+# copies are EXECUTED by the same contract guard, which asserts identical output from
+# each -- so a divergence fails the suite rather than reaching a registry.
 #
 # This is also the workflow that closes the residual left on BL-E008-001: `v*` tag pushes
 # reached nothing after the legacy publish path was deleted, so a pushed release tag
@@ -54,7 +60,7 @@ jobs:
       forge: ${{ steps.forge.outputs.forge }}
       registry: ${{ steps.forge.outputs.registry }}
       image-repository: ${{ steps.forge.outputs.image-repository }}
-      image-tags: ${{ steps.identity.outputs.image-tags }}
+      image-tags: ${{ steps.meta.outputs.tags }}
       package-index-url: ${{ steps.forge.outputs.package-index-url }}
       enabled-destinations: ${{ steps.destinations.outputs.enabled-destinations }}
     steps:
@@ -69,11 +75,47 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
 
+      # Host-neutral forge coordinates (CI-AR6), from action context alone -- the same
+      # projection dev.yaml derives, for the same reason. Every value is a function of
+      # `github.server_url` and `github.repository`, so there is no operator-supplied
+      # input to validate: `GITEA_ACTIONS` is set by Gitea's act_runner and by nothing
+      # else, and the host is the authority segment of the server URL. Unknown forges
+      # fail closed: guessing a registry means publishing an immutable artifact somewhere
+      # nobody chose.
       - name: Derive forge coordinates
         id: forge
-        uses: ./.github/actions/forge-coordinates
-        with:
-          registry-override: ${{ vars.FORGE_REGISTRY }}
+        env:
+          FORGE_REPOSITORY: ${{ github.repository }}
+          FORGE_SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          server_host="${FORGE_SERVER_URL#*://}"
+          server_host="${server_host%%/*}"
+          # Registry references are lowercase; a forge owner or repository need not be.
+          repository="$(printf '%s' "$FORGE_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          owner="${repository%%/*}"
+          if [[ "${GITEA_ACTIONS:-}" == "true" ]]; then
+            forge=gitea
+            registry="$server_host"
+            package_index_supported=true
+            package_index_url="${FORGE_SERVER_URL%/}/api/packages/$owner/pypi"
+          elif [[ "$server_host" == "github.com" ]]; then
+            forge=github
+            registry=ghcr.io
+            package_index_supported=false
+            package_index_url=""
+          else
+            echo "unknown forge for server $FORGE_SERVER_URL: expected github.com or a" >&2
+            echo "Gitea runner setting GITEA_ACTIONS=true" >&2
+            exit 2
+          fi
+          {
+            echo "forge=$forge"
+            echo "registry=$registry"
+            echo "image-repository=$registry/$repository"
+            echo "package-index-supported=$package_index_supported"
+            echo "package-index-url=$package_index_url"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Accept only an annotated exact stable tag on this commit
         id: tag
@@ -210,7 +252,6 @@ jobs:
           # through the setup action and nowhere else. This job derives no version of
           # its own (F12); it only proves the tag and the repository agree.
           COMMITTED_VERSION: ${{ steps.setup.outputs.package-version }}
-          DOCKERHUB_REPOSITORY: ${{ steps.destinations.outputs.dockerhub-repository }}
           IMAGE_REPOSITORY: ${{ steps.forge.outputs.image-repository }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
           RELEASE_VERSION: ${{ steps.tag.outputs.version }}
@@ -245,20 +286,34 @@ jobs:
             echo "release identity: tag $RELEASE_TAG does not match the committed version $COMMITTED_VERSION" >&2
             exit 2
           fi
-          # Exactly one immutable tag per enabled destination. Every mutable alias --
-          # `latest`, `vX`, `vX.Y` -- belongs to the finalizer story, not here.
-          image_tags="$IMAGE_REPOSITORY:$RELEASE_VERSION"
-          if [[ -n "$DOCKERHUB_REPOSITORY" ]]; then
-            image_tags="$image_tags"$'\n'"docker.io/$DOCKERHUB_REPOSITORY:$RELEASE_VERSION"
-          fi
+          # Exactly one immutable tag per enabled destination. The value is decided
+          # here, from the proven identity; joining it to each enabled repository is the
+          # metadata action's job below. Every mutable alias -- `latest`, `vX`, `vX.Y` --
+          # belongs to the finalizer story, not here.
           {
             echo "package-version=$RELEASE_VERSION"
             echo "python-version=$RESOLVED_PYTHON"
             echo "source-sha=$TAG_COMMIT"
-            echo "image-tags<<STABLE_IMAGE_TAGS"
-            echo "$image_tags"
-            echo "STABLE_IMAGE_TAGS"
+            echo "image-tag-value=$RELEASE_VERSION"
           } >> "$GITHUB_OUTPUT"
+
+      # Tags and labels for the image, from the fork of docker/metadata-action that
+      # carries no GitHub API dependency and therefore behaves identically on Gitea
+      # (docs/guidelines.md section 6). It renders references; it does not decide them --
+      # `type=raw` is handed the value the identity step proved, so this step is not a
+      # second version authority, and `latest=false` keeps every mutable alias with the
+      # finalizer story. It has no registry input: `images:` is the fully qualified
+      # repository list, one entry per enabled destination, and the Docker Hub line
+      # collapses to nothing when that destination is not enabled.
+      - name: Render the image reference set
+        id: meta
+        uses: LiquidLogicLabs/git-action-docker-metadata@v6
+        with:
+          images: |
+            ${{ steps.forge.outputs.image-repository }}
+            ${{ steps.destinations.outputs.dockerhub-repository && format('docker.io/{0}', steps.destinations.outputs.dockerhub-repository) || '' }}
+          flavor: latest=false
+          tags: type=raw,value=${{ steps.identity.outputs.image-tag-value }}
 
   verify:
     name: Run governed verifier

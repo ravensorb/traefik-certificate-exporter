@@ -1155,20 +1155,48 @@ DESCRIPTOR_COUNT_ASSERTIONS = (
 )
 
 
-def _load_forge_coordinates() -> Any:
-    """The forge-coordinate validator the workflows delegate to."""
-    location = PROJECT_ROOT / "scripts" / "forge_coordinates.py"
-    spec = importlib.util.spec_from_file_location("forge_coordinates", location)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    # Registered before execution: `@dataclass` resolves annotations through
-    # `sys.modules[cls.__module__]`, absent for a module loaded from a spec alone.
-    sys.modules["forge_coordinates"] = module
-    spec.loader.exec_module(module)
-    return module
+# The coordinates every publishing workflow addresses a forge with. Used to LOCATE the
+# derivation from what a job emits rather than from a filename, so a third channel
+# workflow that derives its own registry is examined the day it lands.
+FORGE_COORDINATE_OUTPUTS = frozenset(
+    {
+        "forge",
+        "registry",
+        "image-repository",
+        "package-index-supported",
+        "package-index-url",
+    }
+)
+STEP_OUTPUT_REFERENCE = re.compile(r"steps\.([A-Za-z0-9_-]+)\.outputs\.")
+
+# The fork of docker/metadata-action with the GitHub API dependency removed, so the same
+# YAML renders the same references on GitHub and on Gitea (docs/guidelines.md section 6).
+IMAGE_METADATA_ACTION = "LiquidLogicLabs/git-action-docker-metadata@v6"
 
 
-forge_coordinates = _load_forge_coordinates()
+def _producing_step(
+    path: Path, job_name: str, job: dict[str, Any], output_name: str
+) -> dict[str, Any]:
+    """The step a job's named output is taken from, resolved through the expression."""
+    reference = STEP_OUTPUT_REFERENCE.search(
+        str((job.get("outputs") or {})[output_name])
+    )
+    assert reference, (
+        f"{path.name}: job {job_name!r} does not take {output_name!r} from a step output"
+    )
+    step = next(
+        (
+            candidate
+            for candidate in (job.get("steps") or [])
+            if candidate.get("id") == reference.group(1)
+        ),
+        None,
+    )
+    assert step is not None, (
+        f"{path.name}: job {job_name!r} takes {output_name!r} from step "
+        f"{reference.group(1)!r}, which does not exist"
+    )
+    return step
 
 
 def _uncommented(command: str) -> str:
@@ -1332,52 +1360,195 @@ def test_every_development_publisher_is_gated_on_stable_tag_suppression() -> Non
         )
 
 
-def test_forge_coordinates_come_from_the_tested_validator_not_an_inline_pattern() -> (
+def _coordinate_derivations() -> list[tuple[Path, str, dict[str, Any]]]:
+    """Every job that derives forge coordinates, and the one step it derives them in.
+
+    Scope is derived from what a job EMITS, never from a list of filenames: a channel
+    workflow added later that resolves its own registry is examined here without an edit,
+    and a job that split the derivation across two steps fails rather than being examined
+    in half.
+    """
+    located: list[tuple[Path, str, dict[str, Any]]] = []
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            outputs = job.get("outputs") or {}
+            emitted = FORGE_COORDINATE_OUTPUTS & set(outputs)
+            if not emitted:
+                continue
+            # Not every coordinate is exposed as a job output -- `package-index-supported`
+            # is consumed inside the job -- so the completeness of the set is asserted by
+            # EXECUTING the step below, where a missing coordinate cannot hide.
+            steps = {
+                _producing_step(path, job_name, job, name)["id"] for name in emitted
+            }
+            assert len(steps) == 1, (
+                f"{path.name}: job {job_name!r} derives its forge coordinates in "
+                f"{sorted(steps)}; there is one derivation or there are two answers"
+            )
+            located.append(
+                (path, job_name, _producing_step(path, job_name, job, "registry"))
+            )
+    return located
+
+
+def test_forge_coordinates_are_derived_from_action_context_and_fail_closed(
+    tmp_path: Path,
+) -> None:
+    """CI-AR6, asserted by RUNNING the derivation rather than by reading it.
+
+    Every coordinate is a projection of `github.server_url` and `github.repository`, so
+    there is no operator-supplied value to validate -- the composite action and the
+    ``scripts/forge_coordinates.py`` module it called were 535 lines producing six
+    template expressions, and `FORGE_REGISTRY` is retired with them.
+
+    The one behaviour worth keeping is the fail-closed branch: an unrecognised forge must
+    stop the run rather than guess a registry, because a guess publishes an immutable
+    artifact somewhere nobody chose. A textual check ("the word `exit` appears") passes
+    with that branch deleted, so each case below is executed.
+    """
+    derivations = _coordinate_derivations()
+    assert derivations, "no workflow derives forge coordinates; nothing was examined"
+    for path, job_name, step in derivations:
+        body = str(step["run"])
+        where = f"{path.name}: job {job_name!r}"
+
+        # GitHub: ghcr.io, no forge Python index, and a lowercased repository -- a forge
+        # owner need not be lowercase, and a registry reference must be.
+        completed, emitted = _run_step(
+            body,
+            {
+                "FORGE_SERVER_URL": "https://github.com",
+                "FORGE_REPOSITORY": "Owner/Name",
+            },
+            tmp_path,
+        )
+        assert completed.returncode == 0, f"{where}: {completed.stderr}"
+        assert emitted == {
+            "forge": "github",
+            "registry": "ghcr.io",
+            "image-repository": "ghcr.io/owner/name",
+            "package-index-supported": "false",
+            "package-index-url": "",
+        }, where
+
+        # Gitea: the registry is the forge's own authority, port included, and the
+        # package index is a capability of the host rather than a toggle.
+        completed, emitted = _run_step(
+            body,
+            {
+                "GITEA_ACTIONS": "true",
+                "FORGE_SERVER_URL": "https://git.example.com:3000",
+                "FORGE_REPOSITORY": "Owner/Name",
+            },
+            tmp_path,
+        )
+        assert completed.returncode == 0, f"{where}: {completed.stderr}"
+        assert emitted == {
+            "forge": "gitea",
+            "registry": "git.example.com:3000",
+            "image-repository": "git.example.com:3000/owner/name",
+            "package-index-supported": "true",
+            "package-index-url": "https://git.example.com:3000/api/packages/owner/pypi",
+        }, where
+
+        # Fail closed. `github.enterprise.example` ends with neither the GitHub host nor
+        # a Gitea flag, and a suffix or substring comparison accepts the first two.
+        for unknown in (
+            "https://github.enterprise.example",
+            "https://notgithub.com",
+            "https://github.com.evil.example",
+            "https://git.example.com",
+        ):
+            completed, emitted = _run_step(
+                body,
+                {"FORGE_SERVER_URL": unknown, "FORGE_REPOSITORY": "owner/name"},
+                tmp_path,
+            )
+            assert completed.returncode != 0, (
+                f"{where}: {unknown} was accepted as a known forge, so a registry was "
+                f"guessed for it"
+            )
+            assert not emitted, f"{where}: {unknown} emitted {emitted} before failing"
+
+        # `GITEA_ACTIONS` is Gitea's flag, and only its exact value means Gitea. Anything
+        # else on an unrecognised host still fails closed.
+        for flag in ("false", "TRUE ", "1", ""):
+            completed, _ = _run_step(
+                body,
+                {
+                    "GITEA_ACTIONS": flag,
+                    "FORGE_SERVER_URL": "https://git.example.com",
+                    "FORGE_REPOSITORY": "owner/name",
+                },
+                tmp_path,
+            )
+            assert completed.returncode != 0, (
+                f"{where}: GITEA_ACTIONS={flag!r} was read as a Gitea runner"
+            )
+
+
+def test_image_references_are_rendered_by_the_metadata_action_never_hand_joined() -> (
     None
 ):
-    """F9: rejecting userinfo, path, query and fragment in a `host[:port]` override is
-    URL parsing. Left inline in a `run:` block the only available test is grepping the
-    workflow for its own regex, which asserts nothing about what that regex accepts.
+    """The plan job proves the tag VALUE; joining it to each enabled repository is the
+    metadata action's job.
 
-    Both halves are here: the action delegates, and the validator actually rejects. The
-    planted violation for the rule is an unanchored host comparison -- `notgit.example.com`
-    ends with the forge host and a suffix match accepts it.
+    `git-action-docker-metadata` is a fork of `docker/metadata-action` with the GitHub
+    API dependency removed, so it renders the same references on GitHub and on Gitea. It
+    has no registry input and derives no registry: `images:` is handed the fully
+    qualified repository the forge coordinates already derived.
+
+    Scope is every job emitting `image-tags`, and the step examined is resolved through
+    that output's own expression -- so a channel that goes back to composing references
+    in a `run:` body fails here because the producing step has no `uses:` at all. That is
+    the scope attack: the rule is trivial, its reach is the point.
     """
-    action = ACTIONS / "forge-coordinates" / "action.yml"
-    # From the parsed steps, so a commented-out invocation does not satisfy it.
-    assert any(
-        "scripts/forge_coordinates.py" in _uncommented(str(step.get("run", "")))
-        for step in _steps(_load_document(action))
-    ), "the forge-coordinates action does not call the validator"
-
-    # Fail closed: an unrecognised forge raises rather than guessing a registry.
-    with pytest.raises(SystemExit):
-        forge_coordinates.derive(
-            server_url="https://forge.unknown.example", repository="owner/name"
-        )
-    for rejected in (
-        "user@git.example.com",
-        "git.example.com/v2",
-        "git.example.com?token=1",
-        "git.example.com#fragment",
-        "https://git.example.com",
-        "notgit.example.com",
-        "registry.evil.example",
-    ):
-        with pytest.raises(SystemExit):
-            forge_coordinates.derive(
-                server_url="https://git.example.com",
-                repository="owner/name",
-                registry_override=rejected,
-                gitea_actions="true",
+    examined = 0
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            if "image-tags" not in (job.get("outputs") or {}):
+                continue
+            examined += 1
+            where = f"{path.name}: job {job_name!r}"
+            step = _producing_step(path, job_name, job, "image-tags")
+            assert step.get("uses") == IMAGE_METADATA_ACTION, (
+                f"{where} composes image references itself instead of delegating to "
+                f"{IMAGE_METADATA_ACTION}"
             )
-    accepted = forge_coordinates.derive(
-        server_url="https://git.example.com",
-        repository="owner/name",
-        registry_override="git.example.com:3000",
-        gitea_actions="true",
-    )
-    assert accepted.registry == "git.example.com:3000"
+            inputs = step.get("with") or {}
+
+            # `images:` is the derived repository, never a registry the step names.
+            repository_step = _producing_step(path, job_name, job, "image-repository")[
+                "id"
+            ]
+            images = str(inputs.get("images", ""))
+            assert f"steps.{repository_step}.outputs.image-repository" in images, (
+                f"{where}: the metadata action is not handed the derived image "
+                f"repository as `images:` (got {images!r})"
+            )
+
+            # The rendered value is the proven identity, resolved through the job's own
+            # version producer rather than a hand-kept step name.
+            identity_step = _producing_step(path, job_name, job, "package-version")[
+                "id"
+            ]
+            tags = str(inputs.get("tags", ""))
+            assert tags.startswith("type=raw,value="), (
+                f"{where}: the metadata action derives the tag itself ({tags!r}); the "
+                f"identity step decides it and this step renders it"
+            )
+            assert f"steps.{identity_step}.outputs.image-tag-value" in tags, (
+                f"{where}: the rendered tag {tags!r} is not the identity the plan job "
+                f"proved, so the publication would carry a second version authority"
+            )
+
+            # `latest=auto` is the action's default, and it adds a mutable alias on a
+            # tag push. Every alias belongs to the finalizer story.
+            assert "latest=false" in str(inputs.get("flavor", "")), (
+                f"{where}: the metadata action may move `latest`; aliases belong to the "
+                f"finalizer, not to a publisher"
+            )
+    assert examined, "no job emits an image tag set; nothing was examined"
 
 
 def test_the_image_fan_out_is_one_buildx_invocation_carrying_every_tag() -> None:
@@ -1595,7 +1766,10 @@ def test_the_push_fixture_drives_the_real_identity_step(tmp_path: Path) -> None:
     An assertion that re-reads a constant out of the file it just loaded is a checksum of
     that file: it passes whatever the production code does. This extracts the step's
     actual `run:` body, executes it against the fixture event, and asserts the immutable
-    tag it produces -- so changing the `:0:12` slice, or the tag composition, fails here.
+    tag value it produces -- so changing the `:0:12` slice, or the `dev-` composition,
+    fails here. Joining that value to the image repository is the metadata action's job
+    and is asserted by
+    `test_image_references_are_rendered_by_the_metadata_action_never_hand_joined`.
     """
     event = _load_fixture("push-main.json")
     assert event["event_name"] == "push"
@@ -1616,7 +1790,6 @@ def test_the_push_fixture_drives_the_real_identity_step(tmp_path: Path) -> None:
             "PATH": os.environ["PATH"],
             "GITHUB_OUTPUT": str(output),
             "DEVELOPMENT_VERSION": "0.1.4.dev37",
-            "IMAGE_REPOSITORY": f"ghcr.io/{event['repository']}",
             "RESOLVED_PYTHON": "3.14.0",
             "SOURCE_SHA": event["sha"],
         },
@@ -1633,7 +1806,7 @@ def test_the_push_fixture_drives_the_real_identity_step(tmp_path: Path) -> None:
     short = event["sha"][:12]
     assert emitted["package-version"] == "0.1.4.dev37"
     assert emitted["short-sha"] == short
-    assert emitted["image-tags"] == f"ghcr.io/{event['repository']}:dev-{short}"
+    assert emitted["image-tag-value"] == f"dev-{short}"
 
     # The empty-version guard is the one branch that must not be silently lost: an empty
     # development version would tag an image `:dev-` and publish it.
@@ -1643,7 +1816,6 @@ def test_the_push_fixture_drives_the_real_identity_step(tmp_path: Path) -> None:
             "PATH": os.environ["PATH"],
             "GITHUB_OUTPUT": str(output),
             "DEVELOPMENT_VERSION": "",
-            "IMAGE_REPOSITORY": "ghcr.io/owner/name",
             "RESOLVED_PYTHON": "3.14.0",
             "SOURCE_SHA": event["sha"],
         },
@@ -2071,7 +2243,6 @@ def _release_identity_environment(**overrides: str) -> dict[str, str]:
     version = committed_versions.package_version()
     environment = {
         "COMMITTED_VERSION": version,
-        "DOCKERHUB_REPOSITORY": "",
         "IMAGE_REPOSITORY": f"ghcr.io/{event['repository']}",
         "RELEASE_TAG": f"v{version}",
         "RELEASE_VERSION": version,
@@ -2106,19 +2277,16 @@ def test_the_stable_identity_is_a_relation_between_fields_never_a_literal(
     assert emitted["source-sha"] == event["sha"]
     assert emitted["python-version"] == "3.14.0"
     # Exactly one immutable tag per enabled destination, and no alias: `latest`, `vX`
-    # and `vX.Y` all belong to the finalizer story.
-    assert emitted["image-tags"] == f"ghcr.io/{event['repository']}:{version}"
-
-    completed, emitted = _run_step(
-        body,
-        _release_identity_environment(DOCKERHUB_REPOSITORY="acme/exporter"),
-        tmp_path,
+    # and `vX.Y` all belong to the finalizer story. The value is decided here; rendering
+    # it against each enabled repository is the metadata action's job, asserted by
+    # `test_image_references_are_rendered_by_the_metadata_action_never_hand_joined` and,
+    # for the Docker Hub leg, by
+    # `test_docker_hub_enabled_with_a_well_formed_repository_reaches_the_image_job`.
+    assert emitted["image-tag-value"] == version
+    assert not emitted.get("image-tags"), (
+        "the identity step composes image references itself; it decides the tag value "
+        "and the metadata action renders it"
     )
-    assert completed.returncode == 0, completed.stderr
-    assert emitted["image-tags"].splitlines() == [
-        f"ghcr.io/{event['repository']}:{version}",
-        f"docker.io/acme/exporter:{version}",
-    ]
 
 
 @pytest.mark.parametrize(
@@ -2409,7 +2577,7 @@ def test_docker_hub_is_never_enabled_without_a_repository_to_publish_to(
 ) -> None:
     """The namespace on Docker Hub is unrelated to the forge owner, so it cannot be
     derived -- and an enabled toggle with a typo would push an *immutable* tag to a
-    namespace nobody chose. Fails closed, exactly as `FORGE_REGISTRY` does."""
+    namespace nobody chose. Fails closed, exactly as an unrecognised forge does."""
     completed, _ = _release_destinations(
         DOCKERHUB_TOGGLE="true", DOCKERHUB_REPOSITORY=repository
     )
@@ -2427,6 +2595,29 @@ def test_docker_hub_enabled_with_a_well_formed_repository_reaches_the_image_job(
     assert completed.returncode == 0, completed.stderr
     assert json.loads(emitted["enabled-destinations"])["image-dockerhub"] == "enabled"
     assert emitted["dockerhub-repository"] == "acme/exporter"
+
+    # And the value reaches the reference renderer as a second `images:` entry. Without
+    # this the destination is "enabled" and no Docker Hub tag is ever produced for it --
+    # a disabled publication that reports itself enabled, which is the failure the
+    # enabled set exists to make visible.
+    jobs = _jobs(_load_workflow(RELEASE_WORKFLOW))
+    plan = jobs["plan"]
+    destinations_step = _producing_step(
+        RELEASE_WORKFLOW, "plan", plan, "enabled-destinations"
+    )["id"]
+    images = str(
+        (
+            _producing_step(RELEASE_WORKFLOW, "plan", plan, "image-tags").get("with")
+            or {}
+        ).get("images", "")
+    )
+    assert f"steps.{destinations_step}.outputs.dockerhub-repository" in images, (
+        "release.yaml: the accepted Docker Hub repository never reaches `images:`, so "
+        "the enabled destination receives no tag"
+    )
+    assert "docker.io/" in images, (
+        "release.yaml: the Docker Hub repository is not qualified with its registry"
+    )
 
 
 def test_optional_destination_credentials_are_gated_on_the_enabled_set() -> None:

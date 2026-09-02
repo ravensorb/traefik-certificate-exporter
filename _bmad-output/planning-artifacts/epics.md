@@ -872,8 +872,9 @@ CI-AR41)
   actual SHA (CI-AR3, CI-AR38).
 - Publish the exact wheel/sdist and exact-wheel image inputs recorded by the verifier; no
   publisher rebuilds the Python package (CI-AR13–CI-AR18).
-- Validate `FORGE_REGISTRY` as same-forge `host[:port]` only, with no userinfo, path, query, or
-  fragment. The image job gets only enabled image credentials; package credentials stay isolated.
+- Derive every forge coordinate from `github.server_url` and `github.repository` alone, failing
+  closed on an unrecognised forge (`FORGE_REGISTRY` is retired). The image job gets only enabled
+  image credentials; package credentials stay isolated.
 - Workflow contract tests prove guards, strict toggles, secret isolation, one image invocation,
   and two-platform inspection. Story 8.3 alone owns the `dev` alias finalizer.
 - Full criteria live in
@@ -1021,8 +1022,8 @@ startup; a first job step never claims to establish trust needed to start itself
 
 - Document bootstrap versus downstream CA, minimal scopes, labels, network access, cache isolation,
   rotation, and rollback (CI-AR24, CI-AR25, CI-AR34).
-- Unknown forges fail closed; `FORGE_REGISTRY` is same-forge `host[:port]` only with no userinfo,
-  path, query, or fragment.
+- Unknown forges fail closed; coordinates are derived from action context alone, with no
+  operator-supplied registry value (`FORGE_REGISTRY` is retired).
 - A smoke workflow proves checkout, artifacts, Poetry, QEMU/Buildx, CA trust, and cleanup without
   publishing.
 - Full criteria live in

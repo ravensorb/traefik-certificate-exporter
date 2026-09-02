@@ -31,7 +31,7 @@ on:
         required: true
         type: string
       registry:
-        description: Forge container registry authority, from the forge-coordinates action.
+        description: Forge container registry authority, derived by the caller's plan job.
         required: true
         type: string
       tags:
