@@ -139,8 +139,40 @@ rather than by convention.
   in `just image` and in the verifier's image job. Whether to add a negative-path check — building
   with a wrong SHA-256, two wheels, or no wheel, and asserting the specific failure — is unresolved.
   Until then these are rules without a guard proving they still fire (Core §3).
-- **Multi-platform builds are untested against this contract.** `docker-bake.hcl` accepts
-  `PLATFORMS` and `OUTPUTS` overrides (`docker-bake.hcl:26-34`), and a pure-Python wheel should be
-  platform-independent, but the verifier builds only the default single-platform local-load target
-  (`.github/workflows/verify-build.yaml:488-493`). Whether the hash-verified wheel path behaves
-  identically under a multi-platform emulated build has not been demonstrated here.
+- ~~**Multi-platform builds are untested against this contract.**~~ **Answered 2026-09-02** by
+  the Epic 8 F13 spike, and answered affirmatively: the hash-verified wheel path behaves
+  identically under an emulated multi-platform build, with **no Dockerfile change required**.
+
+  The reason it holds is worth stating, because it is the property the whole contract rests on:
+  the wheel is `py3-none-any`, so the *same file with the same SHA-256* is installed into both
+  platform images. The `linux/arm64` builder passed the SHA-256 check, the VERSION-equals-metadata
+  check and `pip check` exactly as `linux/amd64` did. Exact-wheel provenance is therefore
+  platform-independent by construction, not by coincidence.
+
+  Measured on 8 vCPU: `linux/amd64` alone 50 s; `linux/amd64,linux/arm64` emulated **436 s**
+  (8.7×), of which 80 % is two `linux/arm64` steps under QEMU — `apk add gcc cargo` (203 s) and
+  `poetry install --only main` (145 s). Nothing compiles Rust from source; the cost is interpreter
+  and unpack overhead amplified by emulation. Budget 12–15 minutes on a 4 vCPU GitHub-hosted
+  runner. A second native runner is not required on these numbers.
+
+  One consequence for whoever asserts the published index: **`ATTESTATIONS = []`, the shipped
+  default, does not disable attestations.** BuildKit emits SLSA provenance `mode=min` regardless,
+  so the index carries four descriptors — two platforms plus two `unknown/unknown`
+  attestation manifests. Adding `type=sbom` keeps it at four (the SBOM shares the per-platform
+  attestation manifest); only `type=provenance,disabled=true` drops it to two. A count assertion
+  is therefore wrong in three separate directions. Assert the filtered set instead, keying on the
+  authoritative annotation rather than on the `unknown/unknown` compatibility convention:
+
+  ```python
+  platforms = {
+      f"{m['platform']['os']}/{m['platform']['architecture']}"
+      for m in index["manifests"]
+      if m.get("annotations", {}).get("vnd.docker.reference.type") != "attestation-manifest"
+  }
+  assert platforms == {"linux/amd64", "linux/arm64"}
+  ```
+
+  Note the nesting level differs by source: `imagetools inspect --raw <ref>` returns the manifest
+  list directly, while an OCI-layout `index.json` sits one level above it — and a single-platform
+  layout has no nested index at all. A test iterating `index.json`'s `manifests[]` reads the wrong
+  level.
