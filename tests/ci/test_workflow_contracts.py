@@ -814,6 +814,58 @@ def test_dependency_maintenance_covers_actions_python_and_docker() -> None:
         ("docker", "/docker"),
     }
 
+    # The reach half. Asserting the entry exists proves the rule, not that the rule can
+    # do anything: Dependabot resolves `FROM $VAR` only through an ARG default, so an
+    # undefaulted `ARG BASE_IMAGE` leaves the watched directory unupdatable while this
+    # config still reports coverage. That exact regression reached main once already.
+    #
+    # Parsed with dockerfile-parse rather than a hand-rolled scanner; only the
+    # Dependabot-specific ARG-default resolution is local.
+    from dockerfile_parse import DockerfileParser
+
+    bake = (PROJECT_ROOT / "docker-bake.hcl").read_text(encoding="utf-8")
+    watched_bases: set[str] = set()
+    for ecosystem, directory in configured:
+        if ecosystem != "docker":
+            continue
+        target = PROJECT_ROOT / directory.lstrip("/")
+        assert target.is_dir(), f"dependabot watches {directory}, which does not exist"
+        dockerfiles = sorted(target.glob("Dockerfile*"))
+        assert dockerfiles, f"dependabot watches {directory} with no Dockerfile in it"
+        for dockerfile in dockerfiles:
+            parser = DockerfileParser(path=str(dockerfile))
+            # Walked in order, accumulating ARG defaults as they appear. `parser.args` is
+            # the build-arg context, not the declared defaults, so the structure is the
+            # authority. Order matters and is not incidental: Dependabot resolves a
+            # variable in FROM only against an ARG that PRECEDES that FROM, so an ARG
+            # declared after the stage it is meant to serve resolves to nothing.
+            defaults: dict[str, str] = {}
+            for line in parser.structure:
+                if line["instruction"] == "ARG":
+                    name, _, value = line["value"].partition("=")
+                    if value:
+                        defaults[name.strip()] = value.strip()
+                    continue
+                if line["instruction"] != "FROM":
+                    continue
+                image = line["value"].split(" AS ")[0].split(" as ")[0].strip()
+                if not image.startswith("$"):
+                    watched_bases.add(image)
+                    continue
+                name = image.lstrip("${").rstrip("}")
+                resolved = defaults.get(name)
+                assert resolved, (
+                    f"{dockerfile}: FROM {image} has no ARG default, so the dependabot "
+                    f"docker entry for {directory} can update nothing"
+                )
+                watched_bases.add(resolved)
+
+    bake_bases = {value for value in re.findall(r'BASE_IMAGE\s*=\s*"([^"]+)"', bake)}
+    assert watched_bases == bake_bases, (
+        f"docker-bake.hcl and the Dockerfile ARG default disagree: "
+        f"bake={sorted(bake_bases)}, dockerfile={sorted(watched_bases)}"
+    )
+
 
 def test_dispatch_fixture_uses_the_committed_poetry_version() -> None:
     event = _load_fixture("workflow-dispatch.json")

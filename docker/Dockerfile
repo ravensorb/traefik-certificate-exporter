@@ -1,6 +1,11 @@
 # syntax=docker/dockerfile:1
 
-ARG BASE_IMAGE
+# Digest-pinned default. Dependabot resolves `FROM $VAR` only through an ARG default,
+# so without one the `docker` ecosystem entry watching /docker can update nothing while
+# still reporting coverage. docker-bake.hcl carries the same value for the build
+# manifest; the two are held equal by
+# tests/ci/test_workflow_contracts.py::test_dependency_maintenance_covers_actions_python_and_docker.
+ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24@sha256:e17494fc7ec17c64f1b502d52705aa99d7a1cd8ccf59bb7b36003db89d97d2c6
 
 # Build stage: install the locked dependency set and the caller-supplied wheel.
 FROM ${BASE_IMAGE} AS builder
