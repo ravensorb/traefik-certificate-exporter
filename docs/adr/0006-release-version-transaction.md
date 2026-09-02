@@ -205,19 +205,34 @@ The identity-versus-artifacts split already drawn above decides this cleanly:
 An alias does not choose a version; it points at one. Forcing it therefore cannot corrupt an
 identity, which is the harm §5 exists to prevent.
 
-**Constraints on the forced write**, all mechanically checked:
+**The mechanism is `LiquidLogicLabs/git-action-tag-floating-version@v1`, not a hand-rolled
+push.** The action extracts the major and optional minor from an exact tag, points the aliases at
+it, performs the non-fast-forward update, and skips prereleases by default
+(`ignore-prerelease: true`). It needs `contents: write`, which is exactly the grant this ADR
+governs, so its use is restricted to a registered finalizer.
 
-- `--force-with-lease` with an expected-old-ref, never a bare `--force`. A blind force would
-  silently clobber a concurrent alias move; the lease turns that race into a failed push.
-- Never `--tags`, and never a broad refspec — the target ref is named explicitly.
-- Never against `refs/tags/vX.Y.Z`. The pattern permitted is `refs/tags/v\d+(\.\d+)?$`, which
-  matches `v1` and `v1.2` and cannot match `v1.2.3`.
-- Only from a job registered in `RELEASE_FINALIZER_JOBS`, which per the amendment above is a
-  `(workflow, job)` pair.
+Unlike ADR-0010's Release action it needs no forge backend: **a tag is a git concept, a Release
+is a forge concept.** The alias action pushes refs with plain git — `using: node24`, no server
+URL, no API base, no platform selector — so it is portable to Gitea for free. That is why one of
+these two actions needs per-API handling and the other does not.
 
-Enforced by `test_forced_ref_writes_target_only_alias_tags_from_a_finalizer`, verified with three
-planted violations: a bare `--force`, a forced write against an exact `vX.Y.Z` identity, and an
-alias force from an unregistered job.
+**Hand-rolling the push is forbidden outright**, not merely constrained. The constraints are the
+hard part — `--force-with-lease` rather than a bare `--force` so a concurrent alias move fails
+instead of being silently clobbered, never `--tags`, never a broad refspec, never against
+`refs/tags/vX.Y.Z` — and a `run:` block re-deriving them would be a second implementation of the
+alias rule, and the one most likely to get the lease wrong.
+
+Two guards, verified by planted violation in both directions:
+
+- `test_alias_moves_go_through_the_approved_action` — no `run:` step may perform a forced ref
+  write under any spelling. Rejected even when the hand-rolled command was *correct*, using
+  `--force-with-lease` against a valid alias ref.
+- `test_the_alias_action_runs_only_from_a_registered_finalizer` — the action may run only from a
+  `(workflow, job)` pair in `RELEASE_FINALIZER_JOBS`. The permitted path was confirmed to pass,
+  not only the rejections.
+
+Carry into E009's pinned tuple: this action is `using: node24`, the same runtime requirement
+ADR-0010 records for the Release action.
 
 ## Consequences
 
