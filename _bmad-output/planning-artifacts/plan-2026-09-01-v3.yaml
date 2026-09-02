@@ -1,0 +1,105 @@
+generated: "2026-09-01T22:30:00Z"
+plan_version: 3
+readiness: green
+stories_elaborated: 6
+total_epics_in_scope: 2
+
+# Epics 1-7 are complete and archived. Phase numbering continues from the previous
+# snapshot for continuity of reference.
+phases:
+  - phase: 2
+    parallel: false
+    epics: ['E008']
+    dependencies: ['E007']
+    estimate:
+      estimates_as_of: "2026-09-01T22:30:00Z"
+      wall_clock_hours_low: 3.6
+      wall_clock_hours_high: 3.72
+      man_hours_low: 137.36
+      man_hours_high: 142.55
+      hitl_hours_low: 0.0
+      hitl_hours_high: 0.0
+      tokens_k_min: 2714
+      tokens_k_max: 3084
+      cost_low: 11.2
+      cost_high: 12.72
+      confidence: medium
+  - phase: 3
+    parallel: false
+    epics: ['E009']
+    dependencies: ['E008']
+    estimate:
+      estimates_as_of: "2026-09-01T22:30:00Z"
+      wall_clock_hours_low: 2.74
+      wall_clock_hours_high: 2.83
+      man_hours_low: 34.73
+      man_hours_high: 36.04
+      hitl_hours_low: 0.45
+      hitl_hours_high: 0.53
+      tokens_k_min: 908
+      tokens_k_max: 1031
+      cost_low: 3.73
+      cost_high: 4.26
+      confidence: medium
+
+readiness_detail:
+  - key: 'E008'
+    status: green
+    gaps: []
+    notes:
+      - 'Six stories elaborated: 267-370 lines each, all seven technical sections present
+         (interface contracts, data model, error handling, observability, security,
+         testability, files in scope), with test anchors and planted-violation cases.'
+      - 'The three blocking questions are answered and recorded in docs/ci/codex-assesment.md
+         and ARCHITECTURE-SPINE.md (CI-AR20/21 amended, CI-AR21a added): publication-contract
+         decides aliases and vendor actions execute them; the owning forge is never optional;
+         the immutable half of the tag race is accepted because tagging drives the release.'
+      - 'Both schema extensions are implemented and tested -- publication-plan-v1 carries
+         per-destination package_targets/image_targets, development_distance, git_aliases and
+         run correlation; release-receipt-v1 expresses missing/mismatched/unverifiable with
+         the `complete` conditional verified intact. build-manifest-v1 deliberately gained no
+         run correlation and stays byte-deterministic.'
+      - '18 open questions remain across the six stories. None blocks execution -- they are
+         implementation choices settled while building. Two are design forks worth deciding
+         when their story starts: how S01-004 distinguishes "publisher disabled" from
+         "publisher failed" when GitHub collapses both to `skipped`, and whether S01-006
+         permits a cancelled run to leave no receipt.'
+      - 'Execution has NOT started, at the maintainer request. E008 remains in planned/.'
+  - key: 'E009'
+    status: red
+    gaps:
+      - 'Three stories have documents but were not elaborated. Re-estimated for snapshot
+         consistency only, using existing classifications.'
+      - 'Depends on E008-S01-006, so it cannot start before E008 completes.'
+
+arch_gate_summary:
+  ran: false
+  reviewers: []
+  findings: []
+
+# ---------------------------------------------------------------------------
+# Notes
+#
+# work_type for E008 is MIXED, not CONFIG. Its acceptance criteria read as workflow
+# configuration, but delivery needs fail-closed validation logic, forge-kind derivation,
+# development-distance computation and schema-valid plan/receipt emission -- which in this
+# codebase lands in src/publication_contract/ with tests. E007 was classified CONFIG while
+# delivering ~3,500 lines of Python; that skipped six of seven review gates and the one
+# retained lens then returned 10 MAJOR findings. MIXED runs adversarial analysis and red
+# team, which is the right posture for the epic holding PyPI tokens, registry logins, OIDC
+# and the only contents:write job the repo will permit.
+#
+# Estimates moved because E007's actuals are now in pm-calibration.yaml:
+#
+#   E008 man_hours   98.22-102.57  ->  137.36-142.55   (+40%)
+#   E008 elapsed     33.14-34.56   ->    3.60-3.72     (-89%)
+#
+# The rise comes from a calibrated `complex` scope ratio of 1.1248, learned from E007
+# landing at 140 actual against 69.7-72.79 estimated. The previous six story estimates were
+# an identical 15.0 placeholder apiece.
+#
+# hitl_hours of 0.00 is a calibration artifact, not a forecast. It derives from E007
+# recording ~0 human hours, while E008 genuinely needs a human to provision PyPI/TestPyPI
+# tokens, registry credentials and trusted publishing, and to approve a first real release.
+# Read the hitl band as unmeasured rather than zero.
+# ---------------------------------------------------------------------------
