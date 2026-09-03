@@ -100,8 +100,14 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           dependencies: none
+      # Through the hook, not the bare command. Every other gate in this file runs
+      # `pre-commit run <hook>` precisely so the hook stays the authority and local and
+      # CI cannot diverge -- the mypy job says so in as many words. This one ran
+      # `poetry check --lock` directly, so an edit to the hook's entry would not have
+      # reached CI, and `test_every_gate_runs_in_ci_or_is_recorded_as_local_only` found
+      # it the moment that rule was made mechanical.
       - name: Check manifest and lock
-        run: poetry check --lock
+        run: poetry run pre-commit run poetry-lock --all-files
 
   ruff-check:
     name: Ruff check

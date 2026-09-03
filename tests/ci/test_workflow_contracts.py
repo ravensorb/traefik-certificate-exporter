@@ -1933,6 +1933,116 @@ def test_the_secret_scanner_reads_content_rather_than_the_index() -> None:
     )
 
 
+# Hooks that deliberately never run in CI, and why. Same registry shape as everywhere
+# else here: an entry IS the acceptance of a coverage gap, and silence is not allowed.
+LOCAL_ONLY_HOOKS: dict[str, str] = {
+    "justfile-fmt": (
+        "CI installs no `just`, so no workflow can run it. A real coverage limit, "
+        "recorded rather than left to be discovered: the drift it catches -- one story "
+        "formatting the shared justfile and a later one unformatting it -- happened."
+    ),
+}
+
+
+def _configured_hooks() -> list[dict[str, Any]]:
+    config = yaml.safe_load(PRE_COMMIT_CONFIG.read_text(encoding="utf-8"))
+    return [hook for repository in config["repos"] for hook in repository["hooks"]]
+
+
+def _hook_id(hook: dict[str, Any]) -> str:
+    """A hook's addressable name -- its alias where it has one, since two hooks here
+    share an `id` and differ only by alias."""
+    return str(hook.get("alias", hook["id"]))
+
+
+def _tracked_paths() -> list[str]:
+    return subprocess.run(
+        ["git", "ls-files"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+
+
+def test_no_configured_gate_examines_an_empty_set() -> None:
+    """The generalisation of this epic's worst gate defect.
+
+    The secret scanner ran a correctly-configured hook over an empty file set --
+    `~0 bytes (0)`, exit 0, on every commit of this project's history -- and the pytest
+    matrix installed one interpreter under five names. Both were green throughout, and
+    both are the same failure: **a gate whose scope is empty reports success**, which is
+    indistinguishable from a gate that looked and found nothing.
+
+    A `files:` pattern that matches no tracked file is the cheapest way back into that
+    state, and it arrives by ordinary means -- moving a directory, renaming a module.
+    `mypy` here is scoped to `^(src/publication_contract/|scripts/(committed_versions|
+    release_version)\\.py)`; relocate either and the type checker silently checks
+    nothing while its job still reports green.
+
+    A hook passing no filenames is exempt from the pattern check and must instead be
+    `always_run`, or pre-commit may not invoke it at all.
+    """
+    config = yaml.safe_load(PRE_COMMIT_CONFIG.read_text(encoding="utf-8"))
+    excluded = re.compile(str(config["exclude"]))
+    tracked = [path for path in _tracked_paths() if not excluded.match(path)]
+    assert tracked, "no tracked files outside the excluded trees; nothing was examined"
+
+    hooks = _configured_hooks()
+    assert hooks, "no hooks are configured; this guard examined nothing"
+    for hook in hooks:
+        name = _hook_id(hook)
+        pattern = hook.get("files")
+        if pattern:
+            matched = [path for path in tracked if re.search(str(pattern), path)]
+            assert matched, (
+                f"the {name!r} gate is scoped to files: {pattern!r}, which matches no "
+                f"tracked file. It runs, it reports success, and it examines nothing."
+            )
+        elif hook.get("pass_filenames") is False:
+            assert hook.get("always_run") is True, (
+                f"the {name!r} gate passes no filenames and is not `always_run`, so "
+                f"pre-commit may never invoke it"
+            )
+
+
+def test_every_gate_runs_in_ci_or_is_recorded_as_local_only() -> None:
+    """A hook nobody runs is a gate in name only.
+
+    `justfile-fmt` is the honest case -- CI installs no `just` -- and it is registered
+    with that reason. Everything else configured for the commit stage must be run by a
+    job in the governed verifier, because "it is in .pre-commit-config.yaml" is exactly
+    the kind of assurance this epic kept finding to be empty.
+
+    Manual-stage hooks are excluded: they are the non-mutating twins `just lint` runs,
+    and their mutating counterparts are what CI executes.
+    """
+    ci = "\n".join(
+        _uncommented(str(step.get("run", "")))
+        for job in _jobs(_load_workflow(VERIFY_WORKFLOW)).values()
+        for step in job.get("steps") or []
+    )
+    assert "pre-commit run" in ci, "the verifier runs no hooks; nothing was examined"
+    examined = 0
+    for hook in _configured_hooks():
+        name = _hook_id(hook)
+        if "manual" in (hook.get("stages") or []):
+            continue
+        examined += 1
+        if re.search(rf"pre-commit run {re.escape(name)}\b", ci):
+            continue
+        assert name in LOCAL_ONLY_HOOKS, (
+            f"the {name!r} gate is configured but no verifier job runs it, so it gates "
+            f"nothing that reaches the default branch. Run it in CI, or record why it "
+            f"cannot be in LOCAL_ONLY_HOOKS."
+        )
+    assert examined, "every hook is manual-stage; this guard examined nothing"
+    stale = set(LOCAL_ONLY_HOOKS) - {_hook_id(hook) for hook in _configured_hooks()}
+    assert not stale, (
+        f"{sorted(stale)} are recorded as local-only but are no longer configured"
+    )
+
+
 def test_the_python_formatter_never_rewrites_a_markdown_record() -> None:
     """A mutating gate must not edit the records this project keeps.
 
