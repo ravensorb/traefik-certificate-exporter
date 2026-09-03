@@ -3515,6 +3515,42 @@ def test_a_job_that_decides_alias_order_serialises_against_every_other_run() -> 
     assert examined, "no job decides alias order; this guard examined nothing"
 
 
+# The scopes the finalizer authority split depends on, in both directions: the
+# ref-writing job must not hold them, and the registry job must not hold `contents:
+# write`. Denial is stated, never inferred.
+AUTHORITY_SCOPES = ("contents", "packages", "id-token", "attestations")
+
+
+def test_every_finalizer_states_the_scopes_it_relies_on_being_denied() -> None:
+    """ADR-0006's split is enforced by `permissions:`, and on GitHub an unlisted scope
+    is `none`. That semantic is what the whole split rests on, and it is platform
+    behaviour rather than something this repository states.
+
+    Gitea does not document it and ships `TokenPermissionMode` permissive by default,
+    so on the forge E009 targets, omission grants where GitHub denies -- and the
+    ref-writing finalizer would silently acquire the registry authority the split
+    exists to keep away from it. An explicit `none` needs no inference from any runner.
+
+    Gitea's granular `code:`/`releases:` spellings are deliberately absent: they are
+    not valid GitHub scopes, actionlint rejects the file outright, and the remaining
+    platform requirement is a precondition recorded in ADR-0006 rather than YAML.
+    """
+    examined = 0
+    for workflow, job_name in sorted(RELEASE_FINALIZER_JOBS):
+        job = _jobs(_load_workflow(WORKFLOWS / workflow))[job_name]
+        declared = job.get("permissions")
+        assert isinstance(declared, dict), (
+            f"{workflow}: finalizer {job_name!r} declares no job-level permissions"
+        )
+        examined += 1
+        for scope in AUTHORITY_SCOPES:
+            assert scope in declared, (
+                f"{workflow}: finalizer {job_name!r} omits {scope!r}. Omission denies "
+                f"on GitHub and grants on a permissive Gitea; state it as `none`."
+            )
+    assert examined, "no finalizer is registered; this guard examined nothing"
+
+
 def _finalizers(path: Path) -> set[str]:
     return {job for workflow, job in RELEASE_FINALIZER_JOBS if workflow == path.name}
 

@@ -304,6 +304,39 @@ Carry into E009's pinned tuple: at `@v2` this action is `using: node24`, the sam
 ADR-0010 records for the Release action -- so the pinned `act_runner` has one JavaScript runtime
 to accept, not node20 and node24 both.
 
+## Platform precondition for the authority split (added at E008 sprint closure)
+
+The split between the ref-writing finalizer and the registry-alias finalizer is enforced
+entirely by job-level `permissions:`. That is sound on GitHub, where **an unlisted scope is
+granted `none`** — but that semantic is platform behaviour, not something this repository
+states, and Epic 9's whole premise is running the same YAML on self-hosted Gitea.
+
+Gitea does not document the deny-by-default reading, and ships `TokenPermissionMode`
+**permissive** by default. Under a permissive runner, omission *grants*: the `contents: write`
+finalizer would silently acquire `packages: write`, and it could then do exactly the damage the
+split exists to prevent, with every contract guard green.
+
+So the split now depends on two things, one fixed here and one that E009 must certify:
+
+1. **Fixed here.** Both finalizers, and `dev.yaml`'s alias job, declare every scope the split
+   relies on — `contents`, `packages`, `id-token`, `attestations` — including the denials, as
+   an explicit `none`. An explicit `none` needs no inference from any runner.
+   `test_every_finalizer_states_the_scopes_it_relies_on_being_denied` derives the job set from
+   `RELEASE_FINALIZER_JOBS` and fails on any omission.
+
+2. **E009 must certify.** Gitea's granular `code:` and `releases:` scopes **cannot** be added to
+   these files: they are not valid GitHub permission scopes, and `actionlint` rejects the
+   workflow outright (verified — "unknown permission scope"). A single file cannot spell both
+   vocabularies. E009 therefore owns a deployment precondition rather than a YAML change:
+   `TokenPermissionMode = restricted` at repository or organisation level, and a minimum Gitea
+   version whose token model honours job-level `permissions:`. Staging must prove it by
+   granting nothing and confirming a write is refused, not by reading the setting back.
+
+Until (2) is certified, the split is *stated* on Gitea and *enforced* only on GitHub. That is
+the honest position, and it belongs in E009's pinned tuple beside the `act_runner` node24
+requirement rather than being assumed.
+
+
 ## Consequences
 
 - Positive: package metadata, commit identity, and stable tag cannot drift through the supported

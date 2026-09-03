@@ -543,8 +543,17 @@ jobs:
       ${{ !cancelled() && needs.stable-tag-guard.outputs.suppressed == 'false' }}
     runs-on: ubuntu-24.04
     permissions:
+      # Every scope the authority split depends on is declared, including the ones
+      # denied. GitHub treats an unlisted scope as `none`; Gitea does not document that
+      # semantic and ships `TokenPermissionMode` permissive by default, so on the forge
+      # E009 targets, omission grants rather than denies. An explicit `none` needs no
+      # inference from any runner. Gitea's granular `code:`/`releases:` spellings cannot
+      # be added here -- they are not valid GitHub scopes and actionlint rejects them --
+      # so the remaining platform requirement is recorded in ADR-0006 instead.
       contents: read
       packages: write
+      id-token: none
+      attestations: none
     steps:
       # The just-in-time proof that the candidate is still the head of the
       # protected default branch. Concurrency already cancels a superseded run,

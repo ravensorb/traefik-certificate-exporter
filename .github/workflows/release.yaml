@@ -598,10 +598,20 @@ jobs:
       cancel-in-progress: false
     runs-on: ubuntu-24.04
     permissions:
-      # The single grant ADR-0006 governs. No `packages:` scope: image aliases
+      # The single grant ADR-0006 governs. No `packages:` write: image aliases
       # are the next job's, and a registry credential here would make the
       # ref-writing job a registry writer too.
+      # Every scope the authority split depends on is declared, including the ones
+      # denied. GitHub treats an unlisted scope as `none`; Gitea does not document that
+      # semantic and ships `TokenPermissionMode` permissive by default, so on the forge
+      # E009 targets, omission grants rather than denies. An explicit `none` needs no
+      # inference from any runner. Gitea's granular `code:`/`releases:` spellings cannot
+      # be added here -- they are not valid GitHub scopes and actionlint rejects them --
+      # so the remaining platform requirement is recorded in ADR-0006 instead.
       contents: write
+      packages: none
+      id-token: none
+      attestations: none
     outputs:
       release-url: ${{ steps.release.outputs.html-url }}
       release-assets: ${{ steps.release.outputs.assets }}
@@ -893,8 +903,17 @@ jobs:
       cancel-in-progress: false
     runs-on: ubuntu-24.04
     permissions:
+      # Every scope the authority split depends on is declared, including the ones
+      # denied. GitHub treats an unlisted scope as `none`; Gitea does not document that
+      # semantic and ships `TokenPermissionMode` permissive by default, so on the forge
+      # E009 targets, omission grants rather than denies. An explicit `none` needs no
+      # inference from any runner. Gitea's granular `code:`/`releases:` spellings cannot
+      # be added here -- they are not valid GitHub scopes and actionlint rejects them --
+      # so the remaining platform requirement is recorded in ADR-0006 instead.
       contents: read
       packages: write
+      id-token: none
+      attestations: none
     outputs:
       # Re-derived here, not carried from `finalize`. Reported separately in the run
       # summary so a divergence between the two is visible rather than averaged away.
