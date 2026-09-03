@@ -2652,6 +2652,40 @@ def _compose_tag_list(
     return completed, emitted
 
 
+@pytest.mark.parametrize(
+    "alias",
+    ["ghcr.io/owner/name:latest", "ghcr.io/owner/name:1", "ghcr.io/owner/name:1.2"],
+)
+def test_a_publisher_refuses_to_push_an_alias_however_the_tag_list_was_rendered(
+    alias: str,
+) -> None:
+    """CI-AR29: an alias is the finalizer's sole property, enforced where the tag list
+    is real rather than where it is requested.
+
+    The list comes from `LiquidLogicLabs/git-action-docker-metadata@v6`, a fork of
+    `docker/metadata-action` on its own major line, and the neighbouring guard asserts
+    `flavor: latest=false` is *passed* -- not that it is *honoured*. If the renderer
+    ever emitted `latest`, or a bare major or major.minor, the publisher would move an
+    alias from outside the grant and every alias-ownership guard would still pass,
+    because they read the workflow and not the rendered list. Executed against the
+    shipped step, so the refusal is proven rather than described.
+    """
+    completed, _ = _compose_tag_list(alias)
+    assert completed.returncode != 0, f"the publisher accepted the alias {alias!r}"
+    assert "belong to the finalizer" in completed.stderr, completed.stderr
+
+
+def test_the_exact_version_a_publisher_does_push_is_still_accepted() -> None:
+    """The other half: the refusal above must not reject what a release actually
+    publishes -- an exact `X.Y.Z`, or the development channel's `dev-<sha>`."""
+    for permitted in (
+        "ghcr.io/owner/name:1.2.3",
+        "ghcr.io/owner/name:dev-0123456789ab",
+    ):
+        completed, _ = _compose_tag_list(permitted)
+        assert completed.returncode == 0, completed.stderr
+
+
 def test_an_enabled_destination_that_receives_no_tag_halts_before_anything_ships() -> (
     None
 ):

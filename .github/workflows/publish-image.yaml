@@ -216,6 +216,20 @@ jobs:
               echo "image tag addresses $authority, which this run did not log in to: $tag" >&2
               exit 2
             fi
+            # An alias is the finalizer's sole property (CI-AR29, ADR-0011). This list
+            # is rendered by a third-party action from `flavor: latest=false`, and this
+            # step does not get to assume that input was honoured -- the contract suite
+            # asserts `latest=false` is *passed*, which is not the same as *obeyed*, and
+            # the renderer is a fork on its own major line. If it ever emitted `latest`,
+            # or a bare major or major.minor, the publisher would move an alias from
+            # outside the grant while every alias-ownership guard still passed, because
+            # those read the workflow rather than the rendered list.
+            reference="${tag##*:}"
+            if [[ "$reference" == latest || "$reference" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+              echo "image tag '$tag' is an alias, and aliases belong to the finalizer" >&2
+              echo "alone (CI-AR29). A publisher pushes the exact version only." >&2
+              exit 2
+            fi
             if [[ " $seen " != *" $authority "* ]]; then
               seen="$seen $authority"
             fi

@@ -87,7 +87,9 @@ vendor preference). Several are directly applicable to open findings in this rep
   `act` testing.
 - **[`git-action-docker-metadata`](https://github.com/LiquidLogicLabs/git-action-docker-metadata)**
   — a drop-in fork of `docker/metadata-action` (identical inputs/tags/flavor semantics, same
-  version numbering) with no GitHub API dependency, so it works identically across GitHub,
+  version numbering — **verified at `@v6` in [ADR-0012](adr/0012-image-metadata-action.md)**:
+  `flavor` is a real input, `using: node24`, `v6` = `78e2563`, and upstream is at `v6.2.0`, so the
+  major lines do track) with no GitHub API dependency, so it works identically across GitHub,
   Gitea, and local `act`. Adopted in [build-container.yaml](../.github/workflows/build-container.yaml)'s
   `Docker meta` steps for semver/major/minor/sha/beta/latest image tagging.
 
