@@ -497,7 +497,14 @@ jobs:
       ${{ fromJSON(needs.plan.outputs.enabled-destinations)['package-forge'] == 'enabled' }}
     runs-on: ubuntu-24.04
     permissions:
+      # Every scope the authority split depends on, including the denials. GitHub treats
+      # an unlisted scope as `none`; Gitea does not document that reading and ships
+      # TokenPermissionMode permissive, so on the forge E009 targets omission GRANTS. An
+      # explicit `none` needs no inference from any runner (ADR-0006).
       contents: read
+      packages: none
+      id-token: none
+      attestations: none
     steps:
       - name: Checkout with full history and tags
         uses: actions/checkout@v7
@@ -618,6 +625,12 @@ jobs:
       # credential; the image job holds registry credentials and no OIDC identity. The
       # two credential sets are disjoint by construction (CI-AR24, CI-AR40).
       id-token: write
+      # Every scope the authority split depends on, including the denials. GitHub treats
+      # an unlisted scope as `none`; Gitea does not document that reading and ships
+      # TokenPermissionMode permissive, so on the forge E009 targets omission GRANTS. An
+      # explicit `none` needs no inference from any runner (ADR-0006).
+      packages: none
+      attestations: none
     steps:
       - name: Checkout with full history and tags
         uses: actions/checkout@v7
@@ -701,8 +714,14 @@ jobs:
       - plan
       - verify
     permissions:
+      # Every scope the authority split depends on, including the denials. GitHub treats
+      # an unlisted scope as `none`; Gitea does not document that reading and ships
+      # TokenPermissionMode permissive, so on the forge E009 targets omission GRANTS. An
+      # explicit `none` needs no inference from any runner (ADR-0006).
       contents: read
       packages: write
+      id-token: none
+      attestations: none
     # One Buildx invocation for every enabled destination, in the shared reusable
     # publisher. Every read of the *published* image lives there, which moves no alias;
     # this file consumes its digest and platforms as outputs. Story 003 adds an alias

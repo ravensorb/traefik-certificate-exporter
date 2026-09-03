@@ -4214,6 +4214,52 @@ def test_an_alias_concurrency_group_queues_rather_than_cancels() -> None:
     assert examined, "no job decides alias order; this guard examined nothing"
 
 
+# The scopes the finalizer authority split depends on, in both directions: the
+# ref-writing job must not hold them, and the registry job must not hold `contents:
+# write`. Denial is stated, never inferred.
+AUTHORITY_SCOPES = ("contents", "packages", "id-token", "attestations")
+
+
+def test_every_privileged_job_states_the_scopes_it_relies_on_being_denied() -> None:
+    """ADR-0006's split is enforced by `permissions:`, and on GitHub an unlisted scope
+    is `none`. That semantic is what the whole split rests on, and it is platform
+    behaviour rather than something this repository states.
+
+    Gitea does not document it and ships `TokenPermissionMode` permissive by default,
+    so on the forge E009 targets, omission grants where GitHub denies -- and the
+    ref-writing finalizer would silently acquire the registry authority the split
+    exists to keep away from it. An explicit `none` needs no inference from any runner.
+
+    Gitea's granular `code:`/`releases:` spellings are deliberately absent: they are
+    not valid GitHub scopes, actionlint rejects the file outright, and the remaining
+    platform requirement is a precondition recorded in ADR-0006 rather than YAML.
+    """
+    examined = 0
+    for name, document in sorted(_workflow_documents().items()):
+        for job_name, job in sorted(_jobs(document).items()):
+            # Every job that holds or can hold a credential, not the three registered
+            # finalizers. The premise the explicit denials rest on -- that a permissive
+            # runner grants what is omitted -- applies to all of them, and scoping the
+            # requirement to the finalizers left seven privileged jobs relying on the
+            # inference the declarations exist to remove. `publish-image.yaml`'s job
+            # declared no `permissions:` at all.
+            if not _is_credential_bearing(job):
+                continue
+            declared = job.get("permissions")
+            assert isinstance(declared, dict), (
+                f"{name}: job {job_name!r} can hold a credential and declares no "
+                f"job-level permissions at all, which is the widest reading a "
+                f"permissive runner can take"
+            )
+            examined += 1
+            for scope in AUTHORITY_SCOPES:
+                assert scope in declared, (
+                    f"{name}: job {job_name!r} omits {scope!r}. Omission denies on "
+                    f"GitHub and grants on a permissive Gitea; state it as `none`."
+                )
+    assert examined, "no job can hold a credential; this guard examined nothing"
+
+
 def _finalizers(path: Path) -> set[str]:
     return {job for workflow, job in RELEASE_FINALIZER_JOBS if workflow == path.name}
 
@@ -6573,6 +6619,48 @@ def _documented_files() -> list[tuple[str, str]]:
         if relative.endswith(".md")
         and (relative.startswith("docs/") or "/" not in relative)
     ]
+
+
+GUARD_CITATION = re.compile(r"\btest_[a-z0-9_]+")
+
+
+def test_every_guard_a_document_cites_still_exists() -> None:
+    """A citation is a promise the reader can follow it.
+
+    This rule existed and was scoped to one section of one page -- the recovery runbook
+    -- so a guard renamed anywhere else left its citations pointing at nothing. It is
+    now every prescriptive document, and it earned that immediately: it caught
+    `test_every_finalizer_states_the_scopes_it_relies_on_being_denied` **missing from
+    the module entirely**, silently removed by a region replacement while ADR-0006 still
+    cited it as the enforcement for the finalizer's denied scopes. The ADR read as
+    enforced and nothing was enforcing it.
+
+    Names matching a test module's own stem are excluded: `test_workflow_contracts` is
+    a file, not a guard, and documents legitimately name the file.
+    """
+    modules = {path.stem for path in (PROJECT_ROOT / "tests").rglob("test_*.py")}
+    known = set(globals())
+    documents = [
+        (relative, text)
+        for relative, text in tracked_text_files()
+        if relative.startswith(
+            ("docs/", "_bmad-output/planning-artifacts/", ".github/")
+        )
+        or "/" not in relative
+    ]
+    assert documents, "no prescriptive documents; this guard examined nothing"
+    cited = 0
+    for relative, text in documents:
+        for name in sorted(set(GUARD_CITATION.findall(text))):
+            if name in modules:
+                continue
+            cited += 1
+            assert name in known, (
+                f"{relative} cites {name}, which is not a guard in this module. Either "
+                f"the guard was renamed and the citation was not, or it was removed and "
+                f"the document still claims it enforces something."
+            )
+    assert cited, "no document cites a guard; this guard examined nothing"
 
 
 def test_no_tracked_document_links_to_a_file_that_does_not_exist() -> None:

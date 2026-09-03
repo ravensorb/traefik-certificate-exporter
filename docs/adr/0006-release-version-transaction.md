@@ -322,7 +322,7 @@ So the split now depends on two things, one fixed here and one that E009 must ce
 1. **Fixed here.** Both finalizers, and `dev.yaml`'s alias job, declare every scope the split
    relies on — `contents`, `packages`, `id-token`, `attestations` — including the denials, as
    an explicit `none`. An explicit `none` needs no inference from any runner.
-   `test_every_finalizer_states_the_scopes_it_relies_on_being_denied` derives the job set from
+   `test_every_privileged_job_states_the_scopes_it_relies_on_being_denied` derives the job set from
    `RELEASE_FINALIZER_JOBS` and fails on any omission.
 
 2. **E009 must certify.** Gitea's granular `code:` and `releases:` scopes **cannot** be added to

@@ -106,6 +106,20 @@ jobs:
   image:
     name: Publish multi-platform image
     runs-on: ubuntu-24.04
+    permissions:
+      # Every scope the authority split depends on, including the denials. GitHub treats
+      # an unlisted scope as `none`; Gitea does not document that reading and ships
+      # TokenPermissionMode permissive, so on the forge E009 targets omission GRANTS. An
+      # explicit `none` needs no inference from any runner (ADR-0006).
+      #
+      # A reusable workflow's effective grant is the intersection with its caller's, so
+      # declaring these widens nothing -- it removes the inference. This job declared no
+      # `permissions:` at all, and "no declaration" is the widest of the readings a
+      # permissive runner can take.
+      contents: read
+      packages: write
+      id-token: none
+      attestations: none
     # 12-15 minutes on a 4 vCPU hosted runner, measured by the F13 spike: linux/amd64
     # alone is 50s, both platforms under QEMU 436s, and 80% of that is `apk add gcc
     # cargo` plus `poetry install` on the emulated arm64 leg. Recorded in ADR-0008.

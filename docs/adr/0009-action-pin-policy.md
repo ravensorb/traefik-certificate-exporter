@@ -68,7 +68,7 @@ Implementation must resolve, review and record the real full commit SHA when the
 - `test_tier_one_actions_use_approved_owners_and_floating_major_aliases` branches on membership
   of `SHA_PINNED_ACTIONS`: registered actions must match a 40-character SHA, everything else must
   match the floating-major alias.
-- `test_credential_handling_publishers_are_registered_as_sha_pinned` supplies the **reach**. The
+- `test_every_credential_handling_action_is_pinned_or_its_risk_is_recorded` supplies the **reach**. The
   first guard only fires on actions already registered, so a *newly added* credential handler
   would silently take the floating-major branch. This one derives candidates from the workflows
   instead — any action whose name contains `pypi` or `publish` must be either registered or
@@ -81,8 +81,8 @@ first, and an unregistered `pypa/some-new-pypi-publish@v3` fails the second.
 
 Two things were wrong with the reach guard, and the first caused the second.
 
-**The candidate set was the action's name.** `test_credential_handling_publishers_are_registered_as_sha_pinned`
-selected candidates by matching `pypi|publish` against an action's repository name. That is a
+**The candidate set was the action's name.** The reach guard selected candidates by matching
+`pypi|publish` against an action's repository name. That is a
 hand-enumerated scope wearing a derivation's clothes, and it is the defect class this project
 keeps finding: the rule was right and the set was wrong. Four references shipped in E008 are
 handed a publication credential and match neither word, so the guard skipped them and the

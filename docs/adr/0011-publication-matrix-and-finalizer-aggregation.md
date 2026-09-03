@@ -175,8 +175,8 @@ The rule this generalises to is structural, not temporal, which is what makes it
 **an ordering decision is never handed across a job boundary to the job that writes.**
 `test_no_alias_move_consumes_an_ordering_decision_taken_in_another_job` derives each job's
 ordering outputs from its own `outputs:` mapping and fails any alias mover that consumes one
-from elsewhere. `test_a_job_that_decides_alias_order_serialises_against_every_other_run`
-requires a ref-free group on every deciding job, and
+from elsewhere. `test_an_alias_concurrency_group_queues_rather_than_cancels`
+keeps that hazard from returning, and
 `test_every_alias_ordering_decision_is_the_same_body` keeps the two copies one implementation.
 Each was proven by planting exactly the violation it forbids.
 
