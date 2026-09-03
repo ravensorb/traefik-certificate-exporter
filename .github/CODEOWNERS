@@ -1,0 +1,36 @@
+# Code owners for the surfaces that grant authority.
+#
+# Every privilege in this system is a hand-kept list: RELEASE_FINALIZER_JOBS decides which
+# job may write a ref or create a Release, SHA_PINNED_ACTIONS and
+# CREDENTIAL_ACTIONS_ON_MOVING_REFS decide how much of the supply chain is pinned, and the
+# workflows decide which credentials exist at all. Each is defended by tests that the same
+# commit can edit, so until this file existed, one approval could move a grant and relax
+# the guard that reports on it in the same diff.
+#
+# This file only requests review. It has teeth only with branch protection set to require
+# code-owner review on the default branch -- if that is not enabled, this is documentation.
+# `test_the_authority_surfaces_are_owned` asserts the coverage; nothing here can assert the
+# branch-protection setting, and that limit is stated rather than implied.
+
+# The publication pipeline itself, and the composite actions that run inside its jobs.
+/.github/                                   @ravensorb
+
+# The registries, and every guard that governs them.
+/tests/ci/                                  @ravensorb
+
+# The decisions the registries point at. An entry without an ADR is not a grant.
+/docs/adr/                                  @ravensorb
+
+# The gate configuration: which checks run, and over which files.
+/.pre-commit-config.yaml                    @ravensorb
+/.gitleaks.toml                             @ravensorb
+
+# Agent instructions. Tooling is told to "READ its entire contents and follow its
+# directions exactly", these trees are excluded from the linting gates, and the agents
+# that read them hold write access. That combination makes them executable surface in
+# every sense that matters, so they are reviewed like it.
+/AGENTS.md                                  @ravensorb
+/CLAUDE.md                                  @ravensorb
+/.agents/                                   @ravensorb
+/.claude/                                   @ravensorb
+/.github/agents/                            @ravensorb

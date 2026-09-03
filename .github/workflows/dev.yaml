@@ -93,11 +93,17 @@ jobs:
             registry="$server_host"
             package_index_supported=true
             package_index_url="${FORGE_SERVER_URL%/}/api/packages/$owner/pypi"
+            # Gitea has no attestation store and no equivalent API. Absent by host
+            # capability, exactly like the forge Python index is absent on GitHub --
+            # not a toggle, and never a comparison against a forge name in a publisher
+            # (ADR-0011 section 2).
+            attestation_supported=false
           elif [[ "$server_host" == "github.com" ]]; then
             forge=github
             registry=ghcr.io
             package_index_supported=false
             package_index_url=""
+            attestation_supported=true
           else
             echo "unknown forge for server $FORGE_SERVER_URL: expected github.com or a" >&2
             echo "Gitea runner setting GITEA_ACTIONS=true" >&2
@@ -110,6 +116,7 @@ jobs:
             echo "image-repository=$registry/$repository"
             echo "package-index-supported=$package_index_supported"
             echo "package-index-url=$package_index_url"
+            echo "attestation-supported=$attestation_supported"
           } >> "$GITHUB_OUTPUT"
 
       - name: Count the first-parent development distance

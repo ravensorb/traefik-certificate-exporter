@@ -104,6 +104,51 @@ rather than by convention.
    `VERSION` are each a build failure with a distinct message. None of them degrade to a warning or
    to a fallback path.
 
+## Amended at E008 sprint closure: the evidence is signed, and where it is not is stated
+
+The Release carries the wheel, the sdist, `SHA256SUMS` and `build-manifest.json`, attached with
+`allow-updates: true` by the one job holding `contents: write`. The `allow-updates` reasoning is
+sound for its own purpose — a stranded run must be resumable, and `refs/tags/vX.Y.Z` is immutable so
+a re-run is the same identity. But it means **the evidence has no authority independent of the
+authority that could forge it**: anyone who can write the Release can replace `SHA256SUMS` with one
+that matches a different wheel, and every checksum then agrees.
+
+The image half already had an answer. BuildKit emits SLSA provenance regardless of `ATTESTATIONS`,
+so the published index carries provenance descriptors per platform. The package half had none.
+
+**Decision.** `publish-package-pypi` attests the distributions with
+`actions/attest-build-provenance@v3` before it uploads them, and gains `attestations: write` to do
+it. Three properties, each guarded, because each is a way to have the step without the guarantee:
+
+- **In the job that ships them.** That job already holds the OIDC identity, so no second job
+  acquires one and the credential split (CI-AR24, CI-AR40) is unchanged. `attestations: write`
+  writes to the attestation store and nowhere a package or an image lives.
+- **Before the upload.** An attestation is keyed on the artifact's digest and needs no destination,
+  so attesting first means a failure costs a release that has not happened — rather than stranding
+  a published version, which PyPI never lets you replace, with evidence that never landed.
+- **`subject-checksums`, not a directory glob.** It reads the bundle's own `SHA256SUMS`, the file
+  the CI-AR36 boundary revalidation has just re-verified, so the attested digests are the ones that
+  passed the gate rather than a second reading of the same directory.
+
+Confirmed against the published `action.yml` at `@v3` (`977bb373ede9`) rather than assumed, per the
+precedent ADR-0006, ADR-0010 and ADR-0012 set: `subject-checksums` is a real input; the action is
+`using: composite` and pins its own two nested actions by SHA; `github-token` defaults to
+`${{ github.token }}`, the same implicit-default case ADR-0012 records as invisible to the
+credential-reach guard. `actions` is an approved owner and `v3` satisfies the floating-major policy,
+so no ADR-0009 amendment is required.
+
+**What is *not* attested, said plainly rather than left to be discovered.** The step is gated on
+`attestation-supported`, a host capability emitted by the forge-coordinate derivation — GitHub has an
+attestation store, Gitea has none. It is a capability and never a comparison against a forge name in
+a publisher, which is the same shape as the forge Python index being absent on GitHub (ADR-0011 §2).
+
+So on a self-hosted Gitea the distributions are published **unattested**, and the evidence there
+rests on the Release contents alone. That is accepted for now: no equivalent store exists to attest
+into, and inventing one is the hand-rolling the engineering rules forbid. E009 owns the question of
+whether a detached signature is worth adding for that path, and it should be answered there rather
+than assumed here.
+
+
 ## Consequences
 
 - Positive: the image's application bytes are, by hash, the bytes that `poetry build` produced,

@@ -63,6 +63,7 @@ jobs:
       image-repository: ${{ steps.forge.outputs.image-repository }}
       image-tags: ${{ steps.meta.outputs.tags }}
       package-index-url: ${{ steps.forge.outputs.package-index-url }}
+      attestation-supported: ${{ steps.forge.outputs.attestation-supported }}
       enabled-destinations: ${{ steps.destinations.outputs.enabled-destinations }}
       # Composed once, beside the toggle that enables it, so the finalizer names
       # the same Docker Hub repository the publisher pushed to rather than
@@ -116,11 +117,17 @@ jobs:
             registry="$server_host"
             package_index_supported=true
             package_index_url="${FORGE_SERVER_URL%/}/api/packages/$owner/pypi"
+            # Gitea has no attestation store and no equivalent API. Absent by host
+            # capability, exactly like the forge Python index is absent on GitHub --
+            # not a toggle, and never a comparison against a forge name in a publisher
+            # (ADR-0011 section 2).
+            attestation_supported=false
           elif [[ "$server_host" == "github.com" ]]; then
             forge=github
             registry=ghcr.io
             package_index_supported=false
             package_index_url=""
+            attestation_supported=true
           else
             echo "unknown forge for server $FORGE_SERVER_URL: expected github.com or a" >&2
             echo "Gitea runner setting GITEA_ACTIONS=true" >&2
@@ -133,6 +140,7 @@ jobs:
             echo "image-repository=$registry/$repository"
             echo "package-index-supported=$package_index_supported"
             echo "package-index-url=$package_index_url"
+            echo "attestation-supported=$attestation_supported"
           } >> "$GITHUB_OUTPUT"
 
       - name: Accept only an annotated exact stable tag on this commit
@@ -479,6 +487,13 @@ jobs:
       # credential; the image job holds registry credentials and no OIDC identity. The
       # two credential sets are disjoint by construction (CI-AR24, CI-AR40).
       id-token: write
+      # Signing the evidence, not publishing with it. `SHA256SUMS` and
+      # `build-manifest.json` are attached to a Release that the same `contents: write`
+      # which creates it can replace, so on their own they attest to nothing an attacker
+      # holding that authority cannot forge. An attestation has an authority outside this
+      # repository. This scope writes to the attestation store and nowhere a package or
+      # an image lives, so the disjointness above is unaffected (ADR-0008).
+      attestations: write
     steps:
       - name: Checkout with full history and tags
         uses: actions/checkout@v7
@@ -525,6 +540,24 @@ jobs:
           mkdir upload-set
           cp -- "$BUNDLE_PATH/$WHEEL_FILENAME" "upload-set/$WHEEL_FILENAME"
           cp -- "$BUNDLE_PATH/$SDIST_FILENAME" "upload-set/$SDIST_FILENAME"
+      # Before the upload, deliberately. An attestation is keyed on the artifact's digest
+      # and needs no destination, so attesting first means a failure here costs a release
+      # that has not happened yet, rather than leaving a published version whose evidence
+      # never landed.
+      #
+      # `subject-checksums` takes the bundle's own `SHA256SUMS` -- the file the boundary
+      # revalidation has just re-verified -- so the attested digests are the ones that
+      # passed the gate rather than a second reading of the directory.
+      #
+      # Gated on a host capability, never on a forge name: GitHub has an attestation
+      # store and Gitea has none, which is the same shape as the forge Python index being
+      # absent on GitHub (ADR-0011 section 2). On Gitea this step is skipped and the
+      # release is unattested, which ADR-0008 records rather than implies.
+      - name: Attest the verified distributions before they are published
+        if: ${{ needs.plan.outputs.attestation-supported == 'true' }}
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-checksums: ${{ steps.bundle.outputs.bundle-path }}/SHA256SUMS
       # Same reviewed pin as the forge index job; see ADR-0009. SHA dc37677 is the head
       # of release/v1, tagged v1.14.2, committed 2026-07-28; reviewed 2026-09-02.
       - name: Upload the verified distributions to PyPI

@@ -620,6 +620,81 @@ def test_the_default_branch_is_named_once_and_derived_everywhere_else() -> None:
                 )
 
 
+CODEOWNERS = PROJECT_ROOT / ".github" / "CODEOWNERS"
+
+
+def _codeowner_patterns() -> set[str]:
+    return {
+        line.split()[0]
+        for line in CODEOWNERS.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+
+def test_the_authority_surfaces_are_owned() -> None:
+    """Every privilege in this system is a hand-kept list, and the lists live in files
+    the same commit can edit alongside the guards that read them.
+
+    `RELEASE_FINALIZER_JOBS` decides which job may write a ref or create a Release.
+    `SHA_PINNED_ACTIONS` and `CREDENTIAL_ACTIONS_ON_MOVING_REFS` decide how much of the
+    supply chain is pinned. The workflows decide which credentials exist at all. Until
+    CODEOWNERS existed, one approval could widen a grant and relax the guard reporting
+    on it in the same diff.
+
+    The owned set is derived from where those things actually live, so a registry moved
+    to a new file is covered or fails here. **What this cannot check**: whether branch
+    protection requires code-owner review. Without that setting the file is
+    documentation, and no test in this repository can see it.
+    """
+    patterns = _codeowner_patterns()
+    assert patterns, "CODEOWNERS assigns no owners"
+    required = {
+        f"/{Path(__file__).relative_to(PROJECT_ROOT).parts[0]}/",  # the registries' home
+        "/.github/",  # every workflow and composite action
+        "/docs/adr/",  # the decisions the registries point at
+        "/.pre-commit-config.yaml",  # which gates run
+    }
+    # The trees the agents are told to follow verbatim, which no linting gate examines.
+    required |= {"/.agents/", "/.claude/", "/AGENTS.md"}
+    missing = {
+        entry
+        for entry in required
+        if not any(
+            pattern.startswith(entry) or entry.startswith(pattern)
+            for pattern in patterns
+        )
+    }
+    assert not missing, f"authority surfaces with no code owner: {sorted(missing)}"
+
+
+def test_every_granted_privilege_points_at_a_decision() -> None:
+    """ADR-0006 and ADR-0009 both say an entry in their registry needs an ADR. Neither
+    said it in a way anything could check, so an entry added without one read exactly
+    like an entry with one.
+
+    Scope is the registries themselves, so a fourth entry is covered without an edit
+    here. The check is that *some* ADR names it -- a weak claim deliberately: it catches
+    the entry nobody wrote down, and does not pretend to judge whether the reasoning is
+    good.
+    """
+    decisions = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((PROJECT_ROOT / "docs" / "adr").glob("*.md"))
+    )
+    assert decisions, "no ADRs on disk; this guard examined nothing"
+    granted = (
+        {job for _, job in RELEASE_FINALIZER_JOBS}
+        | set(SHA_PINNED_ACTIONS)
+        | set(CREDENTIAL_ACTIONS_ON_MOVING_REFS)
+    )
+    assert granted, "no privilege is granted; this guard examined nothing"
+    for entry in sorted(granted):
+        assert entry in decisions, (
+            f"{entry!r} is a granted privilege that no ADR names. Adding the entry IS "
+            f"the grant, and a grant with no recorded decision is one nobody made."
+        )
+
+
 def test_no_governed_definition_branches_on_the_act_environment_variable() -> None:
     """Guidelines §7: one pipeline, three runners, and no conditional on which one is
     executing. A workflow that behaves differently under `act` is not the workflow CI
@@ -2245,6 +2320,9 @@ def test_forge_coordinates_are_derived_from_action_context_and_fail_closed(
             "image-repository": "ghcr.io/owner/name",
             "package-index-supported": "false",
             "package-index-url": "",
+            # GitHub has an attestation store; Gitea does not. A capability of the host,
+            # emitted here so no publisher ever compares a forge name (ADR-0011 s2).
+            "attestation-supported": "true",
         }, where
 
         # Gitea: the registry is the forge's own authority, port included, and the
@@ -2266,6 +2344,9 @@ def test_forge_coordinates_are_derived_from_action_context_and_fail_closed(
             "image-repository": "git.example.com:3000/owner/name",
             "package-index-supported": "true",
             "package-index-url": "https://git.example.com:3000/api/packages/owner/pypi",
+            # The mirror image of the GitHub case above: each forge supports one of the
+            # two, and neither is a toggle an operator can set.
+            "attestation-supported": "false",
         }, where
 
         # Fail closed. `github.enterprise.example` ends with neither the GitHub host nor
@@ -4179,6 +4260,67 @@ def test_the_bundle_action_refuses_an_empty_artifact_name_before_downloading(
         str(steps[refusal]["run"]), {"ARTIFACT_NAME": "verified-dist-v1"}, tmp_path
     )
     assert completed.returncode == 0, completed.stderr
+
+
+ATTESTATION_ACTION = "actions/attest-build-provenance"
+ATTESTATION_CAPABILITY = "attestation-supported"
+
+
+def test_the_released_distributions_are_attested_before_they_are_published() -> None:
+    """The Release's own evidence proves nothing against whoever can write the Release.
+
+    `SHA256SUMS` and `build-manifest.json` are attached with `allow-updates: true` by a
+    job holding `contents: write` -- which is right, because a stranded run must be
+    resumable at an immutable identity -- but it means the evidence has no authority
+    independent of the authority that could forge it. An attestation does.
+
+    Three properties, because each is a way to have the step and not the guarantee:
+    it runs in the job that ships the distributions; it runs BEFORE the upload, so a
+    failure costs a release that has not happened rather than stranding a published
+    version with no evidence; and it is gated on a host capability rather than a forge
+    name, since Gitea has no attestation store (ADR-0011 section 2, ADR-0008).
+    """
+    document = _load_workflow(RELEASE_WORKFLOW)
+    attesting = {
+        name: job
+        for name, job in _jobs(document).items()
+        if any(
+            str(step.get("uses", "")).startswith(ATTESTATION_ACTION)
+            for step in job.get("steps") or []
+        )
+    }
+    assert attesting, (
+        f"no job attests the released distributions; the Release evidence has no "
+        f"authority independent of the {ATTESTATION_ACTION!r} that could replace it"
+    )
+    for name, job in sorted(attesting.items()):
+        steps = job.get("steps") or []
+        attest = next(
+            index
+            for index, step in enumerate(steps)
+            if str(step.get("uses", "")).startswith(ATTESTATION_ACTION)
+        )
+        upload = next(
+            (index for index, step in enumerate(steps) if _is_publishing_step(step)),
+            None,
+        )
+        assert upload is not None, (
+            f"release.yaml: {name!r} attests nothing it publishes"
+        )
+        assert attest < upload, (
+            f"release.yaml: {name!r} attests at step {attest} and uploads at {upload}; "
+            f"a failed attestation would strand a published version with no evidence"
+        )
+        assert (job.get("permissions") or {}).get("attestations") == "write", (
+            f"release.yaml: {name!r} runs the attestation action without the scope it "
+            f"needs, so it fails at the point of use"
+        )
+        condition = str(steps[attest].get("if", ""))
+        assert ATTESTATION_CAPABILITY in condition, (
+            f"release.yaml: {name!r} gates attestation on {condition!r}. Gitea has no "
+            f"attestation store, and that is a host capability -- never a comparison "
+            f"against a forge name in a publisher (ADR-0011 section 2)."
+        )
 
 
 def test_every_publisher_revalidates_the_bundle_before_it_logs_in_or_uploads() -> None:
