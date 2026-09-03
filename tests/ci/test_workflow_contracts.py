@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 import fnmatch
 import functools
@@ -366,6 +367,195 @@ def _transitive_needs(jobs: dict[str, Any], job_name: str) -> set[str]:
                 resolved.add(dependency)
                 pending.append(dependency)
     return resolved
+
+
+# ---------------------------------------------------------------------------
+# The meta-guard (retrospective action item A1).
+#
+# This epic's dominant defect was a guard whose RULE is correct and whose SET is a
+# hand-written list: eleven instances at sprint closure, four more inside the fixes for
+# those eleven, and it recurred after being named twenty times across three reviews.
+# Global rule 4 was the one rule in this project with nothing mechanical behind it,
+# which is exactly the outcome global rule 3 predicts for a rule that lives in prose.
+#
+# The distinction it enforces is not "no literals". Most literals here are vocabulary --
+# forbidden substrings, required platforms, command patterns -- and those are the rule
+# itself rather than the set it runs over. What must never be hand-written is a list of
+# things THE REPOSITORY CONTAINS, because the filesystem can produce that list and a
+# hand-written copy of it goes stale silently.
+#
+# `SCOPE_REGISTRIES` is the escape hatch, and it is the same shape as
+# `SHA_PINNED_ACTIONS` and `CREDENTIAL_ACTIONS_ON_MOVING_REFS`: an entry IS the decision,
+# it carries its reason, an ADR must name it, and a stale entry fails. The difference
+# between a deliberate registry and an accidental one becomes declared instead of
+# inferred -- which is precisely what `SECRET_FREE_WORKFLOWS` needed and did not have.
+SCOPE_REGISTRIES: dict[str, str] = {
+    "RELEASE_FINALIZER_JOBS": (
+        "ADR-0006: adding a (workflow, job) pair IS the grant to write refs or create a "
+        "Release. It records a decision rather than a fact about the tree, so it cannot "
+        "be derived -- deriving it from 'jobs that write refs' would make every new "
+        "writer self-authorising, which is the opposite of a grant."
+    ),
+}
+
+
+def _module_scope_literals(source: str | None = None) -> dict[str, list[str]]:
+    """Module-level literals that enumerate names this repository contains.
+
+    Pure over source text so the plants below run through this exact code.
+
+    A value built by calling a function is derived and never appears here; only literal
+    displays, and `frozenset(...)`/`tuple(...)` wrapping one, are candidates. Every
+    string reachable from the value is collected, including through a reference to
+    another module-level constant -- `(CI_WORKFLOW, VERIFY_WORKFLOW)` is a list of two
+    filenames however indirectly it spells them, and that indirection is what made the
+    original instance read as principled.
+    """
+    if source is None:
+        source = Path(__file__).read_text(encoding="utf-8")
+
+    def literal_strings(node: ast.AST, bindings: dict[str, ast.AST]) -> set[str]:
+        found = {
+            child.value
+            for child in ast.walk(node)
+            if isinstance(child, ast.Constant) and isinstance(child.value, str)
+        }
+        for child in ast.walk(node):
+            if isinstance(child, ast.Name) and child.id in bindings:
+                found |= {
+                    inner.value
+                    for inner in ast.walk(bindings[child.id])
+                    if isinstance(inner, ast.Constant) and isinstance(inner.value, str)
+                }
+        return found
+
+    bindings: dict[str, ast.AST] = {}
+    for statement in ast.parse(source).body:
+        targets = (
+            statement.targets
+            if isinstance(statement, ast.Assign)
+            else [statement.target]
+            if isinstance(statement, ast.AnnAssign)
+            else []
+        )
+        for target in targets:
+            if isinstance(target, ast.Name) and statement.value is not None:
+                bindings[target.id] = statement.value
+
+    strong, weak = _repository_names()
+    flagged: dict[str, list[str]] = {}
+    for name, value in bindings.items():
+        if not name.isupper():
+            continue
+        display = value
+        if (
+            isinstance(display, ast.Call)
+            and isinstance(display.func, ast.Name)
+            and display.func.id in {"frozenset", "set", "tuple", "list"}
+        ):
+            display = display.args[0] if display.args else None
+        if not isinstance(display, (ast.Set, ast.Tuple, ast.List, ast.Dict)):
+            continue
+        strings = literal_strings(display, bindings)
+        if not strings:
+            continue
+        paths = sorted(strings & strong)
+        jobs = sorted(strings & weak)
+        # A path names a file the filesystem could have listed. A set made ENTIRELY of
+        # job names is a job scope. A stray word that merely collides with a job name --
+        # "image" is both a destination class and a job -- is neither, which is why the
+        # weak signal requires the whole collection rather than one element.
+        if paths:
+            flagged[name] = paths
+        elif jobs and set(jobs) == strings:
+            flagged[name] = jobs
+    return flagged
+
+
+@functools.cache
+def _repository_names() -> tuple[frozenset[str], frozenset[str]]:
+    """(paths and filenames, job names) -- everything the filesystem could enumerate."""
+    strong = {str(path.relative_to(PROJECT_ROOT)) for path in GOVERNED_DEFINITIONS}
+    strong |= {path.name for path in GOVERNED_DEFINITIONS}
+    weak: set[str] = set()
+    for path in GOVERNED_DEFINITIONS:
+        document = _load_document(path)
+        if isinstance(document.get("jobs"), dict):
+            weak |= set(document["jobs"])
+    for relative, _ in tracked_text_files():
+        strong.add(relative)
+        strong.add(Path(relative).name)
+    return frozenset(strong), frozenset(weak - strong)
+
+
+def test_no_guard_takes_its_scope_from_a_hand_written_list_of_what_the_repo_contains() -> (
+    None
+):
+    """Retrospective action item A1, and the reason it stopped being deferred.
+
+    Validated against history rather than asserted: run over
+    `tests/ci/test_workflow_contracts.py` at `6a76559` and at `df6e5ed` this flags
+    `SECRET_FREE_WORKFLOWS: ['ci.yaml', 'verify-build.yaml']` -- the tuple that carried
+    the fork-safety prohibitions, sitting eight lines below the filesystem derivation
+    that had replaced its twin, and which took a reviewer's planted violation to find.
+    At `df6e5ed` it also flags `INVOCATION_SCAN_EXEMPTIONS`. Both would have been
+    refused at the moment they were written.
+    """
+    flagged = _module_scope_literals()
+    for name, enumerated in sorted(flagged.items()):
+        assert name in SCOPE_REGISTRIES, (
+            f"{name} = {enumerated} is a hand-written list of things this repository "
+            f"contains, and something takes its scope from it. Derive it from the "
+            f"filesystem or the parsed documents, or -- if it records a DECISION rather "
+            f"than a fact about the tree -- register it in SCOPE_REGISTRIES with the "
+            f"reason and an ADR that names it."
+        )
+    stale = set(SCOPE_REGISTRIES) - set(flagged)
+    assert not stale, (
+        f"{sorted(stale)} are registered as deliberate scopes but no longer enumerate "
+        f"anything in this repository; a registry that outlives its entries stops "
+        f"being read"
+    )
+    decisions = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((PROJECT_ROOT / "docs" / "adr").glob("*.md"))
+    )
+    for name in sorted(SCOPE_REGISTRIES):
+        assert name in decisions, (
+            f"{name} is registered as a deliberate hand-kept scope and no ADR names it"
+        )
+
+
+def test_the_meta_guard_catches_the_defect_it_was_written_for() -> None:
+    """The plant, and it is the epic's own defect in its original spelling.
+
+    A tuple of two `Path` constants, each built from a workflow filename -- exactly how
+    `SECRET_FREE_WORKFLOWS` was written, and the indirection through a `Path` is what
+    made it read as principled rather than as a hand-written list.
+    """
+    planted = _module_scope_literals(
+        'WORKFLOWS = PROJECT_ROOT / ".github" / "workflows"\n'
+        'CI_WORKFLOW = WORKFLOWS / "ci.yaml"\n'
+        'VERIFY_WORKFLOW = WORKFLOWS / "verify-build.yaml"\n'
+        "SECRET_FREE_WORKFLOWS = (CI_WORKFLOW, VERIFY_WORKFLOW)\n"
+    )
+    assert "SECRET_FREE_WORKFLOWS" in planted, planted
+    assert planted["SECRET_FREE_WORKFLOWS"] == ["ci.yaml", "verify-build.yaml"]
+
+    # A bare list of job names is the same defect without a filename in sight.
+    planted = _module_scope_literals('GATES = ("finalize", "finalize-image-aliases")\n')
+    assert "GATES" in planted, planted
+
+    # Vocabulary is not a scope. These are the rule, not the set it runs over.
+    for benign in (
+        'SECRET_FREE_PROHIBITIONS = ("secrets:", "id-token: write")\n',
+        'REQUIRED_IMAGE_PLATFORMS = ("linux/amd64", "linux/arm64")\n',
+        'DESTINATION_CLASSES = ("image", "package")\n',
+    ):
+        assert not _module_scope_literals(benign), benign
+
+    # And a derived value never reaches the check at all.
+    assert not _module_scope_literals("GOVERNED = _governed_definitions()\n")
 
 
 def test_governance_scope_is_derived_from_disk() -> None:

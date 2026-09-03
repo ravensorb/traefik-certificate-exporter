@@ -140,6 +140,39 @@ the `pypi` environment's reviewers plus the matching PyPI trusted-publisher clai
 Until the second is set, any workflow here that can obtain `id-token: write` can mint a PyPI-scoped
 token.
 
+## Follow-through: retrospective action item A1 is built
+
+A1 — "add a meta-guard over the contract suite: assert each guard's scope is derived rather than a
+module-level literal" — was rated the sprint's highest-value item and **deferred**. The epic arch
+review then found four fresh instances of the class it proposed to detect and said so.
+
+It is now `test_no_guard_takes_its_scope_from_a_hand_written_list_of_what_the_repo_contains`. It
+parses this module's own source and flags any module-level literal collection that enumerates names
+**the repository contains** — filenames, tracked paths, or a collection made entirely of job names.
+Vocabulary is untouched: forbidden substrings, required platforms and command patterns are the rule
+itself, not the set it runs over.
+
+`SCOPE_REGISTRIES` is the escape hatch, in the shape this project already uses twice: an entry *is*
+the decision, it carries its reason, an ADR must name it, and a stale entry fails. It holds one
+entry — `RELEASE_FINALIZER_JOBS`, which records a grant rather than a fact about the tree, and which
+must not be derived because deriving it from "jobs that write refs" would make every new writer
+self-authorising.
+
+**Validated against history rather than asserted.** Run over `tests/ci/test_workflow_contracts.py`
+as it stood at each point:
+
+| Commit | Verdict | |
+|---|---|---|
+| `6a76559` | **refused** | `SECRET_FREE_WORKFLOWS = ['ci.yaml', 'verify-build.yaml']` |
+| `df6e5ed` | **refused** | the same, plus `INVOCATION_SCAN_EXEMPTIONS` |
+| `HEAD` | clean | |
+
+`SECRET_FREE_WORKFLOWS` is the tuple that carried the fork-safety prohibitions while sitting eight
+lines below the filesystem derivation that had replaced its twin. Finding it took a reviewer
+constructing a second `pull_request` workflow on a disjoint branch filter and confirming the suite
+stayed green. The meta-guard refuses it at the moment it is written, and it would have refused it
+mid-sprint — before the same shape was copied into three more places.
+
 ## Known limits, stated rather than implied
 
 - **Gitea parity is asserted, not proven.** The finalizer authority split relies on `permissions:`
