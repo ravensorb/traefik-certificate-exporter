@@ -78,8 +78,8 @@ An atomic-push failure leaves the prepared local version commit and annotated ex
 inspection. It does not confirm that either remote ref changed, and the helper never retries with a
 broad, forced, separate, or non-atomic push.
 
-First inspect the local and remote identities without changing them (replace the example version
-and branch with the values printed by the failed command):
+First inspect the local and remote identities without changing them (substitute the example
+version and branch with the values printed by the failed command):
 
 ```bash
 git status --short
@@ -99,7 +99,7 @@ commit's parent, and the remote tag is absent, resume through the guard:
 just release-resume
 ```
 
-Resume does not recalculate a version, create another commit, or replace the tag. It refetches,
+Resume never recalculates a version, never creates another commit, and never replaces the tag. It refetches,
 revalidates the recovery state, and repeats the same atomic two-ref push. Changed or ambiguous
 state, multiple tags, a lightweight tag, or an already-present remote tag is refused without a
 push.
@@ -238,8 +238,9 @@ immutable tag to a mangled guess -- the same posture an unrecognised forge takes
 from the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets, and reach only the image job.
 
 Exactly one immutable tag per enabled destination is published, from one multi-platform Buildx
-invocation shared with the development channel. Mutable aliases -- `latest`, `vX`, `vX.Y` -- and
-the forge Release are not part of this workflow yet.
+invocation shared with the development channel. The mutable aliases -- `latest`, `vX`, `vX.Y` --
+and the forge Release are attached afterwards, by the two registered finalizers (`finalize` and
+`finalize-image-aliases`), and only once every required job has succeeded.
 
 ### The immutable identity is re-read before each upload
 
@@ -247,6 +248,114 @@ the forge Release are not part of this workflow yet.
 their credentialed step and refuse to upload if the tag no longer peels to the commit being
 published. A moved release identity under a run about to publish it is the one case where refusing
 is the only safe outcome -- a version accepted by PyPI can never be withdrawn.
+
+## Publication recovery
+
+A channel run fans out to several destinations, and each one is immutable: an accepted PyPI
+version, an accepted forge package version, and a pushed image tag can never be withdrawn or
+replaced. So a run in which one destination failed after another succeeded is the normal case this
+section exists for, and the recovery is always the same shape -- **rerun only the jobs that
+failed**, against the verifier evidence the original run already produced.
+
+The recovery is never a whole-workflow rerun, and it is never a force, a delete or an overwrite.
+Those four are listed as prohibited below, with what to do instead.
+
+### How a conflict is detected
+
+The detector is **the destination's own rejection**. `pypa/gh-action-pypi-publish` fails when the
+version already exists; a registry fails an immutable tag push; the forge index fails a duplicate
+upload. Nothing in this repository asks a destination whether a version exists before uploading to
+it, and nothing may: a pre-upload existence query is a decision taken from a remote read that can
+be stale by the time the upload runs, and it is refused by
+`test_no_publisher_queries_a_destination_before_uploading`.
+
+Inspecting what a run has **just published** is a different thing and is required -- the image
+publisher pulls the index by digest, resolves the native descriptor, runs it, and asserts the
+index's platforms from its annotations. That read happens after the push and describes this run's
+own output, so it cannot be stale in the way a pre-upload probe is.
+
+### Rerun the failed jobs
+
+Start from the run summary, whose `Run` row links the run that published (see the evidence table
+below). Then:
+
+**GitHub.** Open the run and use **Re-run failed jobs**. The rerun keeps the same run, reuses the
+outputs of the jobs that already succeeded -- including the plan job's identity and the verifier's
+`build-manifest-sha256` -- and re-executes only the failed jobs and the jobs that depend on them.
+The verified distribution artifact uploaded by the original attempt is still the artifact the
+rerun downloads, so nothing is rebuilt and no second identity is created.
+
+**Gitea.** Open the run and use the per-job rerun control on each failed job in the run's job
+list; Gitea reruns that job and the jobs blocked behind it, and leaves the successful ones with
+their original conclusions and outputs. If the deployed Gitea version offers no per-job rerun --
+only a rerun of the whole run -- then failed-jobs-only recovery is unsupported on that host, and
+the run halts and escalates rather than being rerun whole. Certifying this procedure against the
+target Gitea deployment is Epic 9's work; until then, treat a Gitea publication failure as an
+escalation.
+
+### When recovery halts and escalates
+
+Recovery is abandoned, and the incident escalated to a maintainer, in each of these cases. None of
+them has a retry that is safe to take unattended.
+
+| Condition | How you see it | What happens |
+|---|---|---|
+| Failed-jobs-only rerun unsupported | the forge offers no per-job rerun | halt; escalate. A whole-workflow rerun is prohibited, so there is no rerun to take |
+| Verifier evidence expired | the rerun job cannot download `verified-dist-v1` (30-day retention, `verify-build.yaml`) | halt; escalate. Rebuilding produces a new artifact, which is a new identity and not a rerun |
+| Remote immutable identity conflicts | the destination rejects the upload because that version or tag already exists | halt; escalate. Never force, delete or overwrite the published one |
+
+In the **development** channel the escalation resolves by publishing a new version: push again and
+a new `X.Y.(Z+1).devN` is built and published. The already-published development version is left
+exactly where it is. In the **stable** channel the escalation resolves by deciding, with a
+maintainer, whether a new `vX.Y.Z` is warranted through `just release`; the conflicting tag,
+release and package are never moved, deleted or republished.
+
+### Prohibited recovery actions
+
+| Action | Status | Why, and what to do instead |
+|---|---|---|
+| Re-run all jobs / whole-workflow rerun | prohibited | it re-executes destinations that already succeeded, so every immutable upload is attempted a second time. Re-run the failed jobs only |
+| Force update of a tag, alias or release (`--force`, force-push, force-overwrite) | prohibited | it moves an identity that consumers have already resolved. Publish a new version instead |
+| Delete a published tag, release, package version or image tag | prohibited | deletion is not a recovery: PyPI never re-accepts a deleted version, and a deleted image digest breaks whoever pinned it. Escalate instead |
+| Overwrite a published artifact at the same identity | prohibited | the destination rejects it, and where it does not, two different artifacts have shared one name. Publish a new version instead |
+
+### Aliases stay blocked until every required job succeeds
+
+The finalizers -- `release.yaml`'s `finalize` and `finalize-image-aliases`, and `dev.yaml`'s
+`finalize-dev-alias` -- run behind a gate that reads every required job's result and every enabled
+destination's conclusion. A destination that failed, was cancelled, or was skipped while enabled
+blocks finalization, so `latest`, `vX`, `vX.Y` and `dev` never advance to a half-published run.
+Rerunning the failed publisher is what unblocks them: once its conclusion is `success`, the
+finalizers run in the same rerun and the aliases advance to the digest that was published.
+
+### From an image digest to the run that published it
+
+A published index carries no run identity on purpose -- a run number is not a property of the
+artifact. The join key is the source commit, recorded as an OCI label:
+
+```bash
+docker buildx imagetools inspect --format '{{json .Image}}' <registry>/<owner>/<name>@sha256:... \
+  | jq -r 'to_entries[0].value.config.Labels."org.opencontainers.image.revision"'
+```
+
+The published artifact is a multi-platform index (CI-AR39), so that output is keyed by platform
+and the `jq` step reads the labels of the first entry; every platform carries the same revision.
+`org.opencontainers.image.revision` is the full source SHA the image was built from
+(`docker-bake.hcl` sets it from the build manifest's `source_sha`). The run that
+published that digest is the channel run whose summary `Source` row holds the same SHA -- one run
+per source SHA per channel, so the lookup is exact. `org.opencontainers.image.version` gives the
+package version for the same purpose when the digest is not to hand.
+
+### What the run summary reports (CI-AR41)
+
+Both channel workflows end in an evidence job that depends on every publisher and every finalizer,
+and runs on `!cancelled()` so a failed destination is still reported. The table it writes carries
+the run link, the forge, the source SHA, the release tag (stable), the package version, the
+verifier's build manifest SHA-256, the enabled destination set, one conclusion row per
+destination, the published image digest, its immutable reference and its platforms, the Release
+URL (stable), and the alias outcomes. The development table adds the `Suppressed by stable tag`
+row, which is how a run that deliberately published nothing is told apart from one that failed. That table is the input to every decision above -- read it before
+rerunning anything.
 
 ## Rollback
 

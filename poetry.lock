@@ -2858,4 +2858,4 @@ publication-contract = ["jsonschema", "packaging"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.15"
-content-hash = "80c5226b7147c479a7e9d65975ad203fb46e6872ae32488938e71c4220b4de63"
+content-hash = "c01af4cf8ca2ae2d4ae657bbd2f972f3f0a3a3b542fac72da96ff99748985eb1"

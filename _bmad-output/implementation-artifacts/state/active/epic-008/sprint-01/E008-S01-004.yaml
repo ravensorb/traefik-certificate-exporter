@@ -2,7 +2,7 @@ key: 'E008-S01-004'
 epic: 'E008'
 sprint: 'S01'
 title: 'Cut Over the Workflow Topology and Document Failed-Jobs-Only Recovery'
-status: ready-for-dev
+status: done
 classification: standard
 depends_on: ['E008-S01-003']
 estimate:
@@ -24,4 +24,20 @@ estimate:
     output: 9
     cache_write: 53
     cache_read: 88
-updated_at: '2026-09-02T15:33:21Z'
+updated_at: '2026-09-03T01:44:21Z'
+completion_evidence:
+  fix_iterations: 1
+  files_changed: 11
+  test_runs:
+  - command: poetry run pytest
+    exit_code: 0
+  - command: poetry run pre-commit run --files <changed>
+    exit_code: 0
+  tests_passing: true
+actual:
+  elapsed_hours: 1.5
+  man_hours: 12
+  hitl_hours: 0
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-09-03T01:44:09Z'

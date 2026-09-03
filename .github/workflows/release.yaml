@@ -1025,6 +1025,7 @@ jobs:
     steps:
       - name: Summarise identity, destinations and outcomes
         env:
+          BUILD_MANIFEST_SHA256: ${{ needs.verify.outputs.build-manifest-sha256 }}
           ENABLED_DESTINATIONS: ${{ needs.plan.outputs.enabled-destinations }}
           FORGE: ${{ needs.plan.outputs.forge }}
           IMAGE_DIGEST: ${{ needs.publish-image.outputs.digest }}
@@ -1057,6 +1058,7 @@ jobs:
             echo "| Tag | \`${RELEASE_TAG}\` |"
             echo "| Source | \`${SOURCE_SHA}\` |"
             echo "| Version | \`${PACKAGE_VERSION}\` |"
+            echo "| Build manifest SHA-256 | \`${BUILD_MANIFEST_SHA256}\` |"
             echo "| Enabled destinations | \`${ENABLED_DESTINATIONS}\` |"
             echo "| Verifier | \`${VERIFIER_RESULT}\` |"
             echo "| Forge package index | \`${PACKAGE_FORGE_RESULT}\` |"

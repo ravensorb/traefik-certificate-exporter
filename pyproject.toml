@@ -43,6 +43,11 @@ pyyaml = "^6.0.1"
 mypy = "^2.3.1"
 types-jsonschema = "^4.25.1"
 dockerfile-parse = "^2.0.1"
+# The CommonMark parser the workflow-contract guards use to read docs/operational.md as
+# blocks (global rule 1 -- the alternative was a hand-written Markdown block splitter).
+# Already present transitively through `poetry`'s own `rich`; declared here so the tests
+# do not depend on somebody else's transitive dependency staying where it is.
+markdown-it-py = "^3.0.0"
 # Mirrors of the two optional publication-contract extras above, so a plain
 # `poetry install` yields a working test environment without --extras. Held identical
 # by tests/ci/test_publication_contract.py.

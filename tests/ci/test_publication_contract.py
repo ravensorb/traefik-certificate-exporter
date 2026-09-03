@@ -503,3 +503,57 @@ def test_manifest_inputs_match_the_image_build_plan() -> None:
     assert inputs["target"] == "runtime"
     assert 'POETRY_VERSION = "2.4.2"' in bake
     assert '"POETRY_VERSION":"2.4.2"' in inputs["build-args-json"]
+
+
+def test_publication_contract_extra_and_dev_constraints_agree() -> None:
+    """jsonschema and packaging are runtime dependencies of the publication-contract
+    console script, so they are optional main dependencies behind an extra -- which keeps
+    them out of `poetry install --only main`, the command docker/Dockerfile builds the
+    runtime image with. They are mirrored into the dev group so a plain `poetry install`
+    still yields a working test environment.
+
+    Two declarations of one constraint drift. This is the guard that stops them, and its
+    scope is derived from the extra itself rather than a hand-kept list.
+
+    Restored after a repository loss took the guard while leaving the arrangement intact
+    -- the same fix-survives-proof-does-not pattern as the Dockerfile ARG default.
+    """
+    metadata = tomllib.loads(
+        (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    poetry = metadata["tool"]["poetry"]
+    extra_members = poetry["extras"]["publication-contract"]
+    main = poetry["dependencies"]
+    dev = poetry["group"]["dev"]["dependencies"]
+
+    assert extra_members, "the publication-contract extra must not be empty"
+    for name in extra_members:
+        assert isinstance(main[name], dict) and main[name]["optional"] is True, (
+            f"{name} must stay an optional main dependency or it re-enters the runtime "
+            f"image via `poetry install --only main`"
+        )
+        assert main[name]["version"] == dev[name], (
+            f"{name}: main extra constraint {main[name]['version']!r} disagrees with the "
+            f"dev-group constraint {dev[name]!r}"
+        )
+
+
+def test_the_runtime_image_dependency_set_excludes_ci_only_tooling() -> None:
+    """docker/Dockerfile installs the runtime image with `poetry install --only main`, so
+    anything non-optional in [tool.poetry.dependencies] ships in the production image.
+    jsonschema drags in the compiled rpds-py chain, and nothing under
+    src/traefik_certificate_exporter imports it -- only the CI-side publication_contract
+    package does.
+    """
+    metadata = tomllib.loads(
+        (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    main = metadata["tool"]["poetry"]["dependencies"]
+    shipped = {
+        name
+        for name, spec in main.items()
+        if name != "python" and not (isinstance(spec, dict) and spec.get("optional"))
+    }
+    assert not shipped & {"jsonschema", "packaging", "markdown-it-py"}, (
+        "CI-only tooling must not be a non-optional main dependency"
+    )

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import fnmatch
 import importlib.util
+import itertools
 import json
 import os
 import re
@@ -13,7 +15,10 @@ from typing import Any
 
 import pytest
 import yaml
+from markdown_it import MarkdownIt
 from packaging.version import Version
+
+from tests.support import tracked_text_files
 
 PROJECT_ROOT = Path(__file__).parents[2]
 WORKFLOWS = PROJECT_ROOT / ".github" / "workflows"
@@ -4333,3 +4338,687 @@ def test_a_failure_blocks_even_on_a_destination_the_plan_says_is_off(
     )
     assert completed.returncode != 0
     assert f"package-forge reported {blocking}" in completed.stderr
+
+
+# ---------------------------------------------------------------------------
+# Cutover topology and operator recovery (story E008-S01-004). Every guard below
+# was proven by planting the violation it forbids, and each plant is kept as a test
+# of its own rather than recorded in a comment -- a comment cannot fail when someone
+# narrows the derivation under it. The plants include the ones review found this
+# section's first draft missing: a second owner whose ref filter is a *glob* rather
+# than the same literal, and the ordinary rewordings of each prohibited action.
+# ---------------------------------------------------------------------------
+
+OPERATIONAL_RUNBOOK = PROJECT_ROOT / "docs" / "operational.md"
+RECOVERY_HEADING = "## Publication recovery"
+
+# Events that start a run without a person or another workflow asking for it. These are
+# the only ones that can race each other, and "each event has one owner" is a statement
+# about exactly this set. `workflow_call` is excluded because a caller decides, and
+# `workflow_dispatch` because a person does -- the verifier's direct dispatch entry point
+# is governed by `test_verifier_supports_call_and_direct_dispatch_with_the_same_graph`.
+NON_AUTOMATIC_EVENTS = frozenset({"workflow_call", "workflow_dispatch"})
+
+# The only filter keys that divide the ref namespace, and therefore the only ones that
+# can make two claims on the same event genuinely disjoint. `paths`, `paths-ignore` and
+# `types` narrow *when* a workflow fires, never *which refs* it owns: two workflows
+# filtered on different paths still both fire on a push that touches both. Letting them
+# separate two claims is how a second owner of `push` slips past (review HIGH-1).
+REF_NAMESPACE_KEYS = {
+    "branches": "branches",
+    "branches-ignore": "branches",
+    "tags": "tags",
+    "tags-ignore": "tags",
+}
+GLOB_METACHARACTERS = frozenset("*?[]+!")
+
+
+def _trigger_surface(document: dict[str, Any]) -> dict[str, dict[str, tuple[str, ...]]]:
+    """The automatic event surface a workflow claims, as `{event: {namespace: globs}}`.
+
+    Derived from the parsed `on:` block, never from the file's name. A name list is the
+    hand-enumerated scope global rule 4 forbids, and it would have to be edited again by
+    Epic 9; the trigger surface is the property that actually matters, and it is read
+    from the same text GitHub reads.
+
+    An event with no ref-namespace filter -- or filtered only by `paths`/`types`, or by
+    an `-ignore` form, which describes what it does *not* take and so bounds nothing --
+    claims every namespace, spelled as an empty pattern tuple.
+    """
+    triggers = document["on"]
+    if isinstance(triggers, str):
+        triggers = {triggers: None}
+    if isinstance(triggers, list):
+        triggers = dict.fromkeys(triggers)
+    assert isinstance(triggers, dict), document
+    surface: dict[str, dict[str, tuple[str, ...]]] = {}
+    for event, configuration in triggers.items():
+        if event in NON_AUTOMATIC_EVENTS:
+            continue
+        claimed: dict[str, list[str]] = {}
+        if isinstance(configuration, dict):
+            for key, namespace in REF_NAMESPACE_KEYS.items():
+                values = configuration.get(key) or []
+                if not values:
+                    continue
+                # An `-ignore` list names what is excluded, so what remains is the whole
+                # namespace minus an unknown set: treat it as unbounded.
+                patterns = [] if key.endswith("-ignore") else [str(v) for v in values]
+                claimed.setdefault(namespace, []).extend(patterns)
+        surface[event] = (
+            {name: tuple(globs) for name, globs in claimed.items()}
+            if claimed
+            else dict.fromkeys(set(REF_NAMESPACE_KEYS.values()), ())
+        )
+    return surface
+
+
+def _globs_can_both_match(left: str, right: str) -> bool:
+    """Whether two ref patterns can name the same ref. Conservative on purpose.
+
+    A false positive here costs a topology rewrite nobody wanted; a false negative is a
+    second owner of a delivery event that ships. So two globs are assumed to overlap
+    unless one side is a literal that the other provably excludes.
+    """
+    left_wild = bool(GLOB_METACHARACTERS & set(left))
+    right_wild = bool(GLOB_METACHARACTERS & set(right))
+    if not left_wild and not right_wild:
+        return left == right
+    if left_wild and right_wild:
+        return True
+    literal, pattern = (right, left) if left_wild else (left, right)
+    # `fnmatch` is not GitHub's ref matcher -- `*` does not cross `/` there -- but it is
+    # strictly more permissive for these patterns, which is the safe direction.
+    return fnmatch.fnmatchcase(literal, pattern)
+
+
+def _surface_overlap(
+    left: dict[str, dict[str, tuple[str, ...]]],
+    right: dict[str, dict[str, tuple[str, ...]]],
+) -> set[str]:
+    """Events both surfaces claim -- the two-owner condition, per event."""
+    shared: set[str] = set()
+    for event in set(left) & set(right):
+        for namespace in set(left[event]) & set(right[event]):
+            ours, theirs = left[event][namespace], right[event][namespace]
+            if not ours or not theirs:
+                # One of them takes the whole namespace.
+                shared.add(event)
+            elif any(_globs_can_both_match(a, b) for a in ours for b in theirs):
+                shared.add(event)
+    return shared
+
+
+def _declared_events(document: dict[str, Any]) -> set[str]:
+    triggers = document["on"]
+    if isinstance(triggers, str):
+        return {triggers}
+    return set(triggers)
+
+
+def _topology_findings(documents: dict[str, dict[str, Any]]) -> list[str]:
+    """Every way the workflow set can stop being a partition, as a list of findings.
+
+    A pure function over parsed documents so the planted violations below run through
+    exactly the code that governs the repository, rather than through a second
+    implementation that can agree with the guard while both are wrong.
+
+    Two kinds of file, and nothing else: a *reusable* one, which another workflow calls
+    and which owns no automatic event; and a *channel*, which owns automatic events and
+    is called by nobody. Anything else is a defect -- a file nothing can reach is dead
+    weight that reads as governed, and a called file that also self-triggers runs twice
+    for one event.
+    """
+    called = {
+        str(job["uses"]).rsplit("/", 1)[-1]
+        for document in documents.values()
+        for job in _jobs(document).values()
+        if isinstance(job.get("uses"), str)
+        and str(job["uses"]).startswith("./.github/workflows/")
+    }
+    surfaces = {
+        name: _trigger_surface(document) for name, document in documents.items()
+    }
+    findings: list[str] = []
+    for name, document in documents.items():
+        surface = surfaces[name]
+        if name in called:
+            if "workflow_call" not in _declared_events(document):
+                findings.append(
+                    f"{name}: another workflow calls it but it declares no "
+                    f"`workflow_call` trigger"
+                )
+            if surface:
+                findings.append(
+                    f"{name}: a reusable workflow that also owns {sorted(surface)} runs "
+                    f"twice for that event -- once for the caller, once for itself"
+                )
+        elif not surface and "workflow_dispatch" not in _declared_events(document):
+            # Not "has no automatic event": a `workflow_dispatch`-only maintenance
+            # workflow is reachable by a person and is perfectly legal (review LOW-5).
+            # `workflow_call` is deliberately not a reprieve -- a reusable workflow
+            # nobody calls is exactly the obsolete file this branch is looking for.
+            findings.append(
+                f"{name}: no event, no caller and no manual trigger can reach it; an "
+                f"obsolete file left behind reads as governed"
+            )
+    for left, right in itertools.combinations(sorted(documents), 2):
+        for event in sorted(_surface_overlap(surfaces[left], surfaces[right])):
+            findings.append(
+                f"{left} and {right} both own the {event} event; each event has exactly "
+                f"one owner, or two pipelines race one delivery"
+            )
+    return findings
+
+
+def test_the_workflow_topology_is_a_partition_of_reusable_files_and_event_owners() -> (
+    None
+):
+    """Prep finding P2, and the cutover AC it revised.
+
+    The count is not the property -- Epic 8 legitimately added a fifth file, and Epic 9
+    may add a sixth. What must hold is that the on-disk set partitions into reusable
+    workflows and event owners, and that no two owners claim the same event.
+    """
+    documents = {path.name: _load_workflow(path) for path in WORKFLOWS.glob("*.yaml")}
+    assert documents, "no workflows on disk; this guard examined nothing"
+    assert not _topology_findings(documents), _topology_findings(documents)
+
+    # The partition itself, so a derivation that quietly stops classifying anything --
+    # every file reusable, or every file an owner -- fails here rather than passing with
+    # an empty finding list.
+    owners = {
+        name for name, document in documents.items() if _trigger_surface(document)
+    }
+    reusable = set(documents) - owners
+    assert owners and reusable, (
+        f"the topology is no longer a partition: owners={sorted(owners)} "
+        f"reusable={sorted(reusable)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "trigger",
+    [
+        pytest.param({"push": {"branches": ["main"]}}, id="same-branch-literal"),
+        pytest.param({"push": {"branches": ["ma*"]}}, id="branch-glob-over-main"),
+        pytest.param({"push": {"tags": ["v*"]}}, id="same-tag-glob"),
+        pytest.param({"push": {"tags": ["v1.*"]}}, id="narrower-tag-glob"),
+        pytest.param(
+            {"push": {"paths": ["src/**"]}}, id="paths-only-claims-everything"
+        ),
+        pytest.param({"push": {"branches-ignore": ["docs"]}}, id="ignore-form"),
+        pytest.param({"pull_request": {"types": ["labeled"]}}, id="types-only"),
+    ],
+)
+def test_the_topology_rejects_every_shape_of_second_owner(
+    trigger: dict[str, Any],
+) -> None:
+    """The plants review HIGH-1 found the first draft missing.
+
+    Each row is a workflow somebody could add in good faith that races an existing
+    channel for one delivery. Only the first was caught before: string equality of the
+    ref filter is not "each event has one owner", and `v1.*` racing `release.yaml` for a
+    `v1.2.3` tag is exactly the two-publishers-one-release-tag failure the cutover
+    exists to prevent.
+    """
+    documents = {path.name: _load_workflow(path) for path in WORKFLOWS.glob("*.yaml")}
+    documents["build.yaml"] = {
+        "on": trigger,
+        "jobs": {"publish": {"runs-on": "ubuntu-24.04", "steps": []}},
+    }
+    findings = _topology_findings(documents)
+    assert any("both own the" in finding for finding in findings), findings
+
+
+def test_the_topology_rejects_a_triggered_reusable_workflow_and_an_orphan() -> None:
+    """The scope attack, and the obsolete-file attack.
+
+    A name-list assertion sees five files and five names in both cases and passes.
+    """
+    real = {path.name: _load_workflow(path) for path in WORKFLOWS.glob("*.yaml")}
+
+    # publish-image.yaml stays a called workflow AND starts reacting to the tag push
+    # release.yaml owns: two runs of the image publisher for one tag, one of them with
+    # no verifier above it.
+    triggered = dict(real)
+    document = json.loads(json.dumps(real["publish-image.yaml"]))
+    document["on"]["push"] = {"tags": ["v*"]}
+    triggered["publish-image.yaml"] = document
+    findings = _topology_findings(triggered)
+    assert any("runs twice for that event" in finding for finding in findings), findings
+    assert any("both own the push event" in finding for finding in findings), findings
+
+    orphan = dict(real)
+    orphan["build-container.yaml"] = {
+        "on": {"workflow_call": None},
+        "jobs": {"image": {"runs-on": "ubuntu-24.04", "steps": []}},
+    }
+    findings = _topology_findings(orphan)
+    assert any("no manual trigger can reach it" in finding for finding in findings), (
+        findings
+    )
+
+
+@pytest.mark.parametrize(
+    "trigger",
+    [
+        pytest.param({"schedule": [{"cron": "0 3 * * *"}]}, id="new-event-owner"),
+        pytest.param({"workflow_dispatch": None}, id="manual-only-maintenance"),
+        pytest.param(
+            {"push": {"branches": ["release/**"]}}, id="disjoint-branch-literal-space"
+        ),
+    ],
+)
+def test_the_topology_accepts_a_workflow_that_races_nothing(
+    trigger: dict[str, Any],
+) -> None:
+    """The other half of a conservative overlap rule: it must still be satisfiable.
+
+    A guard that rejected every new file would be disabled rather than fixed, so each
+    lawful shape is asserted as explicitly as each violation. `release/**` is disjoint
+    from `main` because both sides are decidable, not because the strings differ.
+    """
+    documents = {path.name: _load_workflow(path) for path in WORKFLOWS.glob("*.yaml")}
+    documents["maintenance.yaml"] = {
+        "on": trigger,
+        "jobs": {"audit": {"runs-on": "ubuntu-24.04", "steps": []}},
+    }
+    assert not _topology_findings(documents), _topology_findings(documents)
+
+
+# The four actions CI-AR38 permits the operations guide to name only as prohibited,
+# matched at the width of the vocabulary an operator would actually use. Review HIGH-2
+# demonstrated the first draft's narrower patterns accepting `remove the published
+# version`, `yank the version`, `replace the published image tag`, `push the tag again
+# with -f` and `re-run the workflow from the start` -- every one of them the prohibited
+# action under a different verb. Each row below is proven by a plant.
+PROHIBITED_RECOVERY_ACTIONS = (
+    (
+        "whole-workflow rerun",
+        re.compile(
+            r"re-?run(?:ning)?\s+(?:all\b|every\b"
+            r"|the\s+(?:whole|entire|full|complete)\b"
+            r"|the\s+(?:run|workflow|pipeline|job list)\b)"
+            r"|whole[- ](?:workflow|run)\s+re-?run"
+            r"|re-?(?:trigger|dispatch|launch)\s+the\s+(?:run|workflow)"
+            r"|trigger\s+the\s+workflow\s+again",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "force update",
+        re.compile(
+            r"--force|(?<![\w-])-f(?![\w-])|force[- ](?:push|updat|overwrit|mov|creat)"
+            r"|\bforce-?(?:push|updat)\w*",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "deletion",
+        re.compile(
+            r"\b(?:delet(?:e|es|ed|ing|ion)|remov(?:e|es|ed|ing|al)|purg(?:e|es|ed|ing)"
+            r"|yank(?:s|ed|ing)?|drop(?:s|ped|ping)?)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "overwrite",
+        re.compile(
+            r"\b(?:overwrit(?:e|es|ing|ten)|replac(?:e|es|ed|ing)"
+            r"|re-?(?:upload|push|publish)(?:es|ed|ing)?)\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
+
+# What makes a mention a prohibition rather than an instruction. Deliberately narrow:
+# review MEDIUM-1 showed that admitting the ordinary negations (`is not`, `does not`,
+# `cannot`) lets an unrelated conditional excuse an instruction -- "If the release is not
+# yet consumed, delete it and republish" passed. Every marker here is prohibitive on its
+# own, whatever the rest of the sentence says.
+PROHIBITION_MARKER = re.compile(
+    r"\b(?:never|not\s+a\s+recovery|prohibited|forbidden|must\s+not|may\s+not"
+    r"|do(?:es)?\s+not\s+prescribe|refus\w*|unsupported|instead\s+of"
+    r"|rather\s+than)\b",
+    re.IGNORECASE,
+)
+
+
+def _statements(text: str) -> list[str]:
+    """The units a prohibition has to attach to.
+
+    Block structure comes from `markdown-it-py`, the CommonMark parser already in this
+    project's dependency tree -- global rule 1, and the first draft's hand-written block
+    splitter treated a line inside a fenced block as prose (review MEDIUM-3). A table
+    *row* is one unit rather than one cell, because the prohibition lives in the row's
+    other columns.
+
+    Within a block, statements are split on sentence punctuation by a deliberately naive
+    rule. It gets abbreviations wrong -- `e.g. ` splits early -- and that is a knowingly
+    accepted limitation because its failure direction is safe: a statement split too
+    early is a *smaller* unit, so a marker in the discarded half no longer excuses a
+    matched verb. It can make this guard stricter, never laxer.
+    """
+    tokens = MarkdownIt("commonmark").enable("table").parse(text)
+    blocks: list[str] = []
+    row: list[str] | None = None
+    for token in tokens:
+        if token.type == "tr_open":
+            row = []
+        elif token.type == "tr_close" and row is not None:
+            blocks.append(" ".join(row))
+            row = None
+        elif token.type == "inline":
+            if row is not None:
+                row.append(token.content)
+            else:
+                blocks.append(token.content)
+        # `fence` and `code_block` carry their content on the token itself and are
+        # skipped outright: a shell transcript is not a runbook instruction.
+    statements: list[str] = []
+    for block in blocks:
+        collapsed = " ".join(block.split())
+        statements.extend(
+            part for part in re.split(r"(?<=[.!?])\s+", collapsed) if part.strip()
+        )
+    return statements
+
+
+def _runbook_findings(text: str) -> list[str]:
+    return [
+        f"{name} appears as an instruction, not a prohibition: {statement!r}"
+        for statement in _statements(text)
+        for name, pattern in PROHIBITED_RECOVERY_ACTIONS
+        if pattern.search(statement) and not PROHIBITION_MARKER.search(statement)
+    ]
+
+
+def _recovery_section(text: str) -> str:
+    """The section this story owns, located by heading and ended by the next one.
+
+    Used only for the *positive* assertions, which are genuinely section-local. The
+    prohibition scan runs over the whole page (review MEDIUM-2): `## Rollback` is another
+    recovery procedure, and an operator following a prohibited instruction there is in
+    the same trouble as one following it here.
+    """
+    assert RECOVERY_HEADING in text, f"{RECOVERY_HEADING} is missing from the runbook"
+    body = text.split(RECOVERY_HEADING, 1)[1]
+    return RECOVERY_HEADING + re.split(r"\n## ", body)[0]
+
+
+def test_the_recovery_runbook_prescribes_failed_jobs_only_recovery() -> None:
+    """CI-AR38. The runbook is the deliverable an operator acts on at 3am, so what it
+    prescribes is as load-bearing as what the workflows enforce."""
+    page = OPERATIONAL_RUNBOOK.read_text(encoding="utf-8")
+    section = _recovery_section(page)
+
+    assert re.search(r"re-?run\s+failed\s+jobs", section, re.IGNORECASE), (
+        "the recovery section never names the failed-jobs-only rerun it exists to "
+        "prescribe (CI-AR38)"
+    )
+    # Both forges, because the procedure differs and Epic 9 inherits this page.
+    assert "GitHub" in section and "Gitea" in section
+
+    # The three halt-and-escalate conditions, each named with its escalation.
+    for condition in ("unsupported", "expired", "conflict"):
+        assert re.search(condition, section, re.IGNORECASE), (
+            f"the recovery section never names the {condition} halt condition"
+        )
+    assert re.search(r"escalat", section, re.IGNORECASE)
+
+    # F17: the detector is the destination's own rejection, and the guard that forbids
+    # the alternative is named where an operator can find it -- so the name has to
+    # resolve. Derived from the page rather than hard-coded, so a second guard cited
+    # later is checked too (review LOW-1).
+    cited_guards = set(re.findall(r"\btest_[a-z0-9_]+", section))
+    assert "test_no_publisher_queries_a_destination_before_uploading" in cited_guards
+    for guard in sorted(cited_guards):
+        assert guard in globals(), (
+            f"docs/operational.md cites {guard}, which no longer exists; the runbook "
+            f"points an operator at nothing"
+        )
+
+    # F30: a digest carries no run identity, so the join key has to be spelled out.
+    assert "org.opencontainers.image.revision" in section
+
+    # The prohibition scan is the whole page, not this section.
+    assert not _runbook_findings(page), _runbook_findings(page)
+    assert len(_statements(page)) > len(_statements(section)), (
+        "the prohibition scan is examining only the section it was widened past"
+    )
+
+
+@pytest.mark.parametrize(
+    ("instruction", "expected"),
+    [
+        ("Re-run all jobs from the run page.", "whole-workflow rerun"),
+        ("Re-run the workflow from the start.", "whole-workflow rerun"),
+        ("Re-run the run.", "whole-workflow rerun"),
+        ("Trigger the workflow again from the tag.", "whole-workflow rerun"),
+        ("Push the tag again with -f so the release points at the build.", "force"),
+        ("Run git push -f origin v1.2.3 to move the tag.", "force"),
+        ("Force update the tag so the release points at the new build.", "force"),
+        ("Delete the published version and upload it again.", "deletion"),
+        ("When the index rejects it, remove the published version.", "deletion"),
+        ("Yank the version from PyPI and publish the same wheel again.", "deletion"),
+        ("Overwrite the image tag with the corrected image.", "overwrite"),
+        ("Replace the published image tag with the corrected image.", "overwrite"),
+        ("Re-upload the wheel once the index has settled.", "overwrite"),
+        ("If the release is not yet consumed, delete it and republish.", "deletion"),
+    ],
+)
+def test_the_runbook_guard_rejects_every_wording_of_a_prohibited_instruction(
+    instruction: str, expected: str
+) -> None:
+    """The planted violations, run through the checker the real page goes through.
+
+    Every row is an instruction somebody would write in good faith, and review HIGH-2
+    and MEDIUM-1 proved the first draft accepted all but the first. The last row is
+    MEDIUM-1's: an unrelated negation must not excuse the verb it does not govern.
+    """
+    findings = _runbook_findings(f"{RECOVERY_HEADING}\n\n{instruction}\n")
+    assert any(expected in finding for finding in findings), (instruction, findings)
+
+
+def test_the_runbook_guard_accepts_the_same_actions_named_as_prohibitions() -> None:
+    """The other half: a guard that rejected the words themselves would be unwritable,
+    and the real page has to be able to say what must not be done."""
+    lawful = (
+        f"{RECOVERY_HEADING}\n\n"
+        "A whole-workflow rerun is prohibited, and the tag is never force-updated, "
+        "deleted, replaced or overwritten.\n\n"
+        "| Action | Status |\n| --- | --- |\n"
+        "| Delete the published version | prohibited |\n\n"
+        "```bash\n"
+        "# a code block is not an instruction and is not scanned\n"
+        "git push --force origin v1.2.3\n"
+        "```\n"
+    )
+    assert not _runbook_findings(lawful), _runbook_findings(lawful)
+
+
+def test_the_runbook_names_every_channel_and_no_workflow_that_is_not_on_disk() -> None:
+    """The rename attack, and the docs half of "no dangling references".
+
+    Scope is derived from disk both ways: every publishing channel must be documented by
+    name, and every workflow filename the page cites must exist. Renaming `dev.yaml` and
+    forgetting the page fails the first; renaming it and leaving the old reference
+    behind fails the second. Citations are collected in both the forms the page actually
+    uses -- the full `.github/workflows/x.yaml` path and the bare backticked filename --
+    because review MEDIUM-6 found only two of the page's references were the former.
+
+    The documented set is "owns an event AND holds a publisher": `ci.yaml` owns the pull
+    request event and ships nothing, so an operations guide has nothing to say about it.
+    """
+    text = OPERATIONAL_RUNBOOK.read_text(encoding="utf-8")
+
+    tracked_names = {Path(relative).name for relative, _ in tracked_text_files()}
+    cited = set(re.findall(r"\.github/workflows/([\w.-]+\.ya?ml)", text)) | {
+        name
+        for name in re.findall(r"`([\w.-]+\.ya?ml)`", text)
+        # A name that is not a workflow filename is somebody else's file -- the page
+        # cites `config.yaml` and `docker-compose.yml` too -- and is resolved against
+        # the tracked corpus rather than against this directory.
+        if name not in tracked_names or (WORKFLOWS / name).exists()
+    }
+    assert len(cited) >= 4, f"the operations guide cites almost no workflow: {cited}"
+    for name in sorted(cited):
+        assert (WORKFLOWS / name).exists(), (
+            f"docs/operational.md cites {name}, which is not in .github/workflows"
+        )
+
+    channels = sorted(
+        path.name
+        for path in WORKFLOWS.glob("*.yaml")
+        if _trigger_surface(_load_workflow(path)) and _publishers(_load_workflow(path))
+    )
+    assert channels, "no publishing channel on disk; this guard examined nothing"
+    for name in channels:
+        assert name in text, (
+            f"{name} owns an event and publishes, but the operations guide never names "
+            f"it, so an operator has no runbook for the channel it drives"
+        )
+
+
+# The local build paths Epic 8 retires. `docker/act-build.sh` is deliberately not one of
+# them: it drives the governed verifier's direct entry point and stays.
+RETIRED_LOCAL_PATHS = ("build.sh", "docker/build.sh")
+# A command position, not a prefix. Review MEDIUM-4 showed the prefix form missing
+# `docker/build.sh --push`, `source build.sh` and `'docker/build.sh'` -- all ordinary
+# ways to call a script from a justfile recipe or a workflow `run:`. Two lookbehinds do
+# the work: `-` and `/` are path characters, so the tail of a longer name such as
+# `act-build.sh` is never a match on its own; and a backtick means the path is being
+# *named* in prose rather than run -- ADR-0006 explains why the retired script went, and
+# an ADR recording history is not a resurrection. An invocation inside documentation
+# lives in a fenced block, where no backtick precedes it, and is still matched.
+RETIRED_INVOCATION = re.compile(r"(?<![\w./$`-])(?:[\w.${}-]+/)*build\.sh(?![\w.-])")
+# The one file that must be skipped, and it is skipped by identity rather than by a
+# pattern: this module names the retired paths as data, and a scan of its own source
+# would match the tuple above. Asserted to be exactly one file.
+INVOCATION_SCAN_EXEMPTIONS = frozenset({"tests/ci/test_workflow_contracts.py"})
+
+
+def test_the_retired_local_build_paths_are_gone_and_nothing_invokes_them() -> None:
+    """The legacy cutover's other half: the shell pipelines that duplicated the
+    workflows' build and publish steps, with none of their guards.
+
+    Reach is every file git tracks, resolved from git rather than walked by hand, so a
+    resurrected invocation anywhere in the repository fails here.
+    """
+    for relative in RETIRED_LOCAL_PATHS:
+        assert not (PROJECT_ROOT / relative).exists(), (
+            f"{relative} is retired; the governed workflows own the build"
+        )
+
+    assert INVOCATION_SCAN_EXEMPTIONS == {
+        str(Path(__file__).relative_to(PROJECT_ROOT))
+    }, "the only exemption from this scan is the module that defines its pattern"
+
+    examined = 0
+    for relative, text in tracked_text_files():
+        if relative in INVOCATION_SCAN_EXEMPTIONS:
+            continue
+        examined += 1
+        match = RETIRED_INVOCATION.search(text)
+        assert match is None, f"{relative} invokes the retired {match.group(0)!r}"
+    assert examined, "no tracked file was examined"
+
+
+@pytest.mark.parametrize(
+    "invocation",
+    [
+        "./build.sh -a release",
+        "bash docker/build.sh",
+        "docker/build.sh --push",
+        "source build.sh",
+        "    run: ./docker/build.sh\n",
+        "'docker/build.sh'",
+        "```bash\n./build.sh -a release\n```",
+    ],
+)
+def test_the_retired_invocation_pattern_catches_every_calling_form(
+    invocation: str,
+) -> None:
+    """The plants for the guard above (review MEDIUM-4): each is how a resurrected
+    script would actually be called."""
+    assert RETIRED_INVOCATION.search(invocation), invocation
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "./docker/act-build.sh",
+        "just test-local delegates to docker/act-build.sh",
+        "act-build.sh",
+        "The previous `build.sh` derived a version independently of Poetry.",
+        "[docker/act-build.sh](../docker/act-build.sh)",
+    ],
+)
+def test_the_retired_invocation_pattern_leaves_the_kept_wrapper_alone(
+    text: str,
+) -> None:
+    """The exemptions, proven rather than asserted in a comment. The first draft's
+    allowance for `act-build.sh` was unreachable code, so nothing showed that the
+    wrapper the project still uses survives the pattern (review MEDIUM-4). The
+    backticked mention is the other one: an ADR recording why a script was retired must
+    stay writable, and an invocation in documentation lives in a fenced block."""
+    assert RETIRED_INVOCATION.search(text) is None, text
+
+
+def test_every_run_summary_reports_the_verified_bundle_and_every_destination() -> None:
+    """CI-AR41, asserted at the job that actually writes the run summary.
+
+    The neighbouring guards check these fields *somewhere in the file*: moving the digest
+    and platform rows out of the evidence job keeps them green while the evidence table
+    loses them (review MEDIUM-5). Every set here is derived -- publishers from
+    capability, the aggregator from "depends on a publisher and ships nothing", the image
+    and release jobs from what they call -- so a destination added later is covered
+    without an edit, which is the scope attack each of these guards has to survive.
+    """
+    channels = _channel_workflows()
+    assert channels, "no workflow calls the image publisher"
+    examined = 0
+    for path in channels:
+        document = _load_workflow(path)
+        jobs = _jobs(document)
+        publishers = set(_publishers(document))
+        aggregators = {
+            name
+            for name in jobs
+            if name not in publishers and _transitive_needs(jobs, name) & publishers
+        }
+        assert aggregators, f"{path.name}: no job aggregates the publication outcomes"
+
+        required = [
+            "needs.plan.outputs.source-sha",
+            "needs.plan.outputs.package-version",
+        ]
+        for name, job in jobs.items():
+            if job.get("uses") == PUBLISH_IMAGE_REFERENCE:
+                required += [
+                    f"needs.{name}.outputs.digest",
+                    f"needs.{name}.outputs.platforms",
+                ]
+            if any(
+                str(step.get("uses", "")).startswith(APPROVED_RELEASE_ACTION)
+                for step in job.get("steps") or []
+            ):
+                required.append(f"needs.{name}.outputs.release-url")
+        required.append("outputs.build-manifest-sha256")
+
+        for name in sorted(aggregators):
+            body = json.dumps(jobs[name])
+            for publisher in sorted(publishers):
+                examined += 1
+                assert f"needs.{publisher}.result" in body, (
+                    f"{path.name}: {name!r} never reports {publisher!r}'s conclusion, so "
+                    f"a destination's outcome reaches no run summary (CI-AR41)"
+                )
+            for reference in required:
+                examined += 1
+                assert reference in body, (
+                    f"{path.name}: {name!r} never reports {reference}, so the run "
+                    f"summary is missing evidence CI-AR41 requires"
+                )
+    assert examined, "no evidence field was examined"

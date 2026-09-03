@@ -709,6 +709,7 @@ jobs:
     steps:
       - name: Summarise identity, destinations and outcomes
         env:
+          BUILD_MANIFEST_SHA256: ${{ needs.verify.outputs.build-manifest-sha256 }}
           ENABLED_DESTINATIONS: ${{ needs.plan.outputs.enabled-destinations }}
           FORGE: ${{ needs.plan.outputs.forge }}
           IMAGE_DIGEST: ${{ needs.publish-image.outputs.digest }}
@@ -736,13 +737,14 @@ jobs:
             echo "| Forge | \`${FORGE}\` |"
             echo "| Source | \`${SOURCE_SHA}\` |"
             echo "| Version | \`${PACKAGE_VERSION}\` |"
+            echo "| Build manifest SHA-256 | \`${BUILD_MANIFEST_SHA256}\` |"
             echo "| Suppressed by stable tag | \`${SUPPRESSED}\` \`${STABLE_TAGS}\` |"
             echo "| Enabled destinations | \`${ENABLED_DESTINATIONS}\` |"
             echo "| Verifier | \`${VERIFIER_RESULT}\` |"
             echo "| Forge package index | \`${PACKAGE_FORGE_RESULT}\` |"
             echo "| TestPyPI | \`${TESTPYPI_RESULT}\` |"
             echo "| Forge image | \`${IMAGE_FORGE_RESULT}\` |"
-            echo "| Image tags | \`${IMAGE_TAGS}\` |"
+            echo "| Image tags | \`${IMAGE_TAGS//$'\n'/, }\` |"
             echo "| Image digest | \`${IMAGE_DIGEST}\` |"
             echo "| Image reference | \`${IMAGE_REFERENCE}\` |"
             echo "| Image platforms | \`${IMAGE_PLATFORMS}\` |"

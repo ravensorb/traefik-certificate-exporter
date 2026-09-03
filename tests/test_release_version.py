@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from scripts import release_version
+from tests.support import tracked_text_files
 
 
 def _run(
@@ -617,13 +618,39 @@ def test_justfile_release_recipes_are_thin_delegates() -> None:
 
 
 def test_legacy_release_script_is_retired() -> None:
-    script = (
-        Path(__file__).parents[1] / "scripts" / "git-increment-version.sh"
-    ).read_text(encoding="utf-8")
+    """The unsafe path is gone, not merely stubbed (story E008-S01-004's cutover).
 
-    assert "release_version.py" in script
-    assert "git push --tags" not in script
-    assert "git tag -a" not in script
+    It was a refusal stub for two epics, which was the right holding position while the
+    replacement was being built. A stub is still a file an operator can find and a script
+    another script can call, so the cutover deletes it -- and the guard becomes reach
+    rather than content: the file is absent, and nothing git tracks invokes it. Prose
+    that *names* it, as ADR-0006 does when explaining why it went, is not an invocation:
+    the pattern matches a command position, and a leading backtick -- how prose cites a
+    path -- is excluded. An invocation in documentation lives in a fenced block, where
+    no backtick precedes it, and is still caught.
+    """
+    root = Path(__file__).parents[1]
+    assert not (root / "scripts" / "git-increment-version.sh").exists(), (
+        "scripts/git-increment-version.sh is retired; releases go through "
+        "`just release`, which drives scripts/release_version.py"
+    )
+
+    invocation = re.compile(
+        r"(?<![\w./$`-])(?:[\w.${}-]+/)*git-increment-version\.sh(?![\w.-])"
+    )
+    # This module names the retired script as data, so its own source is the one file
+    # the scan cannot read -- skipped by identity, and asserted to be the only one.
+    exempt = str(Path(__file__).relative_to(root))
+    assert exempt == "tests/test_release_version.py"
+
+    examined = 0
+    for relative, text in tracked_text_files():
+        if relative == exempt:
+            continue
+        examined += 1
+        match = invocation.search(text)
+        assert match is None, f"{relative} invokes the retired {match.group(0)!r}"
+    assert examined, "no tracked file was examined"
 
 
 def test_release_helper_never_uses_shell_execution() -> None:
