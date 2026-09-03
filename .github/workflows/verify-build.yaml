@@ -100,14 +100,21 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           dependencies: none
-      # Through the hook, not the bare command. Every other gate in this file runs
-      # `pre-commit run <hook>` precisely so the hook stays the authority and local and
-      # CI cannot diverge -- the mypy job says so in as many words. This one ran
-      # `poetry check --lock` directly, so an edit to the hook's entry would not have
-      # reached CI, and `test_every_gate_runs_in_ci_or_is_recorded_as_local_only` found
-      # it the moment that rule was made mechanical.
+      # The hook's own entry, run directly -- not `pre-commit run poetry-lock`.
+      #
+      # This job installs `dependencies: none` on purpose: it validates that the
+      # manifest and the lock agree WITHOUT installing from the lock, so a broken lock
+      # is reported as a broken lock rather than as an install failure. Routing it
+      # through pre-commit needs pre-commit installed, which needs the dev dependencies,
+      # which needs the lock this job exists to doubt. The first CI run said so
+      # directly: `Command not found: pre-commit`.
+      #
+      # Drift is still impossible, and that was the point of routing it through the hook
+      # in the first place: `test_every_gate_runs_in_ci_or_is_recorded_as_local_only`
+      # accepts a job that runs a hook's `entry` verbatim and compares the two strings,
+      # so changing the hook without changing this line fails the suite.
       - name: Check manifest and lock
-        run: poetry run pre-commit run poetry-lock --all-files
+        run: poetry check --lock
 
   ruff-check:
     name: Ruff check

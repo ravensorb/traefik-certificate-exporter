@@ -159,9 +159,23 @@ def test_duplicate_json_key_is_rejected_at_the_field() -> None:
 
 
 def test_malformed_json_reports_its_source_location() -> None:
+    """The property is that a malformed file fails *locatably* -- named file, line and
+    column -- not that the failure sits at any particular coordinate.
+
+    The exact position belongs to the standard library, and it moved. CPython 3.13
+    rewrote the JSON parser's diagnostics: for this fixture <=3.12 reports `4:1`
+    ("Expecting property name enclosed in double quotes", the token after the trailing
+    comma) and 3.13+ reports `3:29` ("Illegal trailing comma before end of object",
+    the comma itself, which is the better answer). Pinning `4:1` asserted a CPython
+    implementation detail as though this project owned it.
+
+    Found the first time CI actually ran the interpreter matrix -- it had been declaring
+    five versions and installing one, so 3.13 and 3.14 had never executed.
+    """
     fixture = FIXTURES / "invalid-malformed-build-manifest.json"
     with pytest.raises(
-        contract.ContractError, match=r"invalid-malformed-build-manifest\.json:4:1"
+        contract.ContractError,
+        match=r"invalid-malformed-build-manifest\.json:\d+:\d+: \S",
     ):
         contract.load_json(fixture)
 

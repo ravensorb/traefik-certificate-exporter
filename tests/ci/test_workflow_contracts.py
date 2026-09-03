@@ -2034,6 +2034,15 @@ def test_every_gate_runs_in_ci_or_is_recorded_as_local_only() -> None:
         examined += 1
         if re.search(rf"pre-commit run {re.escape(name)}\b", ci):
             continue
+        # Or the hook's own `entry`, run directly. `poetry-lock` has to take this route:
+        # it validates that the manifest and the lock agree without installing from the
+        # lock, and running it through pre-commit would require installing the dev
+        # dependencies -- from the lock this job exists to doubt. Comparing the entry
+        # string keeps drift impossible either way: change the hook and this line stops
+        # matching.
+        entry = str(hook.get("entry", "")).strip()
+        if entry and entry in ci:
+            continue
         assert name in LOCAL_ONLY_HOOKS, (
             f"the {name!r} gate is configured but no verifier job runs it, so it gates "
             f"nothing that reaches the default branch. Run it in CI, or record why it "
