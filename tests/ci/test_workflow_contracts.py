@@ -2305,6 +2305,84 @@ def test_step_based_publishers_re_read_the_tag_set_before_they_upload() -> None:
     assert examined, "no channel workflow has a step-based publisher; nothing examined"
 
 
+def _compose_tag_list(
+    tags: str, registry: str = "ghcr.io", dockerhub: str = "false"
+) -> Any:
+    """Execute publish-image.yaml's real tag-composition body with a planted input.
+
+    Shared by the two guards that own opposite directions of the same rule, so both
+    run the shipped step rather than a paraphrase of it.
+    """
+    document = _load_workflow(PUBLISH_IMAGE_WORKFLOW)
+    compose = next(step for step in _steps(document) if step.get("id") == "plan")
+    output = Path(tempfile.mkdtemp()) / "github-output"
+    output.touch()
+    completed = subprocess.run(
+        ["bash", "-c", str(compose["run"])],
+        env={
+            "PATH": os.environ["PATH"],
+            "GITHUB_OUTPUT": str(output),
+            "DOCKERHUB_ENABLED": dockerhub,
+            "IMAGE_TAGS": tags,
+            "PLATFORMS": ",".join(REQUIRED_IMAGE_PLATFORMS),
+            "REGISTRY": registry,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    emitted = dict(
+        line.split("=", 1)
+        for line in output.read_text(encoding="utf-8").splitlines()
+        if line
+    )
+    return completed, emitted
+
+
+def test_an_enabled_destination_that_receives_no_tag_halts_before_anything_ships() -> (
+    None
+):
+    """The symmetric direction of the permission check, and the one that was missing.
+
+    The forbidden direction -- a tag for a destination the run did not log into -- was
+    enforced. Its mirror was enforced nowhere, and nothing downstream can recover it: a
+    job result carries no evidence of *which* destinations it addressed, which the
+    finalizer gate says of itself. So `PUBLISH_IMAGE_DOCKERHUB=true` with a tag list
+    that renders forge-only pushed to the forge alone, passed the permission check,
+    succeeded, let the gate join `image-dockerhub: enabled` with `success` -> ok,
+    created the Release, advanced the Git aliases, and only then failed inside
+    `imagetools create` against a Docker Hub digest that was never pushed.
+
+    Run against the shipped step, like its mirror: a textual check would pass with the
+    refusal deleted and the accumulator left behind.
+    """
+    completed, _ = _compose_tag_list("ghcr.io/owner/name:1.2.3", dockerhub="true")
+    assert completed.returncode != 0, (
+        "dockerhub was enabled and no tag addressed it, and the step composed a "
+        "forge-only push anyway"
+    )
+    assert "no tag addresses docker.io" in completed.stderr, completed.stderr
+
+    # The forge registry is never optional, so a Docker-Hub-only list is the same defect.
+    completed, _ = _compose_tag_list(
+        "docker.io/owner/name:1.2.3", registry="ghcr.io", dockerhub="true"
+    )
+    assert completed.returncode != 0, "no tag addressed the forge registry"
+    assert "no tag addresses it" in completed.stderr, completed.stderr
+
+    # Both addressed, in either Docker Hub spelling, and it goes through.
+    for hub in ("docker.io/owner/name:1.2.3", "index.docker.io/owner/name:1.2.3"):
+        completed, emitted = _compose_tag_list(
+            f"ghcr.io/owner/name:1.2.3\n{hub}", dockerhub="true"
+        )
+        assert completed.returncode == 0, completed.stderr
+        assert emitted["tags"].count(",") == 1
+
+    # And with Docker Hub off, a forge-only list is correct rather than a drift.
+    completed, _ = _compose_tag_list("ghcr.io/owner/name:1.2.3")
+    assert completed.returncode == 0, completed.stderr
+
+
 def test_every_published_tag_addresses_a_destination_the_run_logged_into() -> None:
     """ "Disabled destinations receive no credentials **or requests**."
 
@@ -2318,33 +2396,7 @@ def test_every_published_tag_addresses_a_destination_the_run_logged_into() -> No
     `permitted` appears") passes with the rejection branch deleted and the variable left
     behind, which is exactly the shape of guard this repository keeps finding.
     """
-    document = _load_workflow(PUBLISH_IMAGE_WORKFLOW)
-    compose = next(step for step in _steps(document) if step.get("id") == "plan")
-    body = str(compose["run"])
-
-    def run(tags: str, registry: str = "ghcr.io", dockerhub: str = "false") -> Any:
-        output = Path(tempfile.mkdtemp()) / "github-output"
-        output.touch()
-        completed = subprocess.run(
-            ["bash", "-c", body],
-            env={
-                "PATH": os.environ["PATH"],
-                "GITHUB_OUTPUT": str(output),
-                "DOCKERHUB_ENABLED": dockerhub,
-                "IMAGE_TAGS": tags,
-                "PLATFORMS": ",".join(REQUIRED_IMAGE_PLATFORMS),
-                "REGISTRY": registry,
-            },
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        emitted = dict(
-            line.split("=", 1)
-            for line in output.read_text(encoding="utf-8").splitlines()
-            if line
-        )
-        return completed, emitted
+    run = _compose_tag_list
 
     completed, emitted = run("ghcr.io/owner/name:dev-0123456789ab")
     assert completed.returncode == 0, completed.stderr
@@ -2593,8 +2645,11 @@ def test_the_release_guard_rejects_every_ref_that_is_not_an_exact_stable_tag(
 ) -> None:
     """The ref table, run against the guard's real `run:` body and real git.
 
-    Planted to prove it: dropping the `object_type == "tag"` filter from
-    `stable_tags.annotated_tags` makes the lightweight case pass, and this test fails.
+    Planted to prove it: delete the
+    `[[ "$(git for-each-ref --format='%(objecttype)' ...)" == tag ]]` line from the
+    `tag` step's body in release.yaml (`:391`) and the lightweight case passes, so this
+    test fails. The instruction used to name `stable_tags.annotated_tags`, a module
+    E008-S01-003 deleted -- an unfollowable plant is a claim with no evidence behind it.
     """
     head = _git(tagged_repository, "rev-parse", "HEAD")
     completed, _ = _run_step(
@@ -3205,6 +3260,119 @@ def _alias_moving_jobs(
                 if any(re.search(probe, command) for probe in ALIAS_MOVE_COMMANDS):
                     moving.add((name, job_name))
     return moving
+
+
+def _ordering_steps(job: dict[str, Any]) -> set[str]:
+    """Step ids in this job that read the Git tag order."""
+    return {
+        str(step["id"])
+        for step in job.get("steps", []) or []
+        if step.get("id")
+        and ALIAS_ORDER_MARKER in _uncommented(str(step.get("run", "")))
+    }
+
+
+def _ordering_outputs(document: dict[str, Any]) -> dict[str, set[str]]:
+    """Job name -> the job outputs that carry an ordering decision out of it.
+
+    Derived by following each job's `outputs:` mapping back to the step that produced
+    it, so a renamed output or a new one is covered without editing anything here.
+    """
+    produced: dict[str, set[str]] = {}
+    for job_name, job in _jobs(document).items():
+        step_ids = _ordering_steps(job)
+        if not step_ids:
+            continue
+        names = {
+            output
+            for output, value in (job.get("outputs") or {}).items()
+            if any(f"steps.{step_id}.outputs." in str(value) for step_id in step_ids)
+        }
+        if names:
+            produced[job_name] = names
+    return produced
+
+
+def test_every_alias_ordering_decision_is_the_same_body() -> None:
+    """One ordering rule, one implementation, however many places read it.
+
+    `finalize` decides and `finalize-image-aliases` re-decides; two copies of a
+    `--sort=v:refname` comparison that drift are two answers to "which tag is
+    greatest", and the copy nobody updated is the one that moves `latest`.
+    """
+    bodies = {
+        _uncommented(str(step.get("run", "")))
+        for document in _workflow_documents().values()
+        for job in _jobs(document).values()
+        for step in job.get("steps", []) or []
+        if ALIAS_ORDER_MARKER in _uncommented(str(step.get("run", "")))
+    }
+    assert bodies, "no step reads the tag order; this guard examined nothing"
+    assert len(bodies) == 1, (
+        f"{len(bodies)} different alias-ordering bodies are in use; they must be one"
+    )
+
+
+def test_no_alias_move_consumes_an_ordering_decision_taken_in_another_job() -> None:
+    """The alias inversion, closed at its source.
+
+    `finalize` decided `advance-major` and `finalize-image-aliases` applied it a job
+    later. Two stable tags are two refs and run fully in parallel by design, so a
+    slower `v1.2.3` run applied a decision that was true when taken and false when
+    used, dragging `latest` and `v1` back off `v1.3.0` -- both runs green. The same
+    inversion happened inside one run whenever a tag landed between the two jobs.
+
+    So the rule is structural rather than temporal: the ordering authority is read in
+    the job that writes, never handed across a job boundary. Derived from each job's
+    own `outputs:` mapping, so an ordering output added or renamed later is covered.
+    """
+    examined = 0
+    for name, document in sorted(_workflow_documents().items()):
+        ordering = _ordering_outputs(document)
+        if not ordering:
+            continue
+        movers = {job for workflow, job in _alias_moving_jobs() if workflow == name}
+        for job_name in sorted(movers):
+            rendered = json.dumps(_jobs(document)[job_name])
+            examined += 1
+            for producer, outputs in sorted(ordering.items()):
+                if producer == job_name:
+                    continue
+                for output in sorted(outputs):
+                    assert f"needs.{producer}.outputs.{output}" not in rendered, (
+                        f"{name}: job {job_name!r} moves an alias using "
+                        f"{output!r} decided in job {producer!r}. The tag set is read "
+                        f"where the write happens, or the answer can be stale by the "
+                        f"time it is used (F4)."
+                    )
+    assert examined, "no alias mover shares a file with an ordering decision"
+
+
+def test_a_job_that_decides_alias_order_serialises_against_every_other_run() -> None:
+    """A fresh read is only meaningful if the writes are ordered.
+
+    The workflow-level group is keyed on `github.ref`, which is correct for the
+    immutable fan-out and wrong for a shared mutable name: two tags never queue
+    against each other. Every job that takes an ordering decision therefore carries a
+    ref-free job-level group, so the alias stage of one run cannot interleave with
+    another's.
+    """
+    examined = 0
+    for name, document in sorted(_workflow_documents().items()):
+        for job_name, job in sorted(_jobs(document).items()):
+            if not _ordering_steps(job):
+                continue
+            examined += 1
+            group = str((job.get("concurrency") or {}).get("group", ""))
+            assert group, (
+                f"{name}: job {job_name!r} decides alias order with no job-level "
+                f"concurrency group, so two runs' alias stages interleave"
+            )
+            assert "github.ref" not in group, (
+                f"{name}: job {job_name!r} serialises on {group!r}, which is keyed on "
+                f"the ref -- two tags are two refs, so this queues nothing"
+            )
+    assert examined, "no job decides alias order; this guard examined nothing"
 
 
 def _finalizers(path: Path) -> set[str]:

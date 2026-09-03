@@ -175,16 +175,26 @@ jobs:
           # containing a comma would silently split into two tags. Rejected rather than
           # quoted: an image reference has no business carrying one.
           #
-          # Every tag is also checked against the destinations this run logs into. Buildx
-          # pushes whatever it is handed, so a Docker Hub tag passed with dockerhub:false
-          # would issue a request to a destination the run declared disabled -- and
-          # "disabled destinations receive no credentials or requests" is the whole rule.
+          # Every tag is also checked against the destinations this run logs into, in
+          # both directions. Buildx pushes whatever it is handed, so a Docker Hub tag
+          # passed with dockerhub:false would issue a request to a destination the run
+          # declared disabled -- and "disabled destinations receive no credentials or
+          # requests" is the whole rule.
+          #
+          # The other direction is the one sprint closure found missing: an *enabled*
+          # destination that receives no tag at all. Nothing downstream can notice it.
+          # A job result carries no evidence of which destinations it addressed, so the
+          # finalizer gate joins `image-dockerhub: enabled` with `success` and reports
+          # ok; the Release is created and the Git aliases advance; and only then does
+          # `imagetools create` fail against a Docker Hub digest that was never pushed
+          # -- after the irreversible half of the transaction.
           permitted="$REGISTRY"
           if [[ "$DOCKERHUB_ENABLED" == "true" ]]; then
             permitted="$permitted docker.io index.docker.io"
           fi
           tags=""
           primary=""
+          seen=""
           while IFS= read -r tag; do
             tag="$(echo "$tag" | tr -d '[:space:]')"
             if [[ -z "$tag" ]]; then
@@ -206,11 +216,25 @@ jobs:
               echo "image tag addresses $authority, which this run did not log in to: $tag" >&2
               exit 2
             fi
+            if [[ " $seen " != *" $authority "* ]]; then
+              seen="$seen $authority"
+            fi
             tags="${tags:+$tags,}$tag"
             primary="${primary:-$repository}"
           done <<< "$IMAGE_TAGS"
           if [[ -z "$tags" ]]; then
             echo "no image tags were supplied" >&2
+            exit 2
+          fi
+          if [[ " $seen " != *" $REGISTRY "* ]]; then
+            echo "the forge registry $REGISTRY is enabled but no tag addresses it: the" >&2
+            echo "enabled set and the rendered tag list have drifted" >&2
+            exit 2
+          fi
+          if [[ "$DOCKERHUB_ENABLED" == "true" &&
+                " $seen " != *" docker.io "* && " $seen " != *" index.docker.io "* ]]; then
+            echo "dockerhub is enabled but no tag addresses docker.io: the enabled set" >&2
+            echo "and the rendered tag list have drifted" >&2
             exit 2
           fi
           {

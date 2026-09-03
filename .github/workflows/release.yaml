@@ -587,6 +587,15 @@ jobs:
     # With `always()` it would run on a cancelled fan-out and advance aliases
     # over a half-published set. Both failures are guarded (ADR-0011).
     if: ${{ !cancelled() }}
+    # The alias stage is serialised across runs, and the group is deliberately
+    # ref-free. The workflow-level group is keyed on `github.ref`, so two tags run
+    # fully in parallel by design -- correct for the immutable fan-out, wrong for the
+    # alias writes, which are a shared mutable name. Serialising alone is not the fix
+    # (a queued run still holds the decision it took before it queued); it is what
+    # makes the re-read below meaningful.
+    concurrency:
+      group: ${{ github.workflow }}-aliases
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     permissions:
       # The single grant ADR-0006 governs. No `packages:` scope: image aliases
@@ -873,10 +882,24 @@ jobs:
     # evaluated every publisher against the enabled set. `!cancelled()` keeps
     # this job reachable so a refusal is reported rather than silently skipped.
     if: ${{ !cancelled() && needs.finalize.result == 'success' }}
+    # The alias stage is serialised across runs, and the group is deliberately
+    # ref-free. The workflow-level group is keyed on `github.ref`, so two tags run
+    # fully in parallel by design -- correct for the immutable fan-out, wrong for the
+    # alias writes, which are a shared mutable name. Serialising alone is not the fix
+    # (a queued run still holds the decision it took before it queued); it is what
+    # makes the re-read below meaningful.
+    concurrency:
+      group: ${{ github.workflow }}-aliases
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
+    outputs:
+      # Re-derived here, not carried from `finalize`. Reported separately in the run
+      # summary so a divergence between the two is visible rather than averaged away.
+      advance-major: ${{ steps.aliases.outputs.advance-major }}
+      advance-minor: ${{ steps.aliases.outputs.advance-minor }}
     steps:
       - name: Checkout the released commit with full history and tags
         uses: actions/checkout@v7
@@ -905,6 +928,60 @@ jobs:
           [[ "$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")" == "$(git rev-parse --verify "${SOURCE_SHA}^{commit}")" ]] ||
             refuse "'$RELEASE_TAG' no longer peels to $SOURCE_SHA"
 
+      # ADR-0011 / F4: the Git tag set is the ordering authority, so it is read
+      # HERE, at the point of the write, rather than carried from `finalize`.
+      # `finalize` decides and this job applies, and between the two a newer tag can
+      # land; across runs the window is wider still, because two tags are two refs
+      # and run in parallel by design. A decision that was correct when taken and
+      # stale when applied dragged `latest` and `vMAJOR` back onto the older release
+      # with both runs green -- the exact inversion F4 exists to prevent, caught
+      # within a run and missed across runs.
+      #
+      # The body is identical to `finalize`'s, and
+      # `test_every_alias_ordering_decision_is_the_same_body` asserts it stays so.
+      - name: Re-derive which aliases this tag may advance, at the point of the write
+        id: aliases
+        env:
+          # The same authority the plan job used, taken from the plan job rather than
+          # restated. Publication is limited to this branch, so the ordering question is
+          # "greatest among the tags this project actually released" -- an annotated
+          # `v9.9.9` abandoned on a side branch would otherwise freeze `vMAJOR` and
+          # `latest` forever, on runs that all finish green.
+          DEFAULT_BRANCH_REF: ${{ needs.plan.outputs.default-branch-ref }}
+          RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
+        run: |
+          set -euo pipefail
+          refuse() { echo "alias plan: $*" >&2; exit 2; }
+          # git owns version ordering, exactly as it owns peeling and reachability:
+          # `--sort=v:refname` knows `v1.10.0` is newer than `v1.9.0`, which the
+          # lexicographic sort a hand-rolled comparison degrades to does not. `--merged`
+          # is the reachability scope AND the membership test -- a tag on history the
+          # protected branch never took is not in this set at all.
+          order=()
+          while read -r objecttype name; do
+            [[ "$objecttype" == tag ]] || continue
+            [[ "$name" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || continue
+            order+=("$name")
+          done <<<"$(git for-each-ref --merged "$DEFAULT_BRANCH_REF" --sort=v:refname \
+            --format='%(objecttype) %(refname:short)' refs/tags)"
+          [[ " ${order[*]-} " == *" $RELEASE_TAG "* ]] ||
+            refuse "'$RELEASE_TAG' is not an annotated stable tag reachable from $DEFAULT_BRANCH_REF; reachable there: ${order[*]-none}"
+          minor="${RELEASE_TAG%.*}"
+          # The trailing separator is what makes the prefix exact: `v1.2.` cannot prefix
+          # `v1.20.3`, and the ban on leading zeros above is what stops `v1.02.3` and
+          # `v1.2.3` being one minor wearing two alias names.
+          within=()
+          for name in "${order[@]}"; do
+            if [[ "$name" == "$minor".* ]]; then within+=("$name"); fi
+          done
+          {
+            echo "major-alias=${minor%.*}"
+            echo "minor-alias=$minor"
+            echo "advance-major=$([[ "$RELEASE_TAG" == "${order[-1]}" ]] && echo true || echo false)"
+            echo "advance-minor=$([[ "$RELEASE_TAG" == "${within[-1]}" ]] && echo true || echo false)"
+            echo "greatest-stable=${order[-1]}"
+          } >> "$GITHUB_OUTPUT"
+
       # Set up only. Every alias below is a digest copy of an index that already
       # exists in the registry; nothing is built here, and no registry is read
       # to decide anything (F4, P1).
@@ -929,15 +1006,15 @@ jobs:
       - name: Point every permitted image alias at the published digest
         id: image-alias
         env:
-          ADVANCE_MAJOR: ${{ needs.finalize.outputs.advance-major }}
-          ADVANCE_MINOR: ${{ needs.finalize.outputs.advance-minor }}
+          ADVANCE_MAJOR: ${{ steps.aliases.outputs.advance-major }}
+          ADVANCE_MINOR: ${{ steps.aliases.outputs.advance-minor }}
           DOCKERHUB_REPOSITORY: >-
             ${{ fromJSON(needs.plan.outputs.enabled-destinations)['image-dockerhub'] == 'enabled'
                 && format('docker.io/{0}', needs.plan.outputs.dockerhub-repository) || '' }}
           IMAGE_DIGEST: ${{ needs.publish-image.outputs.digest }}
           IMAGE_REPOSITORY: ${{ needs.plan.outputs.image-repository }}
-          MAJOR_ALIAS: ${{ needs.finalize.outputs.major-alias }}
-          MINOR_ALIAS: ${{ needs.finalize.outputs.minor-alias }}
+          MAJOR_ALIAS: ${{ steps.aliases.outputs.major-alias }}
+          MINOR_ALIAS: ${{ steps.aliases.outputs.minor-alias }}
         run: |
           set -euo pipefail
           # An absent digest halts rather than moving a name. `imagetools create`
@@ -1034,6 +1111,8 @@ jobs:
           IMAGE_RESULT: ${{ needs.publish-image.result }}
           IMAGE_TAGS: ${{ needs.plan.outputs.image-tags }}
           IMAGE_ALIAS_RESULT: ${{ needs.finalize-image-aliases.result }}
+          IMAGE_MAJOR_ADVANCED: ${{ needs.finalize-image-aliases.outputs.advance-major }}
+          IMAGE_MINOR_ADVANCED: ${{ needs.finalize-image-aliases.outputs.advance-minor }}
           MAJOR_ADVANCED: ${{ needs.finalize.outputs.advance-major }}
           MINOR_ADVANCED: ${{ needs.finalize.outputs.advance-minor }}
           PACKAGE_FORGE_RESULT: ${{ needs.publish-package-forge.result }}
@@ -1071,5 +1150,6 @@ jobs:
             echo "| Release | \`${RELEASE_RESULT}\` [${RELEASE_URL}](${RELEASE_URL}) |"
             echo "| Release assets | \`${RELEASE_ASSETS}\` |"
             echo "| Image aliases | \`${IMAGE_ALIAS_RESULT}\` |"
-            echo "| Aliases advanced | major \`${MAJOR_ADVANCED}\` minor \`${MINOR_ADVANCED}\` |"
+            echo "| Git aliases advanced | major \`${MAJOR_ADVANCED}\` minor \`${MINOR_ADVANCED}\` |"
+            echo "| Image aliases advanced | major \`${IMAGE_MAJOR_ADVANCED}\` minor \`${IMAGE_MINOR_ADVANCED}\` |"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -133,6 +133,48 @@ narrowing in one direction, so it was paid for in two others, both proven by pla
 
 The original planted violation -- a registry credential on the package job -- still fails.
 
+## Amended at sprint closure: the ordering decision is read where the write happens
+
+The finalization split above left one thing implicit, and it was wrong. `finalize` took the
+alias-ordering decision (`advance-major`, from `git for-each-ref --merged --sort=v:refname`)
+and `finalize-image-aliases` consumed it a job later as `needs.finalize.outputs.advance-major`.
+
+That is safe only if the tag set cannot change between the two jobs, and it can. The
+workflow-level concurrency group is `${{ github.workflow }}-${{ github.ref }}`, so two stable
+tags are two refs and run **fully in parallel** — deliberately, because two tags are two
+immutable identities. A slower `v1.2.3` run therefore applied a decision that was true when it
+was taken and false when it was used, pointing `latest` and `v1` back at `v1.2.3` after a
+`v1.3.0` run had already advanced them. **Both runs finish green.** The same inversion happens
+inside a single run whenever a tag lands between the two jobs.
+
+This is precisely the failure F4 exists to prevent. The F4 guard forbids deciding order from a
+registry read, and it does — but it examined the decision's *source*, never its *age*.
+
+Two changes, and the second is the one that fixes it:
+
+- **The alias stage serialises across runs.** `finalize` and `finalize-image-aliases` carry a
+  job-level `concurrency: { group: <workflow>-aliases, cancel-in-progress: false }`. Ref-free,
+  so every stable run queues behind every other for the alias stage while the fan-out stays
+  parallel. Serialising alone is *not* a fix — a queued run still holds the decision it took
+  before it queued — but it is what makes the re-read below meaningful.
+- **`finalize-image-aliases` re-derives the decision itself**, from the same authority, in the
+  job that writes. The body is identical to `finalize`'s, and the aliases advance on the fresh
+  answer. A fast-follow release is then ordinary rather than an error: the older run computes
+  `advance-major=false`, skips the mutable names, and stays green.
+
+The rule this generalises to is structural, not temporal, which is what makes it checkable:
+**an ordering decision is never handed across a job boundary to the job that writes.**
+`test_no_alias_move_consumes_an_ordering_decision_taken_in_another_job` derives each job's
+ordering outputs from its own `outputs:` mapping and fails any alias mover that consumes one
+from elsewhere. `test_a_job_that_decides_alias_order_serialises_against_every_other_run`
+requires a ref-free group on every deciding job, and
+`test_every_alias_ordering_decision_is_the_same_body` keeps the two copies one implementation.
+Each was proven by planting exactly the violation it forbids.
+
+The run summary now reports the Git and image alias decisions on separate rows. They agree in
+every ordinary run; when they diverge, that divergence is the race, and it should be legible
+rather than averaged into one number.
+
 ## Consequences
 
 - Positive: the channel distinction costs nothing at runtime — it is which file you are in.
