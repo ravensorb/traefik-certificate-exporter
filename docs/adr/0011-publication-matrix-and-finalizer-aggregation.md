@@ -112,6 +112,15 @@ the job results substituted into the step's real `env:`, so renaming a publisher
 render rather than silently supplying the old value. Every property the deleted pytest files
 proved is now proven the same way, in `tests/ci/test_workflow_contracts.py`.
 
+That sentence was two-thirds true when it was written, and sprint closure made it true.
+The gate is copied into both channels and all twelve of its input-validation tests were
+bound to `release.yaml`: deleting three refusals from `dev.yaml`'s copy alone left the
+suite green. It is the sprint's third copied body and the only one that shipped without
+the mitigation its siblings got -- the forge-coordinate derivation and the stable-tag
+re-check each carry a same-body guard.
+`test_every_finalization_gate_is_the_same_body` now pins the two copies byte-identical
+once comments are stripped, which is what makes executing one of them a proof about both.
+
 **Finalization is split across two jobs in the stable channel, and that split forced an amendment
 to `test_publisher_credentials_stay_disjoint_between_destinations`.** `finalize` writes refs and
 the Release and holds no registry credential; `finalize-image-aliases` moves registry aliases and

@@ -3839,6 +3839,73 @@ def test_only_registered_finalizers_move_an_alias() -> None:
     )
 
 
+# The composite action that is the trust boundary between the secret-free verifier and
+# the credentialed publishers (CI-AR36). Matched on the path a `uses:` ends with, so a
+# publisher cannot satisfy the rule with a similarly-named action of its own.
+BOUNDARY_ACTION = "/verified-bundle"
+
+
+def test_every_publisher_revalidates_the_bundle_before_it_logs_in_or_uploads() -> None:
+    """CI-AR36, over every publisher rather than the one that attaches the Release.
+
+    "Every publisher downloads the verified bundle, checks SHA256SUMS, revalidates
+    build-manifest.json, and matches the source SHA and version it believes it is
+    publishing -- before any login or upload" is the boundary between the secret-free
+    verifier and the jobs holding credentials. Six publishers implement it and, until
+    this guard, one was checked: the arch review replaced `dev.yaml`'s
+    `publish-package-forge` revalidation with a bare `actions/download-artifact`, so the
+    wheel reached the forge index with no checksum recheck, no manifest validation and
+    no identity match -- and the suite was unchanged.
+
+    Ordering is asserted, not just presence. Revalidating *after* the login satisfies
+    "the step exists" while the credential is already on the runner when the unverified
+    artifact arrives, which is the property the boundary is for.
+
+    Scope is derived from capability: any step-based publisher that reaches an upload.
+    The two alias finalizers are excluded because they ship no artifact -- they point a
+    name at a digest that is already published.
+    """
+    examined = 0
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        for job_name, job in sorted(_publishers(_load_workflow(path)).items()):
+            steps = job.get("steps") or []
+
+            def _first(
+                predicate: Any, steps: list[dict[str, Any]] = steps
+            ) -> int | None:
+                return next(
+                    (index for index, step in enumerate(steps) if predicate(step)), None
+                )
+
+            upload = _first(_is_publishing_step)
+            if upload is None:
+                continue
+            examined += 1
+            bundle = _first(
+                lambda step: (
+                    str(step.get("uses", "")).rstrip("/").endswith(BOUNDARY_ACTION)
+                )
+            )
+            assert bundle is not None, (
+                f"{path.name}: publisher {job_name!r} uploads without revalidating the "
+                f"verified bundle. CI-AR36 is the trust boundary; a publisher that "
+                f"skips it ships whatever the artifact store handed it."
+            )
+            assert bundle < upload, (
+                f"{path.name}: publisher {job_name!r} revalidates the bundle at step "
+                f"{bundle} but uploads at step {upload}"
+            )
+            login = _first(
+                lambda step: str(step.get("uses", "")).startswith(REGISTRY_LOGIN_ACTION)
+            )
+            assert login is None or bundle < login, (
+                f"{path.name}: publisher {job_name!r} logs in at step {login} before "
+                f"revalidating at step {bundle}. The credential is on the runner before "
+                f"the artifact is known to be the verified one."
+            )
+    assert examined, "no publisher uploads anything; this guard examined nothing"
+
+
 def test_no_finalizer_builds_anything() -> None:
     """A finalizer names artifacts that already exist. Building one here would ship a
     different artifact under a name the run has already promised, and the difference is
@@ -3973,6 +4040,35 @@ def test_every_finalizer_waits_for_every_publisher_and_reads_every_result() -> N
                 f"without a finalization gate in itself or in anything it needs "
                 f"(ADR-0011)"
             )
+
+
+def test_every_finalization_gate_is_the_same_body() -> None:
+    """The sprint's third copied body, and the only one that shipped without a same-body
+    guard.
+
+    The forge-coordinate derivation (two copies) and the stable-tag re-check (four and
+    three copies) each carry one. The finalization gate is the largest copied body and
+    the one that decides whether an alias moves, and its twelve input-validation tests
+    are all bound to `release.yaml`. Deleting the "enabled set names no destination at
+    all", "no publisher result was supplied" and "results were supplied for" refusals
+    from `dev.yaml`'s copy alone left the suite unchanged.
+
+    That also made ADR-0011's "every property the deleted pytest files proved is now
+    proven the same way" true of the stable channel and false of the development one --
+    prose overstating its own coverage. With the bodies pinned identical, executing one
+    copy is a proof about both, and the sentence is true again.
+    """
+    bodies = {
+        (path.name, job_name): _uncommented(str(step.get("run", "")))
+        for path in sorted(WORKFLOWS.glob("*.yaml"))
+        for job_name, step in _gate_steps(path).items()
+    }
+    assert bodies, "no finalization gate on disk; this guard examined nothing"
+    distinct = set(bodies.values())
+    assert len(distinct) == 1, (
+        f"{len(distinct)} different finalization gates are in use across "
+        f"{sorted(bodies)}. The channel bindings differ; the decision must not."
+    )
 
 
 def _run_gate(path: Path, bindings: dict[str, str], summary: Path | None = None) -> Any:
