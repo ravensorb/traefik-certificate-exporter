@@ -303,6 +303,7 @@ them has a retry that is safe to take unattended.
 | Failed-jobs-only rerun unsupported | the forge offers no per-job rerun | halt; escalate. A whole-workflow rerun is prohibited, so there is no rerun to take |
 | Verifier evidence expired | the rerun job cannot download `verified-dist-v1` (30-day retention, `verify-build.yaml`) | halt; escalate. Rebuilding produces a new artifact, which is a new identity and not a rerun |
 | Remote immutable identity conflicts | the destination rejects the upload because that version or tag already exists | halt; escalate. Never force, delete or overwrite the published one |
+| Partially aliased registry | `finalize-image-aliases` failed and its run summary lists one or more **Unconfirmed** references beside the ones it Moved | re-run **that job only**. `docker buildx imagetools create` writes each `--tag` in turn rather than atomically, so a rate limit, a token expiry or a registry error part way leaves some aliases moved and the rest not. Pointing the same alias at the same digest again is idempotent, which is why this one is recoverable where the rows above are not. If the re-run also fails, escalate: do not move the names by hand |
 
 In the **development** channel the escalation resolves by publishing a new version: push again and
 a new `X.Y.(Z+1).devN` is built and published. The already-published development version is left

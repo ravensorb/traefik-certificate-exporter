@@ -550,6 +550,76 @@ def test_no_caller_hands_the_verifier_any_secret() -> None:
 ACT_BRANCH = re.compile(r"\bACT\b")
 
 
+def _scalars(
+    node: Any, path: tuple[str, ...] = ()
+) -> Iterator[tuple[tuple[str, ...], str]]:
+    """Every string leaf of a parsed document, with the key path that reaches it."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            yield from _scalars(value, path + (str(key),))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _scalars(value, path + (str(index),))
+    elif isinstance(node, str):
+        yield path, node
+
+
+def _trigger_branch_literals() -> set[str]:
+    """Branch names spelled literally in an `on:` trigger.
+
+    The trigger is the one place a literal is unavoidable -- GitHub takes no expression
+    there -- which is exactly what makes it the authority for the name.
+    """
+    literals: set[str] = set()
+    for document in _workflow_documents().values():
+        triggers = document.get("on")
+        if not isinstance(triggers, dict):
+            continue
+        for event in ("push", "pull_request", "pull_request_target"):
+            specification = triggers.get(event)
+            if isinstance(specification, dict):
+                literals |= {
+                    branch
+                    for branch in (specification.get("branches") or [])
+                    if "*" not in branch
+                }
+    return literals
+
+
+def test_the_default_branch_is_named_once_and_derived_everywhere_else() -> None:
+    """One fact, one spelling. It had three, and the two channels chose opposite answers.
+
+    `release.yaml` pinned `DEFAULT_BRANCH_REF: origin/main`; `dev.yaml` already read
+    `github.event.repository.default_branch`; and `on: push: branches: [main]` is a
+    third. Only the trigger *must* be a literal -- GitHub accepts no expression there --
+    so it is the authority, and every other use derives from the forge.
+
+    A rename is what makes this matter, and it fails three different ways: `dev.yaml`
+    stops triggering with no run, no red and no alert; `release.yaml`'s reachability
+    check refuses a tag that is genuinely reachable; and an empty event field would make
+    `actions/checkout` fall back to the default branch and *appear* correct. The first is
+    unguardable from inside the workflow. The other two are now refusals, and this keeps
+    the literal from spreading back out of the trigger.
+    """
+    literals = _trigger_branch_literals()
+    assert literals, "no workflow names a branch in its trigger; nothing was examined"
+    for path in GOVERNED_DEFINITIONS:
+        for key_path, value in _scalars(_load_document(path)):
+            if key_path and key_path[0] == "on":
+                continue
+            for branch in literals:
+                assert not (
+                    value == branch
+                    or value.endswith(f"/{branch}")
+                    or f"refs/heads/{branch}" in value
+                ), (
+                    f"{path}: {'.'.join(key_path)} spells the default branch "
+                    f"{branch!r} literally. Derive it from "
+                    f"`github.event.repository.default_branch`; only the `on:` trigger "
+                    f"has to name it, and that makes the trigger the authority."
+                )
+
+
 def test_no_governed_definition_branches_on_the_act_environment_variable() -> None:
     """Guidelines §7: one pipeline, three runners, and no conditional on which one is
     executing. A workflow that behaves differently under `act` is not the workflow CI
@@ -5105,11 +5175,22 @@ def test_a_failing_registry_write_still_reports_which_names_moved(
     )
     assert completed.returncode != 0, "a failing registry write finished green"
     rendered = summary.read_text(encoding="utf-8")
-    assert "ghcr.io/owner/name:latest" in rendered, (
+    moved = [line for line in rendered.splitlines() if line.startswith("- Moved:")]
+    unconfirmed = [
+        line for line in rendered.splitlines() if line.startswith("- **Unconfirmed**:")
+    ]
+    assert any("ghcr.io/owner/name:latest" in line for line in moved), (
         f"the aliases that DID move are unreported: {rendered!r}"
     )
-    assert "docker.io/owner/name" not in rendered, (
+    assert not any("docker.io/owner/name" in line for line in moved), (
         "an alias that failed is reported as moved"
+    )
+    # MEDIUM-1: `imagetools create -t a -t b` writes each tag in turn, so a failure part
+    # way leaves names this step may have moved and cannot confirm. Absent from the
+    # record they read as untouched, which is the reconciliation reporting the opposite
+    # of the truth -- so they are named as unconfirmed rather than omitted.
+    assert any("docker.io/owner/name" in line for line in unconfirmed), (
+        f"a name this step may have written is missing from the record: {rendered!r}"
     )
 
 

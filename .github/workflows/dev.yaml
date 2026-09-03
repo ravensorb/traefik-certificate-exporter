@@ -576,6 +576,21 @@ jobs:
       # so the head is re-read here -- through an authenticated checkout rather
       # than an unauthenticated `git fetch`, because `persist-credentials: false`
       # removes the credential the moment the clone finishes.
+      # `actions/checkout` with an EMPTY `ref` silently falls back to the repository's
+      # default branch, so an unset `github.event.repository.default_branch` -- recorded
+      # as unverified on Gitea's act_runner -- would produce a checkout that looks
+      # correct and proves nothing. Refused before the checkout rather than after.
+      - name: Refuse an empty default branch before the just-in-time checkout
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${DEFAULT_BRANCH//[[:space:]]/}" ]]; then
+            echo "the forge reported no default branch; the just-in-time head check" >&2
+            echo "would fall back to a default and prove nothing" >&2
+            exit 2
+          fi
+
       - name: Fetch the protected default branch head just in time
         id: head
         uses: actions/checkout@v7

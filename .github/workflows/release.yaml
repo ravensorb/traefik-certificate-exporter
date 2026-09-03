@@ -140,12 +140,22 @@ jobs:
         env:
           # The protected default branch, as a remote-tracking ref. The checkout above
           # fetched every branch, so this is answered from the local commit graph.
-          DEFAULT_BRANCH_REF: origin/main
+          #
+          # Taken from the forge rather than restated as a literal. One fact was spelled
+          # three ways across the two channels, and they chose opposite answers: this was
+          # `origin/main` while dev.yaml already read the event field. The name below is
+          # refused if empty, because an empty one composes `origin/` and `merge-base`
+          # would then fail for a reason that has nothing to do with reachability.
+          DEFAULT_BRANCH_REF: origin/${{ github.event.repository.default_branch }}
           EVENT_OBJECT: ${{ github.sha }}
           EVENT_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           refuse() { echo "release identity: $*" >&2; exit 2; }
+          # An empty default branch composes a bare `origin/`, and `merge-base` would
+          # then fail for a reason unrelated to reachability. Refused by name.
+          [[ -n "${DEFAULT_BRANCH_REF#origin/}" ]] ||
+            refuse "the forge reported no default branch, so reachability cannot be checked"
           [[ "$EVENT_REF" == refs/tags/* ]] ||
             refuse "stable publication requires a tag ref; got '$EVENT_REF'"
           tag="${EVENT_REF#refs/tags/}"
@@ -1092,6 +1102,18 @@ jobs:
           # written after the loop would then be written never -- leaving an operator
           # with a partially aliased registry and no record of which names moved, which
           # is precisely the reconciliation CI-AR41's evidence exists for.
+          # Two lists, not one, and both are reported. `attempted` is written BEFORE
+          # the call that would move those names; `moved` only after it returns.
+          #
+          # The single-invocation form is still right -- it is one decision, one command
+          # -- but it is NOT atomic, and the previous comment claimed it was.
+          # `imagetools create -t a -t b <src>` pushes the manifest to each tag in turn,
+          # so a rate limit, a token expiry or a registry error between the two leaves
+          # `MAJOR` moved and `latest` not. With bookkeeping only after the call, `set -e`
+          # aborted the step and the summary reported "Moved: none" for a repository
+          # where one alias HAD moved -- the reconciliation record CI-AR41 exists to
+          # provide, stating the opposite of the truth.
+          attempted=()
           moved=()
           report() {
             {
@@ -1105,18 +1127,26 @@ jobs:
                   echo "- Moved: \`${reference}\`"
                 done
               fi
+              # The difference is the reconciliation set: names this step may have
+              # written and cannot confirm. Empty on every successful run.
+              for reference in "${attempted[@]}"; do
+                if [[ " ${moved[*]-} " != *" ${reference} "* ]]; then
+                  echo "- **Unconfirmed**: \`${reference}\` -- attempted, outcome unknown"
+                fi
+              done
             } >> "$GITHUB_STEP_SUMMARY"
           }
           trap report EXIT
           for repository in "$IMAGE_REPOSITORY" "$DOCKERHUB_REPOSITORY"; do
             [[ -n "$repository" ]] || continue
             # One invocation per repository, carrying every alias that repository is
-            # permitted to take. `latest` and `MAJOR` mean the same thing, so they must
-            # not be two writes that can disagree -- and a single `imagetools create`
-            # is the only spelling in which they cannot.
+            # permitted to take. `latest` and `MAJOR` mean the same thing, so they are
+            # one command rather than two independent writes -- which narrows the window
+            # without closing it, hence the attempted/moved split above.
             tags=()
             for alias in "${aliases[@]}"; do
               tags+=(--tag "${repository}:${alias}")
+              attempted+=("${repository}:${alias}")
             done
             # A digest copy: the index that was published is given another
             # name. No build, no rebuild, no second image per destination.
