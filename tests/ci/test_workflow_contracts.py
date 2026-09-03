@@ -2352,9 +2352,28 @@ def test_dependency_maintenance_covers_actions_python_and_docker() -> None:
     )
 
 
-def test_dispatch_fixture_uses_the_committed_poetry_version() -> None:
+def test_the_dispatch_fixture_carries_a_well_formed_version() -> None:
+    """Shape, not the repository's current version.
+
+    This asserted equality with the committed Poetry version, and that made the project
+    **unreleasable at any version**. `just release` bumps the version and then runs
+    `just check` before it commits or tags, so at that moment the fixture still holds
+    the old value and the check fails -- restoring the version, refusing the release,
+    and reporting only "just check failed". The guard's rule was reasonable and its
+    coupling was a deadlock, and nothing found it until a release was actually
+    attempted.
+
+    Nothing depends on which version the fixture names: the three guards that consume
+    it use it as an event payload and care about the relations between its fields.
+    """
     event = _load_fixture("workflow-dispatch.json")
-    assert event["inputs"]["package-version"] == committed_versions.package_version()
+    assert re.fullmatch(r"\d+\.\d+\.\d+", str(event["inputs"]["package-version"])), (
+        event["inputs"]["package-version"]
+    )
+    assert re.fullmatch(r"[0-9a-f]{40}", str(event["sha"]))
+    assert event["inputs"]["source-sha"] == event["sha"], (
+        "the dispatch fixture's declared source SHA and event SHA disagree"
+    )
 
 
 def test_every_gate_job_blocks_the_distribution_job() -> None:
@@ -3810,12 +3829,19 @@ def test_the_stable_channel_owns_exact_tag_pushes() -> None:
     assert "test.pypi.org" not in executable
 
 
-def test_the_release_tag_fixture_names_the_committed_version() -> None:
-    """The fixture that drives the identity guard must not drift from the repository."""
+def test_the_release_tag_fixture_is_internally_consistent() -> None:
+    """The relations the identity guard reads, not the repository's current version.
+
+    Same deadlock as the dispatch fixture above: pinning this to the committed version
+    meant `just release` could never pass its own `just check`, because the bump lands
+    before the check and the fixture still names the previous release. What the guards
+    that consume this fixture actually need is that `ref`, `ref_name` and the exact
+    stable spelling agree with each other, and that the SHA is a real object name.
+    """
     event = _load_fixture("push-tag.json")
     assert event["event_name"] == "push"
-    assert event["ref"] == f"refs/tags/v{committed_versions.package_version()}"
     assert event["ref"] == f"refs/tags/{event['ref_name']}"
+    assert re.fullmatch(r"v\d+\.\d+\.\d+", str(event["ref_name"])), event["ref_name"]
     assert re.fullmatch(r"[0-9a-f]{40}", event["sha"])
 
 
