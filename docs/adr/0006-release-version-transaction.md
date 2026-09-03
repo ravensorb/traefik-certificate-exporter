@@ -338,6 +338,38 @@ the honest position, and it belongs in E009's pinned tuple beside the `act_runne
 requirement rather than being assumed.
 
 
+## Amended after the first releases: the alias action's required input is `tag`
+
+This ADR recorded that `git-action-tag-floating-version@v2` renamed every input to hyphenated
+spellings, and the guard was written to assert the hyphenated names were passed. It asserted the
+wrong one.
+
+At `@v2` the manifest declares **both**:
+
+| input | required | meaning |
+|---|---|---|
+| `tag` | **yes** | the tag the major and minor are *extracted from* |
+| `ref-tag` | no | what the floating tags *point at*; **defaults to the value of `tag`** |
+
+The workflow passed only `ref-tag`, so the required input was never supplied, and the guard added at
+sprint closure required `ref-tag` — demanding the optional input while never checking the mandatory
+one. Both the code and its guard were wrong in the same direction, which is why nothing caught it
+until v0.1.5 reached the step: `Input required and not supplied: tag`, after the Release had already
+been created.
+
+`ref-tag` is now omitted entirely rather than corrected. Its default *is* the release tag, which is
+precisely what a release wants the aliases to point at, so passing it added a second way to say the
+same thing and no value.
+
+**The lesson, and it is the second time in one release cycle.** ADR-0010's verification confirmed
+`commit` exists on the Release action's manifest and it was passed — wrongly, because this workflow
+is triggered by the tag it was asking the forge to create. This ADR's verification confirmed
+`ref-tag` exists and it was passed — wrongly, because `tag` is the required one. **Confirming that
+an input exists is not confirming it is the input to pass.** Reading a manifest establishes the
+vocabulary; only running the thing establishes the grammar. Both defects survived six review phases
+and roughly seventy findings, and neither was reachable by any amount of static reading.
+
+
 ## Consequences
 
 - Positive: package metadata, commit identity, and stable tag cannot drift through the supported

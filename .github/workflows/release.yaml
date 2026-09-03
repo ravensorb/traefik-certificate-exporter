@@ -1054,7 +1054,14 @@ jobs:
           # is not an input at all here: Actions would pass it through as an unread
           # `INPUT_*` variable, `update-minor` would fall back to its `false` default,
           # and `vMAJOR.MINOR` would silently never move (ADR-0006).
-          ref-tag: ${{ needs.plan.outputs.release-tag }}
+          #
+          # `tag` is the REQUIRED input -- the tag the major and minor are extracted
+          # from. `ref-tag` is an optional override for what the floating tags point AT,
+          # and its documented default is the value of `tag`, which is exactly what this
+          # release wants. Passing only `ref-tag` left the required input unsupplied and
+          # the first release that got this far died on `Input required and not
+          # supplied: tag`, after the Release had been created.
+          tag: ${{ needs.plan.outputs.release-tag }}
           update-minor: "true"
           ignore-prerelease: "true"
 

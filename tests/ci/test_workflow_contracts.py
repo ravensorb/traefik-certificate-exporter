@@ -5665,13 +5665,24 @@ def test_the_git_alias_action_runs_only_behind_the_ordering_gate() -> None:
                 # whatever it defaults to. It must also resolve through the plan job's
                 # released tag rather than a literal, or the alias is computed from
                 # something other than the identity this run is publishing.
-                ref_tag = str(inputs.get("ref-tag", ""))
-                assert ref_tag, (
-                    f"{path.name}: {job_name!r} moves aliases without passing "
-                    f"`ref-tag`, so the action decides from its own default"
+                # `tag` is the action's REQUIRED input at `@v2` -- the tag the major
+                # and minor are extracted from. An earlier version of this guard
+                # required `ref-tag`, which is the OPTIONAL override for what the
+                # floating tags point at and whose documented default is the value of
+                # `tag`. So it demanded the optional input and never the mandatory one,
+                # and the first release to reach this step died on `Input required and
+                # not supplied: tag` -- after the Release had already been created.
+                #
+                # Reading the manifest confirmed both names exist. Existing is not the
+                # same as being the one that is required; that distinction is what this
+                # release path has now cost twice.
+                release_tag = str(inputs.get("tag", ""))
+                assert release_tag, (
+                    f"{path.name}: {job_name!r} moves aliases without passing `tag`, "
+                    f"which `{APPROVED_ALIAS_ACTION}@v2` requires"
                 )
-                assert "needs.plan.outputs.release-tag" in ref_tag, (
-                    f"{path.name}: {job_name!r} passes ref-tag={ref_tag!r}, which is "
+                assert "needs.plan.outputs.release-tag" in release_tag, (
+                    f"{path.name}: {job_name!r} passes tag={release_tag!r}, which is "
                     f"not the release tag the plan job resolved"
                 )
                 assert inputs.get("update-minor") == "true", (
