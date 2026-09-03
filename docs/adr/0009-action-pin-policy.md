@@ -77,6 +77,57 @@ Implementation must resolve, review and record the real full commit SHA when the
 Both were verified by planting a violation: `pypa/gh-action-pypi-publish@release/v1` fails the
 first, and an unregistered `pypa/some-new-pypi-publish@v3` fails the second.
 
+## Amended at E008 sprint closure: the classification is derived, and the inverse registry is explicit
+
+Two things were wrong with the reach guard, and the first caused the second.
+
+**The candidate set was the action's name.** `test_credential_handling_publishers_are_registered_as_sha_pinned`
+selected candidates by matching `pypi|publish` against an action's repository name. That is a
+hand-enumerated scope wearing a derivation's clothes, and it is the defect class this project
+keeps finding: the rule was right and the set was wrong. Four references shipped in E008 are
+handed a publication credential and match neither word, so the guard skipped them and the
+floating-major branch passed them:
+
+| Action | What reaches it |
+|---|---|
+| `LiquidLogicLabs/git-action-release` | `contents: write` `GITHUB_TOKEN` as `token`, in the repository's only ref-writing job |
+| `LiquidLogicLabs/git-action-tag-floating-version` | the same token, through `GIT_CONFIG_VALUE_0` on its `env:` |
+| `docker/login-action` | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` |
+| `LiquidLogicLabs/git-action-docker-test` | nothing *passed* — it runs after both logins and can read `~/.docker/config.json` |
+
+The classification is now derived from what an action **receives**: a `secrets.*` expression
+reaching it through `with:`/`env:` or a job-level `secrets:` block, or its position after a
+registry login in the same job. The last case is why "what is passed to it" alone is not the
+test — the fourth action is handed nothing and has the credentials anyway. Composite actions are
+in scope, since they run inside the same job and see the same runner state.
+
+**Silence was an available answer.** The old guard offered "SHA-pinned" or an empty
+`not_credential_handling` set that no entry had ever been added to. There was no way to say
+"this receives a credential, rides a moving ref, and we accept that" — so nothing said it, and
+four such actions existed with nothing recorded.
+
+`CREDENTIAL_ACTIONS_ON_MOVING_REFS` is that registry, and it is the inverse of
+`SHA_PINNED_ACTIONS`: not a claim these actions are safe, but a record of accepted risk with the
+reason attached. Adding an entry **is** the acceptance, the same way adding to
+`SHA_PINNED_ACTIONS` is the grant. The guard also fails on a *stale* entry — one accepting a risk
+the repository no longer takes — because a registry that outlives its entries stops being read.
+
+**The four entries, and why they are entries rather than pins.** `LiquidLogicLabs` is
+**maintainer-owned** (confirmed with the maintainer at sprint closure; `docs/guidelines.md`
+previously recorded only that the org exists, which a reviewer correctly read as identification
+rather than ownership). The residual risk on those three is the maintainer's own account rather
+than a third party's, and the floating major is what lets an upstream fix reach this repository
+without a manifest edit. `docker/login-action` stays floating on ordinary CI-AR4 grounds: an
+approved owner, large and widely audited, whose security fixes should arrive automatically.
+
+This does not weaken the original decision. `pypa/gh-action-pypi-publish` remains SHA-pinned:
+`pypa` is not maintainer-owned and the credential it holds publishes under this project's name
+on an index that does not allow re-uploads.
+
+**Revisit if:** the maintainer stops controlling `LiquidLogicLabs`, any of those actions gains a
+package-publishing capability, or a supply-chain incident affects `docker/login-action`.
+
+
 ## Consequences
 
 - Positive: the action holding the PyPI token cannot be swapped under this repository without a

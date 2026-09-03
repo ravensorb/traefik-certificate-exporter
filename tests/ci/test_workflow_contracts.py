@@ -163,6 +163,37 @@ FLOATING_MAJOR_ALIAS = re.compile(r"\A(?:release/)?v[0-9]+\Z")
 # action of theirs is pinned harder.
 SHA_PINNED_ACTIONS = frozenset({"pypa/gh-action-pypi-publish"})
 
+# The inverse registry: actions that ARE handed a publication credential and stay on a
+# floating major anyway. Not a claim that they are safe -- a registry of accepted risk,
+# and the reason is the entry. Whoever can move one of these refs can exfiltrate the
+# credential it receives on the next run, with no diff in this repository to review.
+#
+# Adding an entry IS the acceptance, and each needs an ADR, exactly as adding to
+# SHA_PINNED_ACTIONS is the grant (ADR-0009). Every entry here was found by
+# `_credential_handling_actions`, which derives candidates from what a step is handed;
+# the previous reach guard matched the words "pypi" or "publish" in an action's name and
+# saw none of them.
+CREDENTIAL_ACTIONS_ON_MOVING_REFS: dict[str, str] = {
+    # Maintainer-owned org (confirmed with the maintainer at E008 sprint closure; ADR-0010
+    # called this "first-party in practice" and that is accurate). The residual risk is
+    # the maintainer's own account rather than a third party's, and the floating major is
+    # what makes an upstream fix reach this repository without a manifest edit.
+    "LiquidLogicLabs/git-action-release": (
+        "receives contents: write GITHUB_TOKEN as `token`; maintainer-owned org"
+    ),
+    "LiquidLogicLabs/git-action-tag-floating-version": (
+        "receives GITHUB_TOKEN through GIT_CONFIG_VALUE_0; maintainer-owned org"
+    ),
+    "LiquidLogicLabs/git-action-docker-test": (
+        "runs after both registry logins, so it can read ~/.docker/config.json; "
+        "maintainer-owned org"
+    ),
+    # An approved owner under CI-AR4, and the one action here nobody in this project
+    # controls. Kept floating on the ordinary CI-AR4 grounds -- a large, widely audited
+    # owner whose security fixes should arrive without a manifest edit.
+    "docker/login-action": "receives DOCKERHUB_USERNAME and DOCKERHUB_TOKEN",
+}
+
 # The one action permitted to create a forge Release (ADR-0010). It speaks GitHub's and
 # Gitea's release APIs from a single step, so `release.yaml` carries no forge branch and
 # E009 inherits the Gitea path unchanged. Pinned `@v2` -- never `@v2.0`, which is stale.
@@ -319,25 +350,126 @@ def test_tier_one_actions_use_approved_owners_and_floating_major_aliases() -> No
     assert examined, "no external action references were examined"
 
 
-def test_credential_handling_publishers_are_registered_as_sha_pinned() -> None:
-    # The reach half of the rule above. That test only fires on actions already in
-    # SHA_PINNED_ACTIONS, so a *new* credential-handling publisher added to a workflow
-    # would take the floating-major branch and never be noticed. This derives the
-    # candidate set from the workflows instead: any action whose name says it publishes a
-    # package must be registered, or explicitly recorded as not credential-handling.
-    publisher_verb = re.compile(r"(?:\A|[-/])(?:pypi|publish)(?:[-/]|\Z)")
-    not_credential_handling: frozenset[str] = frozenset()
+REGISTRY_LOGIN_ACTION = "docker/login-action"
 
-    for path in GOVERNED_DEFINITIONS:
-        for reference in _external_action_references(path):
-            action, _, _ = reference.rpartition("@")
-            if not publisher_verb.search(action.split("/", 1)[-1]):
-                continue
-            assert action in SHA_PINNED_ACTIONS or action in not_credential_handling, (
-                f"{path}: {action} looks like a package publisher but is neither "
-                f"SHA-pinned nor recorded as not credential-handling; decide which, "
-                f"with an ADR (CI-AR38)"
-            )
+
+def _definition_step_lists(document: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every ordered step list in a workflow or a composite action.
+
+    A composite action holds one list under `runs.steps`; a workflow holds one per job.
+    Composite actions are in scope because they run inside the credential-bearing job
+    and see the same runner state.
+    """
+    if "jobs" in document:
+        return list(_jobs(document).values())
+    runs = document.get("runs") or {}
+    return [{"steps": runs.get("steps") or []}]
+
+
+def _credential_handling_actions(
+    definitions: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, set[str]]:
+    """External actions handed a publication credential, and why -- derived.
+
+    Two mechanically checkable ways an action receives one:
+
+    * a `secrets.*` expression reaches it, through its own `with:`/`env:` or through a
+      `secrets:` block on the job that calls it;
+    * it runs *after* a registry login in the same job, so the runner's
+      `~/.docker/config.json` holds credentials for it to read. Nothing is passed to it
+      and it has them anyway, which is why "what is passed" alone is not the test.
+
+    The rule this replaces matched `pypi|publish` against the action's *repository
+    name*. That is a hand-enumerated scope wearing a derivation's clothes: four actions
+    shipped this sprint are handed a credential and match neither word, so the guard
+    skipped them and the floating-major branch passed them (redteam H1).
+    """
+    if definitions is None:
+        definitions = {
+            str(path.relative_to(PROJECT_ROOT)): _load_document(path)
+            for path in GOVERNED_DEFINITIONS
+        }
+    found: dict[str, set[str]] = {}
+    for document in definitions.values():
+        for job in _definition_step_lists(document):
+            after_login = False
+            for step in job.get("steps") or []:
+                used = str(step.get("uses", ""))
+                if used and not used.startswith("./"):
+                    action = used.rpartition("@")[0]
+                    handed = json.dumps({key: step.get(key) for key in ("with", "env")})
+                    reasons = set()
+                    if "secrets." in handed:
+                        reasons.add("a secret is passed to it")
+                    if job.get("secrets") is not None:
+                        reasons.add("its job receives secrets")
+                    if after_login:
+                        reasons.add("it runs after a registry login")
+                    if reasons:
+                        found.setdefault(action, set()).update(reasons)
+                    if action.startswith(REGISTRY_LOGIN_ACTION):
+                        after_login = True
+    return found
+
+
+def test_every_credential_handling_action_is_pinned_or_its_risk_is_recorded() -> None:
+    """ADR-0009's reach half, over a set derived from what an action is handed.
+
+    An action on a floating major is one moved ref away from exfiltrating whatever it
+    receives, and nothing in this repository would change. So each candidate is either
+    SHA-pinned or its acceptance is written down with a reason -- silence is the one
+    outcome the registry does not allow.
+    """
+    candidates = _credential_handling_actions()
+    assert candidates, "no action receives a credential; this guard examined nothing"
+    for action, reasons in sorted(candidates.items()):
+        assert (
+            action in SHA_PINNED_ACTIONS or action in CREDENTIAL_ACTIONS_ON_MOVING_REFS
+        ), (
+            f"{action} is handed a publication credential ({'; '.join(sorted(reasons))}) "
+            f"and rides a moving ref. Register it in SHA_PINNED_ACTIONS, or record the "
+            f"accepted risk in CREDENTIAL_ACTIONS_ON_MOVING_REFS with an ADR (CI-AR38)."
+        )
+    assert not (SHA_PINNED_ACTIONS & set(CREDENTIAL_ACTIONS_ON_MOVING_REFS)), (
+        "an action cannot be both SHA-pinned and recorded as accepted on a moving ref"
+    )
+    stale = set(CREDENTIAL_ACTIONS_ON_MOVING_REFS) - set(candidates)
+    assert not stale, (
+        f"{sorted(stale)} accept a risk this repository no longer takes; a registry that "
+        f"outlives its entries stops being read"
+    )
+
+
+def test_the_credential_reach_follows_what_an_action_receives_not_its_name() -> None:
+    """The scope attack. Neither planted action's name says `pypi` or `publish`, which
+    is precisely how four real ones went unexamined for the whole sprint."""
+    planted = {
+        "plant.yaml": {
+            "on": {"push": {}},
+            "jobs": {
+                "ship": {
+                    "runs-on": "ubuntu-24.04",
+                    "steps": [
+                        {
+                            "uses": "vendor/upload-thing@v1",
+                            "with": {"token": "${{ secrets.VENDOR_TOKEN }}"},
+                        },
+                        {
+                            "uses": "docker/login-action@v3",
+                            "with": {"password": "${{ secrets.REGISTRY_TOKEN }}"},
+                        },
+                        {"uses": "vendor/smoke-test@v2"},
+                    ],
+                }
+            },
+        }
+    }
+    found = _credential_handling_actions(planted)
+    assert found["vendor/upload-thing"] == {"a secret is passed to it"}
+    assert found["vendor/smoke-test"] == {"it runs after a registry login"}, (
+        "an action that reads the runner's docker config is handed a credential too, "
+        "even though nothing is passed to it"
+    )
 
 
 def test_no_caller_hands_the_verifier_any_secret() -> None:

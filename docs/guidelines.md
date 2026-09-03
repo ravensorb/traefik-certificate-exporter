@@ -65,7 +65,11 @@ this is what governs [review findings #4 and #13](../_bmad-output/implementation
 
 **Vendor preference — resolved.** Confirmed org: [`LiquidLogicLabs`](https://github.com/LiquidLogicLabs)
 (checked 2026-08-30 via GitHub search — the earlier "liquidlogicapps"/"liquidlogiclabs" search
-had simply used the wrong handle). It publishes a suite of `git-action-*` GitHub Actions that
+had simply used the wrong handle). **Maintainer-owned**, confirmed with the maintainer at Epic 8
+sprint closure. The earlier wording recorded only that the org exists, which is identification
+rather than ownership; a red-team review read it that way and treated the org's actions as
+ordinary third-party supply chain. Ownership is what makes ADR-0010's "first-party in practice"
+accurate and what ADR-0009's accepted-risk entries rest on, so it is stated rather than implied. It publishes a suite of `git-action-*` GitHub Actions that
 are **multi-platform (GitHub + Gitea)** by design — a direct fit for this project's
 [§7 one-pipeline-three-runners rule](#7-one-pipeline-three-runners--no-act-env-var-dependency).
 Prefer a `LiquidLogicLabs` action over an official/community one where one exists and covers
