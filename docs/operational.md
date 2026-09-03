@@ -410,6 +410,58 @@ URL (stable), and the alias outcomes. The development table adds the `Suppressed
 row, which is how a run that deliberately published nothing is told apart from one that failed. That table is the input to every decision above -- read it before
 rerunning anything.
 
+## If a publication credential is compromised
+
+The publication-recovery procedure above answers "a run failed part way". This one answers "someone
+else may have used our credentials", which is a different question with a different first move: the
+recovery runbook's instinct is to finish the release, and this one's is to stop being able to.
+
+There are four long-lived-ish credentials, and they are not equally bad.
+
+| Credential | Blast radius | Where it is used |
+|---|---|---|
+| `DOCKERHUB_TOKEN` (+ `DOCKERHUB_USERNAME`) | **account-scoped**: every repository that Docker Hub account can write, not only this one | the image publisher, and the stable alias job |
+| `FORGE_PACKAGE_TOKEN` | the forge Python index for this owner | the forge package publisher |
+| `GITHUB_TOKEN` | per-run, expires with the run, scoped by each job's `permissions:` | everywhere; never stored |
+| PyPI | **no stored credential** — trusted publishing mints a short-lived OIDC token per run | the PyPI publisher |
+
+PyPI being absent from the list of things that can leak is the point of CI-AR25, and it is the
+posture the other two would ideally move to.
+
+**First, in order.**
+
+1. **Invalidate the credential at its source**, not here: Docker Hub → Account Settings → Personal
+   access tokens; the forge → the owner's package-registry tokens. Clearing the repository secret
+   only stops this pipeline from reaching for it, and has no effect on anyone else who holds a
+   copy.
+2. **Then** clear the repository secret, so a run cannot half-succeed with a credential that no
+   longer works and leave a confusing state behind.
+3. Turn the affected destination off — `PUBLISH_IMAGE_DOCKERHUB=false` — rather than letting runs
+   fail against it. A disabled destination is a state the finalizer understands (ADR-0011); a
+   failing one blocks the Release and the aliases.
+
+**Then work out what was published.** Everything this pipeline ships is recorded, and that is what
+the evidence is for:
+
+- each run's summary names every destination, the image digest, the platforms, and the exact
+  repositories the tags addressed;
+- the Release carries `SHA256SUMS` and `build-manifest.json` for its version, and on GitHub the
+  distributions are attested (ADR-0008), so an artifact that this pipeline did **not** build has no
+  attestation — that is the check to run, rather than comparing checksums against the same Release
+  an attacker with `contents: write` could have replaced;
+- the image index carries SLSA provenance naming the workflow and run that built it.
+
+Anything on a destination that no run summary accounts for was not published from here.
+
+**What not to expect.** Rotating a credential does not unpublish anything, and nothing in the
+prohibited-actions table above becomes available because a credential leaked: a version PyPI has
+accepted is still spent, and an image digest someone pinned is still pinned. The remedy for a bad
+artifact is the same as it always is — publish a new version and communicate the bad one.
+
+**Afterwards**, record it: which credential, when it was invalidated, what the run summaries showed,
+and whether anything was published that should not have been. A rotation nobody writes down teaches
+nobody anything.
+
 ## Rollback
 
 Pin the previous image tag/PyPI version; there is no migration/state to roll back — the
