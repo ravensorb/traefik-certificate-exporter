@@ -1,0 +1,23 @@
+# Content scanning for the pre-commit `gitleaks` hook.
+#
+# The hook used the upstream default invocation, `gitleaks git --pre-commit --staged`,
+# which scans the *index*. Under `pre-commit run gitleaks --all-files` -- what CI runs --
+# nothing is staged, so it scanned `~0 bytes (0)`, reported `no leaks found` and exited 0.
+# Reproduced against a repository holding a live-format GitHub PAT and Slack bot token:
+# the staged form exits 0; `gitleaks dir` finds both and exits 1. The gate had been
+# passing over every commit of this project without reading any of it.
+#
+# `gitleaks dir` takes no notice of pre-commit's `exclude:`, so the vendored tool trees
+# are allowlisted here instead. They are the same three paths, and
+# `test_the_secret_scanner_and_pre_commit_exclude_the_same_vendored_trees` asserts the two
+# lists stay identical rather than trusting this comment.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Vendored tool trees this project neither authors nor maintains"
+paths = [
+  '''^\.agents/''',
+  '''^\.claude/''',
+  '''^_bmad/''',
+]

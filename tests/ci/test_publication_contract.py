@@ -3,15 +3,22 @@ from __future__ import annotations
 import inspect
 import json
 import re
+import sys
 from importlib import resources
 from pathlib import Path
 from typing import Any
 
 import pytest
-import tomllib
 import yaml
 from jsonschema import Draft202012Validator
 from packaging.specifiers import SpecifierSet
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover - exercised only on the oldest supported interpreter
+    # pyproject declares >=3.10 and `tomllib` arrived in 3.11. `tomli` is the same
+    # parser under its pre-stdlib name and is already resolved for <3.11 by the lock.
+    import tomli as tomllib
 
 import publication_contract as contract
 from publication_contract import cli

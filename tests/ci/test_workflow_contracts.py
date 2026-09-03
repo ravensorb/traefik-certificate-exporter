@@ -16,6 +16,13 @@ from typing import Any
 
 import pytest
 import yaml
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover - exercised only on the oldest supported interpreter
+    # pyproject declares >=3.10 and `tomllib` arrived in 3.11. `tomli` is the same
+    # parser under its pre-stdlib name and is already resolved for <3.11 by the lock.
+    import tomli as tomllib
 from markdown_it import MarkdownIt
 from packaging.version import Version
 
@@ -1190,6 +1197,139 @@ def test_verifier_supports_call_and_direct_dispatch_with_the_same_graph() -> Non
         "package-version": "0.1.3",
         "source-sha": event["sha"],
     }
+
+
+PRE_COMMIT_CONFIG = PROJECT_ROOT / ".pre-commit-config.yaml"
+GITLEAKS_CONFIG = PROJECT_ROOT / ".gitleaks.toml"
+
+
+def _gitleaks_hook() -> dict[str, Any]:
+    config = yaml.safe_load(PRE_COMMIT_CONFIG.read_text(encoding="utf-8"))
+    for repository in config["repos"]:
+        for hook in repository["hooks"]:
+            if hook["id"] == "gitleaks":
+                return hook
+    raise AssertionError("no gitleaks hook is configured")
+
+
+def test_the_secret_scanner_reads_content_rather_than_the_index() -> None:
+    """The gate passed over every commit of this project without reading any of it.
+
+    The upstream hook's entry is `gitleaks git --pre-commit --redact --staged
+    --verbose`, which scans the git *index*. `pre-commit run gitleaks --all-files` --
+    what CI runs, and what `just check` runs -- stages nothing, so it read
+    `~0 bytes (0)`, reported `no leaks found` and exited 0. Reproduced against a
+    repository holding a live-format GitHub PAT and Slack bot token: the staged form
+    exits 0, `gitleaks dir` finds both and exits 1.
+
+    A green secret scanner that reads nothing is worse than no scanner, because it is
+    the control everyone assumes has looked. The real proof is in verify-build.yaml,
+    which runs the configured invocation against a planted credential on every CI run
+    (`test_the_secret_scanner_proves_itself_in_ci` requires that step to exist). This
+    guard covers the shape, so the defect cannot come back by editing one word.
+    """
+    entry = str(_gitleaks_hook()["entry"])
+    assert "--staged" not in entry, (
+        f"the secret scanner is back on the index rather than content: {entry}"
+    )
+    assert entry.split()[1] == "dir", (
+        f"the secret scanner must scan a directory of content: {entry}"
+    )
+    assert _gitleaks_hook().get("pass_filenames") is False, (
+        "`gitleaks dir` takes exactly one path; pre-commit must not append the changed "
+        "file list to it"
+    )
+
+
+def test_the_secret_scanner_and_pre_commit_exclude_the_same_vendored_trees() -> None:
+    """`gitleaks dir` takes no notice of pre-commit's `exclude:`, so the vendored trees
+    are allowlisted a second time in .gitleaks.toml. Two hand-kept copies of one list
+    drift, and the copy nobody updated is the one that decides what goes unscanned --
+    so the two are derived from each other here rather than trusted to agree.
+    """
+    config = yaml.safe_load(PRE_COMMIT_CONFIG.read_text(encoding="utf-8"))
+    excluded = re.fullmatch(r"\^\((?P<alternatives>.+)\)/", str(config["exclude"]))
+    assert excluded, (
+        f"the pre-commit exclude is no longer an alternation: {config['exclude']}"
+    )
+    expected = {
+        f"^{alternative}/" for alternative in excluded["alternatives"].split("|")
+    }
+
+    scanner = tomllib.loads(GITLEAKS_CONFIG.read_text(encoding="utf-8"))
+    allowlisted = {
+        path for entry in scanner["allowlists"] for path in entry.get("paths", [])
+    }
+    assert allowlisted == expected, (
+        f"the scanner allowlists {sorted(allowlisted)} while pre-commit excludes "
+        f"{sorted(expected)}; one tree is linted by neither or scanned by neither"
+    )
+    assert scanner["extend"]["useDefault"] is True, (
+        "the allowlist must extend the default rule set, not replace it"
+    )
+
+
+def test_the_secret_scanner_proves_itself_in_ci() -> None:
+    """The guard above reads configuration; this requires the job that reads *behaviour*.
+
+    Asserting "a gitleaks hook is configured" is exactly the guard this repository
+    already had, and it passed throughout the period the scanner read nothing. So the
+    CI job plants a credential and requires the configured invocation to fail on it,
+    and this test requires that step to keep existing.
+    """
+    steps = _jobs(_load_workflow(VERIFY_WORKFLOW))["gitleaks"]["steps"]
+    bodies = [_uncommented(str(step.get("run", ""))) for step in steps]
+    assert any("pre-commit run gitleaks" in body for body in bodies), (
+        "the gitleaks job no longer runs the hook"
+    )
+    proof = [body for body in bodies if "planted" in body]
+    assert proof, (
+        "the gitleaks job no longer proves the scanner reads content. A configuration "
+        "check cannot replace it: the defect it exists for was a correctly configured "
+        "hook scanning an empty index."
+    )
+    assert ".pre-commit-config.yaml" in proof[0], (
+        "the proof must run the configured invocation, not a second copy of it that "
+        "can stay correct while the real one rots"
+    )
+
+
+def test_every_matrix_dimension_is_actually_consumed_by_its_job() -> None:
+    """A matrix that varies nothing runs one job N times under N names.
+
+    `pytest` declared `python: [3.10 ... 3.14]` and every leg installed
+    `${{ env.PYTHON_VERSION }}`, so five identical 3.14 runs reported themselves as
+    five interpreters. pyproject declares `>=3.10,<3.15` and nothing tested the floor;
+    a module-level `import tomllib`, which does not exist before 3.11, sat in the suite
+    unnoticed.
+
+    The job's display name is deliberately excluded from the search. Interpolating a
+    dimension into the name is what made the failure invisible -- the CI summary read
+    `pytest (Python 3.10)` -- and a guard that accepted it would have passed too.
+    """
+    examined = 0
+    for name, document in sorted(_workflow_documents().items()):
+        for job_name, job in sorted(_jobs(document).items()):
+            matrix = (job.get("strategy") or {}).get("matrix")
+            if not isinstance(matrix, dict):
+                continue
+            body = json.dumps(
+                {
+                    key: value
+                    for key, value in job.items()
+                    if key not in {"strategy", "name"}
+                }
+            )
+            for dimension in matrix:
+                if dimension in {"include", "exclude"}:
+                    continue
+                examined += 1
+                assert f"matrix.{dimension}" in body, (
+                    f"{name}: job {job_name!r} declares matrix dimension "
+                    f"{dimension!r} and never uses it outside its display name, so "
+                    f"every leg runs the same thing under a different label"
+                )
+    assert examined, "no job declares a matrix; this guard examined nothing"
 
 
 def test_local_wrapper_and_just_recipe_invoke_only_the_direct_verifier() -> None:

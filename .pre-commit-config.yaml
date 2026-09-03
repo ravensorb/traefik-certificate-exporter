@@ -74,7 +74,14 @@ repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
+      # `entry` is overridden, not `args`: upstream puts the whole invocation in entry as
+      # `gitleaks git --pre-commit --redact --staged --verbose`, which scans the *index*.
+      # Under `--all-files` -- what CI runs -- nothing is staged, so it read ~0 bytes,
+      # reported no leaks and exited 0. See .gitleaks.toml for the reproduction.
       - id: gitleaks
+        entry: gitleaks dir --redact --no-banner --config .gitleaks.toml .
+        always_run: true
+        pass_filenames: false
 
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
