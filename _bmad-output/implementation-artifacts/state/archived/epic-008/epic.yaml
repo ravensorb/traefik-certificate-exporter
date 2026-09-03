@@ -1,7 +1,7 @@
 key: 'E008'
 title: 'Epic 008 — Action-Based Multi-Channel Delivery'
 goal: 'Publish verified development and stable artifacts through normal destination actions, then advance aliases only after required jobs succeed.'
-status: in-progress
+status: done
 depends_on: ['E007']
 estimate:
   man_hours_low: 74.6
@@ -26,4 +26,20 @@ estimate:
   cost_high: 7.43
   model: claude-opus-5
   confidence: medium
-updated_at: '2026-09-02T15:28:01Z'
+updated_at: '2026-09-03T06:48:18Z'
+actual:
+  elapsed_hours: 12.75
+  man_hours: 210
+  hitl_hours: 0.45
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-09-03T06:46:32Z'
+orchestration:
+  elapsed_hours: 0.3
+  man_hours: 0
+  hitl_hours: 0
+  tokens_k: N/A
+  cost: N/A
+orchestration_sampled_at: '2026-09-03T06:46:33Z'
+closed:
+  date: '2026-09-03'

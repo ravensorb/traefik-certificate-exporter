@@ -178,3 +178,35 @@ backlog:
   severity: Low
   status: backlog
   description: "docs/guidelines.md describes .agents/ and .claude/ as vendored BMad skills 'this project neither authors nor maintains'. That is a checkable claim and it is unchecked: 1,229 tracked files that any pull request can edit, excluded from every linting gate by .pre-commit-config.yaml's exclude and from the secret scanner by .gitleaks.toml's allowlist, in a repository whose agents hold write access and are instructed to read them and follow their directions exactly. Sprint closure addressed the review half by adding them to CODEOWNERS. The integrity half remains: a guard asserting the trees are byte-identical to the release they claim to vendor. Deliberately not done in closure -- it needs a source of truth for 'the installed release' that does not exist in the repo yet, and inventing one would be worse than the gap."
+- key: BL-E008-010
+  epic: '008'
+  sprint: ''
+  title: tests/ci/test_workflow_contracts.py is one 6,600-line module spanning ten concerns
+  source: epic closure — arch drift MAJOR 6
+  severity: Medium
+  status: backlog
+  description: 'The contract suite grew from 34 guards to 294 in one epic and lives in a single module that now covers the action pin policy, the fork-safety boundary, the workflow topology, forge coordinates, the publication matrix, the finalizer gate, alias ordering, the secret scanner, the runbook and the documentation citations. Two concrete costs were paid during this closure rather than hypothesised: replacing a text region twice deleted adjacent definitions belonging to a different concern, once silently, and it was caught only because a document still cited the deleted guard by name. Splitting it by concern would make those blast radii structural rather than a matter of care. Deferred from closure because the split is a large mechanical change with real risk of losing a guard in the move, and this closure has already demonstrated that risk twice; it wants its own story with a definition-set diff as its acceptance criterion.'
+- key: BL-E008-011
+  epic: '008'
+  sprint: '01'
+  title: The finalizer gate binds destination keys to job results by hand, and nothing checks the pairing
+  source: epic closure — arch drift MINOR 7
+  severity: Low
+  status: backlog
+  description: "release.yaml's PUBLISHER_RESULTS maps each destination key to a needs.<job>.result by hand. test_every_finalizer_waits_for_every_publisher_and_reads_every_result asserts each publisher's result appears somewhere in the gate's env:, never that a key is bound to the job that actually ships that destination. Verified by the reviewer: rebinding image-dockerhub to needs.publish-package-forge.result left the suite green. Gross rewiring IS caught -- binding every key to needs.verify.result fires 11 guards -- so only a swap between two live publishers is invisible. Blast radius is small today because one job ships both image destinations; it grows the moment a second image publisher exists. Remedy: derive the expected binding from what each job addresses (the repositories input already carries that mapping), or state the key-to-job rule and assert it."
+- key: BL-E008-012
+  epic: '008'
+  sprint: '01'
+  title: Image tag normalisation is ASCII-only and the CSV defence covers only the comma
+  source: epic closure — redteam E8
+  severity: Low
+  status: backlog
+  description: "publish-image.yaml's tag composition strips whitespace with tr -d '[:space:]' and rejects a comma because Buildx parses an env override of a list(string) as CSV. Both are byte-oriented: a Unicode homoglyph or a zero-width character in a repository name passes normalisation and compares unequal to the proven repository, and any other Buildx list separator would not be caught. The tag list is rendered by a third-party action, which is where such a value would have to come from. Not exploitable through any path the reviewer could construct -- the repository allowlist refuses the mismatch, which is why this is Low -- but the normalisation is narrower than the comparison it feeds."
+- key: BL-E008-013
+  epic: '008'
+  sprint: '01'
+  title: The image digest reference follows whichever tag the metadata action emitted first
+  source: epic closure — redteam E9
+  severity: Low
+  status: backlog
+  description: "publish-image.yaml sets primary to the repository of the first tag in the rendered list, and primary becomes the reference the digest is resolved from and therefore the target the finalizer's aliases follow. That makes a positional property of a third-party action's output ordering load-bearing. Every tag now has to name a repository the plan job proved, so the value cannot be arbitrary -- which is why this is Low -- but with two enabled destinations the choice between them is the renderer's, not this repository's. Remedy: select primary explicitly as the forge repository, which is the one destination that is never optional."
