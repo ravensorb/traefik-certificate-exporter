@@ -489,6 +489,19 @@ jobs:
     if: >-
       ${{ fromJSON(needs.plan.outputs.enabled-destinations)['package-pypi'] == 'enabled' }}
     runs-on: ubuntu-24.04
+    # The one place a human can be required. PyPI never lets a version be withdrawn or
+    # replaced, so a single tag push otherwise carries straight through to an irrevocable
+    # upload with nothing but identity re-checks between -- and every one of those proves
+    # the tag names the commit, not that anyone meant to release it.
+    #
+    # Declaring the environment is the half that lives in this file, and on its own it
+    # changes nothing: an environment with no protection rules runs exactly as before.
+    # The protection is two settings outside the repository tree, and `docs/operational.md`
+    # records them -- required reviewers on this environment, and the PyPI trusted
+    # publisher constrained to the same environment claim. Until the second is set, ANY
+    # workflow here that can obtain `id-token: write` can mint a PyPI-scoped token, not
+    # only this one.
+    environment: pypi
     permissions:
       contents: read
       # Trusted publishing (CI-AR25). This job holds an OIDC identity and no registry

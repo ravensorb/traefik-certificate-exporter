@@ -4331,6 +4331,39 @@ ATTESTATION_ACTION = "actions/attest-build-provenance"
 ATTESTATION_CAPABILITY = "attestation-supported"
 
 
+def test_the_irrevocable_destination_names_an_environment() -> None:
+    """PyPI is the one destination nothing can be withdrawn from: a version number is
+    spent the moment it is accepted. Every mitigation around it is an identity re-check,
+    and identity re-checks prove the tag still names the commit -- never that a person
+    meant to release it.
+
+    An `environment:` is where a human can be required, and it is also what lets the
+    PyPI trusted publisher be constrained to one workflow: without an environment claim
+    to match on, *any* workflow in this repository that obtains `id-token: write` can
+    mint a PyPI-scoped token.
+
+    **What this cannot check**: whether that environment has required reviewers, and
+    whether PyPI is configured to demand the claim. Both are settings outside the tree,
+    and this guard would pass with neither set -- which is why `docs/operational.md`
+    names them rather than leaving the declaration to imply protection it may not have.
+    """
+    examined = 0
+    for name, job in sorted(_jobs(_load_workflow(RELEASE_WORKFLOW)).items()):
+        if not any(
+            str(step.get("uses", "")).startswith("pypa/gh-action-pypi-publish")
+            and not (step.get("with") or {}).get("repository-url")
+            for step in job.get("steps") or []
+        ):
+            continue
+        examined += 1
+        assert job.get("environment"), (
+            f"release.yaml: {name!r} uploads to PyPI without naming an environment, so "
+            f"there is nowhere to require a reviewer and nothing for the trusted "
+            f"publisher to constrain on"
+        )
+    assert examined, "no job uploads to PyPI; this guard examined nothing"
+
+
 def test_the_released_distributions_are_attested_before_they_are_published() -> None:
     """The Release's own evidence proves nothing against whoever can write the Release.
 

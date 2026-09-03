@@ -218,6 +218,25 @@ PyPI is reached by trusted publishing, which needs a GitHub OIDC identity. On a 
 is none, so the destination is reported `unsupported` rather than failing a job nobody expected --
 the same situation TestPyPI has in the development channel, for the same reason.
 
+### The `pypi` environment — two settings this repository cannot make for you
+
+`release.yaml`'s PyPI job declares `environment: pypi`. That declaration on its own changes
+nothing: an environment with no protection rules runs exactly as it did before. It exists so the
+two settings below have somewhere to attach, and **until both are made, neither protection is in
+effect** — the contract suite can see the declaration and cannot see either setting.
+
+1. **Required reviewers on the `pypi` environment** (repository → Settings → Environments → `pypi`).
+   PyPI never lets a version be withdrawn or replaced, so without this a single tag push carries
+   straight through to an irrevocable upload. Everything between is an identity re-check, and an
+   identity re-check proves the tag still names the commit — never that anyone meant to release it.
+2. **The PyPI trusted publisher constrained to that environment** (PyPI → the project → Publishing).
+   Without an environment claim to match on, *any* workflow in this repository that can obtain
+   `id-token: write` can mint a PyPI-scoped token, not only the reviewed one.
+
+Setting (1) means every stable release waits for a human. That is the trade this environment exists
+to offer; if you would rather not take it, leave the reviewers unset and set (2) anyway — it costs
+nothing operationally and closes the "any workflow can mint a token" half on its own.
+
 ### `DOCKERHUB_ORG`
 
 Two independent things, and only one of them needs you.
