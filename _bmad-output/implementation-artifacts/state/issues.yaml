@@ -210,3 +210,11 @@ backlog:
   severity: Low
   status: backlog
   description: "publish-image.yaml sets primary to the repository of the first tag in the rendered list, and primary becomes the reference the digest is resolved from and therefore the target the finalizer's aliases follow. That makes a positional property of a third-party action's output ordering load-bearing. Every tag now has to name a repository the plan job proved, so the value cannot be arbitrary -- which is why this is Low -- but with two enabled destinations the choice between them is the renderer's, not this repository's. Remedy: select primary explicitly as the forge repository, which is the one destination that is never optional."
+- key: BL-E009-001
+  epic: '009'
+  sprint: ''
+  title: Run the adversarial pass per story in E009, not only at sprint closure
+  source: epic closure — E008 retrospective follow-through
+  severity: Medium
+  status: backlog
+  description: "The per-story loop runs bmad-code-review only; adversarial, red-team and arch-drift run at sprint closure. In E008 that meant a defect written in story 001 was found after 002, 003 and 004 had copied its shape -- one finding, four times, with three stories built on top of it. Closure remediation was 24 commits against 3 implementation commits, and roughly half the epic's man-hours landed in the closure band. There is no customize.toml knob for this: it is an orchestration choice made at dispatch time, so it has to be remembered rather than configured, which is why it is an issue rather than a setting. Recorded in docs/project-context.md alongside the rest of E008's process learnings. E009 adds guards to the same surface, so the multiplier applies again."
