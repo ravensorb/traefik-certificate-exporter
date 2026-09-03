@@ -249,13 +249,26 @@ jobs:
           primary=""
           seen=""
           while IFS= read -r tag; do
-            tag="$(echo "$tag" | tr -d '[:space:]')"
+            # Trim the ENDS only. `tr -d '[:space:]'` also deleted interior whitespace,
+            # so `ghcr.io/a b:1` silently became `ghcr.io/ab:1` -- a different image
+            # reference, published without complaint. A malformed tag must be refused,
+            # never repaired.
+            tag="${tag#"${tag%%[![:space:]]*}"}"
+            tag="${tag%"${tag##*[![:space:]]}"}"
             if [[ -z "$tag" ]]; then
               continue
             fi
-            case "$tag" in
-              *,*) echo "image tag must not contain a comma: $tag" >&2; exit 2 ;;
-            esac
+            # An OCI reference is ASCII by construction. Refusing everything outside that
+            # grammar subsumes three separate defences: the comma that Buildx's CSV parse
+            # would split into two tags, any other separator a future Buildx might take,
+            # and the homoglyph or zero-width character that survives normalisation and
+            # then compares unequal to the repository the plan job proved. A byte-level
+            # class catches the multi-byte cases too, because every continuation byte is
+            # outside it.
+            if [[ "$tag" =~ [^A-Za-z0-9._:/@-] ]]; then
+              echo "image tag contains a character an OCI reference may not carry: $tag" >&2
+              exit 2
+            fi
             repository="${tag%:*}"
             if [[ "$repository" == "$tag" || "$repository" != *"/"* ]]; then
               echo "image tag must be <registry>/<repository>:<tag>: $tag" >&2
@@ -303,7 +316,15 @@ jobs:
               seen="$seen $authority"
             fi
             tags="${tags:+$tags,}$tag"
-            primary="${primary:-$repository}"
+            # The forge repository, explicitly -- not whichever tag came first.
+            # `primary` becomes the reference the digest is resolved from, and therefore
+            # the target every alias the finalizer moves will follow. Taking it
+            # positionally made an alias target a property of a third-party renderer's
+            # output ORDER. The forge registry is the one destination that is never
+            # optional (ADR-0011), so it is the only stable anchor available.
+            if [[ "$authority" == "$REGISTRY" ]]; then
+              primary="${primary:-$repository}"
+            fi
           done <<< "$IMAGE_TAGS"
           if [[ -z "$tags" ]]; then
             echo "no image tags were supplied" >&2
@@ -312,6 +333,13 @@ jobs:
           if [[ " $seen " != *" $REGISTRY "* ]]; then
             echo "the forge registry $REGISTRY is enabled but no tag addresses it: the" >&2
             echo "enabled set and the rendered tag list have drifted" >&2
+            exit 2
+          fi
+          # Cannot be reached while the check above holds -- `primary` is set from the
+          # same condition. Kept as the invariant the digest resolution depends on,
+          # stated where it is used rather than inferred from ten lines above.
+          if [[ -z "$primary" ]]; then
+            echo "no forge repository resolved for the published digest" >&2
             exit 2
           fi
           if [[ "$DOCKERHUB_ENABLED" == "true" &&

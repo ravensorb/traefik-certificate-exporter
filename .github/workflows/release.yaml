@@ -577,7 +577,13 @@ jobs:
         with:
           packages-dir: upload-set
           repository-url: ${{ needs.plan.outputs.package-index-url }}
-          user: ${{ github.actor }}
+          # `__token__`, not the pusher. Gitea's basic auth resolves a token supplied as
+          # the password and ignores the username, so `github.actor` worked -- but it
+          # varies per push and is unrelated to whoever minted FORGE_PACKAGE_TOKEN,
+          # which made the upload's apparent identity a property of who pushed rather
+          # than of the credential. `__token__` is the convention every Python index
+          # uses for exactly this, and it is a constant.
+          user: __token__
           password: ${{ secrets.FORGE_PACKAGE_TOKEN }}
       - name: Record forge package publication evidence
         env:

@@ -3500,6 +3500,77 @@ def test_the_exact_version_a_publisher_does_push_is_still_accepted() -> None:
         assert completed.returncode == 0, completed.stderr
 
 
+@pytest.mark.parametrize(
+    ("tag", "why"),
+    [
+        (
+            "ghcr.io/owner/name:a,b",
+            "a comma splits into two tags under bake's CSV parse",
+        ),
+        (
+            "ghcr.io/owner/na me:1.2.3",
+            "interior whitespace was silently deleted, not refused",
+        ),
+        ("ghcr.io/owner/name\u200b:1.2.3", "a zero-width space survives normalisation"),
+        (
+            "ghcr.io/оwner/name:1.2.3",
+            "a Cyrillic homoglyph reads as the proven repository",
+        ),
+        ("ghcr.io/owner/name;evil:1.2.3", "a separator other than the comma"),
+    ],
+)
+def test_a_tag_outside_the_oci_character_grammar_is_refused(tag: str, why: str) -> None:
+    """Refused, never repaired.
+
+    The normalisation was `tr -d '[:space:]'`, which deletes *interior* whitespace too --
+    so `ghcr.io/a b:1` became `ghcr.io/ab:1`, a different image reference, published
+    without complaint. And the separator defence named only the comma, while the
+    repository comparison it feeds is byte-exact: a homoglyph or zero-width character
+    passes normalisation and then compares unequal to the repository the plan job proved.
+
+    An OCI reference is ASCII by construction, so one character-class refusal subsumes
+    all three. The multi-byte cases are caught because every UTF-8 continuation byte is
+    outside the class.
+    """
+    completed, _ = _compose_tag_list(
+        f"ghcr.io/owner/name:1.2.3\n{tag}", repositories="ghcr.io/owner/name"
+    )
+    assert completed.returncode != 0, f"accepted {tag!r}: {why}"
+
+
+def test_the_digest_reference_is_the_forge_repository_never_the_first_tag() -> None:
+    """`primary` is the reference the digest is resolved from, and therefore the target
+    every alias the finalizer moves will follow.
+
+    It was taken positionally -- the first tag in the rendered list -- which made an
+    alias target a property of a third-party metadata action's output ORDER. With two
+    enabled destinations the choice between them was the renderer's, not this
+    repository's. The forge registry is the one destination that is never optional
+    (ADR-0011), so it is the only stable anchor.
+    """
+    permitted = "ghcr.io/owner/name\ndocker.io/owner/name"
+    # Docker Hub first in the rendered list, forge second: `primary` must still be the
+    # forge repository.
+    completed, emitted = _compose_tag_list(
+        "docker.io/owner/name:1.2.3\nghcr.io/owner/name:1.2.3",
+        dockerhub="true",
+        repositories=permitted,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert emitted["primary"] == "ghcr.io/owner/name", (
+        f"the digest reference followed the first tag ({emitted['primary']}) rather "
+        f"than the forge repository"
+    )
+    # And the reverse order gives the same answer, which is the point.
+    completed, emitted = _compose_tag_list(
+        "ghcr.io/owner/name:1.2.3\ndocker.io/owner/name:1.2.3",
+        dockerhub="true",
+        repositories=permitted,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert emitted["primary"] == "ghcr.io/owner/name"
+
+
 def test_a_tag_may_not_address_a_repository_the_plan_job_never_proved() -> None:
     """The permission check tested the *authority* and never the *repository*.
 
@@ -4943,6 +5014,36 @@ def test_the_released_distributions_are_attested_on_every_release() -> None:
         )
 
 
+def test_a_package_upload_never_authenticates_as_the_pusher() -> None:
+    """A token upload's identity must come from the credential, not from whoever pushed.
+
+    Both forge index publishers passed `user: ${{ github.actor }}` alongside
+    `FORGE_PACKAGE_TOKEN`. It works -- Gitea's basic auth resolves a token supplied as
+    the password and ignores the username -- but the value varies per push and is
+    unrelated to whoever minted the token, so the upload's apparent identity became a
+    property of who triggered the run. `__token__` is the convention every Python index
+    uses for this, and it is a constant.
+
+    Scope is every package-upload step in every governed definition, so a third index
+    added later is covered without editing this.
+    """
+    examined = 0
+    for definition, container, steps in _governed_step_groups():
+        for step in steps:
+            if not str(step.get("uses", "")).startswith("pypa/gh-action-pypi-publish"):
+                continue
+            supplied = str((step.get("with") or {}).get("user", ""))
+            if not supplied:
+                continue  # trusted publishing passes no user at all, which is stronger
+            examined += 1
+            assert "github.actor" not in supplied, (
+                f"{definition}: {container!r} uploads a package as `{supplied}`. The "
+                f"identity of a token upload is the token's, not the pusher's; use "
+                f"`__token__`."
+            )
+    assert examined, "no package upload supplies a user; this guard examined nothing"
+
+
 def test_every_publisher_revalidates_the_bundle_before_it_logs_in_or_uploads() -> None:
     """CI-AR36, over every publisher rather than the one that attaches the Release.
 
@@ -5081,6 +5182,80 @@ def test_ref_writing_and_registry_alias_privileges_never_meet() -> None:
                 )
     assert ref_writers, "no job writes a ref; this guard examined nothing"
     assert alias_movers, "no job moves a registry alias; this guard examined nothing"
+
+
+DESTINATION_KEY = re.compile(r'"([a-z][a-z-]*)"\s*:\s*"')
+
+
+def _destination_vocabulary(path: Path) -> set[str]:
+    """The destination keys this workflow's plan job actually emits.
+
+    Read from the `enabled-destinations=` line the step prints, which is the single
+    producer of the set (ADR-0011). Everything downstream spells these keys by hand --
+    three times in release.yaml, and dozens of times in this module -- and nothing
+    derived them from here until now.
+    """
+    for job in _jobs(_load_workflow(path)).values():
+        for step in job.get("steps") or []:
+            body = str(step.get("run", ""))
+            if "enabled-destinations=" not in body:
+                continue
+            emitted = body.split("enabled-destinations=", 1)[1].split("}", 1)[0]
+            return set(DESTINATION_KEY.findall(emitted))
+    return set()
+
+
+def test_the_finalizer_gate_binds_every_destination_to_the_job_that_serves_it() -> None:
+    """Two defects, one coupling.
+
+    The gate's `PUBLISHER_RESULTS` maps each destination key to a `needs.<job>.result` by
+    hand, and the vocabulary itself is spelled by hand everywhere downstream of the one
+    step that emits it. The existing guard asserted each publisher's result appears
+    *somewhere* in the gate's env, never that a key is bound to the job that ships that
+    destination: rebinding `image-dockerhub` to `needs.publish-package-forge.result`
+    left the suite green.
+
+    So: the gate's keys must be exactly the vocabulary the plan job emits, and where a
+    job's own definition gates on a destination key -- `fromJSON(...)['package-pypi']` in
+    its `if:`, or in an input it passes down -- the gate must bind that key to that job.
+    That covers every toggle-gated destination, which are the ones a mis-binding can
+    actually hide. `image-forge` and `attestation` are unconstrained here because no job
+    gates on them: the first is the channel and the second is a host capability.
+    """
+    examined = 0
+    for path in sorted(WORKFLOWS.glob("*.yaml")):
+        vocabulary = _destination_vocabulary(path)
+        if not vocabulary:
+            continue
+        gates = _gate_steps(path)
+        assert gates, f"{path.name}: emits a destination set and no gate reads it"
+        for job_name, step in gates.items():
+            results = str((step.get("env") or {}).get("PUBLISHER_RESULTS", ""))
+            bound = set(DESTINATION_KEY.findall(results))
+            examined += 1
+            assert bound == vocabulary, (
+                f"{path.name}: the gate in {job_name!r} binds {sorted(bound)} but the "
+                f"plan job emits {sorted(vocabulary)}. The set has one producer."
+            )
+            # And each key must name the job that actually serves it.
+            for key in sorted(vocabulary):
+                serving = {
+                    name
+                    for name, job in _jobs(_load_workflow(path)).items()
+                    if f"['{key}']" in json.dumps(job)
+                }
+                if not serving:
+                    continue
+                match = re.search(
+                    rf'"{re.escape(key)}"\s*:\s*"\$\{{\{{\s*needs\.([a-z0-9-]+)\.result',
+                    results,
+                )
+                assert match and match.group(1) in serving, (
+                    f"{path.name}: the gate binds {key!r} to "
+                    f"{match.group(1) if match else 'nothing'!r}, but the job that gates "
+                    f"on that destination is {sorted(serving)}"
+                )
+    assert examined, "no workflow has both a destination set and a gate"
 
 
 def test_every_finalizer_waits_for_every_publisher_and_reads_every_result() -> None:
