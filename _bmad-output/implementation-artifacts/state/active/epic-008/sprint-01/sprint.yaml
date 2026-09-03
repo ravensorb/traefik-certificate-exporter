@@ -1,7 +1,7 @@
 key: 'S01'
 epic: 'E008'
 title: 'Sprint 01 — Action-Based Multi-Channel Delivery'
-status: backlog
+status: done
 estimate:
   man_hours_low: 65.11
   man_hours_high: 80.32
@@ -25,4 +25,24 @@ estimate:
   cost_high: 6.33
   model: claude-opus-5
   confidence: medium
-updated_at: '2026-09-02T00:30:27Z'
+updated_at: '2026-09-03T05:57:04Z'
+actual:
+  elapsed_hours: 12
+  man_hours: 185
+  hitl_hours: 0.35
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-09-03T05:54:36Z'
+orchestration:
+  elapsed_hours: 1.7
+  man_hours: 0
+  hitl_hours: 0
+  tokens_k: N/A
+  cost: N/A
+orchestration_sampled_at: '2026-09-03T05:54:58Z'
+closed:
+  date: '2026-09-03'
+retrospective:
+  velocity: '4'
+  carry_over: '0'
+  summary: "Four stories delivered the action-based multi-channel publication pipeline: five workflow files (two reusable), three composite actions, twelve jobs, three registered finalizers, two credential classes. All four closed done, carry-over zero.\n\nClosure was larger than the sprint's implementation. Four review phases returned one BLOCKER, one CRITICAL, nine HIGH, six MAJOR, eleven MEDIUM and fourteen MINOR/LOW; every one is fixed, in twenty commits. The contract suite went 215 collected (one red) to 285 passing, and 38s to 7s after caching the YAML parse.\n\nThe sprint's signature defect recurred eleven times and is worth naming precisely: a guard whose rule is correct over a set that is wrong. The clearest instance was SECRET_FREE_WORKFLOWS -- the identical two-tuple tier 1 had already replaced with a filesystem derivation, left eight lines below the derivation that replaced it, carrying the fork-safety rules. A second pull_request workflow running fork code on a self-hosted runner with packages: write and a registry login failed no guard at all. Ten write prohibitions could not see composite actions, though release.yaml's finalize holds contents: write and calls one. Ten more guards scoped themselves to 'publishes a container image' rather than 'publishes'. The lesson is not 'derive the scope' -- the team knew that, and wrote it in three docstrings -- it is that a derivation added beside a literal does not remove the literal, and nothing was checking.\n\nTwo live publication bugs that no amount of guard-scope work would have found, because they were in the workflows rather than the tests. Alias inversion: the ordering decision was taken in finalize and applied a job later, and two stable tags run in parallel by design, so a slower v1.2.3 run dragged latest and v1 back off v1.3.0 with both runs green. And silent under-publication: the tag check enforced 'no tag for a disabled destination' and not its mirror, so an enabled Docker Hub could receive nothing, pass the gate, create the Release, advance the aliases, and fail afterwards against a digest never pushed.\n\nTwo controls were found to have never worked. The gitleaks gate ran the upstream --staged invocation under --all-files, which stages nothing: 0 bytes scanned, exit 0, every commit of this project. And the pytest matrix declared five Python versions while installing one, interpolating the dimension into the job name so CI reported five interpreters running 3.14 -- pyproject's 3.10 floor had never been executed. Both were green the whole time, which is the failure mode that matters: a control everyone trusts to have looked.\n\nWhat worked: planting the violation. Every fix here is proven by a plant that attacks the scope rather than the rule, and the discipline paid twice on its own author -- a first https test passed against a deliberately weakened check because the URLs chosen hit the fail-closed branch anyway, and a region replace silently removed seven definitions, caught only because the collected count fell by four.\n\nCarried forward as backlog rather than fixed: BL-E008-007 and -008 are settings outside the tree (branch protection requiring code-owner review; the pypi environment's reviewers and the matching PyPI trusted-publisher claim) which the guards state plainly they cannot observe. BL-E008-009 is the unchecked claim that the vendored agent trees match an installed release."

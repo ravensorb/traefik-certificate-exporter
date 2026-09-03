@@ -1,7 +1,3 @@
-_lock:
-  session_id: l3io-pm-20260902T235913Z-e008r
-  claimed_at: '2026-09-03T00:59:34Z'
-  ttl_minutes: 30
 key: 'E008'
 title: 'Epic 008 — Action-Based Multi-Channel Delivery'
 goal: 'Publish verified development and stable artifacts through normal destination actions, then advance aliases only after required jobs succeed.'

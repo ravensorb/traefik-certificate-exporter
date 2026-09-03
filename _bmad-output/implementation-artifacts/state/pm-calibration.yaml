@@ -105,6 +105,7 @@ closure:
       - 0.4598
       - 0.3053
       - 0.2699
+      - 8.6811
     hitl_hours:
       samples:
       - 0.625
@@ -114,6 +115,7 @@ closure:
       - 0.6667
       - 0.3704
       - 0.1641
+      - 10.409
     man_hours:
       samples:
       - 0.4234
@@ -122,6 +124,7 @@ closure:
       - 0.3802
       - 0.2538
       - 5.8989
+      - 7.7975
   epic:
     elapsed_hours:
       samples:
@@ -167,8 +170,10 @@ orchestration:
       samples:
       - 0.1463
       - 0.1132
+      - 0.2125
     man_hours:
       samples:
+      - 0.0
       - 0.0
       - 0.0
     hitl_hours:
