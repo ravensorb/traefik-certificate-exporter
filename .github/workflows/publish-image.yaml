@@ -264,14 +264,25 @@ jobs:
             # is rendered by a third-party action from `flavor: latest=false`, and this
             # step does not get to assume that input was honoured -- the contract suite
             # asserts `latest=false` is *passed*, which is not the same as *obeyed*, and
-            # the renderer is a fork on its own major line. If it ever emitted `latest`,
-            # or a bare major or major.minor, the publisher would move an alias from
-            # outside the grant while every alias-ownership guard still passed, because
-            # those read the workflow rather than the rendered list.
+            # the renderer is a fork on its own major line.
+            #
+            # An ALLOWLIST of the two immutable shapes, not a denylist of alias shapes.
+            # The denylist enumerated the stable channel's aliases -- `latest`, a bare
+            # major, a bare major.minor -- and therefore accepted `dev`, which is the
+            # development channel's alias and is moved by dev.yaml's own finalizer. The
+            # publisher could have pushed it directly, outside the grant, skipping the
+            # just-in-time default-branch-head proof and the stable-tag suppression
+            # re-check. Enumerating what is forbidden gets this wrong every time a new
+            # alias is introduced; enumerating what is permitted does not.
             reference="${tag##*:}"
-            if [[ "$reference" == latest || "$reference" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-              echo "image tag '$tag' is an alias, and aliases belong to the finalizer" >&2
-              echo "alone (CI-AR29). A publisher pushes the exact version only." >&2
+            case "$reference" in
+              dev-*) shape='^dev-[0-9a-f]{12}$' ;;
+              *)     shape='^[0-9]+\.[0-9]+\.[0-9]+$' ;;
+            esac
+            if [[ ! "$reference" =~ $shape ]]; then
+              echo "image tag '$tag' is not an immutable publication tag. A publisher" >&2
+              echo "pushes an exact X.Y.Z or a dev-<12 hex> tag; every mutable name is" >&2
+              echo "the finalizer's alone (CI-AR29)." >&2
               exit 2
             fi
             if [[ " $seen " != *" $authority "* ]]; then

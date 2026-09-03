@@ -3006,7 +3006,22 @@ def _compose_tag_list(
 
 @pytest.mark.parametrize(
     "alias",
-    ["ghcr.io/owner/name:latest", "ghcr.io/owner/name:1", "ghcr.io/owner/name:1.2"],
+    [
+        "ghcr.io/owner/name:latest",
+        "ghcr.io/owner/name:1",
+        "ghcr.io/owner/name:1.2",
+        # The development channel's alias, moved by dev.yaml's own finalizer. The first
+        # version of this refusal enumerated the *stable* channel's alias shapes and
+        # accepted `dev`, so the publisher could have taken it outside the grant --
+        # skipping the just-in-time default-branch-head proof and the stable-tag
+        # suppression re-check (epic redteam E1).
+        "ghcr.io/owner/name:dev",
+        "ghcr.io/owner/name:main",
+        "ghcr.io/owner/name:stable",
+        "ghcr.io/owner/name:dev-nothex12345",
+        "ghcr.io/owner/name:1.2.3.4",
+        "ghcr.io/owner/name:v1.2.3",
+    ],
 )
 def test_a_publisher_refuses_to_push_an_alias_however_the_tag_list_was_rendered(
     alias: str,
@@ -3024,7 +3039,7 @@ def test_a_publisher_refuses_to_push_an_alias_however_the_tag_list_was_rendered(
     """
     completed, _ = _compose_tag_list(alias)
     assert completed.returncode != 0, f"the publisher accepted the alias {alias!r}"
-    assert "belong to the finalizer" in completed.stderr, completed.stderr
+    assert "not an immutable publication tag" in completed.stderr, completed.stderr
 
 
 def test_the_exact_version_a_publisher_does_push_is_still_accepted() -> None:
@@ -3032,7 +3047,9 @@ def test_the_exact_version_a_publisher_does_push_is_still_accepted() -> None:
     publishes -- an exact `X.Y.Z`, or the development channel's `dev-<sha>`."""
     for permitted in (
         "ghcr.io/owner/name:1.2.3",
+        "ghcr.io/owner/name:10.20.30",
         "ghcr.io/owner/name:dev-0123456789ab",
+        "ghcr.io/owner/name:dev-abcdef012345",
     ):
         completed, _ = _compose_tag_list(permitted)
         assert completed.returncode == 0, completed.stderr
@@ -3749,6 +3766,7 @@ def _release_destinations(**environment: str) -> tuple[Any, dict[str, str]]:
         # a name Docker Hub and the forge registry could disagree on.
         "FORGE_OWNER": "ravensorb",
         "IMAGE_NAME": "traefik-certificate-exporter",
+        "ATTESTATION_SUPPORTED": "true",
         "PACKAGE_INDEX_SUPPORTED": "false",
         "PYPI_TOGGLE": "",
     }
@@ -4121,14 +4139,29 @@ def test_no_alias_move_consumes_an_ordering_decision_taken_in_another_job() -> N
     assert examined, "no alias mover shares a file with an ordering decision"
 
 
-def test_a_job_that_decides_alias_order_serialises_against_every_other_run() -> None:
-    """A fresh read is only meaningful if the writes are ordered.
+def test_an_alias_concurrency_group_queues_rather_than_cancels() -> None:
+    """A concurrency group on an alias job is a hazard unless it is told to queue.
 
-    The workflow-level group is keyed on `github.ref`, which is correct for the
-    immutable fan-out and wrong for a shared mutable name: two tags never queue
-    against each other. Every job that takes an ordering decision therefore carries a
-    ref-free job-level group, so the alias stage of one run cannot interleave with
-    another's.
+    Sprint closure added `concurrency: {group: <workflow>-aliases, cancel-in-progress:
+    false}` to both stable finalizers and ADR-0011 recorded that "every stable run
+    queues behind every other". **GitHub does not do that.** Its documented default is
+    `queue: single`: at most one run is pending per group, and "any existing pending job
+    or workflow run in the same group is canceled and replaced". `cancel-in-progress`
+    governs the *running* member only.
+
+    So the group did the opposite of its purpose. Three overlapping tags cancelled a
+    middle finalizer that had already published to PyPI and the registry irreversibly --
+    creating no Release and moving no alias -- and `release-evidence`'s `!cancelled()`
+    meant no run summary was written either. Anyone able to push a tag could freeze
+    `latest` by pushing a throwaway one.
+
+    The groups are gone. Ordering is carried entirely by re-deriving the tag set in the
+    job that writes (`test_no_alias_move_consumes_an_ordering_decision_taken_in_another_job`),
+    which the epic-closure red team confirmed it could not break. This guard keeps the
+    hazard from returning: an alias-deciding job may carry a group only with
+    `queue: max`, the option that actually queues. `actionlint` v1.7.12 does not know
+    that key yet (upstream PR #661 adds it, unreleased), and its behaviour on Gitea is
+    unknown, which is why the group was removed rather than corrected in place.
     """
     examined = 0
     for name, document in sorted(_workflow_documents().items()):
@@ -4136,52 +4169,16 @@ def test_a_job_that_decides_alias_order_serialises_against_every_other_run() -> 
             if not _ordering_steps(job):
                 continue
             examined += 1
-            group = str((job.get("concurrency") or {}).get("group", ""))
-            assert group, (
-                f"{name}: job {job_name!r} decides alias order with no job-level "
-                f"concurrency group, so two runs' alias stages interleave"
-            )
-            assert "github.ref" not in group, (
-                f"{name}: job {job_name!r} serialises on {group!r}, which is keyed on "
-                f"the ref -- two tags are two refs, so this queues nothing"
+            concurrency = job.get("concurrency")
+            if not isinstance(concurrency, dict):
+                continue
+            assert str(concurrency.get("queue", "")) == "max", (
+                f"{name}: job {job_name!r} decides alias order behind a concurrency "
+                f"group without `queue: max`. GitHub cancels the pending member of a "
+                f"group rather than queueing it, so this loses a finalizer that has "
+                f"already published irreversibly -- worse than no group at all."
             )
     assert examined, "no job decides alias order; this guard examined nothing"
-
-
-# The scopes the finalizer authority split depends on, in both directions: the
-# ref-writing job must not hold them, and the registry job must not hold `contents:
-# write`. Denial is stated, never inferred.
-AUTHORITY_SCOPES = ("contents", "packages", "id-token", "attestations")
-
-
-def test_every_finalizer_states_the_scopes_it_relies_on_being_denied() -> None:
-    """ADR-0006's split is enforced by `permissions:`, and on GitHub an unlisted scope
-    is `none`. That semantic is what the whole split rests on, and it is platform
-    behaviour rather than something this repository states.
-
-    Gitea does not document it and ships `TokenPermissionMode` permissive by default,
-    so on the forge E009 targets, omission grants where GitHub denies -- and the
-    ref-writing finalizer would silently acquire the registry authority the split
-    exists to keep away from it. An explicit `none` needs no inference from any runner.
-
-    Gitea's granular `code:`/`releases:` spellings are deliberately absent: they are
-    not valid GitHub scopes, actionlint rejects the file outright, and the remaining
-    platform requirement is a precondition recorded in ADR-0006 rather than YAML.
-    """
-    examined = 0
-    for workflow, job_name in sorted(RELEASE_FINALIZER_JOBS):
-        job = _jobs(_load_workflow(WORKFLOWS / workflow))[job_name]
-        declared = job.get("permissions")
-        assert isinstance(declared, dict), (
-            f"{workflow}: finalizer {job_name!r} declares no job-level permissions"
-        )
-        examined += 1
-        for scope in AUTHORITY_SCOPES:
-            assert scope in declared, (
-                f"{workflow}: finalizer {job_name!r} omits {scope!r}. Omission denies "
-                f"on GitHub and grants on a permissive Gitea; state it as `none`."
-            )
-    assert examined, "no finalizer is registered; this guard examined nothing"
 
 
 def _finalizers(path: Path) -> set[str]:
@@ -4364,60 +4361,84 @@ def test_the_irrevocable_destination_names_an_environment() -> None:
     assert examined, "no job uploads to PyPI; this guard examined nothing"
 
 
-def test_the_released_distributions_are_attested_before_they_are_published() -> None:
+def test_the_released_distributions_are_attested_on_every_release() -> None:
     """The Release's own evidence proves nothing against whoever can write the Release.
 
     `SHA256SUMS` and `build-manifest.json` are attached with `allow-updates: true` by a
     job holding `contents: write` -- which is right, because a stranded run must be
-    resumable at an immutable identity -- but it means the evidence has no authority
-    independent of the authority that could forge it. An attestation does.
+    resumable at an immutable identity -- so the evidence has no authority independent
+    of the authority that could forge it. An attestation does.
 
-    Three properties, because each is a way to have the step and not the guarantee:
-    it runs in the job that ships the distributions; it runs BEFORE the upload, so a
-    failure costs a release that has not happened rather than stranding a published
-    version with no evidence; and it is gated on a host capability rather than a forge
-    name, since Gitea has no attestation store (ADR-0011 section 2, ADR-0008).
+    **The property this asserts is reachability, and that is the correction.** The first
+    version of this fix put the attestation inside `publish-package-pypi`, which is
+    gated on `PUBLISH_PACKAGE_PYPI` -- default `false`. In the shipped default
+    configuration nothing was attested, and the guard passed, because it proved the step
+    existed, was ordered before the upload and held the right scope. It never asked
+    whether the step runs. Setting the attesting job to `if: false` left the suite green.
+    That is the epic's signature defect -- a correct rule over the wrong set -- appearing
+    inside the remediation written to close it.
+
+    So: the attesting job may be gated on a HOST CAPABILITY and on nothing else. Not a
+    `PUBLISH_*` toggle, not a destination's enabled state, not a forge name. Gitea has no
+    attestation store, and that is the only reason a release may go unattested.
     """
     document = _load_workflow(RELEASE_WORKFLOW)
+    jobs = _jobs(document)
     attesting = {
         name: job
-        for name, job in _jobs(document).items()
+        for name, job in jobs.items()
         if any(
             str(step.get("uses", "")).startswith(ATTESTATION_ACTION)
             for step in job.get("steps") or []
         )
     }
     assert attesting, (
-        f"no job attests the released distributions; the Release evidence has no "
-        f"authority independent of the {ATTESTATION_ACTION!r} that could replace it"
+        "no job attests the released distributions; the Release evidence has no "
+        "authority independent of the `contents: write` that could replace it"
     )
     for name, job in sorted(attesting.items()):
-        steps = job.get("steps") or []
-        attest = next(
-            index
-            for index, step in enumerate(steps)
-            if str(step.get("uses", "")).startswith(ATTESTATION_ACTION)
+        condition = str(job.get("if", ""))
+        assert ATTESTATION_CAPABILITY in condition, (
+            f"release.yaml: {name!r} gates attestation on {condition!r}. Only the host "
+            f"capability may gate it -- Gitea has no attestation store."
         )
-        upload = next(
-            (index for index, step in enumerate(steps) if _is_publishing_step(step)),
-            None,
-        )
-        assert upload is not None, (
-            f"release.yaml: {name!r} attests nothing it publishes"
-        )
-        assert attest < upload, (
-            f"release.yaml: {name!r} attests at step {attest} and uploads at {upload}; "
-            f"a failed attestation would strand a published version with no evidence"
+        assert (
+            "PUBLISH_" not in condition and "enabled-destinations" not in condition
+        ), (
+            f"release.yaml: {name!r} gates attestation on a publication toggle "
+            f"({condition!r}), so a release with that destination off is unattested. "
+            f"An attestation is evidence, not a destination that can be switched off."
         )
         assert (job.get("permissions") or {}).get("attestations") == "write", (
             f"release.yaml: {name!r} runs the attestation action without the scope it "
             f"needs, so it fails at the point of use"
         )
-        condition = str(steps[attest].get("if", ""))
-        assert ATTESTATION_CAPABILITY in condition, (
-            f"release.yaml: {name!r} gates attestation on {condition!r}. Gitea has no "
-            f"attestation store, and that is a host capability -- never a comparison "
-            f"against a forge name in a publisher (ADR-0011 section 2)."
+        # And nothing irreversible may precede it in its own job: an attestation made
+        # after an upload cannot protect the upload.
+        steps = job.get("steps") or []
+        attest_at = next(
+            index
+            for index, step in enumerate(steps)
+            if str(step.get("uses", "")).startswith(ATTESTATION_ACTION)
+        )
+        shipping = next(
+            (index for index, step in enumerate(steps) if _is_publishing_step(step)),
+            None,
+        )
+        assert shipping is None or attest_at < shipping, (
+            f"release.yaml: {name!r} ships at step {shipping} before attesting at "
+            f"{attest_at}"
+        )
+
+    # Reachability is not only about the `if:`. The Release must wait for it, or a
+    # failed attestation would leave a Release published with unsigned evidence.
+    for finalizer in sorted(_finalizers(RELEASE_WORKFLOW)):
+        if "alias" in finalizer:
+            continue
+        waits_on = set(jobs[finalizer].get("needs") or [])
+        assert waits_on & set(attesting), (
+            f"release.yaml: {finalizer!r} creates the Release without waiting for "
+            f"{sorted(attesting)}, so the Release can carry evidence never signed"
         )
 
 
@@ -4660,6 +4681,7 @@ def _run_gate(path: Path, bindings: dict[str, str], summary: Path | None = None)
 def _stable_bindings(**results: str) -> dict[str, str]:
     """Every expression release.yaml's gate step resolves, with results overridable."""
     defaults = {
+        "attest": "success",
         "publish-image": "success",
         "publish-package-forge": "success",
         "publish-package-pypi": "success",
@@ -4673,9 +4695,36 @@ def _stable_bindings(**results: str) -> dict[str, str]:
                 "image-dockerhub": "disabled",
                 "package-forge": "unsupported",
                 "package-pypi": "enabled",
+                # Enabled here because the GitHub case is the one with an attestation
+                # store; the unsupported (Gitea) case has its own test below.
+                "attestation": "enabled",
             }
         )
     }
+
+
+def test_an_attestation_that_did_not_happen_stops_finalization() -> None:
+    """The attestation is a destination in ADR-0011's sense, and this is why.
+
+    It began as a step inside `publish-package-pypi`, which is gated on
+    PUBLISH_PACKAGE_PYPI -- default false -- so by default nothing was attested and the
+    guard covering it still passed, because it asserted the step existed rather than
+    that it runs. Modelling the attestation as a destination puts it under the gate that
+    already knows the difference between "skipped because this host has none" and
+    "skipped because something upstream died".
+    """
+    completed = _run_gate(RELEASE_WORKFLOW, _stable_bindings(attest="skipped"))
+    assert completed.returncode != 0, "an enabled attestation that never ran finalized"
+    assert "attestation" in completed.stderr
+
+    # And absent by host capability is legitimate: Gitea has no attestation store, so a
+    # skip there must finalize exactly as an absent forge package index does.
+    bindings = _stable_bindings(attest="skipped")
+    enabled = json.loads(bindings["needs.plan.outputs.enabled-destinations"])
+    enabled["attestation"] = "unsupported"
+    bindings["needs.plan.outputs.enabled-destinations"] = json.dumps(enabled)
+    completed = _run_gate(RELEASE_WORKFLOW, bindings)
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_a_disabled_optional_destination_still_finalizes() -> None:
@@ -5516,6 +5565,10 @@ def _irreversible_jobs(path: Path) -> set[str]:
         name
         for name, job in _jobs(document).items()
         if any(_is_publishing_step(step) for step in job.get("steps") or [])
+        # An attestation is a signed public statement about an identity, written to a
+        # store this repository cannot retract. It is as irreversible as an upload, and
+        # it therefore re-reads the identity immediately before making it.
+        or (job.get("permissions") or {}).get("attestations") == "write"
     }
     aliases = {job for workflow, job in _alias_moving_jobs() if workflow == path.name}
     return shipping | aliases
@@ -5781,13 +5834,21 @@ def test_a_result_for_a_destination_nobody_planned_is_a_wiring_defect() -> None:
     )
     completed = _run_gate(RELEASE_WORKFLOW, bindings)
     assert completed.returncode != 0
-    assert "results were supplied for package-forge, package-pypi" in completed.stderr
+    assert (
+        "results were supplied for attestation, package-forge, package-pypi"
+        in completed.stderr
+    )
 
 
 def test_an_empty_enabled_set_blocks_rather_than_finalizing_nothing() -> None:
     bindings = {
         f"needs.{job}.result": "skipped"
-        for job in ("publish-image", "publish-package-forge", "publish-package-pypi")
+        for job in (
+            "publish-image",
+            "publish-package-forge",
+            "publish-package-pypi",
+            "attest",
+        )
     }
     bindings["needs.verify.result"] = "success"
     bindings["needs.plan.outputs.enabled-destinations"] = "{}"
@@ -5815,6 +5876,7 @@ def test_an_unrecognised_destination_state_blocks(state: str) -> None:
             "image-dockerhub": "disabled",
             "package-forge": "unsupported",
             "package-pypi": "enabled",
+            "attestation": "enabled",
         }
     )
     completed = _run_gate(RELEASE_WORKFLOW, bindings)
@@ -5858,6 +5920,7 @@ def test_the_gate_writes_its_evidence_table_where_it_is_told(tmp_path: Path) -> 
         "image-dockerhub",
         "package-forge",
         "package-pypi",
+        "attestation",
         "verify",
     ):
         assert f"`{destination}`" in rendered

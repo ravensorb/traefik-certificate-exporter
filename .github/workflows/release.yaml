@@ -213,6 +213,7 @@ jobs:
       - name: Emit the enabled destination set
         id: destinations
         env:
+          ATTESTATION_SUPPORTED: ${{ steps.forge.outputs.attestation-supported }}
           # The ONLY reader of a PUBLISH_* toggle in this file. Every publisher consumes
           # the set below; two readers of one truth is how the static job graph and the
           # runtime set drift apart (ADR-0011). A contract test enforces it.
@@ -289,9 +290,20 @@ jobs:
           fi
           # `image-forge` is always enabled in this channel -- it is the channel, not a
           # toggle -- so the key is evidence rather than a gate.
+          #
+          # `attestation` is in this map for the reason ADR-0011 s2 gives: it is absent by
+          # HOST CAPABILITY, never by toggle. That is what makes the finalizer gate treat
+          # a skipped attestation on Gitea as legitimate and a skipped one on GitHub as a
+          # failure -- and it is what stops the attestation being quietly optional, which
+          # is how it came to hang off PUBLISH_PACKAGE_PYPI and never run by default.
+          if [[ "$ATTESTATION_SUPPORTED" == "true" ]]; then
+            attestation="enabled"
+          else
+            attestation="unsupported"
+          fi
           {
-            printf 'enabled-destinations={"image-forge":"enabled","image-dockerhub":"%s","package-forge":"%s","package-pypi":"%s"}\n' \
-              "$image_dockerhub" "$package_forge" "$package_pypi"
+            printf 'enabled-destinations={"image-forge":"enabled","image-dockerhub":"%s","package-forge":"%s","package-pypi":"%s","attestation":"%s"}\n' \
+              "$image_dockerhub" "$package_forge" "$package_pypi" "$attestation"
             echo "dockerhub-repository=$dockerhub_repository"
           } >> "$GITHUB_OUTPUT"
 
@@ -377,6 +389,104 @@ jobs:
       channel: stable
       package-version: ${{ needs.plan.outputs.package-version }}
       source-sha: ${{ needs.plan.outputs.source-sha }}
+
+  # Evidence, not a destination -- which is why it is its own job and why nothing
+  # optional gates it.
+  #
+  # This began as a step inside `publish-package-pypi`, and epic closure found that job
+  # is gated on `PUBLISH_PACKAGE_PYPI`, which defaults to false. So in the shipped
+  # default configuration a release attached SHA256SUMS and build-manifest.json to a
+  # Release under `allow-updates: true` and attested nothing -- exactly the state
+  # ADR-0008's amendment was written to fix. The guard proved the step existed, was
+  # ordered before the upload and held the right scope; it proved nothing about whether
+  # the step ever runs. That is this epic's signature defect appearing inside the fix
+  # for it.
+  #
+  # The authority split holds: this job holds an OIDC identity and the attestation
+  # scope, no `contents:` write and no registry credential. `finalize` waits for it, so
+  # a Release is never created carrying evidence that was never signed.
+  attest:
+    name: Attest the verified distributions
+    needs:
+      - plan
+      - verify
+    # Host capability only. GitHub has an attestation store and Gitea has none, the same
+    # shape as the forge Python index being absent on GitHub (ADR-0011 s2). Never a
+    # destination toggle, and never a forge-name comparison.
+    if: ${{ needs.plan.outputs.attestation-supported == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      packages: none
+    outputs:
+      attestation-url: ${{ steps.attest.outputs.attestation-url }}
+    steps:
+      - name: Checkout with full history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.source-sha }}
+
+      # The same re-check every other credentialed job makes, for the same reason: an
+      # attestation is a signed statement about an identity, so the identity is re-read
+      # here rather than trusted from the plan job.
+      - name: Re-check the tag still names this commit before it is attested
+        env:
+          DEFAULT_BRANCH_REF: ${{ needs.plan.outputs.default-branch-ref }}
+          RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          # The same body as every other re-check, and asserted to be by
+          # `test_every_stable_tag_recheck_is_the_same_body`.
+          refuse() { echo "release identity: $*" >&2; exit 2; }
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+            refuse "'$RELEASE_TAG' is not an exact vX.Y.Z stable tag"
+          [[ "$(git for-each-ref --format='%(objecttype)' "refs/tags/$RELEASE_TAG")" == tag ]] ||
+            refuse "'$RELEASE_TAG' is not an annotated tag in this checkout"
+          [[ "$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")" == "$(git rev-parse --verify "${SOURCE_SHA}^{commit}")" ]] ||
+            refuse "'$RELEASE_TAG' no longer peels to $SOURCE_SHA"
+          # The reachability leg the plan job proved, re-proved here. Peeling shows the
+          # tag still names this commit; it says nothing about whether that commit is
+          # still on the protected default branch. A force-push to the branch between
+          # the plan job and this step leaves the tag intact and the history it was
+          # published from gone, and every other leg of this check passes.
+          git merge-base --is-ancestor "${SOURCE_SHA}^{commit}" "$DEFAULT_BRANCH_REF" ||
+            refuse "$SOURCE_SHA is no longer reachable from $DEFAULT_BRANCH_REF; publication is limited to the protected default branch"
+
+      # ADR-0011 / F4: the Git tag set is the ordering authority, so it is read
+      # HERE, at the point of the write, rather than carried from `finalize`.
+      # `finalize` decides and this job applies, and between the two a newer tag can
+      # land; across runs the window is wider still, because two tags are two refs
+      # and run in parallel by design. A decision that was correct when taken and
+      # stale when applied dragged `latest` and `vMAJOR` back onto the older release
+      # with both runs green -- the exact inversion F4 exists to prevent, caught
+      # within a run and missed across runs.
+      #
+      # The body is identical to `finalize`'s, and
+      # `test_every_alias_ordering_decision_is_the_same_body` asserts it stays so.
+
+      - name: Revalidate the verified bundle before it is attested
+        id: bundle
+        uses: ./.github/actions/verified-bundle
+        with:
+          python-version: ${{ needs.plan.outputs.python-version }}
+          artifact-name: ${{ needs.verify.outputs.dist-artifact-name }}
+          expected-package-version: ${{ needs.plan.outputs.package-version }}
+          expected-source-sha: ${{ needs.plan.outputs.source-sha }}
+
+      # `subject-checksums` takes the bundle's own SHA256SUMS -- the file the CI-AR36
+      # boundary has just re-verified -- so the attested digests are the ones that
+      # passed the gate rather than a second reading of the directory.
+      - name: Attest the verified distributions
+        id: attest
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-checksums: ${{ steps.bundle.outputs.bundle-path }}/SHA256SUMS
 
   publish-package-forge:
     name: Publish the stable package to the forge index
@@ -508,13 +618,6 @@ jobs:
       # credential; the image job holds registry credentials and no OIDC identity. The
       # two credential sets are disjoint by construction (CI-AR24, CI-AR40).
       id-token: write
-      # Signing the evidence, not publishing with it. `SHA256SUMS` and
-      # `build-manifest.json` are attached to a Release that the same `contents: write`
-      # which creates it can replace, so on their own they attest to nothing an attacker
-      # holding that authority cannot forge. An attestation has an authority outside this
-      # repository. This scope writes to the attestation store and nowhere a package or
-      # an image lives, so the disjointness above is unaffected (ADR-0008).
-      attestations: write
     steps:
       - name: Checkout with full history and tags
         uses: actions/checkout@v7
@@ -569,24 +672,6 @@ jobs:
           mkdir upload-set
           cp -- "$BUNDLE_PATH/$WHEEL_FILENAME" "upload-set/$WHEEL_FILENAME"
           cp -- "$BUNDLE_PATH/$SDIST_FILENAME" "upload-set/$SDIST_FILENAME"
-      # Before the upload, deliberately. An attestation is keyed on the artifact's digest
-      # and needs no destination, so attesting first means a failure here costs a release
-      # that has not happened yet, rather than leaving a published version whose evidence
-      # never landed.
-      #
-      # `subject-checksums` takes the bundle's own `SHA256SUMS` -- the file the boundary
-      # revalidation has just re-verified -- so the attested digests are the ones that
-      # passed the gate rather than a second reading of the directory.
-      #
-      # Gated on a host capability, never on a forge name: GitHub has an attestation
-      # store and Gitea has none, which is the same shape as the forge Python index being
-      # absent on GitHub (ADR-0011 section 2). On Gitea this step is skipped and the
-      # release is unattested, which ADR-0008 records rather than implies.
-      - name: Attest the verified distributions before they are published
-        if: ${{ needs.plan.outputs.attestation-supported == 'true' }}
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-checksums: ${{ steps.bundle.outputs.bundle-path }}/SHA256SUMS
       # Same reviewed pin as the forge index job; see ADR-0009. SHA dc37677 is the head
       # of release/v1, tagged v1.14.2, committed 2026-07-28; reviewed 2026-09-02.
       - name: Upload the verified distributions to PyPI
@@ -667,6 +752,7 @@ jobs:
     needs:
       - plan
       - verify
+      - attest
       - publish-package-forge
       - publish-package-pypi
       - publish-image
@@ -676,15 +762,6 @@ jobs:
     # With `always()` it would run on a cancelled fan-out and advance aliases
     # over a half-published set. Both failures are guarded (ADR-0011).
     if: ${{ !cancelled() }}
-    # The alias stage is serialised across runs, and the group is deliberately
-    # ref-free. The workflow-level group is keyed on `github.ref`, so two tags run
-    # fully in parallel by design -- correct for the immutable fan-out, wrong for the
-    # alias writes, which are a shared mutable name. Serialising alone is not the fix
-    # (a queued run still holds the decision it took before it queued); it is what
-    # makes the re-read below meaningful.
-    concurrency:
-      group: ${{ github.workflow }}-aliases
-      cancel-in-progress: false
     runs-on: ubuntu-24.04
     permissions:
       # The single grant ADR-0006 governs. No `packages:` write: image aliases
@@ -736,7 +813,8 @@ jobs:
             {"image-forge":"${{ needs.publish-image.result }}",
              "image-dockerhub":"${{ needs.publish-image.result }}",
              "package-forge":"${{ needs.publish-package-forge.result }}",
-             "package-pypi":"${{ needs.publish-package-pypi.result }}"}
+             "package-pypi":"${{ needs.publish-package-pypi.result }}",
+             "attestation":"${{ needs.attest.result }}"}
           REQUIRED_RESULTS: >-
             {"verify":"${{ needs.verify.result }}"}
         run: |
@@ -997,15 +1075,6 @@ jobs:
     # evaluated every publisher against the enabled set. `!cancelled()` keeps
     # this job reachable so a refusal is reported rather than silently skipped.
     if: ${{ !cancelled() && needs.finalize.result == 'success' }}
-    # The alias stage is serialised across runs, and the group is deliberately
-    # ref-free. The workflow-level group is keyed on `github.ref`, so two tags run
-    # fully in parallel by design -- correct for the immutable fan-out, wrong for the
-    # alias writes, which are a shared mutable name. Serialising alone is not the fix
-    # (a queued run still holds the decision it took before it queued); it is what
-    # makes the re-read below meaningful.
-    concurrency:
-      group: ${{ github.workflow }}-aliases
-      cancel-in-progress: false
     runs-on: ubuntu-24.04
     permissions:
       # Every scope the authority split depends on is declared, including the ones
@@ -1243,6 +1312,7 @@ jobs:
       - publish-package-forge
       - publish-package-pypi
       - publish-image
+      - attest
       - finalize
       - finalize-image-aliases
     # `!cancelled()` rather than `always()`: a legitimately absent destination must not
@@ -1262,6 +1332,8 @@ jobs:
           IMAGE_REFERENCE: ${{ needs.publish-image.outputs.image-reference }}
           IMAGE_RESULT: ${{ needs.publish-image.result }}
           IMAGE_TAGS: ${{ needs.plan.outputs.image-tags }}
+          ATTESTATION_RESULT: ${{ needs.attest.result }}
+          ATTESTATION_URL: ${{ needs.attest.outputs.attestation-url }}
           IMAGE_ALIAS_RESULT: ${{ needs.finalize-image-aliases.result }}
           IMAGE_MAJOR_ADVANCED: ${{ needs.finalize-image-aliases.outputs.advance-major }}
           IMAGE_MINOR_ADVANCED: ${{ needs.finalize-image-aliases.outputs.advance-minor }}
@@ -1301,6 +1373,7 @@ jobs:
             echo "| Image platforms | \`${IMAGE_PLATFORMS}\` |"
             echo "| Release | \`${RELEASE_RESULT}\` [${RELEASE_URL}](${RELEASE_URL}) |"
             echo "| Release assets | \`${RELEASE_ASSETS}\` |"
+            echo "| Attestation | \`${ATTESTATION_RESULT}\` ${ATTESTATION_URL} |"
             echo "| Image aliases | \`${IMAGE_ALIAS_RESULT}\` |"
             echo "| Git aliases advanced | major \`${MAJOR_ADVANCED}\` minor \`${MINOR_ADVANCED}\` |"
             echo "| Image aliases advanced | major \`${IMAGE_MAJOR_ADVANCED}\` minor \`${IMAGE_MINOR_ADVANCED}\` |"
