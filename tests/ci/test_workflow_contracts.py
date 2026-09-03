@@ -5700,6 +5700,35 @@ def test_the_git_alias_action_runs_only_behind_the_ordering_gate() -> None:
     assert examined, "no workflow moves a Git alias; this guard examined nothing"
 
 
+def test_the_release_step_never_asks_the_forge_to_create_its_own_trigger() -> None:
+    """`commit:` makes the Release action create the tag at that SHA.
+
+    This workflow is triggered by the tag push, so `refs/tags/vX.Y.Z` exists before the
+    job starts. Passing `commit:` asks the forge to create a ref the run depends on
+    already existing, and the first real release died on exactly that:
+    `HTTP 422 Unprocessable Entity: {"message":"Reference already exists"}` -- after the
+    image had been published and attested, with the Release and every alias unmade.
+
+    Nothing is lost by omitting it: the tag identifies the Release, it already points at
+    the released commit, and the re-check immediately above re-proves that it still
+    peels to `source-sha`.
+    """
+    steps = _jobs(_load_workflow(RELEASE_WORKFLOW))["finalize"]["steps"]
+    creating = [
+        step
+        for step in steps
+        if str(step.get("uses", "")).startswith(APPROVED_RELEASE_ACTION)
+    ]
+    assert creating, "no step creates the Release"
+    for step in creating:
+        inputs = step.get("with") or {}
+        assert "commit" not in inputs, (
+            "the Release step passes `commit:`, which creates the tag. The tag is this "
+            "workflow's trigger and already exists; the forge answers 422."
+        )
+        assert inputs.get("tag"), "the Release must name the tag it attaches to"
+
+
 def test_the_release_carries_the_whole_verified_bundle_and_is_traceable(
     tmp_path: Path,
 ) -> None:

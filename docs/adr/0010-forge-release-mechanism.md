@@ -35,8 +35,9 @@ and major — `LiquidLogicLabs/git-action-release`, described as "Multi-platform
   Gitea Actions sets. This is *better* for CI-AR6 than an override: coordinates come from action
   context. A `platform:` input exists as the explicit escape hatch.
 - Its inputs cover what E008-S01-003 needs (`tag`, `name`, `body-file`, `artifacts`,
-  `prerelease`, `allow-updates`, `commit`) and its outputs (`html-url`, `assets`) satisfy the
-  CI-AR41 run-summary evidence requirement.
+  `prerelease`, `allow-updates`) and its outputs (`html-url`, `assets`) satisfy the
+  CI-AR41 run-summary evidence requirement. **`commit` is deliberately not among them** --
+  see the amendment below; it was listed here and passed, and it is wrong for this workflow.
 
 Two things this ADR relies on are **explicitly unverified**, and both belong in E009's pinned
 tuple rather than being assumed here:
@@ -113,6 +114,39 @@ Confirmed against the published `action.yml` rather than assumed:
   under the single-reader form.
 - `using: node24` is confirmed. ADR-0006's alias action is node24 too at `@v2`, so E009's pinned
   `act_runner` needs one JavaScript runtime for both, not node20 and node24 (E008-S01-003).
+
+## Amended after the first real release: `commit:` must not be passed
+
+The first stable release, v0.1.4, failed here:
+
+```
+HTTP 422 Unprocessable Entity: {"message":"Reference already exists"}
+```
+
+`commit:` tells the action to **create** the tag at the given SHA — the inherited
+`ncipollo/release-action` behaviour for workflows that cut a release from a branch. This workflow
+does the opposite: it is *triggered by* the tag push, so `refs/tags/vX.Y.Z` exists before the job
+starts. Passing `commit:` asked the forge to create the very ref the run depends on already
+existing, and the forge refused, correctly.
+
+Nothing is lost by omitting it. The tag identifies the Release, it already points at the released
+commit, and the identity re-check in the step immediately above re-proves that it still peels to
+`source-sha` before anything is written.
+
+**What this cost, and why it is recorded rather than quietly fixed.** The failure landed *after* the
+multi-platform image was published to the registry and the distributions were attested, and *before*
+the Release and every alias. That is the partially-applied state the finalizer ordering was designed
+to make rare — and the design held: the image is immutable and re-runnable at the same identity, no
+alias moved, and `finalize-image-aliases` never started because it waits on this job. The recovery is
+exactly what `docs/operational.md` prescribes: re-run the failed job only.
+
+It is also a plain instance of this project's own lesson. Every input in the list above was
+*confirmed to exist* on the published `action.yml` (ADR-0010's original verification, and ADR-0012
+did the same for the metadata action). Existing is not the same as being correct to pass, and no
+amount of reading the manifest would have shown it — only running a release did.
+
+`test_the_release_step_never_asks_the_forge_to_create_its_own_trigger` keeps it out.
+
 
 ## Consequences
 

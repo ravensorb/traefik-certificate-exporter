@@ -970,7 +970,15 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ needs.plan.outputs.release-tag }}
-          commit: ${{ needs.plan.outputs.source-sha }}
+          # No `commit:`. That input tells the action to CREATE the tag at a given SHA,
+          # and this workflow is triggered BY the tag push -- `refs/tags/vX.Y.Z` always
+          # already exists by the time this step runs. The first real release proved it:
+          # `HTTP 422 Unprocessable Entity: {"message":"Reference already exists"}`.
+          #
+          # Nothing is lost by omitting it. The tag identifies the Release, the tag
+          # already points at the released commit, and the step directly above re-proved
+          # that it still peels to `source-sha` -- so passing the SHA again asked the
+          # forge to re-create a ref this run depends on already existing.
           # The evidence half of the bundle travels with the distributions:
           # SHA256SUMS and build-manifest.json are what let someone check the
           # attached wheel against what the verifier proved.
