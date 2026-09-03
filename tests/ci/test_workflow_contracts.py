@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import fnmatch
 import importlib.util
 import itertools
@@ -61,9 +62,16 @@ GOVERNED_DEFINITIONS = _governed_definitions()
 
 # Tier 2 scope. Tier 1 (approved owners, floating major aliases, no interpolated
 # `uses:`) applies to every governed definition. The credential prohibitions below
-# apply only to the verifier pair, because those two run untrusted fork code and must
+# apply only to definitions that can execute fork-authored code, because those must
 # never hold a publishing capability -- the publisher workflows legitimately do.
-SECRET_FREE_WORKFLOWS = (CI_WORKFLOW, VERIFY_WORKFLOW)
+#
+# This was a hand-kept `(CI_WORKFLOW, VERIFY_WORKFLOW)` tuple: the *same* 2-tuple that
+# tier 1 replaced with a filesystem derivation, left eight lines below the derivation
+# that replaced it, carrying the rules that matter more. A second `pull_request`
+# workflow on a disjoint branch filter -- a shape the topology guard asserts lawful --
+# ran fork code on a self-hosted runner with `packages: write` and a registry login,
+# and not one guard fired. The set is now derived; the seed is the event.
+FORK_EVENTS = frozenset({"pull_request", "pull_request_target"})
 
 # Jobs permitted to write repository contents -- push refs, or create a forge Release.
 # A registry of granted exceptions, not a derived scope: adding a name here IS the grant,
@@ -109,6 +117,11 @@ RELEASE_FINALIZER_JOBS: frozenset[tuple[str, str]] = frozenset(
 RELEASE_ACTION_VERB = re.compile(r"(?:\A|[-/])(?:release|tag)(?:[-/]|\Z)")
 SECRET_FREE_PROHIBITIONS = (
     "secrets:",
+    # `secrets:` is the mapping a caller passes down; `secrets.` is the expression that
+    # materialises one into a step. The list had only the first, so an `env:` block
+    # naming `${{ secrets.NPM_TOKEN }}` inside the pull-request adapter's own job was
+    # invisible to every guard here.
+    "secrets.",
     "id-token: write",
     "packages: write",
     "attestations: write",
@@ -269,7 +282,9 @@ def test_governance_scope_is_derived_from_disk() -> None:
     # that build the governed set. Either must fail here rather than pass unexamined.
     assert set(GOVERNED_DEFINITIONS) == workflow_files | action_files
 
-    assert set(SECRET_FREE_WORKFLOWS) < set(GOVERNED_DEFINITIONS)
+    # Tier 2 is a proper subset of tier 1: every fork-facing definition is also
+    # governed, and the tier-2 set is smaller because publishers are excluded.
+    assert set(_fork_facing_definitions()) < set(GOVERNED_DEFINITIONS)
     for path in GOVERNED_DEFINITIONS:
         assert _load_document(path), path
 
@@ -350,11 +365,110 @@ def test_tier_one_forbids_expression_interpolated_action_references() -> None:
             assert "${{" not in reference, f"{path}: {reference}"
 
 
-def test_tier_two_verifier_pair_holds_no_publisher_capability() -> None:
-    for path in SECRET_FREE_WORKFLOWS:
+def _local_references(path: Path) -> set[Path]:
+    """Every local workflow or composite action a definition names with `uses: ./...`.
+
+    Resolved from the file's own text, so a directory reference picks up its
+    `action.yml` the way the runner does.
+    """
+    found: set[Path] = set()
+    for reference in re.findall(
+        r"uses:\s*(\./[^\s#]+)", path.read_text(encoding="utf-8")
+    ):
+        target = PROJECT_ROOT / reference.removeprefix("./")
+        found.add(target / "action.yml" if target.is_dir() else target)
+    return found
+
+
+def _fork_facing_workflow_names(documents: dict[str, dict[str, Any]]) -> set[str]:
+    """Workflow filenames that can execute fork-authored code.
+
+    Seeded from whoever owns a `pull_request*` event and closed over local
+    `workflow_call`s, because a reusable workflow inherits its caller's trust boundary.
+    Pure over parsed documents so the scope attack below runs through this exact code.
+    """
+    reachable = {
+        name
+        for name, document in documents.items()
+        if _declared_events(document) & FORK_EVENTS
+    }
+    frontier = list(reachable)
+    while frontier:
+        document = documents.get(frontier.pop())
+        if document is None:
+            continue
+        for job in _jobs(document).values():
+            used = job.get("uses")
+            if isinstance(used, str) and used.startswith("./.github/workflows/"):
+                name = used.rsplit("/", 1)[-1]
+                if name not in reachable:
+                    reachable.add(name)
+                    frontier.append(name)
+    return reachable
+
+
+def _fork_facing_definitions() -> tuple[Path, ...]:
+    """The fork-facing workflows plus every composite action they reach, from disk."""
+    documents = {path.name: _load_workflow(path) for path in WORKFLOWS.glob("*.yaml")}
+    resolved: set[Path] = set()
+    frontier = [WORKFLOWS / name for name in _fork_facing_workflow_names(documents)]
+    while frontier:
+        path = frontier.pop()
+        if path in resolved or not path.exists():
+            continue
+        resolved.add(path)
+        frontier.extend(_local_references(path))
+    return tuple(sorted(resolved))
+
+
+def test_tier_two_fork_facing_definitions_hold_no_publisher_capability() -> None:
+    """ADR-0007 invariant 2, over every definition that can run a fork's code."""
+    definitions = _fork_facing_definitions()
+    assert definitions, "nothing reacts to a pull request; this guard examined nothing"
+    for path in definitions:
         source = path.read_text(encoding="utf-8")
         for forbidden in SECRET_FREE_PROHIBITIONS:
             assert forbidden not in source, f"{path}: {forbidden}"
+        if path.parent != WORKFLOWS:
+            continue
+        for job_name, job in _jobs(_load_workflow(path)).items():
+            # The substrings above read the file; this reads the parsed job, so a
+            # capability spelled a way the list does not anticipate still fails.
+            assert not _is_credential_bearing(job), (
+                f"{path.name}: job {job_name!r} runs fork-authored code and holds a "
+                f"publication capability (ADR-0007 invariant 2)"
+            )
+
+
+def test_the_fork_facing_scope_follows_the_event_not_a_list_of_files() -> None:
+    """The scope attack. Each planted document is a workflow the hand-kept 2-tuple
+    could not see: a second pull-request entry point, and a reusable workflow that only
+    a fork-facing caller reaches."""
+    documents = {path.name: _load_workflow(path) for path in WORKFLOWS.glob("*.yaml")}
+    assert _fork_facing_workflow_names(documents) >= {"ci.yaml", "verify-build.yaml"}
+
+    planted = dict(documents)
+    planted["pr-preview.yaml"] = {
+        "on": {"pull_request": {"branches": ["release/**"]}},
+        "jobs": {
+            "preview": {
+                "runs-on": "self-hosted",
+                "permissions": {"packages": "write"},
+                "uses": "./.github/workflows/preview-publish.yaml",
+            }
+        },
+    }
+    planted["preview-publish.yaml"] = {
+        "on": {"workflow_call": {}},
+        "jobs": {"push": {"runs-on": "ubuntu-24.04", "steps": []}},
+    }
+    names = _fork_facing_workflow_names(planted)
+    assert "pr-preview.yaml" in names, (
+        "a second pull-request workflow escaped the scope"
+    )
+    assert "preview-publish.yaml" in names, (
+        "a reusable workflow reached only from a fork-facing caller escaped the scope"
+    )
 
 
 def test_fork_verification_has_no_publisher_capability_or_persistent_runner() -> None:
@@ -477,6 +591,54 @@ def test_the_committed_version_authority_has_one_implementation() -> None:
     assert development == f"{major}.{minor}.{int(patch) + 1}.dev7"
 
 
+def _workflow_documents() -> dict[str, dict[str, Any]]:
+    """Every governed workflow, parsed, keyed by filename."""
+    return {
+        path.name: _load_workflow(path) for path in sorted(WORKFLOWS.glob("*.yaml"))
+    }
+
+
+def _unverified_shipping_findings(documents: dict[str, dict[str, Any]]) -> list[str]:
+    """Entry points that can ship without reaching the governed verifier.
+
+    Pure over parsed documents so the scope attack below runs through this exact code
+    rather than a second implementation that can agree with it while both are wrong.
+    """
+    findings: list[str] = []
+    for name, document in sorted(documents.items()):
+        events = _declared_events(document)
+        # Every event that can start a run on its own, derived as a complement. The
+        # previous form was a literal `{push, release, workflow_dispatch, schedule}`
+        # that had already grown by one entry each time a hole was found -- and
+        # `repository_dispatch`, `workflow_run`, `merge_group`, `create` and
+        # `pull_request_target` were all still missing, each of them a way to reach a
+        # publisher having run nothing. `workflow_call` is the single exemption: a
+        # reusable workflow is not an entry point, and its caller owns the gate.
+        if not (events - {"workflow_call"}):
+            continue
+        jobs = _jobs(document)
+        called = {job_name: job.get("uses") for job_name, job in jobs.items()}
+        # A publisher is anything that ships or can ship -- derived from capability, not
+        # from shape (gate finding F15). Recognising only "calls another local workflow"
+        # made this pass vacuously over Epic 8's dev.yaml, whose publishers are ordinary
+        # step-based jobs holding registry credentials.
+        publishers = set(_publishers(document))
+        if not publishers:
+            continue
+        verifiers = {n for n, used in called.items() if used == VERIFIER_REFERENCE}
+        if not verifiers:
+            findings.append(
+                f"{name}: publishes on {sorted(events)} without the governed verifier"
+            )
+            continue
+        for publisher in sorted(publishers):
+            if not verifiers <= _transitive_needs(jobs, publisher):
+                findings.append(
+                    f"{name}: job {publisher!r} does not depend on the governed verifier"
+                )
+    return findings
+
+
 def test_any_push_triggered_workflow_verifies_before_it_ships() -> None:
     """Epic 7 deleted test.yaml and nothing replaced it, so pushes ran zero tests.
     build.yaml restored that, then went with the rest of the legacy publish path, so no
@@ -488,33 +650,42 @@ def test_any_push_triggered_workflow_verifies_before_it_ships() -> None:
     that some push workflow exists -- that would be red for all of Epic 8, and a
     permanently-red gate gets disabled rather than fixed.
     """
-    for path in sorted(WORKFLOWS.glob("*.yaml")):
-        document = _load_workflow(path)
-        triggers = document["on"]
-        events = set(triggers) if not isinstance(triggers, str) else {triggers}
-        # Any trigger that can ship, not `push` alone. Filtering to push let a publisher
-        # on `on: release:` -- with no verifier anywhere in the file -- pass untouched,
-        # which is the shipping path this guard exists to gate.
-        if not (events & {"push", "release", "workflow_dispatch", "schedule"}):
-            continue
-        jobs = _jobs(document)
-        called = {name: job.get("uses") for name, job in jobs.items()}
-        # A publisher is anything that ships or can ship -- derived from capability, not
-        # from shape (gate finding F15). Recognising only "calls another local workflow"
-        # made this pass vacuously over Epic 8's dev.yaml, whose publishers are ordinary
-        # step-based jobs holding registry credentials.
-        # One definition of "publisher", shared with the development-channel guards
-        # below. Two hand-kept copies of this derivation would drift, and the copy
-        # nobody updated would be the one still reporting success.
-        publishers = set(_publishers(document))
-        if not publishers:
-            continue
-        verifiers = {n for n, used in called.items() if used == VERIFIER_REFERENCE}
-        assert verifiers, f"{path.name}: builds artifacts on push without the verifier"
-        for publisher in publishers:
-            assert verifiers <= _transitive_needs(jobs, publisher), (
-                f"{path.name}: job {publisher!r} does not depend on the governed verifier"
-            )
+    findings = _unverified_shipping_findings(_workflow_documents())
+    assert not findings, findings
+
+
+@pytest.mark.parametrize(
+    "trigger",
+    [
+        {"repository_dispatch": {"types": ["nightly"]}},
+        {"workflow_run": {"workflows": ["ci"], "types": ["completed"]}},
+        {"merge_group": {}},
+        {"create": None},
+        {"release": {"types": ["published"]}},
+        {"schedule": [{"cron": "0 3 * * *"}]},
+    ],
+)
+def test_the_shipping_gate_scope_follows_capability_not_a_list_of_events(
+    trigger: dict[str, Any],
+) -> None:
+    """The scope attack. Every trigger here reaches a publisher on its own, and the
+    previous literal event set saw only two of them -- so a job holding `id-token:
+    write` could upload to PyPI having run no tests at all."""
+    planted = _workflow_documents()
+    planted["nightly.yaml"] = {
+        "on": trigger,
+        "jobs": {
+            "publish-package-pypi": {
+                "runs-on": "ubuntu-24.04",
+                "permissions": {"id-token": "write"},
+                "steps": [{"uses": "pypa/gh-action-pypi-publish@release/v1"}],
+            }
+        },
+    }
+    findings = _unverified_shipping_findings(planted)
+    assert any("nightly.yaml" in finding for finding in findings), (
+        f"a publisher on {sorted(trigger)} shipped without the verifier: {findings}"
+    )
 
 
 def test_no_workflow_exposes_a_secret_at_workflow_scope() -> None:
@@ -667,28 +838,61 @@ def test_alias_ordering_is_decided_from_git_never_from_a_registry() -> None:
     per-destination remote-state read, one refactor from retired CI-AR26, and wrong on its
     own terms: the registry is a publication side effect, not the version authority.
     """
-    registry_reads = REGISTRY_READ_COMMANDS
-    for path in sorted(WORKFLOWS.glob("*.yaml")):
-        for job_name, job in _jobs(_load_workflow(path)).items():
-            steps = job.get("steps", []) or []
-            # Scope is the whole workflow, not the alias job. Restricting it to the job
-            # holding the action let a `skopeo inspect` in the plan job decide ordering and
-            # hand the answer downstream -- the same remote-state read, one job earlier.
-            # Only files that move aliases are examined, so unrelated workflows are free.
-            moves_aliases = any(
-                str(step.get("uses", "")).startswith(APPROVED_ALIAS_ACTION)
-                for candidate in _jobs(_load_workflow(path)).values()
-                for step in (candidate.get("steps", []) or [])
-            )
-            if not moves_aliases:
-                continue
-            for step in steps:
+    findings = _alias_ordering_findings(_workflow_documents())
+    assert not findings, findings
+
+
+def _alias_ordering_findings(documents: dict[str, dict[str, Any]]) -> list[str]:
+    """Registry reads in any file that moves an alias.
+
+    Scope is the whole workflow, not the alias job: restricting it to the job holding
+    the action let a `skopeo inspect` in the plan job decide ordering and hand the
+    answer downstream -- the same remote-state read, one job earlier.
+
+    Which workflows those are comes from `_alias_moving_jobs`, not from "contains a
+    `git-action-tag-floating-version` step". That earlier test keyed the scope on the
+    action name, so `dev.yaml` -- which moves the `dev` image alias with `buildx
+    imagetools create` and holds no Git-alias step -- was excluded outright, and
+    `release.yaml` was covered only incidentally, because it happens to move a Git
+    alias too. Deleting that one step would have dropped it from the scope while it
+    still moved three image aliases.
+    """
+    alias_files = {workflow for workflow, _ in _alias_moving_jobs(documents)}
+    findings: list[str] = []
+    for name, document in sorted(documents.items()):
+        if name not in alias_files:
+            continue
+        for job_name, job in _jobs(document).items():
+            for step in job.get("steps", []) or []:
                 command = str(step.get("run", ""))
-                for probe in registry_reads:
-                    assert not re.search(probe, command), (
-                        f"{path.name}: job {job_name!r} moves aliases and reads a "
-                        f"registry. Ordering comes from the Git tag set alone (F4)."
-                    )
+                for probe in REGISTRY_READ_COMMANDS:
+                    if re.search(probe, command):
+                        findings.append(
+                            f"{name}: job {job_name!r} moves aliases and reads a "
+                            f"registry. Ordering comes from the Git tag set alone (F4)."
+                        )
+    return findings
+
+
+def test_the_alias_ordering_scope_covers_registry_aliases_not_just_git_ones() -> None:
+    """The scope attack, planted in the file the sprint taught to move an alias.
+
+    `dev.yaml` moves the `dev` tag with `imagetools create`, so a registry read in any
+    of its jobs decides ordering from a publication side effect -- the retired-CI-AR26
+    revival this guard exists to prevent. The previous scope could not see the file at
+    all, and `dev.yaml` asserted in a comment that it could.
+    """
+    documents = _workflow_documents()
+    assert "dev.yaml" in {workflow for workflow, _ in _alias_moving_jobs(documents)}, (
+        "dev.yaml no longer moves an alias; this attack examined nothing"
+    )
+    planted = {name: copy.deepcopy(document) for name, document in documents.items()}
+    plan = _jobs(planted["dev.yaml"])["plan"]
+    plan.setdefault("steps", []).append(
+        {"name": "Decide", "run": 'docker buildx imagetools inspect "$IMAGE:dev"'}
+    )
+    findings = _alias_ordering_findings(planted)
+    assert any("dev.yaml" in finding for finding in findings), findings
 
 
 def test_no_workflow_calls_a_local_workflow_or_action_that_does_not_exist() -> None:
@@ -1256,11 +1460,35 @@ def _uncommented(command: str) -> str:
     )
 
 
-def _channel_workflows() -> list[Path]:
-    """Workflows that publish an image through the shared reusable publisher.
+def _publishing_workflows() -> list[Path]:
+    """Every workflow that owns an automatic event and publishes something.
+
+    The scope for the destination-agnostic rules: full-history checkouts, credential
+    disjointness, re-reading the tag set before upload, gating optional credentials,
+    the evidence job, the finalizer, the run summary.
+
+    Those rules used to take their scope from `_image_channel_workflows` below, which
+    derives from *whether the workflow publishes a container image*. A `nightly.yaml`
+    with a single PyPI job -- `id-token: write`, `fetch-depth: 1`, no tag re-read, no
+    finalizer, ungated optional credentials -- ships no image, so none of the seven
+    looked at it and the suite stayed green. Publishing is the property that matters
+    here, not what is published.
+    """
+    return [
+        path
+        for path in sorted(WORKFLOWS.glob("*.yaml"))
+        if _trigger_surface(_load_workflow(path)) and _publishers(_load_workflow(path))
+    ]
+
+
+def _image_channel_workflows() -> list[Path]:
+    """The subset that publishes an image through the shared reusable publisher.
 
     Derived from who calls it, never enumerated: release.yaml is covered the day it
-    lands, without an edit here.
+    lands, without an edit here. Kept narrow deliberately -- it is the right scope for
+    rules about the image wiring (platform inputs, digest and platform outputs,
+    consuming an inspection rather than performing one) and the wrong scope for
+    anything that is true of publishing in general.
     """
     return [
         path
@@ -1270,6 +1498,35 @@ def _channel_workflows() -> list[Path]:
             for job in _jobs(_load_workflow(path)).values()
         )
     ]
+
+
+def test_the_publishing_scope_is_derived_from_publishing_not_from_images() -> None:
+    """The scope attack for `_publishing_workflows`, as a classification proof.
+
+    The seven destination-agnostic guards used to key on "calls publish-image.yaml".
+    A push-triggered workflow holding one PyPI job satisfies none of their rules and
+    was examined by none of them, because it ships no image. Planted on disk it now
+    fails nine guards; here the classification itself is pinned, so the derivation
+    cannot quietly narrow again.
+    """
+    assert set(_image_channel_workflows()) <= set(_publishing_workflows()), (
+        "a workflow that publishes an image must also count as publishing"
+    )
+    nightly = {
+        "on": {"push": {"branches": ["nightly"]}},
+        "jobs": {
+            "publish-package-pypi": {
+                "runs-on": "ubuntu-24.04",
+                "permissions": {"id-token": "write"},
+                "steps": [{"uses": "pypa/gh-action-pypi-publish@" + "0" * 40}],
+            }
+        },
+    }
+    assert _trigger_surface(nightly), "a push-triggered workflow owns an event"
+    assert _publishers(nightly), "an `id-token: write` job can ship"
+    assert not any(
+        job.get("uses") == PUBLISH_IMAGE_REFERENCE for job in _jobs(nightly).values()
+    ), "and it ships no image -- which is exactly how it escaped the seven guards"
 
 
 def _publishers(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -1344,7 +1601,7 @@ def test_every_channel_checkout_keeps_full_history_and_tags() -> None:
     and from who calls the image publisher, so neither a job added later nor a channel
     added later can quietly take a shallow one.
     """
-    channel_workflows = _channel_workflows()
+    channel_workflows = _publishing_workflows()
     assert channel_workflows, "no workflow calls the image publisher"
     checkouts = 0
     for path in channel_workflows:
@@ -1615,10 +1872,14 @@ def test_the_image_fan_out_is_one_buildx_invocation_carrying_every_tag() -> None
         f"publish-image.yaml performs {len(builds)} image builds; CI-AR39 allows one"
     )
     # And nowhere else. A per-registry "just push it to Docker Hub too" step added to a
-    # channel workflow is the cheapest way to break this rule, and scoping the count to
-    # one hand-named file would not see it. The scope is derived from who calls the image
-    # publisher, so release.yaml is covered the day it lands.
-    for path in _channel_workflows():
+    # publishing workflow is the cheapest way to break this rule, and scoping the count
+    # to one hand-named file would not see it.
+    #
+    # The scope is every publishing workflow, not every caller of the image publisher.
+    # Keying it on "calls publish-image.yaml" was circular: a workflow that built and
+    # pushed an image inline was, by that derivation, not a channel workflow, so the
+    # one rule forbidding exactly that could not see it.
+    for path in _publishing_workflows():
         for step in _steps(_load_workflow(path)):
             assert not re.search(
                 r"buildx\s+(?:bake|build)\b", str(step.get("run", ""))
@@ -1720,7 +1981,7 @@ def test_channel_workflows_consume_image_inspection_rather_than_performing_it() 
     removes. Scope is derived: any workflow that calls the image publisher is a channel
     workflow, so release.yaml is covered the day it lands.
     """
-    channel_workflows = _channel_workflows()
+    channel_workflows = _image_channel_workflows()
     assert channel_workflows, "no workflow calls the image publisher"
     for path in channel_workflows:
         for job_name, job in _jobs(_load_workflow(path)).items():
@@ -1821,7 +2082,7 @@ def test_publisher_credentials_stay_disjoint_between_destinations() -> None:
       can be excluded from the comparison at all.
     """
     secret_reference = re.compile(r"secrets\.([A-Za-z_][A-Za-z0-9_-]*)")
-    channel_workflows = _channel_workflows()
+    channel_workflows = _publishing_workflows()
     assert channel_workflows, "no workflow calls the image publisher"
     for path in channel_workflows:
         used: dict[str, set[str]] = {}
@@ -2000,7 +2261,7 @@ def test_step_based_publishers_re_read_the_tag_set_before_they_upload() -> None:
     tag set itself.
     """
     examined = 0
-    for path in _channel_workflows():
+    for path in _publishing_workflows():
         document = _load_workflow(path)
         suppressors = {
             name
@@ -2536,7 +2797,7 @@ def test_the_run_evidence_job_blocks_on_every_publisher() -> None:
     violation is the scope attack: a new publisher absent from the aggregator's needs
     fails here without anyone remembering to edit a list.
     """
-    channel_workflows = _channel_workflows()
+    channel_workflows = _publishing_workflows()
     assert channel_workflows, "no workflow calls the image publisher"
     for path in channel_workflows:
         document = _load_workflow(path)
@@ -2815,7 +3076,7 @@ def test_optional_destination_credentials_are_gated_on_the_enabled_set() -> None
     no list here to keep.
     """
     examined = 0
-    for path in _channel_workflows():
+    for path in _publishing_workflows():
         for job_name, job in _jobs(_load_workflow(path)).items():
             called = str(job.get("uses", ""))
             if not called.startswith("./.github/workflows/"):
@@ -2850,7 +3111,7 @@ def test_channel_workflows_surface_the_published_digest_and_platforms() -> None:
     disappears silently.
     """
     examined = 0
-    for path in _channel_workflows():
+    for path in _image_channel_workflows():
         document = _load_workflow(path)
         body = json.dumps(document)
         image_jobs = [
@@ -2923,22 +3184,26 @@ BUILD_ACTIONS = ("docker/build-push-action", "docker/bake-action")
 EXPRESSION = re.compile(r"\$\{\{\s*(.+?)\s*\}\}")
 
 
-def _alias_moving_jobs() -> set[tuple[str, str]]:
+def _alias_moving_jobs(
+    documents: dict[str, dict[str, Any]] | None = None,
+) -> set[tuple[str, str]]:
     """Every job that points a mutable name at an artifact, from the parsed steps.
 
     Both kinds, because the story owns both: a Git alias moved by the approved action,
     and a registry alias moved by a digest copy. Derived rather than enumerated, so an
     alias step added to a publisher shows up here without anyone editing a list.
+
+    Takes an optional document set so a scope attack can plant one.
     """
     moving = set()
-    for path in sorted(WORKFLOWS.glob("*.yaml")):
-        for job_name, job in _jobs(_load_workflow(path)).items():
+    for name, document in sorted((documents or _workflow_documents()).items()):
+        for job_name, job in _jobs(document).items():
             for step in job.get("steps", []) or []:
                 if str(step.get("uses", "")).startswith(APPROVED_ALIAS_ACTION):
-                    moving.add((path.name, job_name))
+                    moving.add((name, job_name))
                 command = _uncommented(str(step.get("run", "")))
                 if any(re.search(probe, command) for probe in ALIAS_MOVE_COMMANDS):
-                    moving.add((path.name, job_name))
+                    moving.add((name, job_name))
     return moving
 
 
@@ -3126,7 +3391,7 @@ def test_every_finalizer_waits_for_every_publisher_and_reads_every_result() -> N
     never mentions. Both sets are derived from `_publishers()`, so the scope attack --
     a new publisher nothing depends on -- fails without anyone editing a list.
     """
-    channel_workflows = _channel_workflows()
+    channel_workflows = _publishing_workflows()
     assert channel_workflows, "no workflow calls the image publisher"
     for path in channel_workflows:
         document = _load_workflow(path)
@@ -4891,7 +5156,7 @@ def test_every_run_summary_reports_the_verified_bundle_and_every_destination() -
     and release jobs from what they call -- so a destination added later is covered
     without an edit, which is the scope attack each of these guards has to survive.
     """
-    channels = _channel_workflows()
+    channels = _publishing_workflows()
     assert channels, "no workflow calls the image publisher"
     examined = 0
     for path in channels:

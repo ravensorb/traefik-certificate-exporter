@@ -494,10 +494,15 @@ jobs:
       contents: read
       packages: write
     # Every read of the published image lives in publish-image.yaml, which moves no
-    # alias; this file consumes its digest and platforms as outputs. Story 003 adds an
-    # alias finalizer here, and from that moment a registry read in any job of this file
-    # would fail `test_alias_ordering_is_decided_from_git_never_from_a_registry`
+    # alias; this file consumes its digest and platforms as outputs. Story 003 added the
+    # alias finalizer below, so a registry read in any job of this file now fails
+    # `test_alias_ordering_is_decided_from_git_never_from_a_registry`
     # (story E008-S01-001, prep finding P1).
+    #
+    # That was written as a prediction and was untrue for the whole sprint: the guard
+    # took its scope from "contains a `git-action-tag-floating-version` step", and this
+    # file moves its alias with `imagetools create`. Sprint closure derived the scope
+    # from what a job does instead, which is what makes the sentence above true.
     uses: ./.github/workflows/publish-image.yaml
     with:
       channel: dev
