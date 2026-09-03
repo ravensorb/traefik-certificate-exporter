@@ -4,8 +4,14 @@
 # which scans the *index*. Under `pre-commit run gitleaks --all-files` -- what CI runs --
 # nothing is staged, so it scanned `~0 bytes (0)`, reported `no leaks found` and exited 0.
 # Reproduced against a repository holding a live-format GitHub PAT and Slack bot token:
-# the staged form exits 0; `gitleaks dir` finds both and exits 1. The gate had been
-# passing over every commit of this project without reading any of it.
+# the staged form exits 0; `gitleaks dir` finds both and exits 1.
+#
+# TWO DOMAINS, and this file governs both. `gitleaks dir` walks the checked-out tree and
+# is what the hook runs, locally and in CI. It does NOT walk commit objects, so a
+# credential committed and removed in a later commit stays live in the history -- and
+# for a period after the fix above, nothing read it. verify-build.yaml's gitleaks job
+# runs `gitleaks git` over the full history it already fetches (~1.5s, 143 commits), and
+# `test_the_secret_scanner_covers_both_the_tree_and_the_history` keeps the pair together.
 #
 # `gitleaks dir` takes no notice of pre-commit's `exclude:`, so the vendored tool trees
 # are allowlisted here instead. They are the same three paths, and

@@ -184,3 +184,30 @@ Validated against each tool's current release as of this writing (§8 in practic
 | `actionlint` | `rhysd/actionlint` v1.7.12 | §7 GitHub Actions workflow validation — this class of tool would have caught the broken `build.yaml` wiring ([review finding #4](../_bmad-output/implementation-artifacts/review-report.md)) before it was committed |
 
 Not yet added: a `mypy`/`pyright` hook (needs a ruff-clean baseline first, per §1).
+
+## 11. Defect provenance belongs in the comment, and this is a deliberate deviation
+
+Core §6 says change history is git's job and that changelog-in-comments is a review finding. This
+project deviates on purpose, and records it here so the next reviewer reads it as a choice rather
+than an oversight.
+
+Where a guard or a workflow step exists **because a specific defect got through**, the comment says
+which one. `release.yaml` is roughly a third comments and much of that mass is provenance: "this was
+a hand-kept 2-tuple that tier 1 had already replaced"; "the list had only the first, so an `env:`
+block naming a secret was invisible to every guard here"; "a count is satisfied by any five files".
+
+The reason is narrow and evidenced. Epic 8 found **eleven** instances of one defect class -- a
+correct rule over a hand-enumerated set -- and several were introduced *while fixing earlier
+instances of it*, by people and agents who had read the rule and agreed with it. Knowing that a line
+is the fix for a specific escape is what stops the next reader simplifying it back. A commit message
+does not travel with the line; a comment does.
+
+The limits, so this does not become licence:
+
+- **The invariant comes first.** Provenance is the second half of a comment whose first half says
+  what the code guarantees. A comment that is *only* history is a review finding here too.
+- **One defect, one place.** Where an ADR already records it, the comment names the ADR and stops.
+- **It expires.** When a comment describes a shape the code no longer has, delete it. Several went
+  at E008 closure for exactly that -- `publish-image.yaml`'s "becomes the fifth workflow file once
+  release.yaml lands", and a push-verification guard still calling itself vacuous two stories after
+  it had stopped being.

@@ -155,6 +155,47 @@ The line-numbered citations below are to files that have been deleted. They are 
 place as a record of what was true when the decision was taken.
 
 
+## Amended at E008 epic closure: `build.yaml` is gone, and the adapter set is five files
+
+This ADR is the one of the epic's five that received no amendment while the topology it describes
+was rebuilt underneath it, and epic closure found it still `Accepted` and still wrong in two ways.
+
+**`build.yaml` no longer exists.** It was deleted with the rest of the legacy publish path in E008's
+topology cutover. The decision above routes pushes to `main` and `v*` tags through it, so a reader
+following this ADR to find where a push is verified arrives at a deleted file — the same failure the
+guidelines page had, one document along.
+
+**The verifier-isolation set is no longer two named files.** Invariant 2's row reads "the named
+verifier set only — `ci.yaml`, `verify-build.yaml`". That literal pair was this epic's *first*
+guard-reach defect: the derivation that replaced it was added while the pair was left in place eight
+lines below, still carrying the tier-2 credential prohibitions, and a second `pull_request` workflow
+running fork code with `packages: write` failed nothing. The property is now derived —
+`_fork_facing_definitions` seeds from the `pull_request*` events and closes over `uses: ./…`, so a
+reusable workflow and a composite action inherit the boundary from their caller.
+
+**What the topology actually is now.** Five workflow files, in two classes, and the classes are a
+partition rather than a count:
+
+| File | Class | Event |
+|---|---|---|
+| `ci.yaml` | adapter | `pull_request` on the default branch |
+| `dev.yaml` | adapter | `push` to the default branch |
+| `release.yaml` | adapter | `push` of a `v*` tag |
+| `verify-build.yaml` | reusable | `workflow_call`, `workflow_dispatch` |
+| `publish-image.yaml` | reusable | `workflow_call` |
+
+`dev.yaml` and `release.yaml` are what option C called "`build.yaml` for pushes and tags", split by
+channel because ADR-0011 makes the destination set a property of the file rather than a runtime
+condition. **The decision itself is unchanged and was correct**: thin per-event adapters resolving
+immutable inputs, one secret-free verifier, publishers separate and holding their own credentials.
+Only the file names and the way the verifier set is computed have moved.
+
+`test_the_workflow_topology_is_a_partition_of_reusable_files_and_event_owners` enforces the table:
+a reusable file that also owns an automatic event runs twice for it, and a file nothing can reach is
+dead weight that reads as governed. It asserts the partition rather than the membership, because an
+earlier version asserted "exactly five files" — and a count is satisfied by any five.
+
+
 ## Consequences
 
 - Positive: a fork pull request can run the complete verification graph, because there is nothing in

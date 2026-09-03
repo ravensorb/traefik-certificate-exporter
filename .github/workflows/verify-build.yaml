@@ -177,37 +177,57 @@ jobs:
       - name: Scan tracked content for credentials
         run: poetry run pre-commit run gitleaks --all-files
 
-      # The gate proves itself, because for this project's whole history it did not.
-      # The upstream hook scans the git index; under `--all-files` nothing is staged, so
-      # it read `~0 bytes (0)`, reported `no leaks found` and exited 0 on every run. A
-      # green secret scanner that reads nothing is worse than none, because it is the
-      # thing everyone trusts to have looked.
-      #
-      # So the same configured invocation is pointed at a planted credential and is
-      # required to fail. If it passes, the scanner is not reading content again and this
-      # job says so, instead of the next reader discovering it in a red-team review.
-      - name: Prove the scanner reads content
+      # `gitleaks dir` walks the checked-out tree. It does not walk commit objects, so a
+      # credential committed and removed in a later commit of the same pull request is
+      # live in the history and read by nothing. This job already fetches the full
+      # history (`fetch-depth: 0`); scanning it costs ~1.5s over 143 commits.
+      - name: Scan the repository history for credentials
         run: |
           set -euo pipefail
-          workspace="$(mktemp -d)"
-          # The fixture is a real-format token, so the scanner this step exercises also
-          # finds it here -- which is the gate working. `gitleaks:allow` is the intended
-          # way to say "this literal is the test data", and it is scoped to this line.
-          printf 'TOKEN = "ghp_016C7e42F292c6912E7710c838347Ae178B4a"\n' > "$workspace/planted.py"  # gitleaks:allow
-          # The configured entry, read from the file that configures it, so a change to
-          # the flags is exercised here rather than paraphrased in a second copy.
-          entry="$(poetry run python -c 'import yaml; c = yaml.safe_load(open(".pre-commit-config.yaml", encoding="utf-8")); print(next(h["entry"] for r in c["repos"] for h in r["hooks"] if h["id"] == "gitleaks"))')"
           scanner="$(find "$HOME/.cache/pre-commit" -type f -perm -u+x -name gitleaks | head -1)"
           [ -n "$scanner" ] || { echo "gitleaks binary not found under the pre-commit cache" >&2; exit 2; }
-          # Same flags, fixture in place of the repository as the one scan target.
-          read -r -a argv <<< "${entry#gitleaks }"
-          argv[${#argv[@]}-1]="$workspace"
-          if "$scanner" "${argv[@]}"; then
-            echo "the configured gitleaks invocation passed over a planted credential:" >&2
-            echo "  $entry" >&2
+          "$scanner" git --redact --no-banner --config .gitleaks.toml .
+
+      # The gate proves itself, because for this project's whole history it did not. The
+      # upstream hook scans the git index; under `--all-files` nothing is staged, so it
+      # read `~0 bytes (0)`, reported `no leaks found` and exited 0 on every run. A green
+      # secret scanner that reads nothing is worse than none, because it is the thing
+      # everyone trusts to have looked.
+      #
+      # Both halves are proven by running THE HOOK -- not by locating the binary and
+      # splicing its argv, which the first version did. That version asserted only that
+      # the exit code was non-zero, and gitleaks exits non-zero for a usage error too, so
+      # a change to the entry's flag order would have made the probe error out and report
+      # success while exercising nothing.
+      - name: Prove the scanner reads this repository, and respects its allowlist
+        run: |
+          set -euo pipefail
+          probe_tree=".scanner-probe"
+          probe_vendored="_bmad/.scanner-probe"
+          cleanup() { rm -rf "$probe_tree" "$probe_vendored"; }
+          trap cleanup EXIT
+
+          # (1) A planted credential inside the scanned tree must fail the real hook.
+          mkdir -p "$probe_tree"
+          printf 'TOKEN = "ghp_016C7e42F292c6912E7710c838347Ae178B4a"\n' > "$probe_tree/planted.py"  # gitleaks:allow
+          if poetry run pre-commit run gitleaks --all-files; then
+            echo "the gitleaks hook passed over a credential planted at $probe_tree" >&2
             exit 2
           fi
-          echo "the scanner read the planted credential and failed, as required"
+          rm -rf "$probe_tree"
+
+          # (2) The same credential inside an allowlisted tree must be ignored -- so this
+          # step tests the allowlist's SHAPE, not merely that the binary can find bytes.
+          # The earlier probe wrote to a temp directory, where the anchored `^_bmad/`
+          # patterns cannot match, so widening the allowlist to `^src/` would have been
+          # invisible to it.
+          mkdir -p "$probe_vendored"
+          printf 'TOKEN = "ghp_016C7e42F292c6912E7710c838347Ae178B4a"\n' > "$probe_vendored/planted.py"  # gitleaks:allow
+          if ! poetry run pre-commit run gitleaks --all-files; then
+            echo "the gitleaks hook failed on an allowlisted vendored tree" >&2
+            exit 2
+          fi
+          echo "the scanner reads this repository and honours its allowlist"
 
   actionlint:
     name: actionlint

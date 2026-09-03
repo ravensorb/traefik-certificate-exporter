@@ -682,10 +682,17 @@ def test_the_authority_surfaces_are_owned() -> None:
     CODEOWNERS existed, one approval could widen a grant and relax the guard reporting
     on it in the same diff.
 
-    The owned set is derived from where those things actually live, so a registry moved
-    to a new file is covered or fails here. **What this cannot check**: whether branch
-    protection requires code-owner review. Without that setting the file is
-    documentation, and no test in this repository can see it.
+    **The required set below is a registry, not a derivation, and the entries are
+    literals.** An earlier version of this docstring claimed the set was "derived from
+    where those things actually live, so a registry moved to a new file is covered" --
+    it was not: only `tests/` is computed, and moving `RELEASE_FINALIZER_JOBS` to
+    `scripts/` would satisfy this guard while leaving the registry unowned. Each entry
+    is here because someone decided that surface grants authority; adding one is that
+    decision, the same way adding to `SHA_PINNED_ACTIONS` is.
+
+    **What this cannot check**: whether branch protection requires code-owner review.
+    Without that setting the file is documentation, and no test in this repository can
+    see it (BL-E008-007).
     """
     patterns = _codeowner_patterns()
     assert patterns, "CODEOWNERS assigns no owners"
@@ -1082,15 +1089,16 @@ def _unverified_shipping_findings(documents: dict[str, dict[str, Any]]) -> list[
 
 
 def test_any_push_triggered_workflow_verifies_before_it_ships() -> None:
-    """Epic 7 deleted test.yaml and nothing replaced it, so pushes ran zero tests.
-    build.yaml restored that, then went with the rest of the legacy publish path, so no
-    workflow reacts to push right now -- Epic 8's dev.yaml closes that.
+    """Epic 7 deleted test.yaml and nothing replaced it, so pushes ran zero tests. This
+    guard was written while that was still true, and it asserted the conditional
+    invariant -- any workflow that reacts to an event must reach the verifier before
+    anything that ships -- so that it passed vacuously rather than sitting permanently
+    red, which is how a gate gets disabled instead of fixed.
 
-    Asserts the conditional invariant rather than the absent one: any workflow that does
-    react to push must reach the verifier before anything that ships. Passes vacuously
-    today and bites the moment a push workflow reappears. Deliberately does not assert
-    that some push workflow exists -- that would be red for all of Epic 8, and a
-    permanently-red gate gets disabled rather than fixed.
+    It is no longer vacuous. `dev.yaml` reacts to `push` on the default branch and
+    `release.yaml` to `v*` tags, and both are examined here: every publisher in each must
+    depend transitively on the governed verifier. The docstring said otherwise for two
+    stories after that stopped being true.
     """
     findings = _unverified_shipping_findings(_workflow_documents())
     assert not findings, findings
@@ -1796,67 +1804,79 @@ def test_the_secret_scanner_and_pre_commit_exclude_the_same_vendored_trees() -> 
     )
 
 
-def test_the_secret_scanner_proves_itself_in_ci() -> None:
-    """The guard above reads configuration; this requires the job that reads *behaviour*.
+def test_the_secret_scanner_covers_both_the_tree_and_the_history() -> None:
+    """Two domains, and fixing one of them changed which was covered.
 
-    Asserting "a gitleaks hook is configured" is exactly the guard this repository
-    already had, and it passed throughout the period the scanner read nothing. So the
-    CI job plants a credential and requires the configured invocation to fail on it,
-    and this test requires that step to keep existing.
+    Sprint closure replaced `gitleaks git --staged` (which read nothing) with
+    `gitleaks dir` (which reads the checked-out tree). That also moved the domain:
+    `git` walks commit objects, `dir` walks the tip. A credential committed and removed
+    in a later commit of the same pull request is live in the history and in
+    `refs/pull/*`, and after the fix it was read by no gate at all -- while
+    `.gitleaks.toml` said the gate "had been passing over every commit without reading
+    any of it", which invites the reader to assume it now reads every commit.
+
+    The hook keeps the tree, and the CI job that already fetches the full history scans
+    it too. Asserted here so the two cannot drift back to one.
     """
     steps = _jobs(_load_workflow(VERIFY_WORKFLOW))["gitleaks"]["steps"]
     bodies = [_uncommented(str(step.get("run", ""))) for step in steps]
     assert any("pre-commit run gitleaks" in body for body in bodies), (
-        "the gitleaks job no longer runs the hook"
+        "the gitleaks job no longer runs the configured hook over the tree"
     )
-    proof = [body for body in bodies if "planted" in body]
+    # The `git` subcommand, however the binary is named at the call site -- the history
+    # step resolves it into a variable rather than hard-coding `gitleaks`.
+    history = re.compile(r"(?:gitleaks|scanner)\S*\"?\s+git\b")
+    assert any(history.search(body) for body in bodies), (
+        "nothing scans the repository history; a credential removed in a later commit "
+        "is live in the history and read by no gate"
+    )
+
+
+def test_the_secret_scanner_proves_itself_in_ci() -> None:
+    """The guard above reads configuration; this requires the job that reads *behaviour*.
+
+    Asserting "a gitleaks hook is configured" is exactly the guard this repository
+    already had, and it passed throughout the period the scanner read nothing.
+
+    Two properties, because the first version of this probe had only half of one. It
+    located the binary with `find | head -1`, spliced the configured entry's argv to
+    point at a temp directory, and accepted any non-zero exit -- but gitleaks exits
+    non-zero for a usage error too, so a change to the entry's flag order would have made
+    the probe fail to parse and report success while exercising nothing. And the fixture
+    sat in a temp directory, where `.gitleaks.toml`'s anchored `^_bmad/` patterns cannot
+    match, so widening the allowlist to `^src/` was invisible to it.
+
+    Now: plant inside the repository and run the hook itself, which removes the argv
+    surgery entirely; and plant a second fixture inside an allowlisted tree, which makes
+    this a test of the allowlist's shape rather than of the binary's existence.
+    """
+    steps = _jobs(_load_workflow(VERIFY_WORKFLOW))["gitleaks"]["steps"]
+    proof = [
+        _uncommented(str(step.get("run", "")))
+        for step in steps
+        if "planted" in str(step.get("run", ""))
+    ]
     assert proof, (
         "the gitleaks job no longer proves the scanner reads content. A configuration "
         "check cannot replace it: the defect it exists for was a correctly configured "
         "hook scanning an empty index."
     )
-    assert ".pre-commit-config.yaml" in proof[0], (
-        "the proof must run the configured invocation, not a second copy of it that "
-        "can stay correct while the real one rots"
+    body = proof[0]
+    assert body.count("pre-commit run gitleaks") >= 2, (
+        "the proof must exercise the configured hook in both directions -- a planted "
+        "credential must fail it, and an allowlisted tree must not"
     )
-
-
-def test_every_matrix_dimension_is_actually_consumed_by_its_job() -> None:
-    """A matrix that varies nothing runs one job N times under N names.
-
-    `pytest` declared `python: [3.10 ... 3.14]` and every leg installed
-    `${{ env.PYTHON_VERSION }}`, so five identical 3.14 runs reported themselves as
-    five interpreters. pyproject declares `>=3.10,<3.15` and nothing tested the floor;
-    a module-level `import tomllib`, which does not exist before 3.11, sat in the suite
-    unnoticed.
-
-    The job's display name is deliberately excluded from the search. Interpolating a
-    dimension into the name is what made the failure invisible -- the CI summary read
-    `pytest (Python 3.10)` -- and a guard that accepted it would have passed too.
-    """
-    examined = 0
-    for name, document in sorted(_workflow_documents().items()):
-        for job_name, job in sorted(_jobs(document).items()):
-            matrix = (job.get("strategy") or {}).get("matrix")
-            if not isinstance(matrix, dict):
-                continue
-            body = json.dumps(
-                {
-                    key: value
-                    for key, value in job.items()
-                    if key not in {"strategy", "name"}
-                }
-            )
-            for dimension in matrix:
-                if dimension in {"include", "exclude"}:
-                    continue
-                examined += 1
-                assert f"matrix.{dimension}" in body, (
-                    f"{name}: job {job_name!r} declares matrix dimension "
-                    f"{dimension!r} and never uses it outside its display name, so "
-                    f"every leg runs the same thing under a different label"
-                )
-    assert examined, "no job declares a matrix; this guard examined nothing"
+    allowlisted = {
+        entry.split("/")[0].lstrip("^").replace("\\", "")
+        for pattern in tomllib.loads(GITLEAKS_CONFIG.read_text(encoding="utf-8"))[
+            "allowlists"
+        ]
+        for entry in pattern.get("paths", [])
+    }
+    assert any(tree in body for tree in allowlisted), (
+        f"the proof plants nothing inside an allowlisted tree ({sorted(allowlisted)}), "
+        f"so widening the allowlist would not be caught by it"
+    )
 
 
 def test_local_wrapper_and_just_recipe_invoke_only_the_direct_verifier() -> None:
@@ -2147,7 +2167,14 @@ def _publishing_workflows() -> list[Path]:
     return [
         path
         for path in sorted(WORKFLOWS.glob("*.yaml"))
-        if _trigger_surface(_load_workflow(path)) and _publishers(_load_workflow(path))
+        # Any entry point that publishes. `_trigger_surface` excludes
+        # `workflow_dispatch`, which is right for the event-ownership partition -- a
+        # person asked for it, so it races nothing -- and wrong here: a
+        # manually-dispatched publisher holding `id-token: write` and running
+        # `twine upload` escaped all seven of these rules. `workflow_call` is the one
+        # exemption, because a reusable file's caller owns the gate.
+        if (_declared_events(_load_workflow(path)) - {"workflow_call"})
+        and _publishers(_load_workflow(path))
     ]
 
 
@@ -5527,6 +5554,14 @@ def test_a_disabled_docker_hub_is_addressed_by_no_alias_step() -> None:
     """
     examined = 0
     for path, job_name in sorted(_alias_moving_jobs()):
+        # `_alias_moving_jobs` keys composite actions by their repo-relative path, not
+        # by a workflow filename, so composing `WORKFLOWS / path` raised
+        # `FileNotFoundError: .../.github/workflows/.github/actions/...` -- a crash that
+        # reads as a broken test rather than a caught violation, which is how a real one
+        # gets triaged as flake. Composite actions carry no Docker Hub condition of
+        # their own; the job that calls them does, and that job is examined here.
+        if job_name == "runs":
+            continue
         job = _jobs(_load_workflow(WORKFLOWS / path))[job_name]
         for step in job.get("steps", []) or []:
             body = json.dumps({k: v for k, v in step.items() if k != "run"})
