@@ -94,6 +94,18 @@ jobs:
           FORGE_SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
+          # https only, checked before the value is used for anything. This URL is
+          # reassembled into a credential URL (`https://x-access-token:<token>@host/...`)
+          # and into the package index URL that carries FORGE_PACKAGE_TOKEN. Over plain
+          # HTTP both cross the network as cleartext Basic auth. On GitHub
+          # `github.server_url` is always https, so this is latent there and live the
+          # moment E009 reaches a self-hosted Gitea -- the deployment shape CI-AR6
+          # exists to support, and the one where an operator can choose http.
+          if [[ "$FORGE_SERVER_URL" != https://* ]]; then
+            echo "forge server URL must use https, got '$FORGE_SERVER_URL':" >&2
+            echo "a publication credential would cross the network in cleartext" >&2
+            exit 2
+          fi
           server_host="${FORGE_SERVER_URL#*://}"
           server_host="${server_host%%/*}"
           # Registry references are lowercase; a forge owner or repository need not be.
@@ -548,6 +560,11 @@ jobs:
       python-version: ${{ needs.plan.outputs.python-version }}
       artifact-name: ${{ needs.verify.outputs.dist-artifact-name }}
       registry: ${{ needs.plan.outputs.registry }}
+      # The same two repositories the plan job proved and handed to the metadata action,
+      # so the rendered tag list is checked against them rather than trusted.
+      repositories: |
+        ${{ needs.plan.outputs.image-repository }}
+        ${{ fromJSON(needs.plan.outputs.enabled-destinations)['image-dockerhub'] == 'enabled' && format('docker.io/{0}', needs.plan.outputs.dockerhub-repository) || '' }}
       tags: ${{ needs.plan.outputs.image-tags }}
       # The enabled set decides, and it was produced once by the plan job. This file
       # never re-reads PUBLISH_IMAGE_DOCKERHUB (ADR-0011).
@@ -808,8 +825,16 @@ jobs:
           FORGE_SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
-          if [[ "$FORGE_SERVER_URL" != *://* ]]; then
-            echo "forge server URL has no scheme: '$FORGE_SERVER_URL'" >&2
+          # https only, checked before the value is used for anything. This URL is
+          # reassembled into a credential URL (`https://x-access-token:<token>@host/...`)
+          # and into the package index URL that carries FORGE_PACKAGE_TOKEN. Over plain
+          # HTTP both cross the network as cleartext Basic auth. On GitHub
+          # `github.server_url` is always https, so this is latent there and live the
+          # moment E009 reaches a self-hosted Gitea -- the deployment shape CI-AR6
+          # exists to support, and the one where an operator can choose http.
+          if [[ "$FORGE_SERVER_URL" != https://* ]]; then
+            echo "forge server URL must use https, got '$FORGE_SERVER_URL':" >&2
+            echo "a publication credential would cross the network in cleartext" >&2
             exit 2
           fi
           {

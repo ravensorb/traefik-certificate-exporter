@@ -58,6 +58,24 @@ outputs:
 runs:
   using: composite
   steps:
+    # An explicitly-passed empty string OVERRIDES a default rather than falling back to
+    # it, and every caller passes `artifact-name: ${{ needs.verify.outputs.… }}`. If that
+    # output is ever empty, `actions/download-artifact` with an empty `name` downloads
+    # EVERY artifact in the run into `path`, and the failure surfaces several steps later
+    # as "expected exactly one wheel" -- which reads as a packaging fault rather than a
+    # missing input. Named here, where it happened.
+    - name: Refuse an empty bundle name before anything is downloaded
+      shell: bash
+      env:
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+      run: |
+        set -euo pipefail
+        if [[ -z "${ARTIFACT_NAME//[[:space:]]/}" ]]; then
+          echo "artifact-name is empty. An empty name makes download-artifact fetch" >&2
+          echo "every artifact in the run; the caller's verify job emitted nothing." >&2
+          exit 2
+        fi
+
     # v4 remains the GitHub/Gitea conformance baseline paired with
     # actions/upload-artifact@v4 until both-forge validation approves a new pair.
     - name: Download the verified distribution bundle

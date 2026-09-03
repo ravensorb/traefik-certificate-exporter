@@ -71,6 +71,18 @@ jobs:
           FORGE_SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
+          # https only, checked before the value is used for anything. This URL is
+          # reassembled into a credential URL (`https://x-access-token:<token>@host/...`)
+          # and into the package index URL that carries FORGE_PACKAGE_TOKEN. Over plain
+          # HTTP both cross the network as cleartext Basic auth. On GitHub
+          # `github.server_url` is always https, so this is latent there and live the
+          # moment E009 reaches a self-hosted Gitea -- the deployment shape CI-AR6
+          # exists to support, and the one where an operator can choose http.
+          if [[ "$FORGE_SERVER_URL" != https://* ]]; then
+            echo "forge server URL must use https, got '$FORGE_SERVER_URL':" >&2
+            echo "a publication credential would cross the network in cleartext" >&2
+            exit 2
+          fi
           server_host="${FORGE_SERVER_URL#*://}"
           server_host="${server_host%%/*}"
           # Registry references are lowercase; a forge owner or repository need not be.
@@ -511,6 +523,9 @@ jobs:
       python-version: ${{ needs.plan.outputs.python-version }}
       artifact-name: ${{ needs.verify.outputs.dist-artifact-name }}
       registry: ${{ needs.plan.outputs.registry }}
+      # The forge repository the plan job proved, and nothing else: the development
+      # channel has exactly one image destination.
+      repositories: ${{ needs.plan.outputs.image-repository }}
       tags: ${{ needs.plan.outputs.image-tags }}
       # Development images never reach Docker Hub. That is the channel, not a toggle:
       # PUBLISH_IMAGE_DOCKERHUB is inert in this file (ADR-0011).

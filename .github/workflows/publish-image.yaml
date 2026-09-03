@@ -34,6 +34,15 @@ on:
         description: Forge container registry authority, derived by the caller's plan job.
         required: true
         type: string
+      repositories:
+        description: >-
+          Newline-separated list of the exact image repositories this run is permitted to
+          address, each one proved by the caller's plan job. Checking the authority alone
+          is not enough: a Docker Hub PAT is account-scoped, so a tag list naming
+          `docker.io/<somewhere-else>/x` passes an authority check and pushes this
+          project's verified image under a name nobody chose.
+        required: true
+        type: string
       tags:
         description: >-
           Newline-separated complete image references to publish. Every one of them is
@@ -168,6 +177,7 @@ jobs:
           DOCKERHUB_ENABLED: ${{ inputs.dockerhub }}
           IMAGE_TAGS: ${{ inputs.tags }}
           PLATFORMS: ${{ inputs.platforms }}
+          PERMITTED_REPOSITORIES: ${{ inputs.repositories }}
           REGISTRY: ${{ inputs.registry }}
         run: |
           set -euo pipefail
@@ -192,6 +202,30 @@ jobs:
           if [[ "$DOCKERHUB_ENABLED" == "true" ]]; then
             permitted="$permitted docker.io index.docker.io"
           fi
+
+          # An authority is a host; a repository is the name the image is published
+          # under. Both are checked, because a Docker Hub credential is account-scoped
+          # and every repository that account can write shares one authority.
+          # `index.docker.io` and a bare `owner/name` are the same destination spelled
+          # three ways, so both sides are normalised before they are compared.
+          normalize_repository() {
+            local value="$1" head="${1%%/*}"
+            if [[ "$head" != *.* && "$head" != *:* ]]; then
+              value="docker.io/$value"
+            fi
+            printf '%s' "${value/#index.docker.io\//docker.io/}"
+          }
+          permitted_repositories=""
+          while IFS= read -r candidate; do
+            candidate="$(echo "$candidate" | tr -d '[:space:]')"
+            if [[ -n "$candidate" ]]; then
+              permitted_repositories+="$(normalize_repository "$candidate")"$'\n'
+            fi
+          done <<< "$PERMITTED_REPOSITORIES"
+          if [[ -z "$permitted_repositories" ]]; then
+            echo "no permitted image repositories were supplied" >&2
+            exit 2
+          fi
           tags=""
           primary=""
           seen=""
@@ -214,6 +248,11 @@ jobs:
             fi
             if [[ " $permitted " != *" $authority "* ]]; then
               echo "image tag addresses $authority, which this run did not log in to: $tag" >&2
+              exit 2
+            fi
+            if [[ $'\n'"$permitted_repositories" != *$'\n'"$(normalize_repository "$repository")"$'\n'* ]]; then
+              echo "image tag addresses repository '$repository', which the plan job did" >&2
+              echo "not prove for this run: $tag" >&2
               exit 2
             fi
             # An alias is the finalizer's sole property (CI-AR29, ADR-0011). This list

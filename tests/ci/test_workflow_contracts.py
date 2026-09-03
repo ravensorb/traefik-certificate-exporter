@@ -37,6 +37,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "workflows"
 CI_WORKFLOW = WORKFLOWS / "ci.yaml"
 VERIFY_WORKFLOW = WORKFLOWS / "verify-build.yaml"
 SETUP_ACTION = ACTIONS / "setup-poetry-python" / "action.yml"
+BUNDLE_ACTION = ACTIONS / "verified-bundle" / "action.yml"
 
 VERIFIER_REFERENCE = "./.github/workflows/verify-build.yaml"
 SETUP_ACTION_REFERENCE = "./.github/actions/setup-poetry-python"
@@ -579,9 +580,9 @@ def _local_references(path: Path) -> set[Path]:
     `action.yml` the way the runner does.
     """
     found: set[Path] = set()
-    for reference in re.findall(
-        r"uses:\s*(\./[^\s#]+)", path.read_text(encoding="utf-8")
-    ):
+    for reference in _action_references(path):
+        if not reference.startswith("./"):
+            continue
         target = PROJECT_ROOT / reference.removeprefix("./")
         found.add(target / "action.yml" if target.is_dir() else target)
     return found
@@ -993,6 +994,25 @@ def test_a_job_gating_on_publishers_uses_not_cancelled_never_always() -> None:
             )
 
 
+ENABLED_SET_OUTPUT = "enabled-destinations"
+
+
+def _enabled_set_producers(path: Path) -> set[str]:
+    """Jobs a finalizer's gate reads the enabled set from, in this workflow.
+
+    Derived from the gate step's own text rather than from what a job calls its outputs:
+    a job is the producer because something consumes it as one, which a label cannot
+    fake. `_gate_steps` is already asserted non-empty by the guards that own it.
+    """
+    producers = set()
+    for step in _gate_steps(path).values():
+        rendered = json.dumps(step)
+        for job_name in _jobs(_load_workflow(path)):
+            if f"needs.{job_name}.outputs.{ENABLED_SET_OUTPUT}" in rendered:
+                producers.add(job_name)
+    return producers
+
+
 def test_the_enabled_destination_set_has_one_producer() -> None:
     """ADR-0011: publishers consume the enabled set; they never re-read `PUBLISH_*`.
 
@@ -1002,15 +1022,16 @@ def test_the_enabled_destination_set_has_one_producer() -> None:
     """
     toggle = re.compile(r"\bPUBLISH_[A-Z_]+\b")
     for path in sorted(WORKFLOWS.glob("*.yaml")):
+        producers = _enabled_set_producers(path)
         for job_name, job in _jobs(_load_workflow(path)).items():
-            outputs = job.get("outputs") or {}
-            # The producer is a job that PLANS -- it emits the set and ships nothing. A
-            # publisher that also declares `enabled-destinations` used to escape by
-            # naming the output, which is the guard reading a label instead of a role.
-            produces = "enabled-destinations" in outputs or any(
-                "version" in name for name in outputs
-            )
-            if produces and not _is_credential_bearing(job):
+            # The producer is defined by role: it is the job the finalizer's gate reads
+            # the enabled set FROM. The previous form tested two labels -- the output
+            # name `enabled-destinations`, or any output whose name merely *contained*
+            # "version" -- and the second was this epic's own defect in a milder form: a
+            # publisher declaring `image-version` and holding no secret was exempted and
+            # could read PUBLISH_* directly, which is the two-readers drift ADR-0011
+            # exists to prevent.
+            if job_name in producers:
                 continue
             body = json.dumps(job)
             assert not toggle.search(body), (
@@ -1105,9 +1126,14 @@ def test_the_alias_ordering_scope_covers_registry_aliases_not_just_git_ones() ->
 def test_no_workflow_calls_a_local_workflow_or_action_that_does_not_exist() -> None:
     # Deleting the legacy workflows left every `uses:` pointing at them dangling. GitHub
     # fails such a call at run time, not at lint time, so nothing else here catches it.
-    for path in sorted(WORKFLOWS.glob("*.yaml")) + sorted(ACTIONS.rglob("action.yml")):
-        text = path.read_text(encoding="utf-8")
-        for reference in re.findall(r"uses:\s*(\./[^\s#]+)", text):
+    # Parsed, not line-matched. `uses: "./.github/workflows/x.yaml"` -- a perfectly
+    # ordinary quoted reference -- does not match a `uses:\s*(\./...)` regex, so a
+    # dangling local call written that way went unchecked. `_action_references` exists
+    # for exactly this and says so in its own docstring.
+    for path in GOVERNED_DEFINITIONS:
+        for reference in _action_references(path):
+            if not reference.startswith("./"):
+                continue
             target = PROJECT_ROOT / reference.removeprefix("./")
             if target.is_dir():
                 target = target / "action.yml"
@@ -1285,10 +1311,48 @@ def test_the_alias_action_runs_only_from_a_registered_finalizer() -> None:
             )
 
 
+# Every bot that decides a version number for you. ADR-0006 puts that authority in the
+# guarded local transaction, and a second one is not a redundancy -- it is two answers.
+VERSION_BOT = re.compile(
+    r"release-please|semantic-release|release-drafter|standard-version|changesets/action",
+    re.IGNORECASE,
+)
+# Their configuration files. A bot that is configured but whose action has not landed yet
+# is the state just before this rule breaks.
+VERSION_BOT_ARTEFACTS = (
+    ".release-please-manifest.json",
+    "release-please-config.json",
+    ".releaserc",
+    ".releaserc.json",
+    ".releaserc.yaml",
+    ".versionrc",
+    ".versionrc.json",
+    ".changeset",
+)
+
+
 def test_no_workflow_delegates_versioning_to_an_external_release_bot() -> None:
+    """ADR-0006: the committed version has one authority, the guarded local transaction.
+
+    This was `"release-please" not in <raw file text>`, which is wrong in both
+    directions. A comment explaining *why* release-please is not used would fail it --
+    prose about a rule breaking the rule -- and every other version bot passed it,
+    including `semantic-release`, which does the same thing under another name.
+
+    Actions are matched as parsed references; configuration files are matched on disk,
+    because a bot that is configured but whose workflow step has not landed yet is the
+    state immediately before this rule is broken.
+    """
     for path in GOVERNED_DEFINITIONS:
-        assert "release-please" not in path.read_text(encoding="utf-8"), (
-            f"{path}: release-please is a competing version authority (ADR-0006)"
+        for reference in _action_references(path):
+            action = reference.rpartition("@")[0] or reference
+            assert not VERSION_BOT.search(action), (
+                f"{path}: {action} is a competing version authority (ADR-0006)"
+            )
+    for artefact in VERSION_BOT_ARTEFACTS:
+        assert not (PROJECT_ROOT / artefact).exists(), (
+            f"{artefact} configures an external version bot; the committed version has "
+            f"one authority (ADR-0006)"
         )
 
 
@@ -1703,17 +1767,20 @@ def test_every_gate_job_blocks_the_distribution_job() -> None:
     downstream cared.
     """
     jobs = _jobs(_load_workflow(VERIFY_WORKFLOW))
-    gates = {
-        name
-        for name, job in jobs.items()
-        if job.get("needs") == "source-integrity"
-        or job.get("needs") == ["source-integrity"]
-    }
-    assert gates, "no gate jobs found; this test has drifted from the workflow"
-
-    blocking = set(jobs["distribution"].get("needs") or [])
-    assert gates <= blocking, (
-        f"gate jobs that do not block distribution: {sorted(gates - blocking)}"
+    # Every job except the one they all block. Derived from the graph rather than from
+    # the shape of one `needs:` value: "gates" used to mean `needs: [source-integrity]`
+    # exactly, so a `pip-audit` job with `needs: [source-integrity, poetry-lock]` and a
+    # body of `exit 1` was outside the set, `assert gates` stayed non-empty on the other
+    # eight, and a permanently-failing gate did not block the build.
+    #
+    # Transitive, because blocking through another gate blocks all the same -- and it is
+    # the shape a longer chain would take.
+    blocking = _transitive_needs(jobs, "distribution")
+    assert blocking, "distribution depends on nothing; this guard examined nothing"
+    unblocked = set(jobs) - {"distribution"} - blocking
+    assert not unblocked, (
+        f"jobs that can fail without blocking the build: {sorted(unblocked)}. A gate "
+        f"that does not block the build is decorative."
     )
 
 
@@ -2057,6 +2124,38 @@ def test_forge_coordinates_are_derived_from_action_context_and_fail_closed(
     for path, job_name, step in derivations:
         body = str(step["run"])
         where = f"{path.name}: job {job_name!r}"
+
+        # https, before the value is used for anything. Every coordinate this step emits
+        # ends up carrying a credential: the package index URL takes FORGE_PACKAGE_TOKEN,
+        # and release.yaml reassembles the same server URL into
+        # `https://x-access-token:<contents-write-token>@host/...`. Over plain HTTP both
+        # are cleartext Basic auth. Latent on GitHub, where `github.server_url` is always
+        # https; live the moment E009 reaches a self-hosted Gitea, which is the
+        # deployment shape where an operator can choose http.
+        #
+        # Each case below is one the derivation would otherwise ACCEPT, so only the
+        # scheme check can reject it. `http://gitea.internal` would not do: it reaches
+        # the fail-closed branch on its own and the assertion would pass with the scheme
+        # check deleted -- which it did, on the first draft of this test.
+        for insecure, environment in (
+            ("http://github.com", {}),
+            ("ftp://github.com", {}),
+            ("github.com", {}),
+            ("http://gitea.internal", {"GITEA_ACTIONS": "true"}),
+        ):
+            completed, _ = _run_step(
+                body,
+                {
+                    "FORGE_SERVER_URL": insecure,
+                    "FORGE_REPOSITORY": "Owner/Name",
+                    **environment,
+                },
+                tmp_path,
+            )
+            assert completed.returncode != 0, (
+                f"{where}: accepted {insecure!r}, so a publication credential would "
+                f"cross the network in cleartext"
+            )
 
         # GitHub: ghcr.io, no forge Python index, and a lowercased repository -- a forge
         # owner need not be lowercase, and a registry reference must be.
@@ -2652,7 +2751,10 @@ def test_step_based_publishers_re_read_the_tag_set_before_they_upload() -> None:
 
 
 def _compose_tag_list(
-    tags: str, registry: str = "ghcr.io", dockerhub: str = "false"
+    tags: str,
+    registry: str = "ghcr.io",
+    dockerhub: str = "false",
+    repositories: str = "ghcr.io/owner/name\ndocker.io/owner/name",
 ) -> Any:
     """Execute publish-image.yaml's real tag-composition body with a planted input.
 
@@ -2670,6 +2772,7 @@ def _compose_tag_list(
             "GITHUB_OUTPUT": str(output),
             "DOCKERHUB_ENABLED": dockerhub,
             "IMAGE_TAGS": tags,
+            "PERMITTED_REPOSITORIES": repositories,
             "PLATFORMS": ",".join(REQUIRED_IMAGE_PLATFORMS),
             "REGISTRY": registry,
         },
@@ -2717,6 +2820,60 @@ def test_the_exact_version_a_publisher_does_push_is_still_accepted() -> None:
     ):
         completed, _ = _compose_tag_list(permitted)
         assert completed.returncode == 0, completed.stderr
+
+
+def test_a_tag_may_not_address_a_repository_the_plan_job_never_proved() -> None:
+    """The permission check tested the *authority* and never the *repository*.
+
+    A Docker Hub credential is account-scoped, so every repository that account can
+    write shares one authority. A tag list naming `docker.io/<elsewhere>/x` passed --
+    `buildx` pushes whatever it is handed, with the real token -- publishing this
+    project's verified image under a name nobody chose, and `primary` (the digest
+    reference the aliases then follow) is whichever tag came first. The list is rendered
+    by a third-party action on a floating ref, which is exactly the input not to trust.
+
+    The plan job already proved both repositories and handed them to that action; they
+    are now handed to the publisher too, and every tag is checked against them.
+    """
+    permitted = "ghcr.io/owner/name\ndocker.io/owner/name"
+    completed, _ = _compose_tag_list(
+        "docker.io/elsewhere/x:1.2.3", dockerhub="true", repositories=permitted
+    )
+    assert completed.returncode != 0, "a tag for an unproven repository was accepted"
+    assert "which the plan job did" in completed.stderr, completed.stderr
+
+    # The forge authority is no different: same host, unproven name.
+    completed, _ = _compose_tag_list(
+        "ghcr.io/elsewhere/x:1.2.3", repositories="ghcr.io/owner/name"
+    )
+    assert completed.returncode != 0, completed.stderr
+
+    # A run that proves nothing publishes nothing, rather than defaulting to open.
+    completed, _ = _compose_tag_list("ghcr.io/owner/name:1.2.3", repositories="  \n ")
+    assert completed.returncode != 0, "an empty permitted set was treated as permissive"
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "docker.io/owner/name:1.2.3",
+        "index.docker.io/owner/name:1.2.3",
+        "owner/name:1.2.3",
+    ],
+)
+def test_the_three_spellings_of_one_docker_hub_repository_are_one_destination(
+    spelling: str,
+) -> None:
+    """`docker.io/owner/name`, `index.docker.io/owner/name` and a bare `owner/name` are
+    the same place. Comparing the rendered string against the proven string would refuse
+    two of the three, so both sides are normalised -- and the refusal above still has to
+    hold, which is what the neighbouring test keeps honest."""
+    completed, _ = _compose_tag_list(
+        f"ghcr.io/owner/name:1.2.3\n{spelling}",
+        dockerhub="true",
+        repositories="ghcr.io/owner/name\ndocker.io/owner/name",
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_an_enabled_destination_that_receives_no_tag_halts_before_anything_ships() -> (
@@ -2788,6 +2945,7 @@ def test_every_published_tag_addresses_a_destination_the_run_logged_into() -> No
     completed, emitted = run(
         "git.example.com:3000/owner/name:dev-0123456789ab",
         registry="git.example.com:3000",
+        repositories="git.example.com:3000/owner/name",
     )
     assert completed.returncode == 0, completed.stderr
     assert emitted["primary"] == "git.example.com:3000/owner/name"
@@ -3910,6 +4068,47 @@ def test_only_registered_finalizers_move_an_alias() -> None:
 # the credentialed publishers (CI-AR36). Matched on the path a `uses:` ends with, so a
 # publisher cannot satisfy the rule with a similarly-named action of its own.
 BOUNDARY_ACTION = "/verified-bundle"
+
+
+def test_the_bundle_action_refuses_an_empty_artifact_name_before_downloading(
+    tmp_path: Path,
+) -> None:
+    """An explicitly-passed empty string overrides a default rather than falling back to
+    it, and every publisher passes `artifact-name: ${{ needs.verify.outputs.… }}`.
+
+    With an empty `name`, `actions/download-artifact@v4` downloads *every* artifact in
+    the run into one directory. The bundle revalidation then fails several steps later
+    with "expected exactly one wheel", which reads as a packaging fault rather than a
+    missing input -- so the diagnosis lands nowhere near the cause. Executed, and
+    asserted to come first: a refusal after the download has already fetched the run.
+    """
+    steps = (_load_document(BUNDLE_ACTION).get("runs") or {}).get("steps") or []
+    refusal = next(
+        (
+            index
+            for index, step in enumerate(steps)
+            if "artifact-name is empty" in str(step.get("run", ""))
+        ),
+        None,
+    )
+    assert refusal is not None, "the bundle action no longer refuses an empty name"
+    download = next(
+        index
+        for index, step in enumerate(steps)
+        if str(step.get("uses", "")).startswith("actions/download-artifact")
+    )
+    assert refusal < download, (
+        "the empty-name refusal runs after the download it exists to prevent"
+    )
+    for empty in ("", "   "):
+        completed, _ = _run_step(
+            str(steps[refusal]["run"]), {"ARTIFACT_NAME": empty}, tmp_path
+        )
+        assert completed.returncode != 0, f"accepted an empty artifact name {empty!r}"
+    completed, _ = _run_step(
+        str(steps[refusal]["run"]), {"ARTIFACT_NAME": "verified-dist-v1"}, tmp_path
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_every_publisher_revalidates_the_bundle_before_it_logs_in_or_uploads() -> None:
