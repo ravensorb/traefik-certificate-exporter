@@ -5,3 +5,9 @@ dist
 .pipeline*
 .env
 **/*.log
+# Agent runtime memory. The rest of `_bmad/` is vendored and committed, but this is
+# state the skills accumulate across runs rather than anything this project authors --
+# and these trees are already excluded from every linting and secret gate, so a growing
+# unreviewed store inside a public repository is the wrong place for it. It persists on
+# disk; it just is not published.
+_bmad/memory/
