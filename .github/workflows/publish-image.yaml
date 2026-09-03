@@ -351,6 +351,20 @@ jobs:
         env:
           PLATFORMS: ${{ steps.plan.outputs.platforms }}
           TAGS: ${{ steps.plan.outputs.tags }}
+          # The exporter, and it has to be set HERE rather than left to `--push`.
+          #
+          # docker-bake.hcl declares `output = OUTPUTS` with `OUTPUTS` defaulting to
+          # `type=docker`, which is right for a local single-platform `just image` that
+          # wants the result in the daemon. `--push` is documented as shorthand for
+          # `--set *.output=type=registry`, and the first CI run proved the target's own
+          # `output` attribute wins over it: `ERROR: docker exporter does not currently
+          # support exporting manifest lists`. The docker exporter cannot hold a
+          # multi-platform index at all, so the push was impossible rather than merely
+          # misdirected.
+          #
+          # An env override is the same mechanism TAGS and PLATFORMS already use, so the
+          # value reaches bake as a variable and no precedence question arises.
+          OUTPUTS: type=registry
         run: |
           set -euo pipefail
           # One invocation, every tag, both platforms. A second `bake` per registry would

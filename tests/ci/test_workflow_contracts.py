@@ -2979,6 +2979,19 @@ def test_the_image_fan_out_is_one_buildx_invocation_carrying_every_tag() -> None
         f"{builder}: the single invocation must receive every tag and every platform as "
         f"bake variables; a tag applied outside it is a second build"
     )
+    # `--push` states the intent and this asserts the mechanism, because the first CI
+    # run showed the two can disagree. docker-bake.hcl's target sets `output = OUTPUTS`,
+    # defaulting to `type=docker` for local single-platform builds, and that attribute
+    # beat `--push`: the run died on `docker exporter does not currently support
+    # exporting manifest lists`. The docker exporter cannot hold a multi-platform index,
+    # so the push was impossible -- while this guard, asserting only that the command
+    # said `--push`, was satisfied. The rule held and the outcome did not.
+    exporter = str(environment.get("OUTPUTS", ""))
+    assert "type=registry" in exporter, (
+        f"{builder}: the multi-platform build exports {exporter!r}. Only the registry "
+        f"exporter can hold a manifest list -- `--push` alone does not override the "
+        f"bake target's own `output`."
+    )
 
     triggers = _load_workflow(WORKFLOWS / builder)["on"]
     platforms = triggers["workflow_call"]["inputs"]["platforms"]["default"]
