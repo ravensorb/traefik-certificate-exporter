@@ -78,9 +78,10 @@ vendor preference). Several are directly applicable to open findings in this rep
 
 - **[`git-action-ca-certificate-import`](https://github.com/LiquidLogicLabs/git-action-ca-certificate-import)**
   — installs custom CA certificates into the runner unconditionally (GitHub, Gitea, or `act`
-  alike). This is the runner-agnostic replacement for the `if: ${{ env.ACT }}`-gated CA install
-  in [build-container.yaml](../.github/workflows/build-container.yaml) — see §7's known violation
-  and PRD backlog item #11.
+  alike). It was the runner-agnostic replacement for the `if: ${{ env.ACT }}`-gated CA install in
+  the legacy `build-container.yaml`; that workflow was deleted in E007 and the violation went with
+  it, so this remains a **candidate** for E009, where a private CA on self-hosted Gitea makes it
+  relevant again.
 - **[`git-action-docker-act-compatibility`](https://github.com/LiquidLogicLabs/git-action-docker-act-compatibility)**
   — resolves Docker build-context/Dockerfile-path differences between `act` and real GitHub
   Actions; relevant given [docker/act-build.sh](../docker/act-build.sh) already exists for local
@@ -90,20 +91,28 @@ vendor preference). Several are directly applicable to open findings in this rep
   version numbering — **verified at `@v6` in [ADR-0012](adr/0012-image-metadata-action.md)**:
   `flavor` is a real input, `using: node24`, `v6` = `78e2563`, and upstream is at `v6.2.0`, so the
   major lines do track) with no GitHub API dependency, so it works identically across GitHub,
-  Gitea, and local `act`. Adopted in [build-container.yaml](../.github/workflows/build-container.yaml)'s
-  `Docker meta` steps for semver/major/minor/sha/beta/latest image tagging.
+  Gitea, and local `act`. **Adopted**, in `dev.yaml`'s and `release.yaml`'s `plan` jobs, which
+  render every published image reference through it. It is passed `flavor: latest=false`, because
+  aliases belong to the finalizer alone — and `publish-image.yaml` refuses an alias-shaped tag
+  outright rather than trusting that input to be honoured (ADR-0012).
 
 `git-action-release@v2` is **selected**, not a candidate: it creates Releases on GitHub and on
 self-hosted Gitea from one step, resolving the instance from `GITHUB_SERVER_URL` (ADR-0010). It
-lands with `release.yaml` in Epic 8 — that workflow does not currently exist, having been deleted
-along with the rest of the legacy publish path in `9e43b90`, and `release-please` was retired by
-ADR-0006 rather than merely disabled.
+landed with `release.yaml` in E008-S01-002, in the `finalize` job, and `release-please` was
+retired by ADR-0006 rather than merely disabled.
 
-Other `LiquidLogicLabs` actions (`git-action-release-changelog-builder`,
-`git-action-tag-validate-version`, `git-action-tag-floating-version`, `git-action-docker-test`,
-`git-action-docker-cleanup`) remain candidates for the same workflow precisely because they
-are multi-platform — but
-adopting them is a separate implementation decision, not bundled into this vendor-preference fix.
+Two more were **adopted** in Epic 8 and are load-bearing:
+`git-action-tag-floating-version@v2` moves the stable Git aliases from `release.yaml`'s `finalize`
+(ADR-0006 — read its `action.yml` at both majors, because `@v1` and `@v2` spell the inputs
+differently and Actions passes an unknown key through in silence), and `git-action-docker-test@v2`
+smoke-tests the published image in `publish-image.yaml`. All three adopted actions are `node24`,
+so E009's pinned `act_runner` needs one JavaScript runtime rather than a mixture.
+
+Still candidates, adopted nowhere: `git-action-release-changelog-builder`,
+`git-action-tag-validate-version`, `git-action-docker-cleanup`,
+`git-action-ca-certificate-import` and `git-action-docker-act-compatibility`. Adopting one is a
+separate decision and, per ADR-0006 and ADR-0010, requires reading its `action.yml` at the tag
+being pinned.
 
 ## 7. One pipeline, three runners — no `ACT` env var dependency
 
@@ -117,13 +126,21 @@ separate pipeline definitions per runner.
 
 **Do not branch behavior on the `ACT` env var, under any circumstances.**
 
-**Known current violation** (not yet fixed, tracked here so it isn't lost): [build-container.yaml](../.github/workflows/build-container.yaml)
-has a step gated `if: ${{ env.ACT }}` that installs a custom CA certificate
-(`ca-ravenwolf.pfx.crt`) mounted via `act`'s `--container-options`. This directly violates
-this guideline and must be replaced with a runner-agnostic mechanism — e.g. a custom runner
-image with the CA baked in, or installing trusted CAs unconditionally from a repo-committed
-source available to every runner (GitHub, Gitea, and `act`), not a conditional on which tool
-is executing the workflow. Added as a new backlog item below.
+**Previously a known violation, now resolved.** The legacy `build-container.yaml` had a step
+gated `if: ${{ env.ACT }}` that installed a custom CA certificate (`ca-ravenwolf.pfx.crt`) mounted
+through `act`'s `--container-options`. That workflow was deleted in E007 and the violation went
+with it.
+
+It is now enforced rather than tracked in prose:
+`test_no_governed_definition_branches_on_the_act_environment_variable` fails any governed workflow
+or composite action containing `ACT` as a whole word. The rule had been checked for
+`verify-build.yaml` alone, by substring, while this section recorded a live violation elsewhere —
+which is the reason the guard's scope is every governed definition rather than one file.
+
+The replacement, if a runner ever needs a custom CA, is runner-agnostic: a runner image with the
+CA baked in, or an unconditional install from a repo-committed source available to GitHub, Gitea
+and `act` alike — never a conditional on which tool is executing. E009 is where this becomes real,
+and `git-action-ca-certificate-import` is the candidate for it.
 
 ## 8. Always validate decisions against latest docs
 

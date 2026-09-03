@@ -543,6 +543,28 @@ def test_no_caller_hands_the_verifier_any_secret() -> None:
     assert verifier_callers, "no job calls the verifier; this guard examined nothing"
 
 
+# `ACT` as a whole word. `\b` is what keeps `GITHUB_ACTIONS` and `actions/checkout` out
+# of it; the previous form was a bare `"ACT" not in text` substring test on one file.
+ACT_BRANCH = re.compile(r"\bACT\b")
+
+
+def test_no_governed_definition_branches_on_the_act_environment_variable() -> None:
+    """Guidelines §7: one pipeline, three runners, and no conditional on which one is
+    executing. A workflow that behaves differently under `act` is not the workflow CI
+    runs, so a green local verification proves nothing about the real one.
+
+    The rule was enforced for `verify-build.yaml` alone, by substring, while §7 recorded
+    a live violation in a workflow that no longer exists. Scope is every governed
+    definition, composite actions included -- a composite is where an `env.ACT` branch
+    would most naturally be hidden, since it is shared by every caller.
+    """
+    for path in GOVERNED_DEFINITIONS:
+        assert not ACT_BRANCH.search(path.read_text(encoding="utf-8")), (
+            f"{path}: branches on the `ACT` environment variable. One pipeline, three "
+            f"runners (guidelines §7); a runner-agnostic mechanism instead."
+        )
+
+
 def test_tier_one_forbids_expression_interpolated_action_references() -> None:
     for path in GOVERNED_DEFINITIONS:
         for reference in _action_references(path):
@@ -1361,7 +1383,7 @@ def test_verifier_supports_call_and_direct_dispatch_with_the_same_graph() -> Non
         "pytest",
         "distribution",
     }
-    assert "ACT" not in VERIFY_WORKFLOW.read_text(encoding="utf-8")
+    assert not ACT_BRANCH.search(VERIFY_WORKFLOW.read_text(encoding="utf-8"))
 
     event = _load_fixture("workflow-dispatch.json")
     assert event["event_name"] == "workflow_dispatch"
@@ -5767,6 +5789,58 @@ def test_the_runbook_guard_accepts_the_same_actions_named_as_prohibitions() -> N
         "```\n"
     )
     assert not _runbook_findings(lawful), _runbook_findings(lawful)
+
+
+MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)\s#]+)")
+
+
+def _documented_files() -> list[tuple[str, str]]:
+    """This project's own documentation: tracked markdown under `docs/`, plus the
+    root-level pages.
+
+    A positive derivation rather than a list of exclusions. The vendored tool trees are
+    not this project's writing, and `_bmad-output/` is the agent execution record --
+    point-in-time reports that describe deleted files *because* they were deleted, which
+    is their function.
+    """
+    return [
+        (relative, text)
+        for relative, text in tracked_text_files()
+        if relative.endswith(".md")
+        and (relative.startswith("docs/") or "/" not in relative)
+    ]
+
+
+def test_no_tracked_document_links_to_a_file_that_does_not_exist() -> None:
+    """A link is a promise that its target exists; prose merely mentioning a filename is
+    not, which is why only links are checked.
+
+    `docs/guidelines.md` is cited by `dev.yaml` and `release.yaml` as the authority for
+    choosing the metadata action, and it linked three times to
+    `.github/workflows/build-container.yaml`, deleted in E007. A reader following the
+    workflow's own citation to check why an action was chosen landed on a 404.
+
+    Deliberately not restricted to `.github/`: a dead link to an ADR or a script is the
+    same defect, and scoping to one directory is how the previous documentation guard
+    ended up checking one page.
+    """
+    documents = _documented_files()
+    assert documents, "no tracked documentation; this guard examined nothing"
+    for relative, text in documents:
+        for target in MARKDOWN_LINK.findall(text):
+            if target.startswith(("http://", "https://", "mailto:")):
+                continue
+            # A regex inside a code span parses as a link -- `[^]](?:workflow|run)` and
+            # its kind. No path in this repository holds a regex metacharacter, so the
+            # implausible target is dropped rather than the whole code-span question
+            # being reopened.
+            if set(target) & set("|?*[]()"):
+                continue
+            resolved = (PROJECT_ROOT / relative).parent / target
+            assert resolved.exists(), (
+                f"{relative} links to {target}, which is not on disk. A document the "
+                f"workflows cite as their authority must not point at a deleted file."
+            )
 
 
 def test_the_runbook_names_every_channel_and_no_workflow_that_is_not_on_disk() -> None:
