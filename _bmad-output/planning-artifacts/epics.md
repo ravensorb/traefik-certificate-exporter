@@ -634,10 +634,10 @@ So that local work uses the same entry points and artifact contracts as CI.
 
 **Given** a supported development machine with `just`, Poetry, Python, Git, and Docker
 **When** `just --list` is run
-**Then** documented recipes exist for `setup`, `lint`, `test`, `test-local`, `package`, `image`,
-`build`, `verify`, and `release PART` (CI-AR7)
+**Then** documented recipes exist for `install`, `lint`, `fix`, `test`, `test-local`, `check`,
+`build`, `image`, `release PART`, `release-dry-run` and `release-resume` (CI-AR7)
 
-**Given** `just package` is invoked from the repository root or a subdirectory
+**Given** `just build` is invoked from the repository root or a subdirectory
 **When** it completes
 **Then** Poetry builds exactly one wheel and one sdist into a clean output directory
 **And** package metadata and wheel installation are validated
@@ -647,7 +647,7 @@ So that local work uses the same entry points and artifact contracts as CI.
 **Then** the image installs the wheel created by the package recipe rather than rebuilding the
 project or resolving an independent dependency set (CI-AR13, CI-AR14)
 
-**Given** a developer invokes `just verify`
+**Given** a developer invokes `just check`
 **When** the recipe graph is evaluated
 **Then** lint, tests, package validation, clean-environment installation, image build, and smoke
 checks execute through named recipes and stop at the first failure

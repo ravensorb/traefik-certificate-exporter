@@ -109,7 +109,8 @@ Release and the Git aliases touch `contents`.
 **Enforcement is two guards, because one cannot cover it.**
 
 - `test_no_workflow_holds_github_token_write_access_to_contents` — no workflow or job may
-  declare `contents: write` unless its job name is registered in `RELEASE_FINALIZER_JOBS`.
+  declare `contents: write` unless its `(workflow filename, job name)` pair is registered in
+  `RELEASE_FINALIZER_JOBS`. A bare job name would match across every workflow.
 - `test_no_workflow_writes_refs_or_releases_outside_a_finalizer` — no unregistered job may run
   `git push`, `gh release create/upload/edit/delete`, `gh api …/releases`, or a
   release-creating action.

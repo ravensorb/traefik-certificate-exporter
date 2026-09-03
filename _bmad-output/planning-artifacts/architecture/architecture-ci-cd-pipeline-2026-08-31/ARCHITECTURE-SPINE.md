@@ -73,8 +73,12 @@ The `CI-AR` identifiers remain stable traceability keys.
 
 ### Local interface and version ownership
 
-- **CI-AR7 — `just` is the local interface.** The root `justfile` exposes `setup`, `lint`,
-  `test`, `test-local`, `package`, `image`, `build`, `verify`, and `release PART`.
+- **CI-AR7 — `just` is the local interface.** The root `justfile` is the authority for which
+  recipes exist; `just --list` enumerates them. This requirement deliberately does not restate
+  that list. It did, and three of the nine names it gave — `setup`, `package`, `verify` — were
+  never recipes, while `fix` and `release-resume` existed and were unlisted.
+  `test_every_recipe_a_document_prescribes_exists` now fails any prescriptive document naming a
+  recipe the justfile does not define.
 - **CI-AR8 — One committed version.** Poetry project metadata is the committed version authority.
 - **CI-AR9 — Guarded release preconditions.** `just release PART` accepts only `major`, `minor`,
   or `patch` and requires a clean, current default branch plus green local verification.

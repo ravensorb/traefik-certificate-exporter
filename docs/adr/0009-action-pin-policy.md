@@ -144,5 +144,8 @@ package-publishing capability, or a supply-chain incident affects `docker/login-
 
 - `ARCHITECTURE-SPINE.md` CI-AR4 is amended to say the classification is per action for
   credential handlers, so the spine no longer contradicts CI-AR38.
-- When `release.yaml` lands (E008-S01-003), record the reviewed SHA and the date it was reviewed
-  alongside the `uses:` line.
+- **Done.** `release.yaml` landed in E008-S01-002, and the reviewed SHA is recorded with the date
+  it was reviewed in the comment above each `uses:` line (`release.yaml:421`, `:509`;
+  `dev.yaml:365`, `:465`). `test_every_sha_pinned_publisher_records_the_date_it_was_reviewed`
+  keeps it that way. This bullet stood in the future tense against the wrong story through two
+  gate reviews.

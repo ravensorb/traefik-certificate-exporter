@@ -8,6 +8,7 @@ import itertools
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -2019,6 +2020,16 @@ def _coordinate_derivations() -> list[tuple[Path, str, dict[str, Any]]]:
             assert len(steps) == 1, (
                 f"{path.name}: job {job_name!r} derives its forge coordinates in "
                 f"{sorted(steps)}; there is one derivation or there are two answers"
+            )
+            # Resolved through one of the names this job actually emits. Hard-coding
+            # `"registry"` meant a channel emitting, say, `image-repository` and
+            # `package-index-url` but not `registry` raised a bare KeyError from inside
+            # `_producing_step` -- which reads as a broken test rather than as a caught
+            # violation, the failure mode `_step_with_id` exists to avoid.
+            assert "registry" in emitted, (
+                f"{path.name}: job {job_name!r} derives forge coordinates but emits no "
+                f"`registry`; it emits {sorted(emitted)}. Every channel resolves the "
+                f"registry from action context (CI-AR6)."
             )
             located.append(
                 (path, job_name, _producing_step(path, job_name, job, "registry"))
@@ -4588,6 +4599,22 @@ def test_the_git_alias_action_runs_only_behind_the_ordering_gate() -> None:
                 # falls back to its defaults, and `update-minor` defaults to `false`.
                 # The visible result is a `vMAJOR.MINOR` alias that silently never
                 # moves. That camelCase pair is this guard's planted violation.
+                # `ref-tag` is what the aliases are computed *from*. ADR-0006 claimed
+                # this guard asserted the hyphenated inputs, and it asserted two of the
+                # three: a step passing `update-minor` and `ignore-prerelease` and no
+                # `ref-tag` passed, and the action would then move aliases against
+                # whatever it defaults to. It must also resolve through the plan job's
+                # released tag rather than a literal, or the alias is computed from
+                # something other than the identity this run is publishing.
+                ref_tag = str(inputs.get("ref-tag", ""))
+                assert ref_tag, (
+                    f"{path.name}: {job_name!r} moves aliases without passing "
+                    f"`ref-tag`, so the action decides from its own default"
+                )
+                assert "needs.plan.outputs.release-tag" in ref_tag, (
+                    f"{path.name}: {job_name!r} passes ref-tag={ref_tag!r}, which is "
+                    f"not the release tag the plan job resolved"
+                )
                 assert inputs.get("update-minor") == "true", (
                     f"{path.name}: {job_name!r} does not ask for the minor alias"
                 )
@@ -4954,6 +4981,26 @@ def _membership_steps(path: Path) -> dict[str, list[str]]:
     return found
 
 
+def _irreversible_jobs(path: Path) -> set[str]:
+    """Jobs doing something no later step can undo: ship an artifact, create the
+    Release, or point a mutable name at one.
+
+    The count of these is what "one re-check before each irreversible act" means, so it
+    is derived rather than written down. The two guards below asserted 4 and 3 by hand:
+    an irreversible act added *without* a re-check left the count unchanged and passed,
+    which is the reach the literal was supposed to supply, and the number went red for
+    the wrong reason the day a destination was added.
+    """
+    document = _load_workflow(path)
+    shipping = {
+        name
+        for name, job in _jobs(document).items()
+        if any(_is_publishing_step(step) for step in job.get("steps") or [])
+    }
+    aliases = {job for workflow, job in _alias_moving_jobs() if workflow == path.name}
+    return shipping | aliases
+
+
 def test_every_stable_tag_recheck_is_the_same_body() -> None:
     """One relation, copied into four steps, asserted to be one copy.
 
@@ -4963,9 +5010,11 @@ def test_every_stable_tag_recheck_is_the_same_body() -> None:
     diverge. A single edited copy fails here rather than reaching a registry.
     """
     refusers = _membership_steps(RELEASE_WORKFLOW)["refusers"]
-    assert len(refusers) == 4, (
-        f"release.yaml has {len(refusers)} pre-write tag re-checks; expected one before "
-        f"each irreversible act (both uploads, the Release, the image aliases)"
+    expected = _irreversible_jobs(RELEASE_WORKFLOW)
+    assert len(refusers) == len(expected), (
+        f"release.yaml has {len(refusers)} pre-write tag re-checks for "
+        f"{len(expected)} irreversible acts ({', '.join(sorted(expected))}); there is "
+        f"one before each"
     )
     assert len(set(refusers)) == 1, "the stable tag re-checks have diverged"
     assert all(STABLE_RECHECK_MARKER in body for body in refusers)
@@ -4975,9 +5024,11 @@ def test_every_suppression_recheck_is_the_same_body() -> None:
     """The development channel's copies of the same relation, under the same rule."""
     steps = _membership_steps(DEV_WORKFLOW)
     assert len(steps["emitters"]) == 1, "the suppression conclusion has one producer"
-    assert len(steps["refusers"]) == 3, (
-        f"dev.yaml has {len(steps['refusers'])} pre-write suppression re-checks; "
-        f"expected one before each of the two uploads and the `dev` alias move"
+    expected = _irreversible_jobs(DEV_WORKFLOW)
+    assert len(steps["refusers"]) == len(expected), (
+        f"dev.yaml has {len(steps['refusers'])} pre-write suppression re-checks for "
+        f"{len(expected)} irreversible acts ({', '.join(sorted(expected))}); there is "
+        f"one before each"
     )
     assert len(set(steps["refusers"])) == 1, "the suppression re-checks have diverged"
 
@@ -5789,6 +5840,75 @@ def test_the_runbook_guard_accepts_the_same_actions_named_as_prohibitions() -> N
         "```\n"
     )
     assert not _runbook_findings(lawful), _runbook_findings(lawful)
+
+
+JUSTFILE = PROJECT_ROOT / "justfile"
+# A recipe declaration: a name at column 0, optional parameters, then `:` -- but not
+# `:=`, which is an assignment.
+JUST_RECIPE = re.compile(
+    r"^([a-z][a-z0-9-]*)(?:\s+[A-Za-z_][A-Za-z0-9_]*)*\s*:(?!=)", re.MULTILINE
+)
+# A recipe being prescribed. Restricted to a code span because `just` is an ordinary
+# English word: an unrestricted scan matched "just above", "just an" and "just because".
+JUST_INVOCATION = re.compile(r"`just ([a-z][a-z0-9-]*)")
+
+
+def _just_recipes() -> set[str]:
+    """Recipe names, extracted from the justfile rather than from `just --summary`.
+
+    CI installs no `just` -- the formatting hook says so and is local-only -- so the
+    extraction is what runs there. `test_the_recipe_extraction_agrees_with_just_itself`
+    keeps it honest wherever the binary exists.
+    """
+    return set(JUST_RECIPE.findall(JUSTFILE.read_text(encoding="utf-8")))
+
+
+def test_the_recipe_extraction_agrees_with_just_itself() -> None:
+    """The extraction above is a line shape, not a parser, so it is checked against the
+    tool it stands in for whenever that tool is installed."""
+    binary = shutil.which("just")
+    if binary is None:
+        pytest.skip("just is not installed; the extraction runs unverified here")
+    summary = subprocess.run(
+        [binary, "--summary"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert _just_recipes() == set(summary.stdout.split())
+
+
+def test_every_recipe_a_document_prescribes_exists() -> None:
+    """Global rule §3's recorded failure, in its original form: three committed
+    documents prescribed a command-line flag that did not exist, and agents followed it
+    for weeks because the instruction read as authoritative.
+
+    `ARCHITECTURE-SPINE.md` CI-AR7 enumerated `setup`, `package` and `verify`, none of
+    which are recipes, and `epics.md` wrote acceptance criteria against two of them. A
+    reader running the documented command gets "Justfile does not contain recipe".
+
+    Scope is documents that *prescribe*: `docs/`, the root pages, the planning
+    artifacts, and the workflows. `_bmad-output/implementation-artifacts/` is excluded
+    because it records what happened, including commands that have since been renamed.
+    """
+    recipes = _just_recipes()
+    assert recipes, "no recipes in the justfile; this guard examined nothing"
+    prescriptive = [
+        (relative, text)
+        for relative, text in tracked_text_files()
+        if relative.startswith(
+            ("docs/", "_bmad-output/planning-artifacts/", ".github/")
+        )
+        or "/" not in relative
+    ]
+    assert prescriptive, "no prescriptive documents; this guard examined nothing"
+    for relative, text in prescriptive:
+        for name in JUST_INVOCATION.findall(text):
+            assert name in recipes, (
+                f"{relative} prescribes `just {name}`, which is not a recipe. "
+                f"Available: {', '.join(sorted(recipes))}"
+            )
 
 
 MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)\s#]+)")
