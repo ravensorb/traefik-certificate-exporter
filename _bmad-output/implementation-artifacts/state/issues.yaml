@@ -118,7 +118,8 @@ backlog:
   title: dev.yaml pairs the pusher's github.actor with the forge package token, coupling the credential to whoever pushed
   source: code-review (E008-S01-001)
   severity: Low
-  status: backlog
+  status: resolved
+  resolution: 'Closed at E008 backlog sweep. Both forge index publishers now pass `user: __token__` instead of github.actor. The upload''s identity is the token''s, not the pusher''s, and it no longer varies per push. test_a_package_upload_never_authenticates_as_the_pusher covers every package-upload step in every governed definition, so a third index added later is covered without an edit.'
   description: "publish-package-forge passes user: ${{ github.actor }} alongside secrets.FORGE_PACKAGE_TOKEN. Gitea's basic auth resolves a token supplied as the password regardless of the username, so it works, but the username varies per push and is unrelated to whoever minted the token. Prefer __token__, or a documented vars.FORGE_PACKAGE_USER alongside FORGE_PACKAGE_TOKEN. Raised as LOW-5 in _bmad-output/implementation-artifacts/epic-008/sprint-01/closure/review-E008-S01-001.md."
 - key: BL-E008-003
   epic: '008'
@@ -152,7 +153,8 @@ backlog:
   source: code-review (E008-S01-003) — L6, deferred
   severity: Medium
   promoted: 'Low -> Medium at E008 epic closure. Unchanged in substance and still fail-closed -- the finalizer gate refuses a result for a destination the enabled set does not name, and refuses a destination with no result, so a typo halts the run rather than skipping a publisher. Promoted for its class rather than its blast radius: eleven guard-reach defects were found in this epic, every one of them a correct rule over a hand-enumerated set, and this is the last hand-spelled scope left in the publication path -- 3 occurrences in release.yaml plus 12 in the contract suite, with nothing deriving the vocabulary from the plan job that emits it. The epic''s own evidence is that this shape does not stay correct.'
-  status: backlog
+  status: resolved
+  resolution: 'Closed at E008 backlog sweep, together with BL-E008-011 -- they were one coupling. The vocabulary is now read from the `enabled-destinations=` line the plan step prints, which ADR-0011 makes the single producer, and test_the_finalizer_gate_binds_every_destination_to_the_job_that_serves_it asserts the gate''s key set equals it exactly. A key the plan job does not emit, or a missing one, now fails.'
   description: "The publication destination-key vocabulary -- 'image-forge', 'image-dockerhub', 'package-forge', 'package-pypi' -- is spelled by hand in release.yaml's plan step (3 occurrences) and in tests/ci/test_workflow_contracts.py (12), with no guard deriving the set from the plan job that emits it. Fail-closed today because the finalizer gate refuses a result for a destination the enabled set does not name, and refuses a destination with no result -- so a typo stops the run rather than skipping a publisher silently. POINTER CORRECTED: this originally named finalizer_gate.evaluate, deleted when the gate became a jq program in the workflow step. The defect is unchanged and live; only the mechanism moved."
 - key: BL-E008-007
   epic: '008'
@@ -194,7 +196,8 @@ backlog:
   title: The finalizer gate binds destination keys to job results by hand, and nothing checks the pairing
   source: epic closure — arch drift MINOR 7
   severity: Low
-  status: backlog
+  status: resolved
+  resolution: 'Closed at E008 backlog sweep with BL-E008-006. Beyond matching the key set, where a job''s own definition gates on a destination key -- fromJSON(...)[''package-pypi''] in its `if:`, or in an input it passes down -- the gate must bind that key to that job. The reviewer''s plant (rebinding image-dockerhub to needs.publish-package-forge.result) now fails. image-forge and attestation stay unconstrained because no job gates on them: one is the channel, the other a host capability.'
   description: "release.yaml's PUBLISHER_RESULTS maps each destination key to a needs.<job>.result by hand. test_every_finalizer_waits_for_every_publisher_and_reads_every_result asserts each publisher's result appears somewhere in the gate's env:, never that a key is bound to the job that actually ships that destination. Verified by the reviewer: rebinding image-dockerhub to needs.publish-package-forge.result left the suite green. Gross rewiring IS caught -- binding every key to needs.verify.result fires 11 guards -- so only a swap between two live publishers is invisible. Blast radius is small today because one job ships both image destinations; it grows the moment a second image publisher exists. Remedy: derive the expected binding from what each job addresses (the repositories input already carries that mapping), or state the key-to-job rule and assert it."
 - key: BL-E008-012
   epic: '008'
@@ -202,7 +205,8 @@ backlog:
   title: Image tag normalisation is ASCII-only and the CSV defence covers only the comma
   source: epic closure — redteam E8
   severity: Low
-  status: backlog
+  status: resolved
+  resolution: 'Closed at E008 backlog sweep, and it was worse than reported. The normalisation was `tr -d ''[:space:]''`, which deletes INTERIOR whitespace, so `ghcr.io/a b:1` silently became `ghcr.io/ab:1` -- a different image reference published without complaint. Ends are now trimmed and the tag is refused rather than repaired. One character-class refusal replaces three separate defences: the comma Buildx splits on, any other separator, and the homoglyph or zero-width character that survives normalisation and then compares unequal to the proven repository. Multi-byte cases are caught because every UTF-8 continuation byte falls outside the class.'
   description: "publish-image.yaml's tag composition strips whitespace with tr -d '[:space:]' and rejects a comma because Buildx parses an env override of a list(string) as CSV. Both are byte-oriented: a Unicode homoglyph or a zero-width character in a repository name passes normalisation and compares unequal to the proven repository, and any other Buildx list separator would not be caught. The tag list is rendered by a third-party action, which is where such a value would have to come from. Not exploitable through any path the reviewer could construct -- the repository allowlist refuses the mismatch, which is why this is Low -- but the normalisation is narrower than the comparison it feeds."
 - key: BL-E008-013
   epic: '008'
@@ -210,7 +214,8 @@ backlog:
   title: The image digest reference follows whichever tag the metadata action emitted first
   source: epic closure — redteam E9
   severity: Low
-  status: backlog
+  status: resolved
+  resolution: 'Closed at E008 backlog sweep. `primary` is now the forge repository explicitly rather than whichever tag the metadata action emitted first. The forge is the one destination that is never optional (ADR-0011), so it is the only stable anchor for the digest reference the aliases follow; the guard proves the answer is the same whichever order the tags arrive in.'
   description: "publish-image.yaml sets primary to the repository of the first tag in the rendered list, and primary becomes the reference the digest is resolved from and therefore the target the finalizer's aliases follow. That makes a positional property of a third-party action's output ordering load-bearing. Every tag now has to name a repository the plan job proved, so the value cannot be arbitrary -- which is why this is Low -- but with two enabled destinations the choice between them is the renderer's, not this repository's. Remedy: select primary explicitly as the forge repository, which is the one destination that is never optional."
 - key: BL-E009-001
   epic: '009'
