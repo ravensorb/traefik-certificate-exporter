@@ -66,8 +66,14 @@ The `CI-AR` identifiers remain stable traceability keys.
   `SHA_PINNED_ACTIONS` (`tests/ci/test_workflow_contracts.py`); see ADR-0009. This is what
   reconciles CI-AR4 with CI-AR38, which previously contradicted it for
   `pypa/gh-action-pypi-publish`.
-- **CI-AR5 — Stable topology.** The pipeline consists of `ci.yaml`, `dev.yaml`, `release.yaml`,
-  and reusable `verify-build.yaml`.
+- **CI-AR5 — Stable topology.** The pipeline consists of `ci.yaml`, `dev.yaml` and `release.yaml`
+  as event owners, and reusable `verify-build.yaml` and `publish-image.yaml`. Five files, in two
+  classes, and the classes are a partition rather than a count -- an earlier form of this
+  requirement named four and omitted `publish-image.yaml`, which holds every registry credential,
+  both registry logins, the QEMU/Buildx build, and one of the two nested `workflow_call` edges
+  E009 must certify. A reader working from that list would not have known to certify it.
+  `test_the_workflow_topology_is_a_partition_of_reusable_files_and_event_owners` enforces the
+  partition; it deliberately does not enforce a count, because a count is satisfied by any five.
 - **CI-AR6 — Host-neutral coordinates.** Repository, API, server, and registry coordinates come
   from action context, with only a documented Gitea override where safe derivation is impossible.
 

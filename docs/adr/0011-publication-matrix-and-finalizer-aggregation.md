@@ -159,13 +159,20 @@ inside a single run whenever a tag lands between the two jobs.
 This is precisely the failure F4 exists to prevent. The F4 guard forbids deciding order from a
 registry read, and it does — but it examined the decision's *source*, never its *age*.
 
-Two changes, and the second is the one that fixes it:
+Two changes were made. **Only the second survives** — the first is recorded here as withdrawn,
+because it was written into this ADR as established fact and was never true:
 
-- **The alias stage serialises across runs.** `finalize` and `finalize-image-aliases` carry a
-  job-level `concurrency: { group: <workflow>-aliases, cancel-in-progress: false }`. Ref-free,
-  so every stable run queues behind every other for the alias stage while the fan-out stays
-  parallel. Serialising alone is *not* a fix — a queued run still holds the decision it took
-  before it queued — but it is what makes the re-read below meaningful.
+- ~~**The alias stage serialises across runs**, via a ref-free job-level `concurrency` group on
+  both finalizers.~~ **Withdrawn, and this paragraph is kept struck through rather than deleted
+  because the reasoning in it was wrong in a way worth seeing.** GitHub's default is
+  `queue: single`: at most one run is *pending* per group, and a newly queued member **cancels**
+  the existing pending one. `cancel-in-progress: false` governs the running member only. So the
+  group did the opposite of what this paragraph claimed — three overlapping tags deterministically
+  cancelled a finalizer that had already published irreversibly, producing no Release, no aliases,
+  and (because `release-evidence` is gated `!cancelled()`) no run summary either. `queue: max` is
+  the option that queues, but `actionlint` v1.7.12 rejects the key and its behaviour on Gitea is
+  unknown, so the groups were **removed**. Ordering rests entirely on the re-read below, which the
+  epic-closure red team confirmed it could not break.
 - **`finalize-image-aliases` re-derives the decision itself**, from the same authority, in the
   job that writes. The body is identical to `finalize`'s, and the aliases advance on the fresh
   answer. A fast-follow release is then ordinary rather than an error: the older run computes

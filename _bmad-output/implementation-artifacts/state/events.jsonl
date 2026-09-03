@@ -193,3 +193,5 @@
 {"agent": "l3io-arch-review", "epic": "E008", "event": "dispatch_close", "session": "l3io-pm-20260903T020000Z-e008close", "ts": "2026-09-03T06:48:05Z"}
 {"agent": "l3io-sec-redteam", "epic": "E008", "event": "dispatch_close", "session": "l3io-pm-20260903T020000Z-e008close", "ts": "2026-09-03T06:48:05Z"}
 {"epic": "E008", "event": "status", "from": "in-progress", "key": "E008", "node": "epic", "session": null, "sprint": null, "to": "done", "ts": "2026-09-03T06:48:06Z"}
+{"agent": "l3io-arch-review", "epic": "E009", "event": "dispatch_open", "session": "l3io-pm-20260903T220000Z-e009gate", "ts": "2026-09-03T20:39:37Z"}
+{"agent": "l3io-arch-review", "epic": "E009", "event": "dispatch_close", "session": "l3io-pm-20260903T220000Z-e009gate", "ts": "2026-09-03T20:49:50Z"}

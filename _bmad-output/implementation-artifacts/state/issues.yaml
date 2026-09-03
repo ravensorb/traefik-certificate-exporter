@@ -225,3 +225,27 @@ backlog:
   severity: Medium
   status: backlog
   description: "The per-story loop runs bmad-code-review only; adversarial, red-team and arch-drift run at sprint closure. In E008 that meant a defect written in story 001 was found after 002, 003 and 004 had copied its shape -- one finding, four times, with three stories built on top of it. Closure remediation was 24 commits against 3 implementation commits, and roughly half the epic's man-hours landed in the closure band. There is no customize.toml knob for this: it is an orchestration choice made at dispatch time, so it has to be remembered rather than configured, which is why it is an issue rather than a setting. Recorded in docs/project-context.md alongside the rest of E008's process learnings. E009 adds guards to the same surface, so the multiplier applies again."
+- key: BL-E009-002
+  epic: '009'
+  sprint: ''
+  title: AUTHORITY_SCOPES covers 4 of GitHub's ~15 permission scopes, so a permissive runner still grants the rest
+  source: E009 arch gate — MAJOR
+  severity: Medium
+  status: backlog
+  description: "E008 made every credential-bearing job declare contents, packages, id-token and attestations explicitly, including the denials, because Gitea does not document GitHub's deny-by-default reading and ships TokenPermissionMode permissive. That closes four scopes. GitHub declares roughly fifteen -- actions, checks, deployments, discussions, issues, models, pages, pull-requests, repository-projects, security-events, statuses, artifact-metadata -- and under a permissive runner every one of them still grants on every one of those jobs. The four chosen are the ones the authority split depends on, so the choice was not arbitrary, but the residual is real and is bounded by nothing. Gitea's code:/releases: vocabulary also does not map one-to-one onto GitHub's, so 'declare them all' is not simply a longer list. Decide the intended posture before E009 certifies the split: enumerate every scope, or record why four is the boundary."
+- key: BL-E009-003
+  epic: '009'
+  sprint: ''
+  title: The spine's protected-credentials table promises Gitea a scoped PyPI/TestPyPI token the code does not implement
+  source: E009 arch gate — MAJOR
+  severity: Low
+  status: backlog
+  description: The spine's Protected-credentials table describes a scoped token for PyPI and TestPyPI on Gitea. The shipped code deliberately marks both destinations 'unsupported' whenever FORGE != github (release.yaml, dev.yaml), by host capability rather than by toggle, and provides no token path at all. The code is right -- capability divergence is exactly how ADR-0011 s2 says absent destinations must be reported -- and the table is stale. It matters because story 001's DoD and story 002's 'required package channels' are both written against the table rather than against the code, so E009 would set out to certify a channel that does not exist. Correct the table when E009 resumes.
+- key: BL-E009-004
+  epic: '009'
+  sprint: ''
+  title: E009's estimate has no allowance for first-forge execution, and its closure ratio contradicts the sprint's
+  source: E009 arch gate — MAJOR
+  severity: Medium
+  status: backlog
+  description: E009 is estimated at 28.81-29.90 man-hours with 0.17-0.18 HITL hours, for an epic whose deliverable is a physical deployment against hardware nobody has run this pipeline on. docs/project-context.md section 8 records that six CI runs against a pipeline six review phases had already cleared produced five statically-invisible defects, and section 2 that E008 actualled 210 man-hours against 74.6-77.4. Neither is reflected. Separately the epic node's closure_ratios.man_hours is 0.2587 while the sprint node's is 1.8449 -- the same metric an order of magnitude apart on parent and child, which will mis-train calibration whichever is used. Re-estimate before execution, and reconcile the two ratios.
