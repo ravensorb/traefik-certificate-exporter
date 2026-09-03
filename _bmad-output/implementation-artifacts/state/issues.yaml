@@ -160,14 +160,16 @@ backlog:
   title: Branch protection must require code-owner review, or CODEOWNERS is documentation
   source: sprint closure — redteam M4
   severity: Medium
-  status: backlog
+  status: resolved
+  resolution: 'Accepted, not implemented. Maintainer decision at E008 closure: this is a sole-developer project, so requiring code-owner review requires a second person who does not exist -- the control would either block every change or be self-approved, and neither is worth the setting. .github/CODEOWNERS stays: it is a useful record of which surfaces grant authority, and test_the_authority_surfaces_are_owned keeps that record honest. What it does NOT do is enforce anything, and the guard docstring says so rather than implying a pending setting. Revisit if a second committer joins.'
   description: "E008 sprint closure added .github/CODEOWNERS covering the workflows, the guard registries, the ADRs, the gate configuration and the agent-instruction trees, and test_the_authority_surfaces_are_owned derives the required set from where those things live. The file requests review and enforces nothing on its own: it has teeth only when the default branch's protection rules require code-owner review. No test in this repository can observe that setting, and the guard's own docstring says so rather than implying coverage it does not have. Until it is enabled, one approval can still widen a privilege grant and relax the guard that reports on it in the same diff. Owner action, outside the tree."
 - key: BL-E008-008
   epic: '008'
   sprint: '01'
   title: The pypi environment needs required reviewers and a matching PyPI trusted-publisher claim
   source: sprint closure — redteam M3
-  severity: Medium
+  severity: Low
+  amended: 'Split at E008 closure on the maintainer''s decision. (1) REQUIRED REVIEWERS: declined -- sole-developer project, so a human approval gate is a gate on yourself. Not revisited unless a second committer joins. (2) BINDING THE PYPI TRUSTED PUBLISHER TO THE `pypi` ENVIRONMENT CLAIM: still open, and it is not a process gate -- it costs nothing operationally, adds no approval and no waiting. It narrows which workflow can mint a PyPI-scoped OIDC token from `any workflow in this repository that can obtain id-token: write` to one. Latent today because PUBLISH_PACKAGE_PYPI is unset, so PyPI publication is disabled: the trigger is the first time PyPI is enabled, and it should be done in the same sitting rather than after. Severity lowered to Low on that basis. The `environment: pypi` declaration is already in release.yaml and is inert until the PyPI side is configured.'
   status: backlog
   description: "release.yaml's publish-package-pypi now declares environment: pypi. That declaration is safe to land alone -- PyPI checks only the constraints its trusted publisher declares, so an unconstrained publisher keeps working, and an environment with no protection rules runs exactly as before -- but it protects nothing yet. Two settings outside the tree finish it: (1) required reviewers on the pypi environment, which is the only place a human can be put in front of an upload PyPI never allows to be withdrawn or replaced; (2) the PyPI trusted publisher constrained to that environment claim, without which ANY workflow in this repository that can obtain id-token: write can mint a PyPI-scoped token, not only the reviewed one. (2) costs nothing operationally and closes the larger half on its own; (1) means every stable release waits for a human, which is the trade to decide. test_the_irrevocable_destination_names_an_environment asserts the declaration and states plainly that it cannot see either setting. Recorded in docs/operational.md."
 - key: BL-E008-009

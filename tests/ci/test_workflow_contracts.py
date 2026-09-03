@@ -880,9 +880,12 @@ def test_the_authority_surfaces_are_owned() -> None:
     is here because someone decided that surface grants authority; adding one is that
     decision, the same way adding to `SHA_PINNED_ACTIONS` is.
 
-    **What this cannot check**: whether branch protection requires code-owner review.
-    Without that setting the file is documentation, and no test in this repository can
-    see it (BL-E008-007).
+    **This file enforces nothing, deliberately.** Branch protection requiring code-owner
+    review was declined at E008 closure: a sole-developer project has no second reviewer,
+    so the control would either block every change or be self-approved. What CODEOWNERS
+    is here for is the record of which surfaces grant authority, and this guard keeps
+    that record complete. No test can see the branch-protection setting either way
+    (BL-E008-007, resolved as accepted).
     """
     patterns = _codeowner_patterns()
     assert patterns, "CODEOWNERS assigns no owners"
@@ -4787,9 +4790,12 @@ def test_the_irrevocable_destination_names_an_environment() -> None:
     mint a PyPI-scoped token.
 
     **What this cannot check**: whether that environment has required reviewers, and
-    whether PyPI is configured to demand the claim. Both are settings outside the tree,
-    and this guard would pass with neither set -- which is why `docs/operational.md`
-    names them rather than leaving the declaration to imply protection it may not have.
+    whether PyPI is configured to demand the claim. Both are settings outside the tree
+    and this guard passes with neither set. Reviewers were declined at E008 closure
+    (sole-developer project); binding the trusted publisher to the environment claim was
+    not, and it is the half that costs nothing operationally -- it is latent only because
+    PyPI publication is currently disabled. `docs/operational.md` records both decisions
+    rather than leaving this declaration to imply protection it does not yet have.
     """
     examined = 0
     for name, job in sorted(_jobs(_load_workflow(RELEASE_WORKFLOW)).items()):

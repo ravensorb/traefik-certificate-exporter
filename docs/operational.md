@@ -233,9 +233,17 @@ effect** — the contract suite can see the declaration and cannot see either se
    Without an environment claim to match on, *any* workflow in this repository that can obtain
    `id-token: write` can mint a PyPI-scoped token, not only the reviewed one.
 
-Setting (1) means every stable release waits for a human. That is the trade this environment exists
-to offer; if you would rather not take it, leave the reviewers unset and set (2) anyway — it costs
-nothing operationally and closes the "any workflow can mint a token" half on its own.
+**Decided for this repository: (1) is declined, (2) is not.** This is a sole-developer project, so
+required reviewers is a gate on yourself — it would either block every release or be self-approved,
+and neither is worth the setting. That is recorded in `BL-E008-007`/`BL-E008-008` rather than left
+looking like pending work.
+
+(2) is a different thing wearing the same heading. It is not an approval gate, costs nothing
+operationally, and adds no waiting: it narrows *which* workflow can mint a PyPI-scoped token from
+"any workflow in this repository that can obtain `id-token: write`" to one. It is latent right now
+because `PUBLISH_PACKAGE_PYPI` is unset and PyPI publication is off — **so the trigger is the first
+time you enable PyPI, and it belongs in that same sitting.** The `environment: pypi` declaration is
+already in `release.yaml` and is inert until the PyPI side is configured.
 
 ### `DOCKERHUB_ORG`
 
