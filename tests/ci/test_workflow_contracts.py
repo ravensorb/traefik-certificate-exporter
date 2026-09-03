@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import fnmatch
+import functools
 import importlib.util
 import itertools
 import json
@@ -201,12 +202,23 @@ APPROVED_RELEASE_ACTION = "LiquidLogicLabs/git-action-release"
 REVIEWED_COMMIT_SHA = re.compile(r"\A[0-9a-f]{40}\Z")
 
 
-def _load_document(path: Path) -> dict[str, Any]:
+@functools.cache
+def _parsed_definition(path: Path) -> dict[str, Any]:
     # BaseLoader keeps GitHub's `on` key as a string instead of applying YAML 1.1's
     # obsolete yes/no boolean coercion.
     document = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     assert isinstance(document, dict), path
     return document
+
+
+def _load_document(path: Path) -> dict[str, Any]:
+    """A parsed definition, parsed once per session and copied per caller.
+
+    The copy is what makes the cache safe: several guards plant a violation by mutating
+    the document they were handed, and a shared object would leak that into whichever
+    test ran next -- a false green in the suite whose job is finding false greens.
+    """
+    return copy.deepcopy(_parsed_definition(path))
 
 
 def _load_workflow(path: Path) -> dict[str, Any]:
@@ -232,6 +244,39 @@ def _steps(document: dict[str, Any]) -> Iterator[dict[str, Any]]:
     if isinstance(runs, dict):
         for step in runs.get("steps") or []:
             yield step
+
+
+def _governed_step_groups() -> list[tuple[str, str, list[dict[str, Any]]]]:
+    """(definition, job-or-`runs`, steps) across every governed definition.
+
+    A composite action's steps run *inside* the calling job and hold that job's
+    authority, so any prohibition that examines only `.github/workflows/*.yaml` is
+    defeated by moving the forbidden step one file across. `release.yaml`'s `finalize`
+    holds `contents: write` and calls `./.github/actions/verified-bundle`, so a
+    `git push --force`, a `gh release create` or an `imagetools create` planted in that
+    composite ran with the finalizer's authority and left the suite green.
+
+    A composite action can never be a registered finalizer -- registration is
+    `(workflow, job)` -- so for these guards its steps are always outside the grant.
+    """
+    groups: list[tuple[str, str, list[dict[str, Any]]]] = []
+    for path in GOVERNED_DEFINITIONS:
+        name = str(path.relative_to(PROJECT_ROOT))
+        document = _load_document(path)
+        if "jobs" in document:
+            for job_name, job in _jobs(document).items():
+                groups.append((name, job_name, list(job.get("steps") or [])))
+        else:
+            runs = document.get("runs") or {}
+            groups.append((name, "runs", list(runs.get("steps") or [])))
+    return groups
+
+
+def _is_registered_finalizer(definition: str, container: str) -> bool:
+    """`RELEASE_FINALIZER_JOBS` holds (workflow filename, job name) pairs, so only a
+    workflow job can ever match -- which is the point: a composite action is never a
+    grant holder in its own right."""
+    return (Path(definition).name, container) in RELEASE_FINALIZER_JOBS
 
 
 def _action_references(path: Path) -> list[str]:
@@ -1088,22 +1133,21 @@ def test_no_workflow_writes_refs_or_releases_outside_a_finalizer() -> None:
         r"\bgh\s+release\s+(?:create|upload|edit|delete)\b",
         r"\bgh\s+api\b.*\breleases\b",
     )
-    for path in sorted(WORKFLOWS.glob("*.yaml")):
-        for job_name, job in _load_workflow(path).get("jobs", {}).items():
-            if (path.name, job_name) in RELEASE_FINALIZER_JOBS:
-                continue
-            for step in job.get("steps", []) or []:
-                command = str(step.get("run", ""))
-                for pattern in write_commands:
-                    assert not re.search(pattern, command), (
-                        f"{path.name}: job {job_name!r} writes refs or releases; "
-                        "register it in RELEASE_FINALIZER_JOBS with an ADR"
-                    )
-                name = str(step.get("uses", "")).split("@", 1)[0]
-                assert not RELEASE_ACTION_VERB.search(name), (
-                    f"{path.name}: job {job_name!r} uses a release/tag-writing action "
-                    f"({name}); register it in RELEASE_FINALIZER_JOBS with an ADR"
+    for definition, container, steps in _governed_step_groups():
+        if _is_registered_finalizer(definition, container):
+            continue
+        for step in steps:
+            command = str(step.get("run", ""))
+            for pattern in write_commands:
+                assert not re.search(pattern, command), (
+                    f"{definition}: {container!r} writes refs or releases; "
+                    "register it in RELEASE_FINALIZER_JOBS with an ADR"
                 )
+            name = str(step.get("uses", "")).split("@", 1)[0]
+            assert not RELEASE_ACTION_VERB.search(name), (
+                f"{definition}: {container!r} uses a release/tag-writing action "
+                f"({name}); register it in RELEASE_FINALIZER_JOBS with an ADR"
+            )
 
 
 def test_releases_are_created_only_through_the_approved_action() -> None:
@@ -1125,16 +1169,15 @@ def test_releases_are_created_only_through_the_approved_action() -> None:
         r"\bcurl\b[^\n]*/api/v1/repos/[^\n]*/releases",
         r"\bcurl\b[^\n]*/repos/[^\n]*/releases",
     )
-    for path in sorted(WORKFLOWS.glob("*.yaml")):
-        for job_name, job in _jobs(_load_workflow(path)).items():
-            for step in job.get("steps", []) or []:
-                command = str(step.get("run", ""))
-                for pattern in hand_rolled:
-                    assert not re.search(pattern, command), (
-                        f"{path.name}: job {job_name!r} creates a Release by hand. Use "
-                        f"{APPROVED_RELEASE_ACTION}@v2, which speaks both GitHub's and "
-                        f"Gitea's APIs from one step (ADR-0010)."
-                    )
+    for definition, container, steps in _governed_step_groups():
+        for step in steps:
+            command = str(step.get("run", ""))
+            for pattern in hand_rolled:
+                assert not re.search(pattern, command), (
+                    f"{definition}: {container!r} creates a Release by hand. Use "
+                    f"{APPROVED_RELEASE_ACTION}@v2, which speaks both GitHub's and "
+                    f"Gitea's APIs from one step (ADR-0010)."
+                )
 
 
 # Moving a floating major is a non-fast-forward ref update, and
@@ -1196,35 +1239,33 @@ def test_alias_moves_go_through_the_approved_action() -> None:
     `ignore-prerelease`. A `run:` block re-deriving it would be a second implementation of
     the alias rule, and the one most likely to get the lease wrong.
     """
-    for path in sorted(WORKFLOWS.glob("*.yaml")):
-        for job_name, job in _jobs(_load_workflow(path)).items():
-            for step in job.get("steps", []) or []:
-                command = str(step.get("run", ""))
-                assert not FORCED_REF_WRITE.search(command), (
-                    f"{path.name}: job {job_name!r} forces a ref update by hand. Alias "
-                    f"moves go through {APPROVED_ALIAS_ACTION}; `vX.Y.Z` is immutable and "
-                    f"is never forced at all (ADR-0006)."
-                )
+    for definition, container, steps in _governed_step_groups():
+        for step in steps:
+            command = str(step.get("run", ""))
+            assert not FORCED_REF_WRITE.search(command), (
+                f"{definition}: {container!r} forces a ref update by hand. Alias "
+                f"moves go through {APPROVED_ALIAS_ACTION}; `vX.Y.Z` is immutable and "
+                f"is never forced at all (ADR-0006)."
+            )
 
 
 def test_the_alias_action_runs_only_from_a_registered_finalizer() -> None:
     # The action needs `contents: write` to push tags, so its use is a grant in exactly
     # the sense ADR-0006 means, and belongs in the same registry as the Release finalizer.
-    for path in sorted(WORKFLOWS.glob("*.yaml")):
-        for job_name, job in _jobs(_load_workflow(path)).items():
-            for step in job.get("steps", []) or []:
-                if not str(step.get("uses", "")).startswith(APPROVED_ALIAS_ACTION):
-                    continue
-                assert (path.name, job_name) in RELEASE_FINALIZER_JOBS, (
-                    f"{path.name}: job {job_name!r} moves version aliases but is not a "
-                    f"registered finalizer (ADR-0006)"
-                )
+    for definition, container, steps in _governed_step_groups():
+        for step in steps:
+            if not str(step.get("uses", "")).startswith(APPROVED_ALIAS_ACTION):
+                continue
+            assert _is_registered_finalizer(definition, container), (
+                f"{definition}: {container!r} moves version aliases but is not a "
+                f"registered finalizer (ADR-0006)"
+            )
 
 
 def test_no_workflow_delegates_versioning_to_an_external_release_bot() -> None:
-    for path in sorted(WORKFLOWS.glob("*.yaml")):
+    for path in GOVERNED_DEFINITIONS:
         assert "release-please" not in path.read_text(encoding="utf-8"), (
-            f"{path.name}: release-please is a competing version authority (ADR-0006)"
+            f"{path}: release-please is a competing version authority (ADR-0006)"
         )
 
 
@@ -3511,26 +3552,45 @@ BUILD_ACTIONS = ("docker/build-push-action", "docker/bake-action")
 EXPRESSION = re.compile(r"\$\{\{\s*(.+?)\s*\}\}")
 
 
+def _moves_an_alias(step: dict[str, Any]) -> bool:
+    """One step, both spellings: a Git alias moved by the approved action, and a
+    registry alias moved by a digest copy."""
+    if str(step.get("uses", "")).startswith(APPROVED_ALIAS_ACTION):
+        return True
+    command = _uncommented(str(step.get("run", "")))
+    return any(re.search(probe, command) for probe in ALIAS_MOVE_COMMANDS)
+
+
 def _alias_moving_jobs(
     documents: dict[str, dict[str, Any]] | None = None,
 ) -> set[tuple[str, str]]:
-    """Every job that points a mutable name at an artifact, from the parsed steps.
+    """Every place that points a mutable name at an artifact, from the parsed steps.
 
-    Both kinds, because the story owns both: a Git alias moved by the approved action,
-    and a registry alias moved by a digest copy. Derived rather than enumerated, so an
-    alias step added to a publisher shows up here without anyone editing a list.
+    Derived rather than enumerated, so an alias step added to a publisher shows up here
+    without anyone editing a list.
 
-    Takes an optional document set so a scope attack can plant one.
+    Composite actions are included, keyed by their path and `runs`. Their steps execute
+    inside the calling job and hold its authority: `release.yaml`'s `finalize` holds
+    `contents: write` and calls `./.github/actions/verified-bundle`, so an `imagetools
+    create` planted there moved a registry alias from outside the grant, and every guard
+    stayed green. A composite action can never be a registered finalizer -- registration
+    is `(workflow, job)` -- so its presence here is always a violation.
+
+    Passing `documents` restricts the scan to those workflows, which is what the scope
+    attacks below plant against.
     """
     moving = set()
     for name, document in sorted((documents or _workflow_documents()).items()):
         for job_name, job in _jobs(document).items():
             for step in job.get("steps", []) or []:
-                if str(step.get("uses", "")).startswith(APPROVED_ALIAS_ACTION):
+                if _moves_an_alias(step):
                     moving.add((name, job_name))
-                command = _uncommented(str(step.get("run", "")))
-                if any(re.search(probe, command) for probe in ALIAS_MOVE_COMMANDS):
-                    moving.add((name, job_name))
+    if documents is None:
+        for path in sorted(ACTIONS.rglob("action.yml")):
+            runs = _load_document(path).get("runs") or {}
+            for step in runs.get("steps") or []:
+                if _moves_an_alias(step):
+                    moving.add((str(path.relative_to(PROJECT_ROOT)), "runs"))
     return moving
 
 
