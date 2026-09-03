@@ -195,6 +195,25 @@ CREDENTIAL_ACTIONS_ON_MOVING_REFS: dict[str, str] = {
     # controls. Kept floating on the ordinary CI-AR4 grounds -- a large, widely audited
     # owner whose security fixes should arrive without a manifest edit.
     "docker/login-action": "receives DOCKERHUB_USERNAME and DOCKERHUB_TOKEN",
+    # Ambient holders, added at epic closure when the derivation learned to see them.
+    # None of these is *passed* a credential; each runs in a job whose token or OIDC
+    # identity it could use. All four are from approved owners on the platform's own
+    # namespaces, and all four are the most-audited actions in the ecosystem -- but the
+    # policy says pinned or recorded, and silence is the one outcome it does not allow.
+    "actions/checkout": (
+        "runs in every credentialed job, so it holds that job's token ambiently; "
+        "first-party GitHub"
+    ),
+    "actions/attest-build-provenance": (
+        "runs in the attest job, which holds id-token: write and attestations: write; "
+        "first-party GitHub"
+    ),
+    "docker/setup-buildx-action": (
+        "runs in registry jobs holding packages: write; approved owner"
+    ),
+    "docker/setup-qemu-action": (
+        "runs in the image job holding packages: write; approved owner"
+    ),
 }
 
 # The one action permitted to create a forge Release (ADR-0010). It speaks GitHub's and
@@ -410,7 +429,10 @@ def _definition_step_lists(document: dict[str, Any]) -> list[dict[str, Any]]:
     if "jobs" in document:
         return list(_jobs(document).values())
     runs = document.get("runs") or {}
-    return [{"steps": runs.get("steps") or []}]
+    # A composite action has no permissions of its own; it runs with the calling job's.
+    # The caller is examined separately, so an empty mapping here is correct rather than
+    # a gap -- it avoids attributing an ambient credential to a file that cannot hold one.
+    return [{"steps": runs.get("steps") or [], "permissions": {}}]
 
 
 def _credential_handling_actions(
@@ -439,6 +461,23 @@ def _credential_handling_actions(
     found: dict[str, set[str]] = {}
     for document in definitions.values():
         for job in _definition_step_lists(document):
+            # The third mechanism, and the one this epic introduced the job for. An OIDC
+            # identity is not *passed* to a step -- it is ambient in the job, as
+            # ACTIONS_ID_TOKEN_REQUEST_URL/_TOKEN in every step's environment -- so every
+            # action in a job holding `id-token: write` can mint one. The same is true of
+            # `packages: write`, `attestations: write` and `contents: write` against the
+            # automatic token. Recognising only what is handed over made the derivation
+            # blind to the newest and most consequential job in the repository.
+            permissions = job.get("permissions")
+            ambient = (
+                sorted(
+                    scope
+                    for scope in ("contents", "packages", "id-token", "attestations")
+                    if permissions.get(scope) == "write"
+                )
+                if isinstance(permissions, dict)
+                else []
+            )
             after_login = False
             for step in job.get("steps") or []:
                 used = str(step.get("uses", ""))
@@ -452,6 +491,8 @@ def _credential_handling_actions(
                         reasons.add("its job receives secrets")
                     if after_login:
                         reasons.add("it runs after a registry login")
+                    if ambient:
+                        reasons.add(f"its job holds {', '.join(ambient)}")
                     if reasons:
                         found.setdefault(action, set()).update(reasons)
                     if action.startswith(REGISTRY_LOGIN_ACTION):

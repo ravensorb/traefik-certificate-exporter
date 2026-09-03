@@ -127,6 +127,48 @@ on an index that does not allow re-uploads.
 **Revisit if:** the maintainer stops controlling `LiquidLogicLabs`, any of those actions gains a
 package-publishing capability, or a supply-chain incident affects `docker/login-action`.
 
+## Amended again at epic closure: a credential can be ambient, not only handed over
+
+The derivation above recognised two ways an action receives a credential — a `secrets.*`
+expression reaching it, or its position after a registry login. Both are *passing* mechanisms, and
+there is a third that this epic introduced the job for.
+
+**An OIDC identity is not passed to a step.** It is ambient in the job, exposed as
+`ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` in every step's environment, so
+*every* action in a job holding `id-token: write` can mint one. The same holds for the automatic
+token under `packages: write`, `attestations: write` or `contents: write`. Recognising only what is
+handed over left the guard reporting green over the newest and most consequential job in the
+repository — and it did so while `release.yaml`'s own comment stated the stakes: until PyPI's
+trusted publisher is bound to an environment, anything that can obtain `id-token: write` can mint a
+PyPI-scoped token.
+
+`_credential_handling_actions` now derives that third reason from the job's own `permissions:`
+mapping, which was already parsed for the denied-scopes guard. Four actions became visible, and each
+is recorded rather than pinned:
+
+| Action | Where it is ambient |
+|---|---|
+| `actions/checkout` | every credentialed job in the repository |
+| `actions/attest-build-provenance` | `release.yaml:attest` — `id-token: write`, `attestations: write` |
+| `docker/setup-buildx-action` | the three jobs holding `packages: write` |
+| `docker/setup-qemu-action` | `publish-image.yaml:image` — `packages: write` |
+
+**Why recorded and not pinned.** These are `actions` and `docker` — the platform's own namespaces,
+and among the most-scrutinised actions in the ecosystem. Compromising one is a materially higher bar
+than the four entries this register already held, and pinning them would mean a manual bump on the
+actions that most need to receive security fixes automatically. That is a defensible acceptance; a
+silent one is not, and the register exists precisely so it has to be written down.
+
+**This does not weaken the register — it is the register working.** The entries were added because
+a derivation got *wider*, which is the direction that finds things. A composite action contributes
+no ambient credential of its own: it runs with the calling job's grant, and the caller is examined
+separately.
+
+**Revisit if:** any of these four gains a capability beyond what it needs, a supply-chain incident
+affects `actions/*` or `docker/*`, or the PyPI trusted publisher is bound to the `pypi` environment
+— which narrows what an ambient OIDC identity in that job is worth, and may make pinning
+`actions/attest-build-provenance` and `actions/checkout` there the cheaper trade.
+
 
 ## Consequences
 
