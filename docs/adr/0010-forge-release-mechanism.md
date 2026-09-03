@@ -111,8 +111,8 @@ Confirmed against the published `action.yml` rather than assumed:
   is what the run aggregator reports, and in the finalizer's own summary step `env:`. The planted
   violation degraded the summary row to a literal while leaving the job output intact -- green
   under the single-reader form.
-- `using: node24` is confirmed. ADR-0006's alias action is `node20`; E009's pinned `act_runner`
-  tuple needs both.
+- `using: node24` is confirmed. ADR-0006's alias action is node24 too at `@v2`, so E009's pinned
+  `act_runner` needs one JavaScript runtime for both, not node20 and node24 (E008-S01-003).
 
 ## Consequences
 

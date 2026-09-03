@@ -35,9 +35,9 @@ completion_evidence:
     exit_code: 0
   - command: poetry run pre-commit run workflow-policy --files .github/workflows/dev.yaml .github/workflows/release.yaml
     exit_code: 0
-  - command: poetry run pre-commit run ruff-check --files scripts/stable_tags.py scripts/finalizer_gate.py tests/ci/test_workflow_contracts.py tests/test_stable_tags.py tests/test_finalizer_gate.py
+  - command: poetry run pre-commit run ruff-check --files tests/ci/test_workflow_contracts.py
     exit_code: 0
-  - command: poetry run pre-commit run mypy --files scripts/stable_tags.py scripts/finalizer_gate.py tests/ci/test_workflow_contracts.py tests/test_stable_tags.py tests/test_finalizer_gate.py
+  - command: poetry run pre-commit run mypy --files tests/ci/test_workflow_contracts.py
     exit_code: 0
   tests_passing: true
 actual:

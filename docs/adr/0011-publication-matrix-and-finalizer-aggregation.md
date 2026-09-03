@@ -102,12 +102,15 @@ a repository-owned schema. It revives neither retired CI-AR22 (publication plan)
 
 ## Implemented (E008-S01-003), and one guard amended to match the rule it states
 
-The decision table above is `scripts/finalizer_gate.py`, called from one step in each channel's
-finalizer. It is a module rather than an `if:` expression because it is a decision, and a
-decision spelled as a workflow expression is testable only by reading it: the two mandatory
-anchors are asserted by executing the real `run:` body with the job results substituted into the
-step's real `env:`, so renaming a publisher breaks the render rather than silently supplying the
-old value.
+The decision table above is a `jq` program in one step of each channel's finalizer -- shell in
+the workflow, not a Python module. E008-S01-003's second directive removed the modules
+`scripts/finalizer_gate.py` and `scripts/stable_tags.py` along with their pytest files, on the
+precedent set when `scripts/forge_coordinates.py` became a `run:` step. It is a program rather than an `if:`
+expression because it is a decision, and a decision spelled as a workflow expression is testable
+only by reading it: the two mandatory anchors are asserted by executing the real `run:` body with
+the job results substituted into the step's real `env:`, so renaming a publisher breaks the
+render rather than silently supplying the old value. Every property the deleted pytest files
+proved is now proven the same way, in `tests/ci/test_workflow_contracts.py`.
 
 **Finalization is split across two jobs in the stable channel, and that split forced an amendment
 to `test_publisher_credentials_stay_disjoint_between_destinations`.** `finalize` writes refs and

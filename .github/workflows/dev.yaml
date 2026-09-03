@@ -253,7 +253,26 @@ jobs:
           # would run without credentials, because `persist-credentials: false` removes
           # them after cloning -- fine on a public GitHub repository and a first-run
           # failure on the private Gitea deployment CI-AR6 exists to support.
-          python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" --commit "$SOURCE_SHA"
+          #
+          # Both real questions are git's. `%(objecttype)` is `tag` only for an
+          # annotated tag, so a lightweight `v1.2.3` pushed by hand -- which is not the
+          # release identity ADR-0006 governs -- suppresses nothing. `^{commit}` is
+          # git's own dereference of a tag object, including the chain of nested tags it
+          # permits; comparing `%(objectname)` instead is the shortcut that silently
+          # never matches an annotated tag. Only the SPELLING needs a pattern, because
+          # "is this the stable release name" is a naming convention, not a git fact.
+          commit="$(git rev-parse --verify "${SOURCE_SHA}^{commit}")"
+          stable_tags=""
+          while read -r objecttype name; do
+            [[ "$objecttype" == tag ]] || continue
+            [[ "$name" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || continue
+            [[ "$(git rev-parse --verify "refs/tags/$name^{commit}")" == "$commit" ]] || continue
+            stable_tags="${stable_tags:+$stable_tags,}$name"
+          done <<<"$(git for-each-ref --format='%(objecttype) %(refname:short)' refs/tags)"
+          {
+            echo "suppressed=$([[ -n "$stable_tags" ]] && echo true || echo false)"
+            echo "stable-tags=$stable_tags"
+          } >> "$GITHUB_OUTPUT"
       - name: Record the suppression conclusion
         env:
           STABLE_TAGS: ${{ steps.guard.outputs.stable-tags }}
@@ -297,12 +316,25 @@ jobs:
           # is the correct outcome -- an immutable dev version published for a release
           # commit cannot be withdrawn. The freshness comes from the authenticated
           # checkout directly above, never from an unauthenticated `git fetch`.
-          conclusion="$(python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" --commit "$SOURCE_SHA" --output "")"
-          echo "$conclusion"
-          if ! grep -qx 'suppressed=false' <<<"$conclusion"; then
-            echo "a stable tag appeared after the guard job; refusing to publish a development version for a release commit" >&2
+          #
+          # The same annotated-tag membership the guard job asked, in the same spelling
+          # -- and every copy is EXECUTED by the contract suite, whose
+          # `test_every_suppression_recheck_is_the_same_body` asserts they are one body
+          # once comments are stripped, so a divergence fails there rather than reaching
+          # a registry.
+          commit="$(git rev-parse --verify "${SOURCE_SHA}^{commit}")"
+          suppressed=""
+          while read -r objecttype name; do
+            [[ "$objecttype" == tag ]] || continue
+            [[ "$name" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || continue
+            [[ "$(git rev-parse --verify "refs/tags/$name^{commit}")" == "$commit" ]] || continue
+            suppressed="${suppressed:+$suppressed,}$name"
+          done <<<"$(git for-each-ref --format='%(objecttype) %(refname:short)' refs/tags)"
+          if [[ -n "$suppressed" ]]; then
+            echo "a stable tag ($suppressed) appeared after the guard job; refusing to publish or alias a development version for a release commit" >&2
             exit 2
           fi
+          echo "suppressed=false: no exact stable tag on $SOURCE_SHA"
       - name: Revalidate the verified bundle before any credential is used
         id: bundle
         uses: ./.github/actions/verified-bundle
@@ -390,12 +422,25 @@ jobs:
           # is the correct outcome -- an immutable dev version published for a release
           # commit cannot be withdrawn. The freshness comes from the authenticated
           # checkout directly above, never from an unauthenticated `git fetch`.
-          conclusion="$(python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" --commit "$SOURCE_SHA" --output "")"
-          echo "$conclusion"
-          if ! grep -qx 'suppressed=false' <<<"$conclusion"; then
-            echo "a stable tag appeared after the guard job; refusing to publish a development version for a release commit" >&2
+          #
+          # The same annotated-tag membership the guard job asked, in the same spelling
+          # -- and every copy is EXECUTED by the contract suite, whose
+          # `test_every_suppression_recheck_is_the_same_body` asserts they are one body
+          # once comments are stripped, so a divergence fails there rather than reaching
+          # a registry.
+          commit="$(git rev-parse --verify "${SOURCE_SHA}^{commit}")"
+          suppressed=""
+          while read -r objecttype name; do
+            [[ "$objecttype" == tag ]] || continue
+            [[ "$name" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || continue
+            [[ "$(git rev-parse --verify "refs/tags/$name^{commit}")" == "$commit" ]] || continue
+            suppressed="${suppressed:+$suppressed,}$name"
+          done <<<"$(git for-each-ref --format='%(objecttype) %(refname:short)' refs/tags)"
+          if [[ -n "$suppressed" ]]; then
+            echo "a stable tag ($suppressed) appeared after the guard job; refusing to publish or alias a development version for a release commit" >&2
             exit 2
           fi
+          echo "suppressed=false: no exact stable tag on $SOURCE_SHA"
       - name: Revalidate the verified bundle before any credential is used
         id: bundle
         uses: ./.github/actions/verified-bundle
@@ -537,12 +582,24 @@ jobs:
           SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
         run: |
           set -euo pipefail
-          conclusion="$(python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" --commit "$SOURCE_SHA" --output "")"
-          echo "$conclusion"
-          if ! grep -qx 'suppressed=false' <<<"$conclusion"; then
-            echo "a stable tag appeared after the guard job; refusing to move 'dev' onto a release commit" >&2
+          # The same annotated-tag membership the guard job asked, in the same spelling
+          # -- and every copy is EXECUTED by the contract suite, whose
+          # `test_every_suppression_recheck_is_the_same_body` asserts they are one body
+          # once comments are stripped, so a divergence fails there rather than reaching
+          # a registry.
+          commit="$(git rev-parse --verify "${SOURCE_SHA}^{commit}")"
+          suppressed=""
+          while read -r objecttype name; do
+            [[ "$objecttype" == tag ]] || continue
+            [[ "$name" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || continue
+            [[ "$(git rev-parse --verify "refs/tags/$name^{commit}")" == "$commit" ]] || continue
+            suppressed="${suppressed:+$suppressed,}$name"
+          done <<<"$(git for-each-ref --format='%(objecttype) %(refname:short)' refs/tags)"
+          if [[ -n "$suppressed" ]]; then
+            echo "a stable tag ($suppressed) appeared after the guard job; refusing to publish or alias a development version for a release commit" >&2
             exit 2
           fi
+          echo "suppressed=false: no exact stable tag on $SOURCE_SHA"
 
       - name: Refuse to finalize unless every enabled destination delivered
         id: gate
@@ -557,7 +614,44 @@ jobs:
              "stable-tag-guard":"${{ needs.stable-tag-guard.result }}"}
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/scripts/finalizer_gate.py"
+          # `needs:` collapses two unrelated outcomes into one state: a job is `skipped`
+          # both when its own `if:` was false and when an upstream died. The enabled set
+          # the plan job emitted once is what separates them, so this is a join of the
+          # two maps rather than a reading of either alone. Malformed or absent JSON is
+          # a refusal, not an empty set -- `--argjson` rejects it before the program runs.
+          #
+          # This detects under-publication, not over-publication: a job result carries no
+          # evidence of WHICH destinations it addressed, and one job ships several (the
+          # image publisher pushes the forge registry and Docker Hub from one Buildx
+          # invocation). Over-publication is prevented upstream -- no credentials, and no
+          # requests -- each with its own guard (ADR-0011).
+          jq -rn \
+            --argjson ENABLED_DESTINATIONS "$ENABLED_DESTINATIONS" \
+            --argjson PUBLISHER_RESULTS "$PUBLISHER_RESULTS" \
+            --argjson REQUIRED_RESULTS "$REQUIRED_RESULTS" '
+            def refuse($why): "finalizer gate: \($why)\n" | halt_error(2);
+            def ordered: to_entries | sort_by(.key);
+            if ([$ENABLED_DESTINATIONS, $PUBLISHER_RESULTS, $REQUIRED_RESULTS] | any(type != "object"))
+              then refuse("every input must be a JSON object of name to string") else . end
+            | (($ENABLED_DESTINATIONS | keys) - ($PUBLISHER_RESULTS | keys)) as $unreported
+            | (($PUBLISHER_RESULTS | keys) - ($ENABLED_DESTINATIONS | keys)) as $undeclared
+            | if ($ENABLED_DESTINATIONS | length) == 0 then refuse("the enabled set names no destination at all") else . end
+            | if ($unreported | length) > 0 then refuse("no publisher result was supplied for \($unreported | join(", ")); the finalizer must depend on every publisher and pass each needs.<job>.result") else . end
+            | if ($undeclared | length) > 0 then refuse("results were supplied for \($undeclared | join(", ")), which the enabled set does not mention; the static job graph and the runtime set have drifted") else . end
+            | [ ($REQUIRED_RESULTS | ordered[] | {name: .key, state: "required", result: .value})
+              , ($ENABLED_DESTINATIONS | ordered[] | {name: .key, state: .value, result: $PUBLISHER_RESULTS[.key]}) ]
+            | map(. + {blocked:
+                ( if (.result | IN("success", "skipped", "failure", "cancelled") | not) then refuse("\(.name) reported unknown result \(.result | tojson)")
+                  elif (.state | IN("required", "enabled", "disabled", "unsupported") | not) then refuse("\(.name) has unknown planned state \(.state | tojson)")
+                  elif .state == "required" and .result != "success" then "required job \(.name) reported \(.result)"
+                  elif (.result | IN("failure", "cancelled")) then "\(.name) reported \(.result)"
+                  elif .state == "enabled" and .result == "skipped" then "\(.name) is enabled but was skipped, so an artifact the release promises was never published"
+                  else "" end) })
+            | (["### Finalization gate", "", "| Destination | Planned state | Job result | Verdict |", "| --- | --- | --- | --- |"]
+               + map("| `\(.name)` | `\(.state)` | `\(.result)` | `\(if .blocked == "" then "ok" else "blocks" end)` |") | .[])
+            , ([.[] | .blocked | select(. != "")] as $blocked
+               | if ($blocked | length) > 0 then refuse("refusing to create the Release or move any alias: \($blocked | join("; "))") else empty end)
+            ' >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

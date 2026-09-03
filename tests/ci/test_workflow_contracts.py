@@ -76,7 +76,7 @@ SECRET_FREE_WORKFLOWS = (CI_WORKFLOW, VERIFY_WORKFLOW)
 #
 # * `("release.yaml", "finalize")` -- creates the forge Release through
 #   `LiquidLogicLabs/git-action-release@v2` (ADR-0010) and advances `vMAJOR` /
-#   `vMAJOR.MINOR` through `LiquidLogicLabs/git-action-tag-floating-version@v1`
+#   `vMAJOR.MINOR` through `LiquidLogicLabs/git-action-tag-floating-version@v2`
 #   (ADR-0006 as amended). It is the only job in the repository declaring
 #   `contents: write`, and it holds no registry credential at all.
 # * `("release.yaml", "finalize-image-aliases")` -- points the `MAJOR.MINOR`, `MAJOR`
@@ -2008,7 +2008,7 @@ def test_step_based_publishers_re_read_the_tag_set_before_they_upload() -> None:
         # to the tested module, whose non-zero exit is the refusal under `set -e`.
         # Grepping only for the script name accepts a step that runs it and throws the
         # answer away, which is the guard-that-cannot-fail shape (F9).
-        refusal = "suppressed" if suppressors else "--expect-tag"
+        refusal = "suppressed" if suppressors else STABLE_RECHECK_MARKER
         for name, job in _publishers(document).items():
             steps = job.get("steps") or []
             if not steps:
@@ -2024,7 +2024,7 @@ def test_step_based_publishers_re_read_the_tag_set_before_they_upload() -> None:
             rechecks = [
                 _uncommented(str(step.get("run", "")))
                 for step in steps[:upload_at]
-                if "scripts/stable_tags.py" in _uncommented(str(step.get("run", "")))
+                if TAG_MEMBERSHIP_MARKER in _uncommented(str(step.get("run", "")))
             ]
             assert rechecks, (
                 f"{path.name}: publisher {name!r} never re-reads the tag set before "
@@ -2312,6 +2312,8 @@ def test_the_release_tag_fixture_names_the_committed_version() -> None:
         ("refs/tags/v1.2.3-rc1", "a prerelease is not a stable release"),
         ("refs/tags/1.2.3", "the stable spelling carries the v prefix"),
         ("refs/tags/v01.2.3", "a zero-padded component is malformed"),
+        ("refs/tags/v1.2.3.4", "a fourth component is not the release spelling"),
+        ("refs/tags/release-1.2.3", "a prefixed name is not the release spelling"),
         ("refs/heads/main", "a branch ref is not a tag at all"),
         (
             "refs/heads/v1.2.3",
@@ -2868,10 +2870,31 @@ def test_channel_workflows_surface_the_published_digest_and_platforms() -> None:
 # violation it forbids -- the rule AND the scope -- and confirming the guard fails.
 # ---------------------------------------------------------------------------
 
+# How the finalization gate is LOCATED, now that it is a `jq` program in the step rather
+# than a module the step calls. The prefix every one of its refusals carries, so a gate
+# that stopped refusing stops being found -- which fails the coverage assertions loudly
+# rather than leaving them examining nothing.
+GATE_MARKER = "finalizer gate:"
+
+# How the annotated-tag membership decision is LOCATED in a `run:` body. `%(objecttype)`
+# is the annotated-object filter itself: a step that peels tags without it accepts a
+# lightweight `v1.2.3` pushed by hand, which is the release-breaking defect story 002
+# recorded as HIGH-1. Matching the mechanism rather than a step name means a re-check
+# that was gutted is no longer found at all.
+TAG_MEMBERSHIP_MARKER = "%(objecttype)"
+
+# The stable channel's re-check names the tag it was handed; the development channel's
+# enumerates every tag on the commit. Two spellings of one relation, and each is the
+# marker for its own channel.
+STABLE_RECHECK_MARKER = "refs/tags/$RELEASE_TAG"
+
+# git's own version ordering, which is what makes the alias decision a delegation rather
+# than a second implementation. A step that reached for `sort` instead is not found here.
+ALIAS_ORDER_MARKER = "--sort=v:refname"
+
 # Every spelling of "give an image that already exists another name". A digest copy is
 # a registry WRITE, which is why it is not matched by REGISTRY_READ_COMMANDS: the
 # ordering guard forbids asking a registry what is there, not putting something there.
-GATE_MODULE = "scripts/finalizer_gate.py"
 
 ALIAS_MOVE_COMMANDS = (
     r"\bbuildx\s+imagetools\s+create\b",
@@ -2937,9 +2960,9 @@ def _writing_steps(job: dict[str, Any]) -> list[int]:
 # name: the enabled-set gate, the `vX.Y.Z` immutability re-check, the alias-ordering
 # decision, and the development channel's just-in-time head proof.
 REFUSAL_MARKERS = (
-    GATE_MODULE,
-    "--expect-tag",
-    "--alias-plan",
+    GATE_MARKER,
+    TAG_MEMBERSHIP_MARKER,
+    ALIAS_ORDER_MARKER,
     "rev-parse HEAD",
 )
 
@@ -2966,7 +2989,7 @@ def _gate_steps(path: Path) -> dict[str, dict[str, Any]]:
     found = {}
     for job_name in sorted(_finalizers(path)):
         for step in _jobs(_load_workflow(path))[job_name].get("steps", []) or []:
-            if GATE_MODULE in _uncommented(str(step.get("run", ""))):
+            if GATE_MARKER in _uncommented(str(step.get("run", ""))):
                 found[job_name] = step
     return found
 
@@ -3146,11 +3169,13 @@ def test_every_finalizer_waits_for_every_publisher_and_reads_every_result() -> N
             )
 
 
-def _run_gate(path: Path, bindings: dict[str, str]) -> Any:
+def _run_gate(path: Path, bindings: dict[str, str], summary: Path | None = None) -> Any:
     step = _gate_step(path)
-    completed, _ = _run_step(
-        str(step["run"]), _render(step, bindings), cwd=PROJECT_ROOT
-    )
+    environment = _render(step, bindings)
+    if summary is not None:
+        summary.touch()
+        environment["GITHUB_STEP_SUMMARY"] = str(summary)
+    completed, _ = _run_step(str(step["run"]), environment, cwd=PROJECT_ROOT)
     return completed
 
 
@@ -3278,6 +3303,38 @@ def alias_repository(tmp_path: Path) -> Path:
                 _git(root, "tag", tag)
             else:
                 _git(root, "tag", "-a", tag, "-m", tag)
+    # An annotated stable tag on history the protected default branch never took. It is
+    # the greatest tag in the repository and must count for nothing: without the
+    # `--merged` scope every release after it becomes the *second* greatest, so `vMAJOR`
+    # and `latest` stop advancing while every run still finishes green. Every ordering
+    # expectation below is therefore also a scope attack on that scoping.
+    _git(root, "checkout", "-b", "abandoned")
+    (root / "file.txt").write_text("abandoned\n", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-m", "abandoned")
+    _git(root, "tag", "-a", "v9.0.0", "-m", "v9.0.0")
+    _git(root, "checkout", "main")
+    return root
+
+
+@pytest.fixture
+def major_boundary_repository(tmp_path: Path) -> Path:
+    """`v1.2.3`, `v1.20.0`, `v2.0.0` -- the two cases prefix arithmetic gets wrong.
+
+    `v1.2.` must not prefix `v1.20.0` (or a patch release would think a neighbouring
+    minor superseded it), and the first release of a new major is greatest within a
+    `MAJOR.MINOR` that contains only itself.
+    """
+    root = tmp_path / "boundary"
+    root.mkdir()
+    _git(root, "init", "--initial-branch=main")
+    _git(root, "config", "user.email", "test@example.com")
+    _git(root, "config", "user.name", "Test")
+    for index, tag in enumerate(["v1.2.3", "v1.20.0", "v2.0.0"]):
+        (root / "file.txt").write_text(f"{index}\n", encoding="utf-8")
+        _git(root, "add", ".")
+        _git(root, "commit", "-m", f"commit {index}")
+        _git(root, "tag", "-a", tag, "-m", tag)
     return root
 
 
@@ -3545,7 +3602,7 @@ def test_the_git_alias_action_runs_only_behind_the_ordering_gate() -> None:
                 str(step["id"])
                 for step in steps
                 if step.get("id")
-                and "--alias-plan" in _uncommented(str(step.get("run", "")))
+                and ALIAS_ORDER_MARKER in _uncommented(str(step.get("run", "")))
             }
             for step in steps:
                 if not str(step.get("uses", "")).startswith(APPROVED_ALIAS_ACTION):
@@ -3566,21 +3623,32 @@ def test_the_git_alias_action_runs_only_behind_the_ordering_gate() -> None:
                     f"older patch would drag the major alias backwards (F4)"
                 )
                 inputs = step.get("with") or {}
-                # The action's own input spelling. `update-minor:` and
-                # `ignore-prerelease:` are silently ignored -- the defaults then leave
-                # the minor alias unmoved, which no test of the workflow would notice.
-                assert inputs.get("updateMinor") == "true", (
+                # The action's own input spelling AT `@v2`, which renamed every one of
+                # them. The camelCase pair `@v1` took -- `updateMinor`,
+                # `ignorePrerelease` -- is not an input here at all: Actions passes an
+                # undeclared input through as an unread `INPUT_*` variable, the action
+                # falls back to its defaults, and `update-minor` defaults to `false`.
+                # The visible result is a `vMAJOR.MINOR` alias that silently never
+                # moves. That camelCase pair is this guard's planted violation.
+                assert inputs.get("update-minor") == "true", (
                     f"{path.name}: {job_name!r} does not ask for the minor alias"
                 )
-                assert inputs.get("ignorePrerelease") == "true", (
+                assert inputs.get("ignore-prerelease") == "true", (
                     f"{path.name}: {job_name!r} does not skip prereleases"
                 )
+                assert not (
+                    set(inputs) & {"updateMinor", "ignorePrerelease", "refTag"}
+                ), (
+                    f"{path.name}: {job_name!r} passes the camelCase inputs of "
+                    f"`{APPROVED_ALIAS_ACTION}@v1`; at `@v2` those are undeclared, "
+                    f"silently ignored, and `update-minor` then defaults to false"
+                )
                 # And its OUTPUT names, for the same reason the inputs are asserted:
-                # `majorTag`/`minorTag` are camelCase too, and a wrong one renders
-                # `none` in the summary on a fully successful move -- the same silent
-                # failure the input spelling would have caused, one step further on.
+                # `@v2` renamed those too, and a wrong one renders `none` in the summary
+                # on a fully successful move -- the same silent failure the input
+                # spelling would have caused, one step further on.
                 consumed = json.dumps(_jobs(_load_workflow(path))[job_name])
-                for output in ("majorTag", "minorTag"):
+                for output in ("major-tag", "minor-tag"):
                     assert f"steps.{step['id']}.outputs.{output}" in consumed, (
                         f"{path.name}: {job_name!r} never reads the alias action's "
                         f"{output!r} output, so a successful move is reported as none"
@@ -3685,7 +3753,8 @@ def test_the_release_carries_the_whole_verified_bundle_and_is_traceable(
                     str(candidate["id"])
                     for candidate in steps
                     if candidate.get("id")
-                    and "--alias-plan" in _uncommented(str(candidate.get("run", "")))
+                    and ALIAS_ORDER_MARKER
+                    in _uncommented(str(candidate.get("run", "")))
                 ),
                 None,
             )
@@ -3896,3 +3965,371 @@ def test_the_release_is_idempotent_for_the_identity_it_already_created() -> None
                     f"re-proving the tag still names this commit first"
                 )
     assert examined, "no workflow creates a Release; this guard examined nothing"
+
+
+# ---------------------------------------------------------------------------
+# The annotated-stable-tag relation, and the finalization gate, as workflow steps
+# (story E008-S01-003, maintainer directive: no Python modules).
+#
+# Both used to be modules with their own pytest files. The properties those files
+# proved are proven here instead, by EXECUTING the real `run:` bodies against real
+# git and real `jq` -- which is strictly stronger, because a module test proves the
+# module and this proves what the workflow actually runs.
+# ---------------------------------------------------------------------------
+
+
+def _membership_steps(path: Path) -> dict[str, list[str]]:
+    """Every step deciding annotated-stable-tag membership, split by what it does.
+
+    Located by the mechanism (`%(objecttype)`), never by a step name or an `id:`: a
+    re-check whose body was gutted stops being found, and the count assertions below
+    then fail loudly rather than examining nothing. `emitters` publish the conclusion
+    as a step output; `refusers` exit non-zero instead.
+    """
+    found: dict[str, list[str]] = {"emitters": [], "refusers": []}
+    for job in _jobs(_load_workflow(path)).values():
+        for step in job.get("steps") or []:
+            body = _uncommented(str(step.get("run", "")))
+            if TAG_MEMBERSHIP_MARKER not in body:
+                continue
+            found["emitters" if "GITHUB_OUTPUT" in body else "refusers"].append(body)
+    return found
+
+
+def test_every_stable_tag_recheck_is_the_same_body() -> None:
+    """One relation, copied into four steps, asserted to be one copy.
+
+    The stable channel re-reads the tag immediately before each irreversible act: the
+    two package uploads, the Release, and the image aliases. Duplication is the price
+    of keeping the decision in the workflow -- so the guard is that the copies cannot
+    diverge. A single edited copy fails here rather than reaching a registry.
+    """
+    refusers = _membership_steps(RELEASE_WORKFLOW)["refusers"]
+    assert len(refusers) == 4, (
+        f"release.yaml has {len(refusers)} pre-write tag re-checks; expected one before "
+        f"each irreversible act (both uploads, the Release, the image aliases)"
+    )
+    assert len(set(refusers)) == 1, "the stable tag re-checks have diverged"
+    assert all(STABLE_RECHECK_MARKER in body for body in refusers)
+
+
+def test_every_suppression_recheck_is_the_same_body() -> None:
+    """The development channel's copies of the same relation, under the same rule."""
+    steps = _membership_steps(DEV_WORKFLOW)
+    assert len(steps["emitters"]) == 1, "the suppression conclusion has one producer"
+    assert len(steps["refusers"]) == 3, (
+        f"dev.yaml has {len(steps['refusers'])} pre-write suppression re-checks; "
+        f"expected one before each of the two uploads and the `dev` alias move"
+    )
+    assert len(set(steps["refusers"])) == 1, "the suppression re-checks have diverged"
+
+
+def _run_stable_recheck(repository: Path, tag: str, commit: str | None = None) -> Any:
+    body = _membership_steps(RELEASE_WORKFLOW)["refusers"][0]
+    completed, _ = _run_step(
+        body,
+        {
+            "RELEASE_TAG": tag,
+            "SOURCE_SHA": commit or _git(repository, "rev-parse", "HEAD"),
+        },
+        cwd=repository,
+    )
+    return completed
+
+
+def test_the_stable_recheck_accepts_the_annotated_tag_that_names_the_commit(
+    tagged_repository: Path,
+) -> None:
+    completed = _run_stable_recheck(tagged_repository, "v1.2.3")
+    assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("tag", "reason"),
+    [
+        ("v9.9.9", "a lightweight tag of the right name is not the release identity"),
+        ("v1.2", "a floating alias is not an exact version"),
+        ("v1.2.3-rc1", "a prerelease is not a stable release"),
+        ("1.2.3", "the stable spelling carries the v prefix"),
+        ("v01.2.3", "a zero-padded component is malformed"),
+        ("v1.2.3.4", "a fourth component is not the release spelling"),
+        ("release-1.2.3", "a prefixed name is not the release spelling"),
+        ("v0.9.0", "this tag peels to another commit"),
+        ("v4.5.6", "this tag does not exist at all"),
+    ],
+)
+def test_the_stable_recheck_refuses_anything_that_is_not_that_tag(
+    tagged_repository: Path, tag: str, reason: str
+) -> None:
+    """The pre-upload refusal, run against real git rather than described.
+
+    `v9.9.9` is the anchor the maintainer named: it is spelled exactly right and it
+    peels to exactly this commit, and it is refused solely because it is lightweight.
+    Dropping the `%(objecttype)` filter makes this case pass and this test fail --
+    which is the release-breaking defect story 002 recorded as HIGH-1.
+    """
+    completed = _run_stable_recheck(tagged_repository, tag)
+    assert completed.returncode != 0, f"{tag} was accepted, but {reason}"
+
+
+def _run_suppression_guard(repository: Path, commit: str) -> tuple[Any, dict[str, str]]:
+    body = _membership_steps(DEV_WORKFLOW)["emitters"][0]
+    return _run_step(body, {"SOURCE_SHA": commit}, cwd=repository)
+
+
+def test_only_an_annotated_exact_stable_tag_suppresses_development(
+    tagged_repository: Path,
+) -> None:
+    """Every rejection in one execution, because the commit carries every shape.
+
+    On this commit sit `v1.2.3` (annotated, exact), `v9.9.9` (exact but lightweight),
+    `v1.2`, `v1.2.3-rc1`, `1.2.3` and `v01.2.3` (annotated, wrong spelling). Only the
+    first may suppress a development publication, and the emitted list says which did.
+    Deleting the annotated-object filter adds `v9.9.9`; loosening the spelling adds the
+    rest; each fails here.
+    """
+    head = _git(tagged_repository, "rev-parse", "HEAD")
+    completed, emitted = _run_suppression_guard(tagged_repository, head)
+    assert completed.returncode == 0, completed.stderr
+    assert emitted["suppressed"] == "true"
+    assert emitted["stable-tags"] == "v1.2.3"
+
+
+def test_a_stable_tag_on_an_ancestor_does_not_suppress_the_new_head(
+    tagged_repository: Path,
+) -> None:
+    """The peel is compared to THIS commit, not asked "is a release in my history".
+
+    Every commit after a release has a release in its history, so the reachability
+    reading would suppress every development publication this project ever makes.
+    """
+    (tagged_repository / "file.txt").write_text("three\n", encoding="utf-8")
+    _git(tagged_repository, "add", ".")
+    _git(tagged_repository, "commit", "-m", "three")
+    head = _git(tagged_repository, "rev-parse", "HEAD")
+    completed, emitted = _run_suppression_guard(tagged_repository, head)
+    assert completed.returncode == 0, completed.stderr
+    assert emitted["suppressed"] == "false"
+    assert emitted["stable-tags"] == ""
+
+
+def test_the_suppression_recheck_refuses_a_tag_that_landed_after_the_guard(
+    tagged_repository: Path,
+) -> None:
+    """F16's cheap hardening, executed: the window is narrowed, and the refusal is real.
+
+    The guard job answered before the verifier finished. A tag that lands afterwards
+    must stop the upload, because an immutable `X.Y.Z.devN` published for a release
+    commit cannot be withdrawn.
+    """
+    body = _membership_steps(DEV_WORKFLOW)["refusers"][0]
+    head = _git(tagged_repository, "rev-parse", "HEAD")
+    completed, _ = _run_step(body, {"SOURCE_SHA": head}, cwd=tagged_repository)
+    assert completed.returncode != 0
+    assert "v1.2.3" in completed.stderr
+
+    (tagged_repository / "file.txt").write_text("four\n", encoding="utf-8")
+    _git(tagged_repository, "add", ".")
+    _git(tagged_repository, "commit", "-m", "four")
+    untagged = _git(tagged_repository, "rev-parse", "HEAD")
+    completed, _ = _run_step(body, {"SOURCE_SHA": untagged}, cwd=tagged_repository)
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_a_release_that_never_reached_the_default_branch_has_no_alias_plan(
+    alias_repository: Path,
+) -> None:
+    """`v9.0.0` is annotated, exactly spelled, and the greatest tag in the repository.
+
+    It is still not a release this project made: it sits on history the protected
+    default branch never took. `--merged` is both the reachability answer and the
+    membership test, so the ordering step refuses rather than handing `v9` an alias.
+    """
+    completed, _ = _alias_plan(alias_repository, "v9.0.0")
+    assert completed.returncode != 0
+    assert "v9.0.0" in completed.stderr
+
+
+def test_a_neighbouring_minor_is_not_mistaken_for_this_one(
+    major_boundary_repository: Path,
+) -> None:
+    """`v1.2.` cannot prefix `v1.20.0`, and the trailing separator is why.
+
+    Without it `v1.20.0` would count as the greatest release within `v1.2`, and the
+    `v1.2` alias would stop advancing on runs that all finish green.
+    """
+    completed, emitted = _alias_plan(major_boundary_repository, "v1.2.3")
+    assert completed.returncode == 0, completed.stderr
+    assert emitted["minor-alias"] == "v1.2"
+    assert emitted["advance-minor"] == "true"
+    assert emitted["advance-major"] == "false"
+    assert emitted["greatest-stable"] == "v2.0.0"
+
+
+def test_the_first_release_of_a_new_major_advances_its_own_aliases(
+    major_boundary_repository: Path,
+) -> None:
+    """Greatest overall, and greatest within a `MAJOR.MINOR` containing only itself."""
+    completed, emitted = _alias_plan(major_boundary_repository, "v2.0.0")
+    assert completed.returncode == 0, completed.stderr
+    assert emitted["major-alias"] == "v2"
+    assert emitted["minor-alias"] == "v2.0"
+    assert emitted["advance-major"] == "true"
+    assert emitted["advance-minor"] == "true"
+
+
+def test_the_ordering_is_gits_version_order_never_a_lexicographic_one(
+    alias_repository: Path,
+) -> None:
+    """`v1.2.10` sorts BELOW `v1.2.3` under every string comparison and above it under
+    git's `v:refname`. The greatest tag reported is the whole ordering assertion."""
+    completed, emitted = _alias_plan(alias_repository, "v1.2.10")
+    assert completed.returncode == 0, completed.stderr
+    assert emitted["greatest-stable"] == "v1.3.0"
+
+
+# --- the finalization gate's input validation (gate finding F7) -------------
+
+
+def test_a_destination_with_no_result_is_a_wiring_defect() -> None:
+    """The finalizer did not `needs:` everything, so a destination reported nothing.
+
+    Treating that as absent is the silent failure: the release finalizes while a
+    destination nobody watched was still running, or had died.
+    """
+    bindings = _stable_bindings()
+    bindings["needs.plan.outputs.enabled-destinations"] = json.dumps(
+        {
+            "image-forge": "enabled",
+            "image-dockerhub": "disabled",
+            "package-forge": "unsupported",
+            "package-pypi": "enabled",
+            "package-testpypi": "enabled",
+        }
+    )
+    completed = _run_gate(RELEASE_WORKFLOW, bindings)
+    assert completed.returncode != 0
+    # The wiring refusal specifically, not merely "something failed". Deleting the
+    # check leaves the destination with a `null` result, which the unknown-result
+    # branch also refuses -- green for the wrong reason, and silent the day a result
+    # of `null` becomes representable.
+    assert "no publisher result was supplied for package-testpypi" in completed.stderr
+
+
+def test_a_result_for_a_destination_nobody_planned_is_a_wiring_defect() -> None:
+    """The other direction: the static job graph and the runtime set have drifted."""
+    bindings = _stable_bindings()
+    bindings["needs.plan.outputs.enabled-destinations"] = json.dumps(
+        {"image-forge": "enabled", "image-dockerhub": "disabled"}
+    )
+    completed = _run_gate(RELEASE_WORKFLOW, bindings)
+    assert completed.returncode != 0
+    assert "results were supplied for package-forge, package-pypi" in completed.stderr
+
+
+def test_an_empty_enabled_set_blocks_rather_than_finalizing_nothing() -> None:
+    bindings = {
+        f"needs.{job}.result": "skipped"
+        for job in ("publish-image", "publish-package-forge", "publish-package-pypi")
+    }
+    bindings["needs.verify.result"] = "success"
+    bindings["needs.plan.outputs.enabled-destinations"] = "{}"
+    completed = _run_gate(RELEASE_WORKFLOW, bindings)
+    assert completed.returncode != 0
+    assert "names no destination at all" in completed.stderr
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "not json", "[]", '"a string"'])
+def test_a_malformed_enabled_set_blocks(raw: str) -> None:
+    """An upstream job that failed before emitting the set must block finalization,
+    never fall through to an empty one."""
+    bindings = _stable_bindings()
+    bindings["needs.plan.outputs.enabled-destinations"] = raw
+    completed = _run_gate(RELEASE_WORKFLOW, bindings)
+    assert completed.returncode != 0
+
+
+@pytest.mark.parametrize("state", ["on", "true", "ENABLED", ""])
+def test_an_unrecognised_destination_state_blocks(state: str) -> None:
+    bindings = _stable_bindings()
+    bindings["needs.plan.outputs.enabled-destinations"] = json.dumps(
+        {
+            "image-forge": state,
+            "image-dockerhub": "disabled",
+            "package-forge": "unsupported",
+            "package-pypi": "enabled",
+        }
+    )
+    completed = _run_gate(RELEASE_WORKFLOW, bindings)
+    assert completed.returncode != 0
+    assert "image-forge" in completed.stderr
+
+
+@pytest.mark.parametrize("result", ["succeeded", "SUCCESS", "", "neutral"])
+def test_an_unrecognised_job_result_blocks(result: str) -> None:
+    completed = _run_gate(
+        RELEASE_WORKFLOW, _stable_bindings(**{"publish-image": result})
+    )
+    assert completed.returncode != 0
+
+
+def test_every_blocking_destination_is_reported_not_only_the_first() -> None:
+    """An operator reading one line and re-running into the second failure is the
+    experience this avoids."""
+    completed = _run_gate(
+        RELEASE_WORKFLOW,
+        _stable_bindings(
+            **{"publish-package-pypi": "skipped", "publish-image": "failure"}
+        ),
+    )
+    assert completed.returncode != 0
+    assert "package-pypi" in completed.stderr
+    assert "image-forge" in completed.stderr
+
+
+def test_the_gate_writes_its_evidence_table_where_it_is_told(tmp_path: Path) -> None:
+    """Every planned state and every job result, in the run summary, on success and on
+    refusal alike -- a refusal that says nothing about the other destinations leaves an
+    operator guessing which ones were fine."""
+    summary = tmp_path / "summary.md"
+    completed = _run_gate(RELEASE_WORKFLOW, _stable_bindings(), summary)
+    assert completed.returncode == 0, completed.stderr
+    rendered = summary.read_text(encoding="utf-8")
+    assert "### Finalization gate" in rendered
+    for destination in (
+        "image-forge",
+        "image-dockerhub",
+        "package-forge",
+        "package-pypi",
+        "verify",
+    ):
+        assert f"`{destination}`" in rendered
+    assert "`blocks`" not in rendered
+
+    blocked = tmp_path / "blocked.md"
+    completed = _run_gate(
+        RELEASE_WORKFLOW,
+        _stable_bindings(**{"publish-package-pypi": "skipped"}),
+        blocked,
+    )
+    assert completed.returncode != 0
+    rendered = blocked.read_text(encoding="utf-8")
+    assert "| `package-pypi` | `enabled` | `skipped` | `blocks` |" in rendered
+    assert "| `image-forge` | `enabled` | `success` | `ok` |" in rendered
+
+
+@pytest.mark.parametrize("blocking", ["failure", "cancelled"])
+def test_a_failure_blocks_even_on_a_destination_the_plan_says_is_off(
+    blocking: str,
+) -> None:
+    """`disabled` and `unsupported` excuse a SKIP, never a failure.
+
+    A destination that was switched off cannot fail; if its job reports one, something
+    ran that nobody planned, and finalizing over it is exactly the state ADR-0011 keeps
+    the finalizer away from. `package-forge` is `unsupported` in these bindings.
+    """
+    completed = _run_gate(
+        RELEASE_WORKFLOW, _stable_bindings(**{"publish-package-forge": blocking})
+    )
+    assert completed.returncode != 0
+    assert f"package-forge reported {blocking}" in completed.stderr

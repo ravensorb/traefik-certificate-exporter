@@ -189,8 +189,11 @@ Only an annotated tag spelled exactly `vX.Y.Z`, whose peeled commit is the event
 commit is reachable from the protected default branch. A lightweight tag, a floating alias (`v1`,
 `v1.2`), a prerelease (`v1.2.3-rc1`), a malformed version (`1.2.3`, `v01.2.3`), a branch ref, a tag
 pointing at some other commit, and a tag on history the default branch never took are each refused
-**before any credential is used**. The decisions are git's, taken by `scripts/stable_tags.py`; the
-workflow composes them and never re-derives one.
+**before any credential is used**. The decisions are git's -- `%(objecttype)` for the
+annotated-object filter, `^{commit}` for the peel, `merge-base --is-ancestor` for reachability
+and `--sort=v:refname` for version ordering -- composed in the workflow step itself. The one
+thing git cannot answer is the *spelling*, which is a naming convention rather than a git fact,
+and it is the only pattern anywhere in the relation.
 
 The accepted tag then has to agree with the repository: the version the tag spells, the committed
 Poetry version, and the checked-out commit are compared as a relation before any publisher starts,

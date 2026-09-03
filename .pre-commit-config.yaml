@@ -89,6 +89,6 @@ repos:
     rev: v1.14.1
     hooks:
       - id: mypy
-        files: ^(src/publication_contract/|scripts/(committed_versions|release_version|stable_tags)\.py)
+        files: ^(src/publication_contract/|scripts/(committed_versions|release_version)\.py)
         args: [--config-file=pyproject.toml]
         additional_dependencies: [types-jsonschema==4.25.1.20250822]

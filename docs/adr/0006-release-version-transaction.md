@@ -214,23 +214,30 @@ The identity-versus-artifacts split already drawn above decides this cleanly:
 An alias does not choose a version; it points at one. Forcing it therefore cannot corrupt an
 identity, which is the harm §5 exists to prevent.
 
-**The mechanism is `LiquidLogicLabs/git-action-tag-floating-version@v1`, not a hand-rolled
+**The mechanism is `LiquidLogicLabs/git-action-tag-floating-version@v2`, not a hand-rolled
 push.** The action extracts the major and optional minor from an exact tag, points the aliases at
 it, performs the non-fast-forward update, and skips prereleases by default. It needs
 `contents: write`, which is exactly the grant this ADR governs, so its use is restricted to a
 registered finalizer.
 
-**Three facts about the action, corrected against `action.yml` at implementation time
-(E008-S01-003) rather than assumed.** Each of them silently changes behaviour if got wrong:
+**Three facts about the action, verified against the published `action.yml` at each tag rather
+than assumed.** Each of them silently changes behaviour if got wrong, and the first two moved
+between `@v1` and `@v2`:
 
-- **Its inputs are camelCase: `updateMinor` and `ignorePrerelease`.** The hyphenated spellings
-  this ADR originally used are not inputs at all -- Actions passes them through as unread
-  `INPUT_*` variables, the action falls back to its defaults, and `updateMinor` defaults to
-  `false`. The visible result is a `vMAJOR.MINOR` alias that silently never moves.
-  `test_the_git_alias_action_runs_only_behind_the_ordering_gate` asserts both spellings; the
-  planted violation is the hyphenated pair.
-- **It declares `using: node20`, not node24.** ADR-0010's Release action is the node24 one. Both
-  belong in E009's pinned `act_runner` tuple; they are not the same requirement.
+- **Its inputs are hyphenated at `@v2`: `ref-tag`, `update-minor`, `ignore-prerelease`.** `@v1`
+  (commit `2d06f8a5ecc2`) took the camelCase `refTag`, `updateMinor`, `ignorePrerelease`; `@v2`
+  (commit `e5413c7e271b`, = v2.0.3) renamed every one of them, and its outputs are `major-tag`
+  and `minor-tag`. Passing the camelCase pair to `@v2` is not an error anyone sees: Actions
+  hands an undeclared input through as an unread `INPUT_*` variable, the action falls back to
+  its defaults, and `update-minor` defaults to `false`. The visible result is a `vMAJOR.MINOR`
+  alias that silently never moves.
+  `test_the_git_alias_action_runs_only_behind_the_ordering_gate` asserts the hyphenated inputs
+  AND the hyphenated outputs, and rejects the camelCase pair outright; the planted violation is
+  that camelCase pair.
+
+  Pinned `v2`, never `v2.0`: that alias is stale at `c0baaebe6f52`.
+- **It declares `using: node24` at `@v2`** (`@v1` was node20). ADR-0010's Release action is
+  node24 too, so E009's pinned `act_runner` needs **one** JavaScript runtime for both, not two.
 - **It takes no token input.** It runs `git tag -f` and `git push origin <alias> --force` in the
   workspace, so it uses whatever credential the checkout left behind. Every governed channel
   checkout is `persist-credentials: false`, so the finalizer grants itself a push credential
@@ -247,8 +254,10 @@ authenticate on the token and ignore the username, and `github.actor` is not a l
 userinfo for a bot actor. `test_a_finalizer_never_leaves_a_credential_in_the_workspace` forbids
 the config write in every spelling.
 
-**The ordering read is scoped to the protected default branch.** `stable_tag_order` passes
-`--merged`, from the plan job's `default-branch-ref` output rather than a second literal.
+**The ordering read is scoped to the protected default branch.** The finalizer's ordering step
+passes `git for-each-ref --merged`, from the plan job's `default-branch-ref` output rather than a
+second literal, and `--sort=v:refname` beside it -- so git owns the version comparison as well as
+the scope.
 Without it one annotated tag abandoned on a side branch makes every later release the second
 greatest, and `vMAJOR`, `latest` and both image aliases stop advancing on runs that all finish
 green.
@@ -291,8 +300,9 @@ Two guards, verified by planted violation in both directions:
   `(workflow, job)` pair in `RELEASE_FINALIZER_JOBS`. The permitted path was confirmed to pass,
   not only the rejections.
 
-Carry into E009's pinned tuple: this action is `using: node24`, the same runtime requirement
-ADR-0010 records for the Release action.
+Carry into E009's pinned tuple: at `@v2` this action is `using: node24`, the same runtime
+ADR-0010 records for the Release action -- so the pinned `act_runner` has one JavaScript runtime
+to accept, not node20 and node24 both.
 
 ## Consequences
 

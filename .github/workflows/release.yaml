@@ -133,45 +133,34 @@ jobs:
           EVENT_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          # Every semantic decision below belongs to scripts/stable_tags.py, which git
-          # answers for it: peeling an annotated tag object, the exact `vX.Y.Z`
-          # spelling, and reachability. Re-deriving any of them here would be a second
-          # implementation of the release identity rule, tested only by grepping this
-          # file for its own regex (F9).
-          if [[ "$EVENT_REF" != refs/tags/* ]]; then
-            echo "stable publication requires a tag ref; got $EVENT_REF" >&2
-            exit 2
-          fi
+          refuse() { echo "release identity: $*" >&2; exit 2; }
+          [[ "$EVENT_REF" == refs/tags/* ]] ||
+            refuse "stable publication requires a tag ref; got '$EVENT_REF'"
           tag="${EVENT_REF#refs/tags/}"
-          if [[ -z "$tag" ]]; then
-            echo "stable publication requires a tag name; got $EVENT_REF" >&2
-            exit 2
-          fi
-          if [[ ! "$EVENT_OBJECT" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "event object must be a full lowercase Git SHA" >&2
-            exit 2
-          fi
+          # The one decision git cannot make: "is this the stable release spelling" is a
+          # naming convention, not a git fact. Leading zeros are banned because without
+          # that `v01.2.3` and `v1.2.3` would be one release wearing two alias names.
+          [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+            refuse "'$tag' is not an exact vX.Y.Z stable tag"
+          [[ "$EVENT_OBJECT" =~ ^[0-9a-f]{40}$ ]] ||
+            refuse "event object must be a full lowercase Git SHA"
           # A push event reports the ref's new object id, and an annotated tag's ref
-          # points at the tag object rather than at the commit. Peeling is the
-          # dereference for a tag object and a no-op for a commit, so one spelling is
-          # correct wherever this runs -- and it is git's dereference, including the
-          # chain of nested tags git permits, never a comparison that quietly never
-          # matches.
+          # points at the tag object rather than at the commit. `^{commit}` is git's own
+          # dereference -- a no-op for a commit, and it follows the chain of nested tags
+          # git permits -- never a comparison that quietly never matches.
           source_commit="$(git rev-parse --verify "${EVENT_OBJECT}^{commit}")"
-          head_commit="$(git rev-parse HEAD)"
-          if [[ "$head_commit" != "$source_commit" ]]; then
-            echo "checked-out source $head_commit is not the event object $EVENT_OBJECT" >&2
-            exit 2
-          fi
-          # Fails unless the tag pushed is an annotated exact `vX.Y.Z` whose peeled
-          # commit is this commit, and unless that commit is reachable from the
-          # protected default branch. Both are the module's decisions: the
-          # annotated-object filter, the spelling and the peel are one relation with one
-          # implementation, and re-deriving the membership half here would be a copy of
-          # it in the one place nothing tests (F9).
-          python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" \
-            --commit "$source_commit" --expect-tag "$tag" \
-            --reachable-from "$DEFAULT_BRANCH_REF" --output ""
+          [[ "$(git rev-parse HEAD)" == "$source_commit" ]] ||
+            refuse "the checked-out source is not the event object $EVENT_OBJECT"
+          # `%(objecttype)` is `tag` for an annotated tag and `commit` for a lightweight
+          # one. `just release` creates annotated tags (ADR-0006), and a lightweight
+          # `v1.2.3` pushed by hand is not the release identity this channel publishes.
+          [[ "$(git for-each-ref --format='%(objecttype)' "refs/tags/$tag")" == tag ]] ||
+            refuse "'$tag' is not an annotated tag"
+          [[ "$(git rev-parse --verify "refs/tags/$tag^{commit}")" == "$source_commit" ]] ||
+            refuse "'$tag' does not peel to $source_commit"
+          # Reachability is git's own commit-graph answer; its exit status IS the answer.
+          git merge-base --is-ancestor "$source_commit" "$DEFAULT_BRANCH_REF" ||
+            refuse "$source_commit is not reachable from $DEFAULT_BRANCH_REF; publication is limited to the protected default branch"
           {
             echo "tag=$tag"
             echo "version=${tag#v}"
@@ -389,12 +378,20 @@ jobs:
           # case where refusing to upload is the only safe outcome. The freshness comes
           # from the authenticated checkout directly above, never from an
           # unauthenticated `git fetch`.
-          # The membership decision is the module's, exactly as it is in the plan job:
-          # `--expect-tag` exits non-zero unless the tag still peels here, and this
-          # step's `set -e` is the refusal. A shell re-derivation of it would be the
-          # third copy of one relation, in front of an upload that cannot be undone.
-          python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" \
-            --commit "$SOURCE_SHA" --expect-tag "$RELEASE_TAG" --output ""
+          #
+          # The same three questions the plan job's guard asked, in the same order and
+          # the same spelling: the exact stable naming convention, `%(objecttype)` for
+          # the annotated-object filter, and `^{commit}` for the peel. Every copy is
+          # executed by `test_every_stable_tag_recheck_is_the_same_body`, which asserts
+          # every copy is the same body once comments are stripped, so a divergence
+          # fails the suite rather than reaching a registry.
+          refuse() { echo "release identity: $*" >&2; exit 2; }
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+            refuse "'$RELEASE_TAG' is not an exact vX.Y.Z stable tag"
+          [[ "$(git for-each-ref --format='%(objecttype)' "refs/tags/$RELEASE_TAG")" == tag ]] ||
+            refuse "'$RELEASE_TAG' is not an annotated tag in this checkout"
+          [[ "$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")" == "$(git rev-parse --verify "${SOURCE_SHA}^{commit}")" ]] ||
+            refuse "'$RELEASE_TAG' no longer peels to $SOURCE_SHA"
       - name: Revalidate the verified bundle before any credential is used
         id: bundle
         uses: ./.github/actions/verified-bundle
@@ -478,12 +475,16 @@ jobs:
           # version number is spent the moment it is accepted. So the identity is
           # re-read immediately before the credentialed step rather than trusted from
           # the plan job, exactly as the forge index job does.
-          # The membership decision is the module's, exactly as it is in the plan job:
-          # `--expect-tag` exits non-zero unless the tag still peels here, and this
-          # step's `set -e` is the refusal. A shell re-derivation of it would be the
-          # third copy of one relation, in front of an upload that cannot be undone.
-          python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" \
-            --commit "$SOURCE_SHA" --expect-tag "$RELEASE_TAG" --output ""
+          #
+          # The same body as every other re-check, and asserted to be by
+          # `test_every_stable_tag_recheck_is_the_same_body`.
+          refuse() { echo "release identity: $*" >&2; exit 2; }
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+            refuse "'$RELEASE_TAG' is not an exact vX.Y.Z stable tag"
+          [[ "$(git for-each-ref --format='%(objecttype)' "refs/tags/$RELEASE_TAG")" == tag ]] ||
+            refuse "'$RELEASE_TAG' is not an annotated tag in this checkout"
+          [[ "$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")" == "$(git rev-parse --verify "${SOURCE_SHA}^{commit}")" ]] ||
+            refuse "'$RELEASE_TAG' no longer peels to $SOURCE_SHA"
       - name: Revalidate the verified bundle before any credential is used
         id: bundle
         uses: ./.github/actions/verified-bundle
@@ -611,9 +612,10 @@ jobs:
 
       # Before anything is written. A `skipped` destination the enabled set says
       # was off does not block; one it says should have run does, and so does
-      # any `failure` or `cancelled`. The decision lives in a module because it
-      # is a decision, and because a decision expressed as an `if:` expression
-      # is testable only by reading it.
+      # any `failure` or `cancelled`. The decision is a `jq` program over the two
+      # maps rather than an `if:` expression, because an `if:` expression is
+      # testable only by reading it -- this body is EXECUTED by the contract
+      # suite, with the job results substituted into the step's real `env:`.
       - name: Refuse to finalize unless every enabled destination delivered
         id: gate
         env:
@@ -631,7 +633,44 @@ jobs:
             {"verify":"${{ needs.verify.result }}"}
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/scripts/finalizer_gate.py"
+          # `needs:` collapses two unrelated outcomes into one state: a job is `skipped`
+          # both when its own `if:` was false and when an upstream died. The enabled set
+          # the plan job emitted once is what separates them, so this is a join of the
+          # two maps rather than a reading of either alone. Malformed or absent JSON is
+          # a refusal, not an empty set -- `--argjson` rejects it before the program runs.
+          #
+          # This detects under-publication, not over-publication: a job result carries no
+          # evidence of WHICH destinations it addressed, and one job ships several (the
+          # image publisher pushes the forge registry and Docker Hub from one Buildx
+          # invocation). Over-publication is prevented upstream -- no credentials, and no
+          # requests -- each with its own guard (ADR-0011).
+          jq -rn \
+            --argjson ENABLED_DESTINATIONS "$ENABLED_DESTINATIONS" \
+            --argjson PUBLISHER_RESULTS "$PUBLISHER_RESULTS" \
+            --argjson REQUIRED_RESULTS "$REQUIRED_RESULTS" '
+            def refuse($why): "finalizer gate: \($why)\n" | halt_error(2);
+            def ordered: to_entries | sort_by(.key);
+            if ([$ENABLED_DESTINATIONS, $PUBLISHER_RESULTS, $REQUIRED_RESULTS] | any(type != "object"))
+              then refuse("every input must be a JSON object of name to string") else . end
+            | (($ENABLED_DESTINATIONS | keys) - ($PUBLISHER_RESULTS | keys)) as $unreported
+            | (($PUBLISHER_RESULTS | keys) - ($ENABLED_DESTINATIONS | keys)) as $undeclared
+            | if ($ENABLED_DESTINATIONS | length) == 0 then refuse("the enabled set names no destination at all") else . end
+            | if ($unreported | length) > 0 then refuse("no publisher result was supplied for \($unreported | join(", ")); the finalizer must depend on every publisher and pass each needs.<job>.result") else . end
+            | if ($undeclared | length) > 0 then refuse("results were supplied for \($undeclared | join(", ")), which the enabled set does not mention; the static job graph and the runtime set have drifted") else . end
+            | [ ($REQUIRED_RESULTS | ordered[] | {name: .key, state: "required", result: .value})
+              , ($ENABLED_DESTINATIONS | ordered[] | {name: .key, state: .value, result: $PUBLISHER_RESULTS[.key]}) ]
+            | map(. + {blocked:
+                ( if (.result | IN("success", "skipped", "failure", "cancelled") | not) then refuse("\(.name) reported unknown result \(.result | tojson)")
+                  elif (.state | IN("required", "enabled", "disabled", "unsupported") | not) then refuse("\(.name) has unknown planned state \(.state | tojson)")
+                  elif .state == "required" and .result != "success" then "required job \(.name) reported \(.result)"
+                  elif (.result | IN("failure", "cancelled")) then "\(.name) reported \(.result)"
+                  elif .state == "enabled" and .result == "skipped" then "\(.name) is enabled but was skipped, so an artifact the release promises was never published"
+                  else "" end) })
+            | (["### Finalization gate", "", "| Destination | Planned state | Job result | Verdict |", "| --- | --- | --- | --- |"]
+               + map("| `\(.name)` | `\(.state)` | `\(.result)` | `\(if .blocked == "" then "ok" else "blocks" end)` |") | .[])
+            , ([.[] | .blocked | select(. != "")] as $blocked
+               | if ($blocked | length) > 0 then refuse("refusing to create the Release or move any alias: \($blocked | join("; "))") else empty end)
+            ' >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 
       # The ordering gate F4 records, and it is the workflow's rather than the
       # action's: `git-action-tag-floating-version` moves an alias
@@ -639,7 +678,24 @@ jobs:
       # backwards unless this refuses first. The Git tag set is the only
       # authority consulted -- no registry is read anywhere in this file, which
       # is why every published-image inspection lives in publish-image.yaml.
-      - name: Re-check the tag and decide which aliases may advance
+      - name: Re-check the tag still names this commit before any alias is decided
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          # `refs/tags/vX.Y.Z` is immutable (ADR-0006), so this must still hold. The
+          # same body as every other re-check, and asserted to be by
+          # `test_every_stable_tag_recheck_is_the_same_body`.
+          refuse() { echo "release identity: $*" >&2; exit 2; }
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+            refuse "'$RELEASE_TAG' is not an exact vX.Y.Z stable tag"
+          [[ "$(git for-each-ref --format='%(objecttype)' "refs/tags/$RELEASE_TAG")" == tag ]] ||
+            refuse "'$RELEASE_TAG' is not an annotated tag in this checkout"
+          [[ "$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")" == "$(git rev-parse --verify "${SOURCE_SHA}^{commit}")" ]] ||
+            refuse "'$RELEASE_TAG' no longer peels to $SOURCE_SHA"
+
+      - name: Decide which aliases the released tag may advance
         id: aliases
         env:
           # The same authority the plan job used, taken from the plan job rather than
@@ -649,12 +705,38 @@ jobs:
           # `latest` forever, on runs that all finish green.
           DEFAULT_BRANCH_REF: ${{ needs.plan.outputs.default-branch-ref }}
           RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
-          SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" \
-            --commit "$SOURCE_SHA" --expect-tag "$RELEASE_TAG" \
-            --reachable-from "$DEFAULT_BRANCH_REF" --alias-plan
+          refuse() { echo "alias plan: $*" >&2; exit 2; }
+          # git owns version ordering, exactly as it owns peeling and reachability:
+          # `--sort=v:refname` knows `v1.10.0` is newer than `v1.9.0`, which the
+          # lexicographic sort a hand-rolled comparison degrades to does not. `--merged`
+          # is the reachability scope AND the membership test -- a tag on history the
+          # protected branch never took is not in this set at all.
+          order=()
+          while read -r objecttype name; do
+            [[ "$objecttype" == tag ]] || continue
+            [[ "$name" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || continue
+            order+=("$name")
+          done <<<"$(git for-each-ref --merged "$DEFAULT_BRANCH_REF" --sort=v:refname \
+            --format='%(objecttype) %(refname:short)' refs/tags)"
+          [[ " ${order[*]-} " == *" $RELEASE_TAG "* ]] ||
+            refuse "'$RELEASE_TAG' is not an annotated stable tag reachable from $DEFAULT_BRANCH_REF; reachable there: ${order[*]-none}"
+          minor="${RELEASE_TAG%.*}"
+          # The trailing separator is what makes the prefix exact: `v1.2.` cannot prefix
+          # `v1.20.3`, and the ban on leading zeros above is what stops `v1.02.3` and
+          # `v1.2.3` being one minor wearing two alias names.
+          within=()
+          for name in "${order[@]}"; do
+            if [[ "$name" == "$minor".* ]]; then within+=("$name"); fi
+          done
+          {
+            echo "major-alias=${minor%.*}"
+            echo "minor-alias=$minor"
+            echo "advance-major=$([[ "$RELEASE_TAG" == "${order[-1]}" ]] && echo true || echo false)"
+            echo "advance-minor=$([[ "$RELEASE_TAG" == "${within[-1]}" ]] && echo true || echo false)"
+            echo "greatest-stable=${order[-1]}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Revalidate the verified bundle before it is attached
         id: bundle
@@ -725,7 +807,7 @@ jobs:
       - name: Advance the stable major and minor aliases
         id: floating
         if: ${{ steps.aliases.outputs.advance-major == 'true' }}
-        uses: LiquidLogicLabs/git-action-tag-floating-version@v1
+        uses: LiquidLogicLabs/git-action-tag-floating-version@v2
         env:
           # git reads configuration from these three variables, so the credential lives
           # in this step's environment and nowhere else -- no `.git/config` write, no
@@ -739,9 +821,13 @@ jobs:
             ${{ steps.remote.outputs.scheme }}://x-access-token:${{ secrets.GITHUB_TOKEN
             }}@${{ steps.remote.outputs.authority }}/${{ github.repository }}.git
         with:
-          tag: ${{ needs.plan.outputs.release-tag }}
-          updateMinor: "true"
-          ignorePrerelease: "true"
+          # Hyphenated, because `@v2` renamed every input. The camelCase pair `@v1` took
+          # is not an input at all here: Actions would pass it through as an unread
+          # `INPUT_*` variable, `update-minor` would fall back to its `false` default,
+          # and `vMAJOR.MINOR` would silently never move (ADR-0006).
+          ref-tag: ${{ needs.plan.outputs.release-tag }}
+          update-minor: "true"
+          ignore-prerelease: "true"
 
       - name: Record the Release and the Git alias outcome
         env:
@@ -750,8 +836,8 @@ jobs:
           GREATEST_STABLE: ${{ steps.aliases.outputs.greatest-stable }}
           MAJOR_ALIAS: ${{ steps.aliases.outputs.major-alias }}
           MINOR_ALIAS: ${{ steps.aliases.outputs.minor-alias }}
-          MOVED_MAJOR: ${{ steps.floating.outputs.majorTag }}
-          MOVED_MINOR: ${{ steps.floating.outputs.minorTag }}
+          MOVED_MAJOR: ${{ steps.floating.outputs.major-tag }}
+          MOVED_MINOR: ${{ steps.floating.outputs.minor-tag }}
           RELEASE_ASSETS: ${{ steps.release.outputs.assets }}
           RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
           RELEASE_URL: ${{ steps.release.outputs.html-url }}
@@ -802,16 +888,22 @@ jobs:
 
       # `refs/tags/vX.Y.Z` is immutable (ADR-0006), so this must still hold. If
       # it does not, the identity moved under a run that is about to point a
-      # convenient name at it, and refusing is the only safe outcome. The
-      # membership decision is the module's; `set -e` is the refusal.
+      # convenient name at it, and refusing is the only safe outcome.
       - name: Re-check the tag still names this commit before any alias moves
         env:
           RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
           SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/scripts/stable_tags.py" \
-            --commit "$SOURCE_SHA" --expect-tag "$RELEASE_TAG" --output ""
+          # The same body as every other re-check, and asserted to be by
+          # `test_every_stable_tag_recheck_is_the_same_body`.
+          refuse() { echo "release identity: $*" >&2; exit 2; }
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+            refuse "'$RELEASE_TAG' is not an exact vX.Y.Z stable tag"
+          [[ "$(git for-each-ref --format='%(objecttype)' "refs/tags/$RELEASE_TAG")" == tag ]] ||
+            refuse "'$RELEASE_TAG' is not an annotated tag in this checkout"
+          [[ "$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")" == "$(git rev-parse --verify "${SOURCE_SHA}^{commit}")" ]] ||
+            refuse "'$RELEASE_TAG' no longer peels to $SOURCE_SHA"
 
       # Set up only. Every alias below is a digest copy of an index that already
       # exists in the registry; nothing is built here, and no registry is read
