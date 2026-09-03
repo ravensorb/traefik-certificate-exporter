@@ -695,6 +695,54 @@ def test_every_granted_privilege_points_at_a_decision() -> None:
         )
 
 
+SCRIPTS = PROJECT_ROOT / "scripts"
+# The one Python module the pipeline may call, and why it is the only one. It answers
+# "what version is committed", which is a fact about the repository rather than a
+# publication decision, and it has a single implementation so the channels cannot
+# disagree about it.
+PERMITTED_PIPELINE_MODULE = "committed_versions.py"
+
+
+def _pipeline_python_modules() -> set[str]:
+    """Modules under `scripts/` that a governed definition actually invokes.
+
+    Both sides come from disk: the candidate names from `scripts/`, the invocations from
+    the parsed `run:` bodies with comments stripped. Every workflow *mentions*
+    `committed_versions.py` in a comment, so a raw text scan would report invocations
+    that are not there.
+    """
+    modules = {path.name for path in SCRIPTS.glob("*.py")}
+    invoked = set()
+    for _, _, steps in _governed_step_groups():
+        for step in steps:
+            command = _uncommented(str(step.get("run", "")))
+            invoked |= {name for name in modules if f"scripts/{name}" in command}
+    return invoked
+
+
+def test_no_publication_decision_lives_in_a_python_module() -> None:
+    """The maintainer's rule for this pipeline: actions and workflow steps, not scripts.
+
+    E008 deleted `forge_coordinates.py`, `stable_tags.py` and `finalizer_gate.py` --
+    535, 301 and 213 lines deciding forge coordinates, alias ordering and whether a
+    release may finalize. Each is now a step in the workflow that owns the decision, and
+    each has an ADR recording why the module form was wrong: a decision in a module is
+    testable only against the module, while a decision in a `run:` body is executed by
+    the contract suite with the real environment substituted in.
+
+    The rule is derived rather than kept as a list of dead filenames. What matters is
+    not that a file is absent -- an unwired file decides nothing -- but that no
+    publication decision is *reached* through one again. A resurrected module fails here
+    the moment a workflow calls it, which is the moment it starts mattering.
+    """
+    invoked = _pipeline_python_modules()
+    assert invoked == {PERMITTED_PIPELINE_MODULE}, (
+        f"the pipeline invokes {sorted(invoked)}; only {PERMITTED_PIPELINE_MODULE!r} is "
+        f"permitted. A publication decision belongs in the workflow step that owns it "
+        f"(ADR-0011), where the contract suite executes it."
+    )
+
+
 def test_no_governed_definition_branches_on_the_act_environment_variable() -> None:
     """Guidelines §7: one pipeline, three runners, and no conditional on which one is
     executing. A workflow that behaves differently under `act` is not the workflow CI
@@ -2458,14 +2506,28 @@ def test_the_image_fan_out_is_one_buildx_invocation_carrying_every_tag() -> None
     Counted across every job of the file, so a per-registry build added to a new job
     fails here too.
     """
-    document = _load_workflow(PUBLISH_IMAGE_WORKFLOW)
-    builds = [
-        step
-        for step in _steps(document)
-        if re.search(r"buildx\s+(?:bake|build)\b", str(step.get("run", "")))
-    ]
-    assert len(builds) == 1, (
-        f"publish-image.yaml performs {len(builds)} image builds; CI-AR39 allows one"
+    # Every reusable workflow that builds an image, not the one file that does today.
+    # Counting inside a literal path meant a second reusable publisher -- a copy with
+    # its own `bake`, correctly wired -- carried a second build that nothing examined.
+    building = {
+        path.name: [
+            step
+            for step in _steps(_load_workflow(path))
+            if re.search(r"buildx\s+(?:bake|build)\b", str(step.get("run", "")))
+        ]
+        for path in sorted(WORKFLOWS.glob("*.yaml"))
+        # Reusable AND publishing. The verifier builds an image too -- that is its
+        # smoke test -- and it holds no credential and pushes nothing, so it is not
+        # what CI-AR39 is counting.
+        if "workflow_call" in _declared_events(_load_workflow(path))
+        and _publishers(_load_workflow(path))
+    }
+    building = {name: builds for name, builds in building.items() if builds}
+    assert building, "no reusable workflow builds an image; this guard examined nothing"
+    total = sum(len(builds) for builds in building.values())
+    assert total == 1, (
+        f"{total} image builds across {sorted(building)}; CI-AR39 allows one per "
+        f"channel run, so every destination is tagged inside the same invocation"
     )
     # And nowhere else. A per-registry "just push it to Docker Hub too" step added to a
     # publishing workflow is the cheapest way to break this rule, and scoping the count
@@ -2495,15 +2557,18 @@ def test_the_image_fan_out_is_one_buildx_invocation_carrying_every_tag() -> None
                 f"{path.name}: job {job_name!r} narrows the published platform set to "
                 f"{supplied!r}; CI-AR39 requires {list(REQUIRED_IMAGE_PLATFORMS)}"
             )
+    # The one build, reached through the derived set rather than a named file.
+    builder, builds = next(iter(building.items()))
     command = str(builds[0]["run"])
     assert "--push" in command
     environment = builds[0].get("env") or {}
     assert "TAGS" in environment and "PLATFORMS" in environment, (
-        "the single invocation must receive every tag and every platform as bake "
-        "variables; a tag applied outside it is a second build"
+        f"{builder}: the single invocation must receive every tag and every platform as "
+        f"bake variables; a tag applied outside it is a second build"
     )
 
-    platforms = document["on"]["workflow_call"]["inputs"]["platforms"]["default"]
+    triggers = _load_workflow(WORKFLOWS / builder)["on"]
+    platforms = triggers["workflow_call"]["inputs"]["platforms"]["default"]
     assert set(platforms.split(",")) == set(REQUIRED_IMAGE_PLATFORMS)
 
 
@@ -5455,17 +5520,45 @@ def test_every_suppression_recheck_is_the_same_body() -> None:
     assert len(set(steps["refusers"])) == 1, "the suppression re-checks have diverged"
 
 
-def _run_stable_recheck(repository: Path, tag: str, commit: str | None = None) -> Any:
+def _run_stable_recheck(
+    repository: Path,
+    tag: str,
+    commit: str | None = None,
+    default_branch_ref: str = "main",
+) -> Any:
     body = _membership_steps(RELEASE_WORKFLOW)["refusers"][0]
     completed, _ = _run_step(
         body,
         {
+            "DEFAULT_BRANCH_REF": default_branch_ref,
             "RELEASE_TAG": tag,
             "SOURCE_SHA": commit or _git(repository, "rev-parse", "HEAD"),
         },
         cwd=repository,
     )
     return completed
+
+
+def test_the_stable_recheck_refuses_a_tag_that_left_the_default_branch(
+    tagged_repository: Path,
+) -> None:
+    """The reachability leg, which the pre-upload re-check did not carry.
+
+    The plan job proves the commit is reachable from the protected default branch, and
+    every re-check then re-proved only the tag relation: the tag is annotated, exact,
+    and still peels to this commit. All three survive a force-push to the branch that
+    removes the history the release was cut from -- the tag object is untouched, so the
+    old body passed and the publisher uploaded from history the branch no longer has.
+
+    `v2.0.0` in the fixture is exactly that shape: annotated, exact, peeling correctly,
+    and on a side branch `main` never took.
+    """
+    side_commit = _git(tagged_repository, "rev-parse", "v2.0.0^{commit}")
+    completed = _run_stable_recheck(tagged_repository, "v2.0.0", commit=side_commit)
+    assert completed.returncode != 0, (
+        "a tag on history the default branch never took was accepted for publication"
+    )
+    assert "no longer reachable" in completed.stderr, completed.stderr
 
 
 def test_the_stable_recheck_accepts_the_annotated_tag_that_names_the_commit(

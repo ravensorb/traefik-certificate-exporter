@@ -398,6 +398,7 @@ jobs:
           ref: ${{ needs.plan.outputs.source-sha }}
       - name: Re-check the tag still names this commit before the first credentialed step
         env:
+          DEFAULT_BRANCH_REF: ${{ needs.plan.outputs.default-branch-ref }}
           RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
           SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
         run: |
@@ -422,6 +423,13 @@ jobs:
             refuse "'$RELEASE_TAG' is not an annotated tag in this checkout"
           [[ "$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")" == "$(git rev-parse --verify "${SOURCE_SHA}^{commit}")" ]] ||
             refuse "'$RELEASE_TAG' no longer peels to $SOURCE_SHA"
+          # The reachability leg the plan job proved, re-proved here. Peeling shows the
+          # tag still names this commit; it says nothing about whether that commit is
+          # still on the protected default branch. A force-push to the branch between
+          # the plan job and this step leaves the tag intact and the history it was
+          # published from gone, and every other leg of this check passes.
+          git merge-base --is-ancestor "${SOURCE_SHA}^{commit}" "$DEFAULT_BRANCH_REF" ||
+            refuse "$SOURCE_SHA is no longer reachable from $DEFAULT_BRANCH_REF; publication is limited to the protected default branch"
       - name: Revalidate the verified bundle before any credential is used
         id: bundle
         uses: ./.github/actions/verified-bundle
@@ -504,6 +512,7 @@ jobs:
           ref: ${{ needs.plan.outputs.source-sha }}
       - name: Re-check the tag still names this commit before the first credentialed step
         env:
+          DEFAULT_BRANCH_REF: ${{ needs.plan.outputs.default-branch-ref }}
           RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
           SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
         run: |
@@ -522,6 +531,13 @@ jobs:
             refuse "'$RELEASE_TAG' is not an annotated tag in this checkout"
           [[ "$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")" == "$(git rev-parse --verify "${SOURCE_SHA}^{commit}")" ]] ||
             refuse "'$RELEASE_TAG' no longer peels to $SOURCE_SHA"
+          # The reachability leg the plan job proved, re-proved here. Peeling shows the
+          # tag still names this commit; it says nothing about whether that commit is
+          # still on the protected default branch. A force-push to the branch between
+          # the plan job and this step leaves the tag intact and the history it was
+          # published from gone, and every other leg of this check passes.
+          git merge-base --is-ancestor "${SOURCE_SHA}^{commit}" "$DEFAULT_BRANCH_REF" ||
+            refuse "$SOURCE_SHA is no longer reachable from $DEFAULT_BRANCH_REF; publication is limited to the protected default branch"
       - name: Revalidate the verified bundle before any credential is used
         id: bundle
         uses: ./.github/actions/verified-bundle
@@ -759,6 +775,7 @@ jobs:
       # is why every published-image inspection lives in publish-image.yaml.
       - name: Re-check the tag still names this commit before any alias is decided
         env:
+          DEFAULT_BRANCH_REF: ${{ needs.plan.outputs.default-branch-ref }}
           RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
           SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
         run: |
@@ -773,6 +790,13 @@ jobs:
             refuse "'$RELEASE_TAG' is not an annotated tag in this checkout"
           [[ "$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")" == "$(git rev-parse --verify "${SOURCE_SHA}^{commit}")" ]] ||
             refuse "'$RELEASE_TAG' no longer peels to $SOURCE_SHA"
+          # The reachability leg the plan job proved, re-proved here. Peeling shows the
+          # tag still names this commit; it says nothing about whether that commit is
+          # still on the protected default branch. A force-push to the branch between
+          # the plan job and this step leaves the tag intact and the history it was
+          # published from gone, and every other leg of this check passes.
+          git merge-base --is-ancestor "${SOURCE_SHA}^{commit}" "$DEFAULT_BRANCH_REF" ||
+            refuse "$SOURCE_SHA is no longer reachable from $DEFAULT_BRANCH_REF; publication is limited to the protected default branch"
 
       - name: Decide which aliases the released tag may advance
         id: aliases
@@ -1001,6 +1025,7 @@ jobs:
       # convenient name at it, and refusing is the only safe outcome.
       - name: Re-check the tag still names this commit before any alias moves
         env:
+          DEFAULT_BRANCH_REF: ${{ needs.plan.outputs.default-branch-ref }}
           RELEASE_TAG: ${{ needs.plan.outputs.release-tag }}
           SOURCE_SHA: ${{ needs.plan.outputs.source-sha }}
         run: |
@@ -1014,6 +1039,13 @@ jobs:
             refuse "'$RELEASE_TAG' is not an annotated tag in this checkout"
           [[ "$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")" == "$(git rev-parse --verify "${SOURCE_SHA}^{commit}")" ]] ||
             refuse "'$RELEASE_TAG' no longer peels to $SOURCE_SHA"
+          # The reachability leg the plan job proved, re-proved here. Peeling shows the
+          # tag still names this commit; it says nothing about whether that commit is
+          # still on the protected default branch. A force-push to the branch between
+          # the plan job and this step leaves the tag intact and the history it was
+          # published from gone, and every other leg of this check passes.
+          git merge-base --is-ancestor "${SOURCE_SHA}^{commit}" "$DEFAULT_BRANCH_REF" ||
+            refuse "$SOURCE_SHA is no longer reachable from $DEFAULT_BRANCH_REF; publication is limited to the protected default branch"
 
       # ADR-0011 / F4: the Git tag set is the ordering authority, so it is read
       # HERE, at the point of the write, rather than carried from `finalize`.

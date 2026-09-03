@@ -237,6 +237,20 @@ namespace that is not a legal Docker Hub reference **fails the plan job** rather
 immutable tag to a mangled guess -- the same posture an unrecognised forge takes. Credentials come
 from the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets, and reach only the image job.
 
+**Changing this variable is a publication-authority change, and it is not a code review.**
+`DOCKERHUB_ORG` is validated for *shape*, never against an expectation, because there is no
+expectation to hold it to -- a fork must resolve its own namespace. It is also a repository
+variable rather than a secret, so anyone who can set repository variables redirects every stable
+image push to a different Docker Hub namespace, using this project's real (account-scoped)
+`DOCKERHUB_TOKEN`, with no diff to review and no ADR. It is the one operator-supplied value in the
+whole publication path.
+
+Two things narrow it and neither closes it: the publisher refuses any tag whose repository the plan
+job did not prove, so the redirect has to go through this variable rather than around it; and the
+run summary records the repository every tag addressed, so a redirect is visible after the fact.
+Treat a change here with the same review as a workflow edit, and check the run summary of the first
+release that follows one.
+
 Exactly one immutable tag per enabled destination is published, from one multi-platform Buildx
 invocation shared with the development channel. The mutable aliases -- `latest`, `vX`, `vX.Y` --
 and the forge Release are attached afterwards, by the two registered finalizers (`finalize` and
@@ -312,6 +326,25 @@ maintainer, whether a new `vX.Y.Z` is warranted through `just release`; the conf
 release and package are never moved, deleted or republished.
 
 ### Prohibited recovery actions
+
+**These four are procedural, and three of them are unenforced.** Nothing in the pipeline can stop
+an operator pressing "Re-run all jobs": `github.run_attempt` distinguishes a re-run from a first
+attempt, not a *whole* re-run from the *failed-jobs* re-run this runbook prescribes, so a guard
+built on it would refuse the legitimate recovery. Stating that here is the point -- a prohibition
+that reads as enforced stops the next person checking.
+
+What **is** enforced, and what you are actually relying on:
+
+- the destination's own rejection. Neither PyPI upload sets `skip-existing`, deliberately, so a
+  second attempt at a spent version fails loudly instead of passing silently;
+- `test_no_publisher_queries_a_destination_before_uploading`, which forbids asking a registry
+  whether something is already there -- the rejection is the detector;
+- the finalizer gate, which refuses to create the Release or move any alias unless every enabled
+  destination delivered, so a half-published re-run does not advance a mutable name;
+- `test_no_workflow_writes_refs_or_releases_outside_a_finalizer` and its siblings, which make the
+  last two rows below unexpressible in a workflow at all -- though a human holding the same
+  authority can still perform them by hand, which is why they remain listed here.
+
 
 | Action | Status | Why, and what to do instead |
 |---|---|---|

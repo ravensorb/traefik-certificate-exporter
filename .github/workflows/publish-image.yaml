@@ -1,8 +1,13 @@
 name: Publish image
 
-# Reusable only -- no event triggers of its own, exactly as verify-build.yaml is. It is
-# the second reusable workflow, and becomes the fifth workflow file once release.yaml
-# lands; story E008-S01-004's topology assertion expects those five (prep finding P2).
+# Reusable only -- no event triggers of its own, exactly as verify-build.yaml is. Adding
+# a trigger here would make it an event owner as well as a callee, and
+# `test_the_workflow_topology_is_a_partition_of_reusable_files_and_event_owners` refuses
+# that shape: a called file that also self-triggers runs twice for one event.
+#
+# The topology guard asserts a partition rather than a count. It once expected exactly
+# five files, which was this epic's fourth guard-reach defect -- a count is satisfied by
+# any five files, including the wrong five.
 #
 # It owns every read of a *published* image: the raw index fetch, the filtered-platform
 # assertion, the digest resolution and the pulled-by-digest smoke test. That placement is
