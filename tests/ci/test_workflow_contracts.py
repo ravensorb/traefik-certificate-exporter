@@ -1694,6 +1694,39 @@ def test_the_secret_scanner_reads_content_rather_than_the_index() -> None:
     )
 
 
+def test_the_python_formatter_never_rewrites_a_markdown_record() -> None:
+    """A mutating gate must not edit the records this project keeps.
+
+    Upstream's `ruff-format` hook declares `types_or: [python, pyi, jupyter, markdown]`,
+    so it reformats Python code fences inside `.md`. It was doing that to this epic's
+    closure reports -- reindenting and rewrapping the code a reviewer had quoted as
+    evidence of what the file said at the time. A report is a record; a formatter that
+    edits it makes the record describe the present rather than the moment it was
+    written, and nothing in the diff explains why.
+
+    ADRs and guides would merely be tidied, and that is a real benefit given up here.
+    It is not worth the class of change it also permits.
+    """
+    config = yaml.safe_load(PRE_COMMIT_CONFIG.read_text(encoding="utf-8"))
+    formatters = [
+        hook
+        for repository in config["repos"]
+        for hook in repository["hooks"]
+        if hook["id"] in {"ruff-format", "ruff-check"}
+    ]
+    assert formatters, "no Python formatter is configured; this guard examined nothing"
+    for hook in formatters:
+        declared = hook.get("types_or")
+        assert declared is not None, (
+            f"{hook.get('alias', hook['id'])} inherits upstream's file types, which "
+            f"include markdown; declare `types_or` explicitly"
+        )
+        assert "markdown" not in declared, (
+            f"{hook.get('alias', hook['id'])} would rewrite Python fences inside .md "
+            f"records: {declared}"
+        )
+
+
 def test_the_secret_scanner_and_pre_commit_exclude_the_same_vendored_trees() -> None:
     """`gitleaks dir` takes no notice of pre-commit's `exclude:`, so the vendored trees
     are allowlisted a second time in .gitleaks.toml. Two hand-kept copies of one list

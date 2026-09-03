@@ -150,7 +150,8 @@ backlog:
   sprint: '01'
   title: No guard derives the publication destination-key vocabulary from the plan job that emits it
   source: code-review (E008-S01-003) — L6, deferred
-  severity: Low
+  severity: Medium
+  promoted: 'Low -> Medium at E008 epic closure. Unchanged in substance and still fail-closed -- the finalizer gate refuses a result for a destination the enabled set does not name, and refuses a destination with no result, so a typo halts the run rather than skipping a publisher. Promoted for its class rather than its blast radius: eleven guard-reach defects were found in this epic, every one of them a correct rule over a hand-enumerated set, and this is the last hand-spelled scope left in the publication path -- 3 occurrences in release.yaml plus 12 in the contract suite, with nothing deriving the vocabulary from the plan job that emits it. The epic''s own evidence is that this shape does not stay correct.'
   status: backlog
   description: "The publication destination-key vocabulary -- 'image-forge', 'image-dockerhub', 'package-forge', 'package-pypi' -- is spelled by hand in release.yaml's plan step (3 occurrences) and in tests/ci/test_workflow_contracts.py (12), with no guard deriving the set from the plan job that emits it. Fail-closed today because the finalizer gate refuses a result for a destination the enabled set does not name, and refuses a destination with no result -- so a typo stops the run rather than skipping a publisher silently. POINTER CORRECTED: this originally named finalizer_gate.evaluate, deleted when the gate became a jq program in the workflow step. The defect is unchanged and live; only the mechanism moved."
 - key: BL-E008-007
