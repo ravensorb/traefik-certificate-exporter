@@ -331,3 +331,134 @@ def test_every_granted_privilege_points_at_a_decision() -> None:
             f"{entry!r} is a granted privilege that no ADR names. Adding the entry IS "
             f"the grant, and a grant with no recorded decision is one nobody made."
         )
+
+
+# ---------------------------------------------------------------------------
+# The split's own invariants (BL-E008-010 phase 4).
+#
+# The split is only worth what keeps it apart. Three properties hold it: every module
+# says what it is for, machinery is shared through `support` rather than sideways
+# between subjects, and a module that stopped being collected fails loudly instead of
+# quietly examining nothing.
+#
+# Scope is `_contract_modules()`, the same directory read the meta-guard uses, so a
+# tenth subject is covered the moment its file exists.
+# ---------------------------------------------------------------------------
+
+
+def test_every_contract_module_states_the_subject_it_covers() -> None:
+    """A module with no docstring is a module with no boundary.
+
+    The split's value is that a reader can find the guard that owns a rule, and that the
+    next author knows where a new one goes. That only survives if each file says what it
+    holds -- `test_workflow_contracts.py` most of all, being the remainder by
+    construction rather than a subject.
+    """
+    modules = _contract_modules()
+    assert modules, "no contract modules on disk; this guard examined nothing"
+    for module in modules:
+        if module.name == "__init__.py":
+            continue
+        docstring = ast.get_docstring(ast.parse(module.read_text(encoding="utf-8")))
+        assert docstring, f"{module.name} states no subject"
+        assert len(docstring.splitlines()[0]) > 20, (
+            f"{module.name} opens with {docstring.splitlines()[0]!r}, which names no "
+            f"subject a reader could use to decide whether a new guard belongs here"
+        )
+
+
+def _sideways_imports(source: str) -> set[str]:
+    """Contract modules this source imports from, other than `support` and `conftest`.
+
+    All three spellings, because the first draft of this helper read absolute
+    `from tests.ci.x import y` only -- and `from .x import y`, which is the same
+    dependency and the more natural one to write inside a package, walked straight past
+    it. The plant that found that is kept below.
+    """
+    sideways: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        modules: list[str] = []
+        if isinstance(node, ast.ImportFrom):
+            # A relative import carries `level` and a module name with no package
+            # prefix; `from . import x` carries no module name at all and names its
+            # targets in `names` instead.
+            if node.level:
+                modules = [node.module] if node.module else [a.name for a in node.names]
+            elif node.module and node.module.startswith("tests.ci."):
+                modules = [node.module]
+        elif isinstance(node, ast.Import):
+            modules = [
+                alias.name for alias in node.names if alias.name.startswith("tests.ci.")
+            ]
+        for module in modules:
+            target = module.rsplit(".", 1)[-1]
+            if target not in {"support", "conftest"}:
+                sideways.add(target)
+    return sideways
+
+
+def test_no_subject_module_reaches_into_another() -> None:
+    """Shared machinery goes to `support`, shared fixtures to `conftest`, and nowhere
+    else.
+
+    A subject that imports a helper from a sibling has re-tangled the thing the split
+    undid: the sibling can no longer change without breaking a module that does not
+    mention it, and the 7,441-line file grows back one import at a time. Adding the
+    helper to `support` costs one line and keeps the dependency pointing one way.
+    """
+    modules = [m for m in _contract_modules() if m.stem.startswith("test_")]
+    assert modules, "no subject modules on disk; this guard examined nothing"
+    for module in modules:
+        sideways = _sideways_imports(module.read_text(encoding="utf-8"))
+        assert not sideways, (
+            f"{module.name} imports from {sorted(sideways)}. Shared machinery belongs "
+            f"in tests/ci/support.py and a shared fixture in tests/ci/conftest.py."
+        )
+
+
+def test_the_split_invariant_guard_catches_a_sideways_import() -> None:
+    """The plant, kept as a test rather than recorded in a comment.
+
+    `_sideways_imports` is the whole reach of the guard above, and a version that
+    matched on `import tests.ci.` alone, or that forgot the relative form, would pass
+    every real module today while catching nothing tomorrow.
+    """
+    for spelling in (
+        "from tests.ci.test_topology import _surface_overlap",
+        "from .test_topology import _surface_overlap",
+        "from . import test_topology",
+        "import tests.ci.test_topology",
+    ):
+        assert _sideways_imports(spelling) == {"test_topology"}, spelling
+    for allowed in (
+        "from tests.ci.support import _jobs",
+        "from .support import _jobs",
+        "from tests.ci.conftest import tagged_repository",
+        "from tests.support import tracked_text_files",
+        "import json",
+    ):
+        assert _sideways_imports(allowed) == set(), allowed
+
+
+def test_every_subject_module_still_holds_guards() -> None:
+    """A module that stopped being collected is the failure the split could cause.
+
+    Nothing in a passing run distinguishes "this subject holds no violations" from
+    "pytest stopped reading this file" -- a renamed function prefix, or a module left
+    without a single test after an edit, and the suite goes green over less than it
+    covered. Asserted per module, because the total is what the collection identity list
+    checked once, at the split, and nothing checks afterwards.
+    """
+    modules = [m for m in _contract_modules() if m.stem.startswith("test_")]
+    assert modules, "no subject modules on disk; this guard examined nothing"
+    for module in modules:
+        tests = [
+            node.name
+            for node in ast.parse(module.read_text(encoding="utf-8")).body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+        ]
+        assert tests, (
+            f"{module.name} is named as a test module and defines no test. Either it "
+            f"holds guards or it should not exist."
+        )

@@ -1,3 +1,14 @@
+"""The publication contract package, and the verifier interface that consumes it.
+
+Predates the BL-E008-010 split and keeps its own subject: what a build manifest must
+say, what the packaged schemas accept and refuse, and that the schema fragment and the
+Python guard agree field by field rather than each enforcing half a rule.
+
+The verifier guards live here rather than with the workflow contracts because what they
+assert is the CONTRACT's surface -- the promotable set, the matrix that must match the
+declared Python range, the refusal to carry a credential -- not the workflow's topology.
+"""
+
 from __future__ import annotations
 
 import inspect
