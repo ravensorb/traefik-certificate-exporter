@@ -202,7 +202,27 @@ backlog:
     NON-GOALS: no renames, no rewrites, no improvements in the same commits -- any behavioural change destroys the collect-only proof, which is the only thing making this safe.
     ALSO MOVES: .pre-commit-config.yaml runs pytest against the single file and must become tests/ci/; verify-build.yaml''s workflow-policy job runs the same string and test_every_gate_runs_in_ci_or_is_recorded_as_local_only compares the two, so they fail together if one is missed.
     SIZE: ~12 commits. Size it 2-3x on this epic''s record.'
-  status: backlog
+  status: resolved
+  resolution: 'Closed 2026-09-04. tests/ci/test_workflow_contracts.py went from 7,441 lines
+    and 307 guards to nine subject modules plus tests/ci/support.py (shared machinery) and
+    tests/ci/conftest.py (shared fixtures); the remainder file is 703 lines and says in its
+    docstring that it is the remainder by construction. Phases 0-2 landed earlier in the
+    sweep; phase 3 moved nine subjects in nine commits -- documentation, gates, meta,
+    topology, action policy, fork safety, image publication, stable identity, finalization.
+    The plan held: pre-planning the partition was not attempted, each subject was moved and
+    the interpreter named the coupling one NameError at a time. Every commit was checked
+    three ways -- the collect-only identity list diffed against the pre-split baseline
+    (identical, 307, on all nine), the top-level definition set diffed against HEAD, and the
+    full suite plus every pre-commit hook. Nothing was renamed or rewritten in a move commit.
+    Ruff, not pytest, caught four annotation-only imports the moves dropped, because
+    `from __future__ import annotations` makes an annotation a string that never resolves;
+    that is why the hook sequence runs on every commit rather than the suite alone.
+    Phase 4 (not in the original plan) added four guards in test_meta.py so the split is
+    held by a check rather than by prose: every module states its subject, no subject module
+    imports from a sibling, and a test_*.py that defines no test fails. Planting the relative
+    `from .x import y` walked past the first draft of the import check, which read absolute
+    imports only -- all four spellings are asserted now and the plant is kept as a test. That
+    guard also found test_publication_contract.py had no docstring.'
   description: 'The contract suite grew from 34 guards to 294 in one epic and lives in a single module that now covers the action pin policy, the fork-safety boundary, the workflow topology, forge coordinates, the publication matrix, the finalizer gate, alias ordering, the secret scanner, the runbook and the documentation citations. Two concrete costs were paid during this closure rather than hypothesised: replacing a text region twice deleted adjacent definitions belonging to a different concern, once silently, and it was caught only because a document still cited the deleted guard by name. Splitting it by concern would make those blast radii structural rather than a matter of care. Deferred from closure because the split is a large mechanical change with real risk of losing a guard in the move, and this closure has already demonstrated that risk twice; it wants its own story with a definition-set diff as its acceptance criterion.'
 - key: BL-E008-011
   epic: '008'
