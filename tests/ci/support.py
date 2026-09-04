@@ -732,3 +732,132 @@ def _governed_step_groups() -> list[tuple[str, str, list[dict[str, Any]]]]:
 
 
 REGISTRY_LOGIN_ACTION = "docker/login-action"
+
+
+def _is_publishing_step(step: dict[str, Any]) -> bool:
+    """The step that actually ships. Everything before it is 'pre-upload'."""
+    uses = str(step.get("uses", ""))
+    if uses.startswith(("pypa/gh-action-pypi-publish", APPROVED_RELEASE_ACTION)):
+        return True
+    command = str(step.get("run", ""))
+    return bool(
+        re.search(
+            r"(?:buildx\s+bake|docker\s+push|buildx\s+build[^\n]*--push|twine\s+upload)",
+            command,
+        )
+    )
+
+
+# Every spelling of "ask a registry what is there". One authority, consumed by the alias
+# ordering guard below and by the placement guard story E008-S01-001 added: two hand-kept
+# copies of the same pattern list would drift, and the copy nobody updated would be the
+# one still reporting success.
+REGISTRY_READ_COMMANDS = (
+    r"\bdocker\s+manifest\s+inspect\b",
+    r"\bbuildx\s+imagetools\s+inspect\b",
+    r"\bskopeo\s+(?:inspect|list-tags)\b",
+    r"\bcrane\s+(?:ls|digest|manifest)\b",
+)
+
+
+# Moving a floating major is a non-fast-forward ref update, and
+# LiquidLogicLabs/git-action-tag-floating-version does it. Unlike git-action-release it
+# needs no forge backend: a tag is a git concept, not a forge one, so the action pushes
+# refs with plain git and is portable to Gitea for free. A Release is the opposite -- a
+# forge object -- which is why that one needs per-API handling (ADR-0010).
+APPROVED_ALIAS_ACTION = "LiquidLogicLabs/git-action-tag-floating-version"
+
+
+PUBLISH_IMAGE_REFERENCE = "./.github/workflows/publish-image.yaml"
+
+
+REQUIRED_IMAGE_PLATFORMS = ("linux/amd64", "linux/arm64")
+
+
+STEP_OUTPUT_REFERENCE = re.compile(r"steps\.([A-Za-z0-9_-]+)\.outputs\.")
+
+
+def _producing_step(
+    path: Path, job_name: str, job: dict[str, Any], output_name: str
+) -> dict[str, Any]:
+    """The step a job's named output is taken from, resolved through the expression."""
+    reference = STEP_OUTPUT_REFERENCE.search(
+        str((job.get("outputs") or {})[output_name])
+    )
+    assert reference, (
+        f"{path.name}: job {job_name!r} does not take {output_name!r} from a step output"
+    )
+    step = next(
+        (
+            candidate
+            for candidate in (job.get("steps") or [])
+            if candidate.get("id") == reference.group(1)
+        ),
+        None,
+    )
+    assert step is not None, (
+        f"{path.name}: job {job_name!r} takes {output_name!r} from step "
+        f"{reference.group(1)!r}, which does not exist"
+    )
+    return step
+
+
+def _publishing_workflows() -> list[Path]:
+    """Every workflow that owns an automatic event and publishes something.
+
+    The scope for the destination-agnostic rules: full-history checkouts, credential
+    disjointness, re-reading the tag set before upload, gating optional credentials,
+    the evidence job, the finalizer, the run summary.
+
+    Those rules used to take their scope from `_image_channel_workflows` below, which
+    derives from *whether the workflow publishes a container image*. A `nightly.yaml`
+    with a single PyPI job -- `id-token: write`, `fetch-depth: 1`, no tag re-read, no
+    finalizer, ungated optional credentials -- ships no image, so none of the seven
+    looked at it and the suite stayed green. Publishing is the property that matters
+    here, not what is published.
+    """
+    return [
+        path
+        for path in sorted(WORKFLOWS.glob("*.yaml"))
+        # Any entry point that publishes. `_trigger_surface` excludes
+        # `workflow_dispatch`, which is right for the event-ownership partition -- a
+        # person asked for it, so it races nothing -- and wrong here: a
+        # manually-dispatched publisher holding `id-token: write` and running
+        # `twine upload` escaped all seven of these rules. `workflow_call` is the one
+        # exemption, because a reusable file's caller owns the gate.
+        if (_declared_events(_load_workflow(path)) - {"workflow_call"})
+        and _publishers(_load_workflow(path))
+    ]
+
+
+def _image_channel_workflows() -> list[Path]:
+    """The subset that publishes an image through the shared reusable publisher.
+
+    Derived from who calls it, never enumerated: release.yaml is covered the day it
+    lands, without an edit here. Kept narrow deliberately -- it is the right scope for
+    rules about the image wiring (platform inputs, digest and platform outputs,
+    consuming an inspection rather than performing one) and the wrong scope for
+    anything that is true of publishing in general.
+    """
+    return [
+        path
+        for path in sorted(WORKFLOWS.glob("*.yaml"))
+        if any(
+            job.get("uses") == PUBLISH_IMAGE_REFERENCE
+            for job in _jobs(_load_workflow(path)).values()
+        )
+    ]
+
+
+# How the annotated-tag membership decision is LOCATED in a `run:` body. `%(objecttype)`
+# is the annotated-object filter itself: a step that peels tags without it accepts a
+# lightweight `v1.2.3` pushed by hand, which is the release-breaking defect story 002
+# recorded as HIGH-1. Matching the mechanism rather than a step name means a re-check
+# that was gutted is no longer found at all.
+TAG_MEMBERSHIP_MARKER = "%(objecttype)"
+
+
+# The stable channel's re-check names the tag it was handed; the development channel's
+# enumerates every tag on the commit. Two spellings of one relation, and each is the
+# marker for its own channel.
+STABLE_RECHECK_MARKER = "refs/tags/$RELEASE_TAG"
