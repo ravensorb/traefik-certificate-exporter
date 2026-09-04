@@ -655,3 +655,31 @@ def _declared_events(document: dict[str, Any]) -> set[str]:
     if isinstance(triggers, str):
         return {triggers}
     return set(triggers)
+
+
+def _transitive_needs(jobs: dict[str, Any], job_name: str) -> set[str]:
+    """Every job `job_name` depends on, directly or through another job."""
+    resolved: set[str] = set()
+    pending = [job_name]
+    while pending:
+        current = pending.pop()
+        needs = jobs.get(current, {}).get("needs") or []
+        if isinstance(needs, str):
+            needs = [needs]
+        for dependency in needs:
+            if dependency not in resolved:
+                resolved.add(dependency)
+                pending.append(dependency)
+    return resolved
+
+
+def _workflow_documents() -> dict[str, dict[str, Any]]:
+    """Every governed workflow, parsed, keyed by filename."""
+    return {
+        path.name: _load_workflow(path) for path in sorted(WORKFLOWS.glob("*.yaml"))
+    }
+
+
+# `ACT` as a whole word. `\b` is what keeps `GITHUB_ACTIONS` and `actions/checkout` out
+# of it; the previous form was a bare `"ACT" not in text` substring test on one file.
+ACT_BRANCH = re.compile(r"\bACT\b")
