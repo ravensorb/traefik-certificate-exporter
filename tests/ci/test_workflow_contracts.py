@@ -26,23 +26,29 @@ else:  # pragma: no cover - exercised only on the oldest supported interpreter
     # pyproject declares >=3.10 and `tomllib` arrived in 3.11. `tomli` is the same
     # parser under its pre-stdlib name and is already resolved for <3.11 by the lock.
     import tomli as tomllib
-from markdown_it import MarkdownIt
 from packaging.version import Version
 
 from tests.ci.support import (
     ACTIONS,
     PROJECT_ROOT,
+    RECOVERY_HEADING,
+    VERIFIER_REFERENCE,
     WORKFLOWS,
     _contract_definitions,
     _contract_modules,
     _git,
+    _is_credential_bearing,
     _jobs,
     _load_document,
     _load_fixture,
     _load_workflow,
+    _publishers,
     _run_step,
+    _runbook_findings,
+    _statements,
     _step_with_id,
     _steps,
+    _trigger_surface,
     _uncommented,
 )
 from tests.support import tracked_text_files
@@ -52,7 +58,6 @@ VERIFY_WORKFLOW = WORKFLOWS / "verify-build.yaml"
 SETUP_ACTION = ACTIONS / "setup-poetry-python" / "action.yml"
 BUNDLE_ACTION = ACTIONS / "verified-bundle" / "action.yml"
 
-VERIFIER_REFERENCE = "./.github/workflows/verify-build.yaml"
 SETUP_ACTION_REFERENCE = "./.github/actions/setup-poetry-python"
 # Workflows that build or ship an artifact. A push event that reaches one of these
 # without first reaching the verifier is the regression this file exists to prevent.
@@ -303,22 +308,6 @@ def _is_publishing_step(step: dict[str, Any]) -> bool:
             command,
         )
     )
-
-
-def _is_credential_bearing(job: dict[str, Any]) -> bool:
-    """A job that holds, or can hold, a publication credential.
-
-    Derived from capability rather than from job name or shape: any `secrets.*`
-    expression anywhere in the job, or a permission that lets it push somewhere.
-    """
-    permissions = job.get("permissions")
-    if isinstance(permissions, dict):
-        for scope in ("packages", "id-token", "attestations"):
-            if permissions.get(scope) == "write":
-                return True
-    if job.get("secrets") is not None:
-        return True
-    return "secrets." in json.dumps(job)
 
 
 def _transitive_needs(jobs: dict[str, Any], job_name: str) -> set[str]:
@@ -2514,27 +2503,6 @@ def test_the_publishing_scope_is_derived_from_publishing_not_from_images() -> No
     assert not any(
         job.get("uses") == PUBLISH_IMAGE_REFERENCE for job in _jobs(nightly).values()
     ), "and it ships no image -- which is exactly how it escaped the seven guards"
-
-
-def _publishers(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Jobs that ship or can ship, derived from capability rather than from name.
-
-    The same derivation `test_any_push_triggered_workflow_verifies_before_it_ships`
-    uses, so a publisher added later is covered by the guards below without editing
-    them -- which is the whole point of the scope attack in each anchor.
-    """
-    jobs = _jobs(document)
-    called = {name: job.get("uses") for name, job in jobs.items()}
-    return {
-        name: job
-        for name, job in jobs.items()
-        if (
-            isinstance(called.get(name), str)
-            and called[name].startswith("./.github/workflows/")
-            and called[name] != VERIFIER_REFERENCE
-        )
-        or _is_credential_bearing(job)
-    }
 
 
 def test_the_development_channel_owns_protected_default_branch_pushes() -> None:
@@ -6573,67 +6541,9 @@ def test_a_failure_blocks_even_on_a_destination_the_plan_says_is_off(
 # ---------------------------------------------------------------------------
 
 OPERATIONAL_RUNBOOK = PROJECT_ROOT / "docs" / "operational.md"
-RECOVERY_HEADING = "## Publication recovery"
 
-# Events that start a run without a person or another workflow asking for it. These are
-# the only ones that can race each other, and "each event has one owner" is a statement
-# about exactly this set. `workflow_call` is excluded because a caller decides, and
-# `workflow_dispatch` because a person does -- the verifier's direct dispatch entry point
-# is governed by `test_verifier_supports_call_and_direct_dispatch_with_the_same_graph`.
-NON_AUTOMATIC_EVENTS = frozenset({"workflow_call", "workflow_dispatch"})
 
-# The only filter keys that divide the ref namespace, and therefore the only ones that
-# can make two claims on the same event genuinely disjoint. `paths`, `paths-ignore` and
-# `types` narrow *when* a workflow fires, never *which refs* it owns: two workflows
-# filtered on different paths still both fire on a push that touches both. Letting them
-# separate two claims is how a second owner of `push` slips past (review HIGH-1).
-REF_NAMESPACE_KEYS = {
-    "branches": "branches",
-    "branches-ignore": "branches",
-    "tags": "tags",
-    "tags-ignore": "tags",
-}
 GLOB_METACHARACTERS = frozenset("*?[]+!")
-
-
-def _trigger_surface(document: dict[str, Any]) -> dict[str, dict[str, tuple[str, ...]]]:
-    """The automatic event surface a workflow claims, as `{event: {namespace: globs}}`.
-
-    Derived from the parsed `on:` block, never from the file's name. A name list is the
-    hand-enumerated scope global rule 4 forbids, and it would have to be edited again by
-    Epic 9; the trigger surface is the property that actually matters, and it is read
-    from the same text GitHub reads.
-
-    An event with no ref-namespace filter -- or filtered only by `paths`/`types`, or by
-    an `-ignore` form, which describes what it does *not* take and so bounds nothing --
-    claims every namespace, spelled as an empty pattern tuple.
-    """
-    triggers = document["on"]
-    if isinstance(triggers, str):
-        triggers = {triggers: None}
-    if isinstance(triggers, list):
-        triggers = dict.fromkeys(triggers)
-    assert isinstance(triggers, dict), document
-    surface: dict[str, dict[str, tuple[str, ...]]] = {}
-    for event, configuration in triggers.items():
-        if event in NON_AUTOMATIC_EVENTS:
-            continue
-        claimed: dict[str, list[str]] = {}
-        if isinstance(configuration, dict):
-            for key, namespace in REF_NAMESPACE_KEYS.items():
-                values = configuration.get(key) or []
-                if not values:
-                    continue
-                # An `-ignore` list names what is excluded, so what remains is the whole
-                # namespace minus an unknown set: treat it as unbounded.
-                patterns = [] if key.endswith("-ignore") else [str(v) for v in values]
-                claimed.setdefault(namespace, []).extend(patterns)
-        surface[event] = (
-            {name: tuple(globs) for name, globs in claimed.items()}
-            if claimed
-            else dict.fromkeys(set(REF_NAMESPACE_KEYS.values()), ())
-        )
-    return surface
 
 
 def _globs_can_both_match(left: str, right: str) -> bool:
@@ -6848,113 +6758,6 @@ def test_the_topology_accepts_a_workflow_that_races_nothing(
         "jobs": {"audit": {"runs-on": "ubuntu-24.04", "steps": []}},
     }
     assert not _topology_findings(documents), _topology_findings(documents)
-
-
-# The four actions CI-AR38 permits the operations guide to name only as prohibited,
-# matched at the width of the vocabulary an operator would actually use. Review HIGH-2
-# demonstrated the first draft's narrower patterns accepting `remove the published
-# version`, `yank the version`, `replace the published image tag`, `push the tag again
-# with -f` and `re-run the workflow from the start` -- every one of them the prohibited
-# action under a different verb. Each row below is proven by a plant.
-PROHIBITED_RECOVERY_ACTIONS = (
-    (
-        "whole-workflow rerun",
-        re.compile(
-            r"re-?run(?:ning)?\s+(?:all\b|every\b"
-            r"|the\s+(?:whole|entire|full|complete)\b"
-            r"|the\s+(?:run|workflow|pipeline|job list)\b)"
-            r"|whole[- ](?:workflow|run)\s+re-?run"
-            r"|re-?(?:trigger|dispatch|launch)\s+the\s+(?:run|workflow)"
-            r"|trigger\s+the\s+workflow\s+again",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "force update",
-        re.compile(
-            r"--force|(?<![\w-])-f(?![\w-])|force[- ](?:push|updat|overwrit|mov|creat)"
-            r"|\bforce-?(?:push|updat)\w*",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "deletion",
-        re.compile(
-            r"\b(?:delet(?:e|es|ed|ing|ion)|remov(?:e|es|ed|ing|al)|purg(?:e|es|ed|ing)"
-            r"|yank(?:s|ed|ing)?|drop(?:s|ped|ping)?)\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "overwrite",
-        re.compile(
-            r"\b(?:overwrit(?:e|es|ing|ten)|replac(?:e|es|ed|ing)"
-            r"|re-?(?:upload|push|publish)(?:es|ed|ing)?)\b",
-            re.IGNORECASE,
-        ),
-    ),
-)
-
-# What makes a mention a prohibition rather than an instruction. Deliberately narrow:
-# review MEDIUM-1 showed that admitting the ordinary negations (`is not`, `does not`,
-# `cannot`) lets an unrelated conditional excuse an instruction -- "If the release is not
-# yet consumed, delete it and republish" passed. Every marker here is prohibitive on its
-# own, whatever the rest of the sentence says.
-PROHIBITION_MARKER = re.compile(
-    r"\b(?:never|not\s+a\s+recovery|prohibited|forbidden|must\s+not|may\s+not"
-    r"|do(?:es)?\s+not\s+prescribe|refus\w*|unsupported|instead\s+of"
-    r"|rather\s+than)\b",
-    re.IGNORECASE,
-)
-
-
-def _statements(text: str) -> list[str]:
-    """The units a prohibition has to attach to.
-
-    Block structure comes from `markdown-it-py`, the CommonMark parser already in this
-    project's dependency tree -- global rule 1, and the first draft's hand-written block
-    splitter treated a line inside a fenced block as prose (review MEDIUM-3). A table
-    *row* is one unit rather than one cell, because the prohibition lives in the row's
-    other columns.
-
-    Within a block, statements are split on sentence punctuation by a deliberately naive
-    rule. It gets abbreviations wrong -- `e.g. ` splits early -- and that is a knowingly
-    accepted limitation because its failure direction is safe: a statement split too
-    early is a *smaller* unit, so a marker in the discarded half no longer excuses a
-    matched verb. It can make this guard stricter, never laxer.
-    """
-    tokens = MarkdownIt("commonmark").enable("table").parse(text)
-    blocks: list[str] = []
-    row: list[str] | None = None
-    for token in tokens:
-        if token.type == "tr_open":
-            row = []
-        elif token.type == "tr_close" and row is not None:
-            blocks.append(" ".join(row))
-            row = None
-        elif token.type == "inline":
-            if row is not None:
-                row.append(token.content)
-            else:
-                blocks.append(token.content)
-        # `fence` and `code_block` carry their content on the token itself and are
-        # skipped outright: a shell transcript is not a runbook instruction.
-    statements: list[str] = []
-    for block in blocks:
-        collapsed = " ".join(block.split())
-        statements.extend(
-            part for part in re.split(r"(?<=[.!?])\s+", collapsed) if part.strip()
-        )
-    return statements
-
-
-def _runbook_findings(text: str) -> list[str]:
-    return [
-        f"{name} appears as an instruction, not a prohibition: {statement!r}"
-        for statement in _statements(text)
-        for name, pattern in PROHIBITED_RECOVERY_ACTIONS
-        if pattern.search(statement) and not PROHIBITION_MARKER.search(statement)
-    ]
 
 
 def _recovery_section(text: str) -> str:
