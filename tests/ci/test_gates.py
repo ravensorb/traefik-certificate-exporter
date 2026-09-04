@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
-from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -28,7 +28,6 @@ from tests.ci.support import (
     _load_workflow,
     _uncommented,
 )
-from tests.support import tracked_text_files
 
 if sys.version_info >= (3, 11):
     import tomllib

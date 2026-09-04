@@ -444,3 +444,214 @@ PUBLISH_IMAGE_WORKFLOW = WORKFLOWS / "publish-image.yaml"
 
 
 RELEASE_WORKFLOW = WORKFLOWS / "release.yaml"
+
+
+# The governed scope, and the three registries of granted privilege. Data rather than
+# rules: the action-policy guards, the finalization guards and the meta-guard all read
+# them, so they sit here rather than in whichever subject module reads them most.
+def _governed_definitions() -> tuple[Path, ...]:
+    """Tier 1 scope, derived from the filesystem rather than enumerated by hand.
+
+    The previous hand-kept 2-tuple examined ci.yaml and verify-build.yaml only, so the
+    four credential-bearing workflows and every composite action were governed by
+    nothing. `test_governance_scope_is_derived_from_disk` attacks this scope directly.
+    """
+    return tuple(sorted(WORKFLOWS.glob("*.yaml")) + sorted(ACTIONS.rglob("action.yml")))
+
+
+GOVERNED_DEFINITIONS = _governed_definitions()
+
+
+# Jobs permitted to write repository contents -- push refs, or create a forge Release.
+# A registry of granted exceptions, not a derived scope: adding a name here IS the grant,
+# and each needs an ADR. ADR-0006 draws the line at *identity* -- the committed version
+# and the exact vX.Y.Z tag are chosen only by the local guarded transaction. A finalizer
+# attaching a Release, its assets, or moving aliases to an identity already decided is not
+# a second version authority. Empty until Epic 8 registers one.
+# `(workflow filename, job name)` pairs, NOT bare job names. A bare-name registry matches
+# across every workflow, so granting `finalize` for release.yaml would silently grant the
+# same name in dev.yaml -- and Epic 8 creates a finalizer in both files (gate finding F6).
+# Widened before the first entry is added, while the set is still empty and the change is
+# free.
+#
+# Epic 8 story E008-S01-003 registers three, and each entry is a deliberate grant:
+#
+# * `("release.yaml", "finalize")` -- creates the forge Release through
+#   `LiquidLogicLabs/git-action-release@v2` (ADR-0010) and advances `vMAJOR` /
+#   `vMAJOR.MINOR` through `LiquidLogicLabs/git-action-tag-floating-version@v2`
+#   (ADR-0006 as amended). It is the only job in the repository declaring
+#   `contents: write`, and it holds no registry credential at all.
+# * `("release.yaml", "finalize-image-aliases")` -- points the `MAJOR.MINOR`, `MAJOR`
+#   and `latest` image names at the digest that was already published. It writes no
+#   ref and declares no `contents: write`; it is registered because it moves an alias,
+#   and alias ownership is what the sole-ownership guard below asserts.
+# * `("dev.yaml", "finalize-dev-alias")` -- points the `dev` image name at the
+#   published digest, after proving the candidate is still the protected default
+#   branch's head. Also no ref write.
+#
+# ADR-0006 draws the line at identity, and none of the three chooses a version: the
+# committed version and the exact `vX.Y.Z` tag are still the local guarded
+# transaction's alone. A Release and an alias attach to an identity already decided.
+RELEASE_FINALIZER_JOBS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("release.yaml", "finalize"),
+        ("release.yaml", "finalize-image-aliases"),
+        ("dev.yaml", "finalize-dev-alias"),
+    }
+)
+
+
+# The exception to the floating-major default, and a registry of granted exceptions
+# rather than a derived scope: adding an entry here IS the grant, and each needs an ADR.
+#
+# A floating major is a *moving* ref. For most actions that is the right trade -- a
+# security fix ships without a manifest edit. For an action handed a publication
+# credential it inverts: whoever can move the branch can exfiltrate the token on the next
+# run. CI-AR4 sets floating-major as the default for approved owners; CI-AR38 requires a
+# reviewed full commit SHA for the PyPI publisher. Both hold, because they are answering
+# different questions -- convenience of upgrade versus blast radius of compromise -- and
+# the split is per action, not per owner. `pypa` stays an approved owner; only this one
+# action of theirs is pinned harder.
+SHA_PINNED_ACTIONS = frozenset({"pypa/gh-action-pypi-publish"})
+
+
+# The inverse registry: actions that ARE handed a publication credential and stay on a
+# floating major anyway. Not a claim that they are safe -- a registry of accepted risk,
+# and the reason is the entry. Whoever can move one of these refs can exfiltrate the
+# credential it receives on the next run, with no diff in this repository to review.
+#
+# Adding an entry IS the acceptance, and each needs an ADR, exactly as adding to
+# SHA_PINNED_ACTIONS is the grant (ADR-0009). Every entry here was found by
+# `_credential_handling_actions`, which derives candidates from what a step is handed;
+# the previous reach guard matched the words "pypi" or "publish" in an action's name and
+# saw none of them.
+CREDENTIAL_ACTIONS_ON_MOVING_REFS: dict[str, str] = {
+    # Maintainer-owned org (confirmed with the maintainer at E008 sprint closure; ADR-0010
+    # called this "first-party in practice" and that is accurate). The residual risk is
+    # the maintainer's own account rather than a third party's, and the floating major is
+    # what makes an upstream fix reach this repository without a manifest edit.
+    "LiquidLogicLabs/git-action-release": (
+        "receives contents: write GITHUB_TOKEN as `token`; maintainer-owned org"
+    ),
+    "LiquidLogicLabs/git-action-tag-floating-version": (
+        "receives GITHUB_TOKEN through GIT_CONFIG_VALUE_0; maintainer-owned org"
+    ),
+    "LiquidLogicLabs/git-action-docker-test": (
+        "runs after both registry logins, so it can read ~/.docker/config.json; "
+        "maintainer-owned org"
+    ),
+    # An approved owner under CI-AR4, and the one action here nobody in this project
+    # controls. Kept floating on the ordinary CI-AR4 grounds -- a large, widely audited
+    # owner whose security fixes should arrive without a manifest edit.
+    "docker/login-action": "receives DOCKERHUB_USERNAME and DOCKERHUB_TOKEN",
+    # Ambient holders, added at epic closure when the derivation learned to see them.
+    # None of these is *passed* a credential; each runs in a job whose token or OIDC
+    # identity it could use. All four are from approved owners on the platform's own
+    # namespaces, and all four are the most-audited actions in the ecosystem -- but the
+    # policy says pinned or recorded, and silence is the one outcome it does not allow.
+    "actions/checkout": (
+        "runs in every credentialed job, so it holds that job's token ambiently; "
+        "first-party GitHub"
+    ),
+    "actions/attest-build-provenance": (
+        "runs in the attest job, which holds id-token: write and attestations: write; "
+        "first-party GitHub"
+    ),
+    "docker/setup-buildx-action": (
+        "runs in registry jobs holding packages: write; approved owner"
+    ),
+    "docker/setup-qemu-action": (
+        "runs in the image job holding packages: write; approved owner"
+    ),
+}
+
+
+# Tier 2 scope. Tier 1 (approved owners, floating major aliases, no interpolated
+# `uses:`) applies to every governed definition. The credential prohibitions below
+# apply only to definitions that can execute fork-authored code, because those must
+# never hold a publishing capability -- the publisher workflows legitimately do.
+#
+# This was a hand-kept `(CI_WORKFLOW, VERIFY_WORKFLOW)` tuple: the *same* 2-tuple that
+# tier 1 replaced with a filesystem derivation, left eight lines below the derivation
+# that replaced it, carrying the rules that matter more. A second `pull_request`
+# workflow on a disjoint branch filter -- a shape the topology guard asserts lawful --
+# ran fork code on a self-hosted runner with `packages: write` and a registry login,
+# and not one guard fired. The set is now derived; the seed is the event.
+FORK_EVENTS = frozenset({"pull_request", "pull_request_target"})
+
+
+def _action_references(path: Path) -> list[str]:
+    """Every `uses:` value in a definition, read from the parsed document.
+
+    Reading these with a line regex silently misses the `- uses:` list form, which is
+    how most steps in this repository are written -- and therefore misses most of what
+    the policy is supposed to examine.
+    """
+    document = _load_document(path)
+    references = [
+        str(job["uses"]) for job in _jobs(document).values() if "uses" in job
+    ] + [str(step["uses"]) for step in _steps(document) if "uses" in step]
+    return references
+
+
+def _local_references(path: Path) -> set[Path]:
+    """Every local workflow or composite action a definition names with `uses: ./...`.
+
+    Resolved from the file's own text, so a directory reference picks up its
+    `action.yml` the way the runner does.
+    """
+    found: set[Path] = set()
+    for reference in _action_references(path):
+        if not reference.startswith("./"):
+            continue
+        target = PROJECT_ROOT / reference.removeprefix("./")
+        found.add(target / "action.yml" if target.is_dir() else target)
+    return found
+
+
+def _fork_facing_workflow_names(documents: dict[str, dict[str, Any]]) -> set[str]:
+    """Workflow filenames that can execute fork-authored code.
+
+    Seeded from whoever owns a `pull_request*` event and closed over local
+    `workflow_call`s, because a reusable workflow inherits its caller's trust boundary.
+    Pure over parsed documents so the scope attack below runs through this exact code.
+    """
+    reachable = {
+        name
+        for name, document in documents.items()
+        if _declared_events(document) & FORK_EVENTS
+    }
+    frontier = list(reachable)
+    while frontier:
+        document = documents.get(frontier.pop())
+        if document is None:
+            continue
+        for job in _jobs(document).values():
+            used = job.get("uses")
+            if isinstance(used, str) and used.startswith("./.github/workflows/"):
+                name = used.rsplit("/", 1)[-1]
+                if name not in reachable:
+                    reachable.add(name)
+                    frontier.append(name)
+    return reachable
+
+
+def _fork_facing_definitions() -> tuple[Path, ...]:
+    """The fork-facing workflows plus every composite action they reach, from disk."""
+    documents = {path.name: _load_workflow(path) for path in WORKFLOWS.glob("*.yaml")}
+    resolved: set[Path] = set()
+    frontier = [WORKFLOWS / name for name in _fork_facing_workflow_names(documents)]
+    while frontier:
+        path = frontier.pop()
+        if path in resolved or not path.exists():
+            continue
+        resolved.add(path)
+        frontier.extend(_local_references(path))
+    return tuple(sorted(resolved))
+
+
+def _declared_events(document: dict[str, Any]) -> set[str]:
+    triggers = document["on"]
+    if isinstance(triggers, str):
+        return {triggers}
+    return set(triggers)

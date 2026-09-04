@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import ast
 import copy
 import fnmatch
-import functools
 import importlib.util
 import itertools
 import json
@@ -31,18 +29,24 @@ from tests.ci.support import (
     ACTIONS,
     BUNDLE_ACTION,
     CI_WORKFLOW,
-    CODEOWNERS,
+    CREDENTIAL_ACTIONS_ON_MOVING_REFS,
     DEV_WORKFLOW,
+    GOVERNED_DEFINITIONS,
     PROJECT_ROOT,
     PUBLISH_IMAGE_WORKFLOW,
     RECOVERY_HEADING,
+    RELEASE_FINALIZER_JOBS,
     RELEASE_WORKFLOW,
     SCRIPTS,
     SETUP_ACTION,
+    SHA_PINNED_ACTIONS,
     VERIFIER_REFERENCE,
     VERIFY_WORKFLOW,
     WORKFLOWS,
-    _contract_modules,
+    _action_references,
+    _declared_events,
+    _fork_facing_definitions,
+    _fork_facing_workflow_names,
     _git,
     _is_credential_bearing,
     _jobs,
@@ -57,7 +61,6 @@ from tests.ci.support import (
     _trigger_surface,
     _uncommented,
 )
-from tests.support import tracked_text_files
 
 SETUP_ACTION_REFERENCE = "./.github/actions/setup-poetry-python"
 # Workflows that build or ship an artifact. A push event that reaches one of these
@@ -76,69 +79,6 @@ def _load_committed_versions() -> Any:
 
 committed_versions = _load_committed_versions()
 
-
-def _governed_definitions() -> tuple[Path, ...]:
-    """Tier 1 scope, derived from the filesystem rather than enumerated by hand.
-
-    The previous hand-kept 2-tuple examined ci.yaml and verify-build.yaml only, so the
-    four credential-bearing workflows and every composite action were governed by
-    nothing. `test_governance_scope_is_derived_from_disk` attacks this scope directly.
-    """
-    return tuple(sorted(WORKFLOWS.glob("*.yaml")) + sorted(ACTIONS.rglob("action.yml")))
-
-
-GOVERNED_DEFINITIONS = _governed_definitions()
-
-# Tier 2 scope. Tier 1 (approved owners, floating major aliases, no interpolated
-# `uses:`) applies to every governed definition. The credential prohibitions below
-# apply only to definitions that can execute fork-authored code, because those must
-# never hold a publishing capability -- the publisher workflows legitimately do.
-#
-# This was a hand-kept `(CI_WORKFLOW, VERIFY_WORKFLOW)` tuple: the *same* 2-tuple that
-# tier 1 replaced with a filesystem derivation, left eight lines below the derivation
-# that replaced it, carrying the rules that matter more. A second `pull_request`
-# workflow on a disjoint branch filter -- a shape the topology guard asserts lawful --
-# ran fork code on a self-hosted runner with `packages: write` and a registry login,
-# and not one guard fired. The set is now derived; the seed is the event.
-FORK_EVENTS = frozenset({"pull_request", "pull_request_target"})
-
-# Jobs permitted to write repository contents -- push refs, or create a forge Release.
-# A registry of granted exceptions, not a derived scope: adding a name here IS the grant,
-# and each needs an ADR. ADR-0006 draws the line at *identity* -- the committed version
-# and the exact vX.Y.Z tag are chosen only by the local guarded transaction. A finalizer
-# attaching a Release, its assets, or moving aliases to an identity already decided is not
-# a second version authority. Empty until Epic 8 registers one.
-# `(workflow filename, job name)` pairs, NOT bare job names. A bare-name registry matches
-# across every workflow, so granting `finalize` for release.yaml would silently grant the
-# same name in dev.yaml -- and Epic 8 creates a finalizer in both files (gate finding F6).
-# Widened before the first entry is added, while the set is still empty and the change is
-# free.
-#
-# Epic 8 story E008-S01-003 registers three, and each entry is a deliberate grant:
-#
-# * `("release.yaml", "finalize")` -- creates the forge Release through
-#   `LiquidLogicLabs/git-action-release@v2` (ADR-0010) and advances `vMAJOR` /
-#   `vMAJOR.MINOR` through `LiquidLogicLabs/git-action-tag-floating-version@v2`
-#   (ADR-0006 as amended). It is the only job in the repository declaring
-#   `contents: write`, and it holds no registry credential at all.
-# * `("release.yaml", "finalize-image-aliases")` -- points the `MAJOR.MINOR`, `MAJOR`
-#   and `latest` image names at the digest that was already published. It writes no
-#   ref and declares no `contents: write`; it is registered because it moves an alias,
-#   and alias ownership is what the sole-ownership guard below asserts.
-# * `("dev.yaml", "finalize-dev-alias")` -- points the `dev` image name at the
-#   published digest, after proving the candidate is still the protected default
-#   branch's head. Also no ref write.
-#
-# ADR-0006 draws the line at identity, and none of the three chooses a version: the
-# committed version and the exact `vX.Y.Z` tag are still the local guarded
-# transaction's alone. A Release and an alias attach to an identity already decided.
-RELEASE_FINALIZER_JOBS: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("release.yaml", "finalize"),
-        ("release.yaml", "finalize-image-aliases"),
-        ("dev.yaml", "finalize-dev-alias"),
-    }
-)
 
 # `release` and `tag` as verbs in an action name -- the ref-writing ones. `publish` is
 # deliberately absent so pypa/gh-action-pypi-publish and image pushes, which write no ref,
@@ -172,68 +112,6 @@ APPROVED_ACTION_OWNERS = {
 # is the same guarantee spelled differently. A pinned patch tag is not an alias.
 FLOATING_MAJOR_ALIAS = re.compile(r"\A(?:release/)?v[0-9]+\Z")
 
-# The exception to the floating-major default, and a registry of granted exceptions
-# rather than a derived scope: adding an entry here IS the grant, and each needs an ADR.
-#
-# A floating major is a *moving* ref. For most actions that is the right trade -- a
-# security fix ships without a manifest edit. For an action handed a publication
-# credential it inverts: whoever can move the branch can exfiltrate the token on the next
-# run. CI-AR4 sets floating-major as the default for approved owners; CI-AR38 requires a
-# reviewed full commit SHA for the PyPI publisher. Both hold, because they are answering
-# different questions -- convenience of upgrade versus blast radius of compromise -- and
-# the split is per action, not per owner. `pypa` stays an approved owner; only this one
-# action of theirs is pinned harder.
-SHA_PINNED_ACTIONS = frozenset({"pypa/gh-action-pypi-publish"})
-
-# The inverse registry: actions that ARE handed a publication credential and stay on a
-# floating major anyway. Not a claim that they are safe -- a registry of accepted risk,
-# and the reason is the entry. Whoever can move one of these refs can exfiltrate the
-# credential it receives on the next run, with no diff in this repository to review.
-#
-# Adding an entry IS the acceptance, and each needs an ADR, exactly as adding to
-# SHA_PINNED_ACTIONS is the grant (ADR-0009). Every entry here was found by
-# `_credential_handling_actions`, which derives candidates from what a step is handed;
-# the previous reach guard matched the words "pypi" or "publish" in an action's name and
-# saw none of them.
-CREDENTIAL_ACTIONS_ON_MOVING_REFS: dict[str, str] = {
-    # Maintainer-owned org (confirmed with the maintainer at E008 sprint closure; ADR-0010
-    # called this "first-party in practice" and that is accurate). The residual risk is
-    # the maintainer's own account rather than a third party's, and the floating major is
-    # what makes an upstream fix reach this repository without a manifest edit.
-    "LiquidLogicLabs/git-action-release": (
-        "receives contents: write GITHUB_TOKEN as `token`; maintainer-owned org"
-    ),
-    "LiquidLogicLabs/git-action-tag-floating-version": (
-        "receives GITHUB_TOKEN through GIT_CONFIG_VALUE_0; maintainer-owned org"
-    ),
-    "LiquidLogicLabs/git-action-docker-test": (
-        "runs after both registry logins, so it can read ~/.docker/config.json; "
-        "maintainer-owned org"
-    ),
-    # An approved owner under CI-AR4, and the one action here nobody in this project
-    # controls. Kept floating on the ordinary CI-AR4 grounds -- a large, widely audited
-    # owner whose security fixes should arrive without a manifest edit.
-    "docker/login-action": "receives DOCKERHUB_USERNAME and DOCKERHUB_TOKEN",
-    # Ambient holders, added at epic closure when the derivation learned to see them.
-    # None of these is *passed* a credential; each runs in a job whose token or OIDC
-    # identity it could use. All four are from approved owners on the platform's own
-    # namespaces, and all four are the most-audited actions in the ecosystem -- but the
-    # policy says pinned or recorded, and silence is the one outcome it does not allow.
-    "actions/checkout": (
-        "runs in every credentialed job, so it holds that job's token ambiently; "
-        "first-party GitHub"
-    ),
-    "actions/attest-build-provenance": (
-        "runs in the attest job, which holds id-token: write and attestations: write; "
-        "first-party GitHub"
-    ),
-    "docker/setup-buildx-action": (
-        "runs in registry jobs holding packages: write; approved owner"
-    ),
-    "docker/setup-qemu-action": (
-        "runs in the image job holding packages: write; approved owner"
-    ),
-}
 
 # The one action permitted to create a forge Release (ADR-0010). It speaks GitHub's and
 # Gitea's release APIs from a single step, so `release.yaml` carries no forge branch and
@@ -275,20 +153,6 @@ def _is_registered_finalizer(definition: str, container: str) -> bool:
     return (Path(definition).name, container) in RELEASE_FINALIZER_JOBS
 
 
-def _action_references(path: Path) -> list[str]:
-    """Every `uses:` value in a definition, read from the parsed document.
-
-    Reading these with a line regex silently misses the `- uses:` list form, which is
-    how most steps in this repository are written -- and therefore misses most of what
-    the policy is supposed to examine.
-    """
-    document = _load_document(path)
-    references = [
-        str(job["uses"]) for job in _jobs(document).values() if "uses" in job
-    ] + [str(step["uses"]) for step in _steps(document) if "uses" in step]
-    return references
-
-
 def _external_action_references(path: Path) -> list[str]:
     return [
         reference
@@ -325,225 +189,6 @@ def _transitive_needs(jobs: dict[str, Any], job_name: str) -> set[str]:
                 resolved.add(dependency)
                 pending.append(dependency)
     return resolved
-
-
-# ---------------------------------------------------------------------------
-# The meta-guard (retrospective action item A1).
-#
-# This epic's dominant defect was a guard whose RULE is correct and whose SET is a
-# hand-written list: eleven instances at sprint closure, four more inside the fixes for
-# those eleven, and it recurred after being named twenty times across three reviews.
-# Global rule 4 was the one rule in this project with nothing mechanical behind it,
-# which is exactly the outcome global rule 3 predicts for a rule that lives in prose.
-#
-# The distinction it enforces is not "no literals". Most literals here are vocabulary --
-# forbidden substrings, required platforms, command patterns -- and those are the rule
-# itself rather than the set it runs over. What must never be hand-written is a list of
-# things THE REPOSITORY CONTAINS, because the filesystem can produce that list and a
-# hand-written copy of it goes stale silently.
-#
-# `SCOPE_REGISTRIES` is the escape hatch, and it is the same shape as
-# `SHA_PINNED_ACTIONS` and `CREDENTIAL_ACTIONS_ON_MOVING_REFS`: an entry IS the decision,
-# it carries its reason, an ADR must name it, and a stale entry fails. The difference
-# between a deliberate registry and an accidental one becomes declared instead of
-# inferred -- which is precisely what `SECRET_FREE_WORKFLOWS` needed and did not have.
-SCOPE_REGISTRIES: dict[str, str] = {
-    "RELEASE_FINALIZER_JOBS": (
-        "ADR-0006: adding a (workflow, job) pair IS the grant to write refs or create a "
-        "Release. It records a decision rather than a fact about the tree, so it cannot "
-        "be derived -- deriving it from 'jobs that write refs' would make every new "
-        "writer self-authorising, which is the opposite of a grant."
-    ),
-}
-
-
-def _module_scope_literals(source: str | None = None) -> dict[str, list[str]]:
-    """Module-level literals that enumerate names this repository contains.
-
-    Pure over source text so the plants below run through this exact code.
-
-    A value built by calling a function is derived and never appears here; only literal
-    displays, and `frozenset(...)`/`tuple(...)` wrapping one, are candidates. Every
-    string reachable from the value is collected, including through a reference to
-    another module-level constant -- `(CI_WORKFLOW, VERIFY_WORKFLOW)` is a list of two
-    filenames however indirectly it spells them, and that indirection is what made the
-    original instance read as principled.
-    """
-    if source is None:
-        # Every module, not this one. Reading `__file__` here would leave the guard
-        # green while examining a fraction of the suite the moment it is split.
-        flagged: dict[str, list[str]] = {}
-        for module in _contract_modules():
-            flagged |= _module_scope_literals(module.read_text(encoding="utf-8"))
-        return flagged
-
-    def literal_strings(node: ast.AST, bindings: dict[str, ast.AST]) -> set[str]:
-        found = {
-            child.value
-            for child in ast.walk(node)
-            if isinstance(child, ast.Constant) and isinstance(child.value, str)
-        }
-        for child in ast.walk(node):
-            if isinstance(child, ast.Name) and child.id in bindings:
-                found |= {
-                    inner.value
-                    for inner in ast.walk(bindings[child.id])
-                    if isinstance(inner, ast.Constant) and isinstance(inner.value, str)
-                }
-        return found
-
-    bindings: dict[str, ast.AST] = {}
-    for statement in ast.parse(source).body:
-        targets = (
-            statement.targets
-            if isinstance(statement, ast.Assign)
-            else [statement.target]
-            if isinstance(statement, ast.AnnAssign)
-            else []
-        )
-        for target in targets:
-            if isinstance(target, ast.Name) and statement.value is not None:
-                bindings[target.id] = statement.value
-
-    strong, weak = _repository_names()
-    flagged: dict[str, list[str]] = {}
-    for name, value in bindings.items():
-        if not name.isupper():
-            continue
-        display = value
-        if (
-            isinstance(display, ast.Call)
-            and isinstance(display.func, ast.Name)
-            and display.func.id in {"frozenset", "set", "tuple", "list"}
-        ):
-            display = display.args[0] if display.args else None
-        if not isinstance(display, (ast.Set, ast.Tuple, ast.List, ast.Dict)):
-            continue
-        strings = literal_strings(display, bindings)
-        if not strings:
-            continue
-        paths = sorted(strings & strong)
-        jobs = sorted(strings & weak)
-        # A path names a file the filesystem could have listed. A set made ENTIRELY of
-        # job names is a job scope. A stray word that merely collides with a job name --
-        # "image" is both a destination class and a job -- is neither, which is why the
-        # weak signal requires the whole collection rather than one element.
-        if paths:
-            flagged[name] = paths
-        elif jobs and set(jobs) == strings:
-            flagged[name] = jobs
-    return flagged
-
-
-@functools.cache
-def _repository_names() -> tuple[frozenset[str], frozenset[str]]:
-    """(paths and filenames, job names) -- everything the filesystem could enumerate."""
-    strong = {str(path.relative_to(PROJECT_ROOT)) for path in GOVERNED_DEFINITIONS}
-    strong |= {path.name for path in GOVERNED_DEFINITIONS}
-    weak: set[str] = set()
-    for path in GOVERNED_DEFINITIONS:
-        document = _load_document(path)
-        if isinstance(document.get("jobs"), dict):
-            weak |= set(document["jobs"])
-    for relative, _ in tracked_text_files():
-        strong.add(relative)
-        strong.add(Path(relative).name)
-    return frozenset(strong), frozenset(weak - strong)
-
-
-def test_no_guard_takes_its_scope_from_a_hand_written_list_of_what_the_repo_contains() -> (
-    None
-):
-    """Retrospective action item A1, and the reason it stopped being deferred.
-
-    Validated against history rather than asserted: run over
-    `tests/ci/test_workflow_contracts.py` at `6a76559` and at `df6e5ed` this flags
-    `SECRET_FREE_WORKFLOWS: ['ci.yaml', 'verify-build.yaml']` -- the tuple that carried
-    the fork-safety prohibitions, sitting eight lines below the filesystem derivation
-    that had replaced its twin, and which took a reviewer's planted violation to find.
-    At `df6e5ed` it also flags `INVOCATION_SCAN_EXEMPTIONS`. Both would have been
-    refused at the moment they were written.
-    """
-    flagged = _module_scope_literals()
-    for name, enumerated in sorted(flagged.items()):
-        assert name in SCOPE_REGISTRIES, (
-            f"{name} = {enumerated} is a hand-written list of things this repository "
-            f"contains, and something takes its scope from it. Derive it from the "
-            f"filesystem or the parsed documents, or -- if it records a DECISION rather "
-            f"than a fact about the tree -- register it in SCOPE_REGISTRIES with the "
-            f"reason and an ADR that names it."
-        )
-    stale = set(SCOPE_REGISTRIES) - set(flagged)
-    assert not stale, (
-        f"{sorted(stale)} are registered as deliberate scopes but no longer enumerate "
-        f"anything in this repository; a registry that outlives its entries stops "
-        f"being read"
-    )
-    decisions = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted((PROJECT_ROOT / "docs" / "adr").glob("*.md"))
-    )
-    for name in sorted(SCOPE_REGISTRIES):
-        assert name in decisions, (
-            f"{name} is registered as a deliberate hand-kept scope and no ADR names it"
-        )
-
-
-def test_the_meta_guard_catches_the_defect_it_was_written_for() -> None:
-    """The plant, and it is the epic's own defect in its original spelling.
-
-    A tuple of two `Path` constants, each built from a workflow filename -- exactly how
-    `SECRET_FREE_WORKFLOWS` was written, and the indirection through a `Path` is what
-    made it read as principled rather than as a hand-written list.
-    """
-    planted = _module_scope_literals(
-        'WORKFLOWS = PROJECT_ROOT / ".github" / "workflows"\n'
-        'CI_WORKFLOW = WORKFLOWS / "ci.yaml"\n'
-        'VERIFY_WORKFLOW = WORKFLOWS / "verify-build.yaml"\n'
-        "SECRET_FREE_WORKFLOWS = (CI_WORKFLOW, VERIFY_WORKFLOW)\n"
-    )
-    assert "SECRET_FREE_WORKFLOWS" in planted, planted
-    assert planted["SECRET_FREE_WORKFLOWS"] == ["ci.yaml", "verify-build.yaml"]
-
-    # A bare list of job names is the same defect without a filename in sight.
-    planted = _module_scope_literals('GATES = ("finalize", "finalize-image-aliases")\n')
-    assert "GATES" in planted, planted
-
-    # Vocabulary is not a scope. These are the rule, not the set it runs over.
-    for benign in (
-        'SECRET_FREE_PROHIBITIONS = ("secrets:", "id-token: write")\n',
-        'REQUIRED_IMAGE_PLATFORMS = ("linux/amd64", "linux/arm64")\n',
-        'DESTINATION_CLASSES = ("image", "package")\n',
-    ):
-        assert not _module_scope_literals(benign), benign
-
-    # And a derived value never reaches the check at all.
-    assert not _module_scope_literals("GOVERNED = _governed_definitions()\n")
-
-
-def test_governance_scope_is_derived_from_disk() -> None:
-    """The guard must prove its reach, not only its rule.
-
-    Adding a workflow or composite action must not be able to leave it ungoverned, so
-    the scope is compared against the on-disk listing rather than a literal list.
-    """
-    assert GOVERNED_DEFINITIONS
-
-    workflow_files = {path for path in WORKFLOWS.iterdir() if path.is_file()}
-    action_files = {
-        path
-        for path in ACTIONS.rglob("*")
-        if path.is_file() and path.name in {"action.yml", "action.yaml"}
-    }
-    # A `.yml` workflow, or an `action.yaml`, would be on disk yet outside the globs
-    # that build the governed set. Either must fail here rather than pass unexamined.
-    assert set(GOVERNED_DEFINITIONS) == workflow_files | action_files
-
-    # Tier 2 is a proper subset of tier 1: every fork-facing definition is also
-    # governed, and the tier-2 set is smaller because publishers are excluded.
-    assert set(_fork_facing_definitions()) < set(GOVERNED_DEFINITIONS)
-    for path in GOVERNED_DEFINITIONS:
-        assert _load_document(path), path
 
 
 def test_tier_one_actions_use_approved_owners_and_floating_major_aliases() -> None:
@@ -814,88 +459,6 @@ def test_the_default_branch_is_named_once_and_derived_everywhere_else() -> None:
                 )
 
 
-def _codeowner_patterns() -> set[str]:
-    return {
-        line.split()[0]
-        for line in CODEOWNERS.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    }
-
-
-def test_the_authority_surfaces_are_owned() -> None:
-    """Every privilege in this system is a hand-kept list, and the lists live in files
-    the same commit can edit alongside the guards that read them.
-
-    `RELEASE_FINALIZER_JOBS` decides which job may write a ref or create a Release.
-    `SHA_PINNED_ACTIONS` and `CREDENTIAL_ACTIONS_ON_MOVING_REFS` decide how much of the
-    supply chain is pinned. The workflows decide which credentials exist at all. Until
-    CODEOWNERS existed, one approval could widen a grant and relax the guard reporting
-    on it in the same diff.
-
-    **The required set below is a registry, not a derivation, and the entries are
-    literals.** An earlier version of this docstring claimed the set was "derived from
-    where those things actually live, so a registry moved to a new file is covered" --
-    it was not: only `tests/` is computed, and moving `RELEASE_FINALIZER_JOBS` to
-    `scripts/` would satisfy this guard while leaving the registry unowned. Each entry
-    is here because someone decided that surface grants authority; adding one is that
-    decision, the same way adding to `SHA_PINNED_ACTIONS` is.
-
-    **This file enforces nothing, deliberately.** Branch protection requiring code-owner
-    review was declined at E008 closure: a sole-developer project has no second reviewer,
-    so the control would either block every change or be self-approved. What CODEOWNERS
-    is here for is the record of which surfaces grant authority, and this guard keeps
-    that record complete. No test can see the branch-protection setting either way
-    (BL-E008-007, resolved as accepted).
-    """
-    patterns = _codeowner_patterns()
-    assert patterns, "CODEOWNERS assigns no owners"
-    required = {
-        f"/{Path(__file__).relative_to(PROJECT_ROOT).parts[0]}/",  # the registries' home
-        "/.github/",  # every workflow and composite action
-        "/docs/adr/",  # the decisions the registries point at
-        "/.pre-commit-config.yaml",  # which gates run
-    }
-    # The trees the agents are told to follow verbatim, which no linting gate examines.
-    required |= {"/.agents/", "/.claude/", "/AGENTS.md"}
-    missing = {
-        entry
-        for entry in required
-        if not any(
-            pattern.startswith(entry) or entry.startswith(pattern)
-            for pattern in patterns
-        )
-    }
-    assert not missing, f"authority surfaces with no code owner: {sorted(missing)}"
-
-
-def test_every_granted_privilege_points_at_a_decision() -> None:
-    """ADR-0006 and ADR-0009 both say an entry in their registry needs an ADR. Neither
-    said it in a way anything could check, so an entry added without one read exactly
-    like an entry with one.
-
-    Scope is the registries themselves, so a fourth entry is covered without an edit
-    here. The check is that *some* ADR names it -- a weak claim deliberately: it catches
-    the entry nobody wrote down, and does not pretend to judge whether the reasoning is
-    good.
-    """
-    decisions = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted((PROJECT_ROOT / "docs" / "adr").glob("*.md"))
-    )
-    assert decisions, "no ADRs on disk; this guard examined nothing"
-    granted = (
-        {job for _, job in RELEASE_FINALIZER_JOBS}
-        | set(SHA_PINNED_ACTIONS)
-        | set(CREDENTIAL_ACTIONS_ON_MOVING_REFS)
-    )
-    assert granted, "no privilege is granted; this guard examined nothing"
-    for entry in sorted(granted):
-        assert entry in decisions, (
-            f"{entry!r} is a granted privilege that no ADR names. Adding the entry IS "
-            f"the grant, and a grant with no recorded decision is one nobody made."
-        )
-
-
 # The one Python module the pipeline may call, and why it is the only one. It answers
 # "what version is committed", which is a fact about the repository rather than a
 # publication decision, and it has a single implementation so the channels cannot
@@ -964,62 +527,6 @@ def test_tier_one_forbids_expression_interpolated_action_references() -> None:
     for path in GOVERNED_DEFINITIONS:
         for reference in _action_references(path):
             assert "${{" not in reference, f"{path}: {reference}"
-
-
-def _local_references(path: Path) -> set[Path]:
-    """Every local workflow or composite action a definition names with `uses: ./...`.
-
-    Resolved from the file's own text, so a directory reference picks up its
-    `action.yml` the way the runner does.
-    """
-    found: set[Path] = set()
-    for reference in _action_references(path):
-        if not reference.startswith("./"):
-            continue
-        target = PROJECT_ROOT / reference.removeprefix("./")
-        found.add(target / "action.yml" if target.is_dir() else target)
-    return found
-
-
-def _fork_facing_workflow_names(documents: dict[str, dict[str, Any]]) -> set[str]:
-    """Workflow filenames that can execute fork-authored code.
-
-    Seeded from whoever owns a `pull_request*` event and closed over local
-    `workflow_call`s, because a reusable workflow inherits its caller's trust boundary.
-    Pure over parsed documents so the scope attack below runs through this exact code.
-    """
-    reachable = {
-        name
-        for name, document in documents.items()
-        if _declared_events(document) & FORK_EVENTS
-    }
-    frontier = list(reachable)
-    while frontier:
-        document = documents.get(frontier.pop())
-        if document is None:
-            continue
-        for job in _jobs(document).values():
-            used = job.get("uses")
-            if isinstance(used, str) and used.startswith("./.github/workflows/"):
-                name = used.rsplit("/", 1)[-1]
-                if name not in reachable:
-                    reachable.add(name)
-                    frontier.append(name)
-    return reachable
-
-
-def _fork_facing_definitions() -> tuple[Path, ...]:
-    """The fork-facing workflows plus every composite action they reach, from disk."""
-    documents = {path.name: _load_workflow(path) for path in WORKFLOWS.glob("*.yaml")}
-    resolved: set[Path] = set()
-    frontier = [WORKFLOWS / name for name in _fork_facing_workflow_names(documents)]
-    while frontier:
-        path = frontier.pop()
-        if path in resolved or not path.exists():
-            continue
-        resolved.add(path)
-        frontier.extend(_local_references(path))
-    return tuple(sorted(resolved))
 
 
 def test_tier_two_fork_facing_definitions_hold_no_publisher_capability() -> None:
@@ -6274,13 +5781,6 @@ def _surface_overlap(
             elif any(_globs_can_both_match(a, b) for a in ours for b in theirs):
                 shared.add(event)
     return shared
-
-
-def _declared_events(document: dict[str, Any]) -> set[str]:
-    triggers = document["on"]
-    if isinstance(triggers, str):
-        return {triggers}
-    return set(triggers)
 
 
 def _topology_findings(documents: dict[str, dict[str, Any]]) -> list[str]:
