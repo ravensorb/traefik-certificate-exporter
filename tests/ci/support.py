@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 import copy
 import functools
+import importlib.util
 import json
 import os
 import re
@@ -683,3 +684,51 @@ def _workflow_documents() -> dict[str, dict[str, Any]]:
 # `ACT` as a whole word. `\b` is what keeps `GITHUB_ACTIONS` and `actions/checkout` out
 # of it; the previous form was a bare `"ACT" not in text` substring test on one file.
 ACT_BRANCH = re.compile(r"\bACT\b")
+
+
+def _load_committed_versions() -> Any:
+    """Load the committed-version authority shared with the workflow plan jobs."""
+    location = PROJECT_ROOT / "scripts" / "committed_versions.py"
+    spec = importlib.util.spec_from_file_location("committed_versions", location)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+committed_versions = _load_committed_versions()
+
+
+# The one action permitted to create a forge Release (ADR-0010). It speaks GitHub's and
+# Gitea's release APIs from a single step, so `release.yaml` carries no forge branch and
+# E009 inherits the Gitea path unchanged. Pinned `@v2` -- never `@v2.0`, which is stale.
+APPROVED_RELEASE_ACTION = "LiquidLogicLabs/git-action-release"
+
+
+def _governed_step_groups() -> list[tuple[str, str, list[dict[str, Any]]]]:
+    """(definition, job-or-`runs`, steps) across every governed definition.
+
+    A composite action's steps run *inside* the calling job and hold that job's
+    authority, so any prohibition that examines only `.github/workflows/*.yaml` is
+    defeated by moving the forbidden step one file across. `release.yaml`'s `finalize`
+    holds `contents: write` and calls `./.github/actions/verified-bundle`, so a
+    `git push --force`, a `gh release create` or an `imagetools create` planted in that
+    composite ran with the finalizer's authority and left the suite green.
+
+    A composite action can never be a registered finalizer -- registration is
+    `(workflow, job)` -- so for these guards its steps are always outside the grant.
+    """
+    groups: list[tuple[str, str, list[dict[str, Any]]]] = []
+    for path in GOVERNED_DEFINITIONS:
+        name = str(path.relative_to(PROJECT_ROOT))
+        document = _load_document(path)
+        if "jobs" in document:
+            for job_name, job in _jobs(document).items():
+                groups.append((name, job_name, list(job.get("steps") or [])))
+        else:
+            runs = document.get("runs") or {}
+            groups.append((name, "runs", list(runs.get("steps") or [])))
+    return groups
+
+
+REGISTRY_LOGIN_ACTION = "docker/login-action"
