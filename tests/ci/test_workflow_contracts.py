@@ -35,6 +35,38 @@ PROJECT_ROOT = Path(__file__).parents[2]
 WORKFLOWS = PROJECT_ROOT / ".github" / "workflows"
 ACTIONS = PROJECT_ROOT / ".github" / "actions"
 FIXTURES = Path(__file__).parent / "fixtures" / "workflows"
+# Every module of the contract suite. Derived from the directory rather than listed, so a
+# module added by the BL-E008-010 split is covered the moment it exists -- which is the
+# whole point: the three guards below read their own module today, and each would SILENTLY
+# NARROW rather than fail if the suite were split beneath them.
+CONTRACT_PACKAGE = Path(__file__).parent
+
+
+def _contract_modules() -> tuple[Path, ...]:
+    return tuple(sorted(CONTRACT_PACKAGE.glob("*.py")))
+
+
+@functools.cache
+def _contract_definitions() -> frozenset[str]:
+    """Every top-level name defined anywhere in the contract suite.
+
+    Read with `ast` rather than by importing, so this stays a fact about the source and
+    cannot be perturbed by import order or by a module that fails to load.
+    """
+    names: set[str] = set()
+    for module in _contract_modules():
+        for node in ast.parse(module.read_text(encoding="utf-8")).body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(node.name)
+            elif isinstance(node, ast.Assign):
+                names |= {
+                    target.id for target in node.targets if isinstance(target, ast.Name)
+                }
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                names.add(node.target.id)
+    return frozenset(names)
+
+
 CI_WORKFLOW = WORKFLOWS / "ci.yaml"
 VERIFY_WORKFLOW = WORKFLOWS / "verify-build.yaml"
 SETUP_ACTION = ACTIONS / "setup-poetry-python" / "action.yml"
@@ -412,7 +444,12 @@ def _module_scope_literals(source: str | None = None) -> dict[str, list[str]]:
     original instance read as principled.
     """
     if source is None:
-        source = Path(__file__).read_text(encoding="utf-8")
+        # Every module, not this one. Reading `__file__` here would leave the guard
+        # green while examining a fraction of the suite the moment it is split.
+        flagged: dict[str, list[str]] = {}
+        for module in _contract_modules():
+            flagged |= _module_scope_literals(module.read_text(encoding="utf-8"))
+        return flagged
 
     def literal_strings(node: ast.AST, bindings: dict[str, ast.AST]) -> set[str]:
         found = {
@@ -7113,7 +7150,7 @@ def test_the_recovery_runbook_prescribes_failed_jobs_only_recovery() -> None:
     cited_guards = set(re.findall(r"\btest_[a-z0-9_]+", section))
     assert "test_no_publisher_queries_a_destination_before_uploading" in cited_guards
     for guard in sorted(cited_guards):
-        assert guard in globals(), (
+        assert guard in _contract_definitions(), (
             f"docs/operational.md cites {guard}, which no longer exists; the runbook "
             f"points an operator at nothing"
         )
@@ -7284,7 +7321,7 @@ def test_every_guard_a_document_cites_still_exists() -> None:
     a file, not a guard, and documents legitimately name the file.
     """
     modules = {path.stem for path in (PROJECT_ROOT / "tests").rglob("test_*.py")}
-    known = set(globals())
+    known = _contract_definitions()
     documents = [
         (relative, text)
         for relative, text in tracked_text_files()
