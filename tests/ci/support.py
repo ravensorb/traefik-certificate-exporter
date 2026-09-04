@@ -414,3 +414,33 @@ def _runbook_findings(text: str) -> list[str]:
         for name, pattern in PROHIBITED_RECOVERY_ACTIONS
         if pattern.search(statement) and not PROHIBITION_MARKER.search(statement)
     ]
+
+
+# The governed definitions by name. Every subject module addresses some of these,
+# so they live with the loaders rather than in whichever module happened to need
+# one first (BL-E008-010 phase 3).
+CI_WORKFLOW = WORKFLOWS / "ci.yaml"
+
+
+VERIFY_WORKFLOW = WORKFLOWS / "verify-build.yaml"
+
+
+SETUP_ACTION = ACTIONS / "setup-poetry-python" / "action.yml"
+
+
+BUNDLE_ACTION = ACTIONS / "verified-bundle" / "action.yml"
+
+
+CODEOWNERS = PROJECT_ROOT / ".github" / "CODEOWNERS"
+
+
+SCRIPTS = PROJECT_ROOT / "scripts"
+
+
+DEV_WORKFLOW = WORKFLOWS / "dev.yaml"
+
+
+PUBLISH_IMAGE_WORKFLOW = WORKFLOWS / "publish-image.yaml"
+
+
+RELEASE_WORKFLOW = WORKFLOWS / "release.yaml"
