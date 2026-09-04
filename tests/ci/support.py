@@ -861,3 +861,81 @@ TAG_MEMBERSHIP_MARKER = "%(objecttype)"
 # enumerates every tag on the commit. Two spellings of one relation, and each is the
 # marker for its own channel.
 STABLE_RECHECK_MARKER = "refs/tags/$RELEASE_TAG"
+
+
+# How the finalization gate is LOCATED, now that it is a `jq` program in the step rather
+# than a module the step calls. The prefix every one of its refusals carries, so a gate
+# that stopped refusing stops being found -- which fails the coverage assertions loudly
+# rather than leaving them examining nothing.
+GATE_MARKER = "finalizer gate:"
+
+
+ALIAS_MOVE_COMMANDS = (
+    r"\bbuildx\s+imagetools\s+create\b",
+    r"\bcrane\s+(?:tag|copy)\b",
+    r"\bskopeo\s+copy\b",
+    r"\bregctl\s+(?:index|image)\s+copy\b",
+    r"\bdocker\s+push\b",
+)
+
+
+def _moves_an_alias(step: dict[str, Any]) -> bool:
+    """One step, both spellings: a Git alias moved by the approved action, and a
+    registry alias moved by a digest copy."""
+    if str(step.get("uses", "")).startswith(APPROVED_ALIAS_ACTION):
+        return True
+    command = _uncommented(str(step.get("run", "")))
+    return any(re.search(probe, command) for probe in ALIAS_MOVE_COMMANDS)
+
+
+def _alias_moving_jobs(
+    documents: dict[str, dict[str, Any]] | None = None,
+) -> set[tuple[str, str]]:
+    """Every place that points a mutable name at an artifact, from the parsed steps.
+
+    Derived rather than enumerated, so an alias step added to a publisher shows up here
+    without anyone editing a list.
+
+    Composite actions are included, keyed by their path and `runs`. Their steps execute
+    inside the calling job and hold its authority: `release.yaml`'s `finalize` holds
+    `contents: write` and calls `./.github/actions/verified-bundle`, so an `imagetools
+    create` planted there moved a registry alias from outside the grant, and every guard
+    stayed green. A composite action can never be a registered finalizer -- registration
+    is `(workflow, job)` -- so its presence here is always a violation.
+
+    Passing `documents` restricts the scan to those workflows, which is what the scope
+    attacks below plant against.
+    """
+    moving = set()
+    for name, document in sorted((documents or _workflow_documents()).items()):
+        for job_name, job in _jobs(document).items():
+            for step in job.get("steps", []) or []:
+                if _moves_an_alias(step):
+                    moving.add((name, job_name))
+    if documents is None:
+        for path in sorted(ACTIONS.rglob("action.yml")):
+            runs = _load_document(path).get("runs") or {}
+            for step in runs.get("steps") or []:
+                if _moves_an_alias(step):
+                    moving.add((str(path.relative_to(PROJECT_ROOT)), "runs"))
+    return moving
+
+
+def _finalizers(path: Path) -> set[str]:
+    return {job for workflow, job in RELEASE_FINALIZER_JOBS if workflow == path.name}
+
+
+def _gate_steps(path: Path) -> dict[str, dict[str, Any]]:
+    """Every step that evaluates publisher results, keyed by the job holding it.
+
+    Found by the module it calls, never by a step name: a name is a label and a label
+    can survive the deletion of the thing it labels. All of them, not the first one a
+    set iteration happened to yield -- a second finalizer growing its own gate would
+    otherwise be checked or not depending on set ordering.
+    """
+    found = {}
+    for job_name in sorted(_finalizers(path)):
+        for step in _jobs(_load_workflow(path))[job_name].get("steps", []) or []:
+            if GATE_MARKER in _uncommented(str(step.get("run", ""))):
+                found[job_name] = step
+    return found
