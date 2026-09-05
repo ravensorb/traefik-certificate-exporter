@@ -25,6 +25,7 @@ from tests.ci.support import (
     RECOVERY_HEADING,
     WORKFLOWS,
     _contract_definitions,
+    _defining_module,
     _load_workflow,
     _publishers,
     _runbook_findings,
@@ -186,6 +187,10 @@ def _documented_files() -> list[tuple[str, str]]:
 
 GUARD_CITATION = re.compile(r"\btest_[a-z0-9_]+")
 
+# A citation that gives an ADDRESS as well as a name: `tests/ci/<module>.py::<guard>`,
+# in prose or in a comment. The path half is the half a move invalidates.
+ADDRESSED_CITATION = re.compile(r"tests/ci/(test_[a-z0-9_]+)\.py::(test_[a-z0-9_]+)")
+
 
 def test_every_guard_a_document_cites_still_exists() -> None:
     """A citation is a promise the reader can follow it.
@@ -224,6 +229,45 @@ def test_every_guard_a_document_cites_still_exists() -> None:
                 f"the document still claims it enforces something."
             )
     assert cited, "no document cites a guard; this guard examined nothing"
+
+
+def test_every_addressed_citation_names_the_module_that_holds_the_guard() -> None:
+    """The name half of a citation survives a move. The path half does not.
+
+    `test_every_guard_a_document_cites_still_exists` asks only whether the name exists
+    somewhere in the suite, which is the right question for a bare citation and the wrong
+    one for `tests/ci/x.py::guard`. The BL-E008-010 split moved 293 of 307 guards between
+    modules and that guard stayed green over every one of them -- including
+    .github/dependabot.yml, whose whole purpose is to point a reader at the test that
+    justifies the artifact pin, and which spent the split pointing at the wrong file.
+
+    Scope is the same document set as the guard above, and the answer comes from the
+    directory rather than a table, so a tenth module is covered when it exists.
+    """
+    location = _defining_module()
+    documents = [
+        (relative, text)
+        for relative, text in tracked_text_files()
+        if relative.startswith(
+            ("docs/", "_bmad-output/planning-artifacts/", ".github/")
+        )
+        or "/" not in relative
+    ]
+    assert documents, "no prescriptive documents; this guard examined nothing"
+    checked = 0
+    for relative, text in documents:
+        for module, name in sorted(set(ADDRESSED_CITATION.findall(text))):
+            checked += 1
+            actual = location.get(name)
+            assert actual, (
+                f"{relative} cites {name}, which no module in the suite defines"
+            )
+            assert actual == f"{module}.py", (
+                f"{relative} cites {name} at tests/ci/{module}.py, but it lives in "
+                f"tests/ci/{actual}. A reader following the address finds nothing, and "
+                f"the rule the citation justifies reads as unenforced."
+            )
+    assert checked, "no document gives a guard's address; this guard examined nothing"
 
 
 def test_no_tracked_document_links_to_a_file_that_does_not_exist() -> None:

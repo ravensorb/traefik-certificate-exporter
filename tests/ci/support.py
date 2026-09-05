@@ -52,6 +52,33 @@ def _contract_modules() -> tuple[Path, ...]:
 
 
 @functools.cache
+def _defining_module() -> dict[str, str]:
+    """Which module defines each top-level name in the contract suite.
+
+    The BL-E008-010 split moved 293 of 307 guards between files, so a citation of the
+    form `tests/ci/<module>.py::<guard>` can now name a guard that exists at an address
+    it no longer occupies. The name half survives the move; the path half does not.
+    """
+    return {
+        name: module.name
+        for module in _contract_modules()
+        for name in _module_definitions(module)
+    }
+
+
+def _module_definitions(module: Path) -> set[str]:
+    names: set[str] = set()
+    for node in ast.parse(module.read_text(encoding="utf-8")).body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            names |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+    return names
+
+
+@functools.cache
 def _contract_definitions() -> frozenset[str]:
     """Every top-level name defined anywhere in the contract suite.
 
@@ -60,15 +87,7 @@ def _contract_definitions() -> frozenset[str]:
     """
     names: set[str] = set()
     for module in _contract_modules():
-        for node in ast.parse(module.read_text(encoding="utf-8")).body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                names.add(node.name)
-            elif isinstance(node, ast.Assign):
-                names |= {
-                    target.id for target in node.targets if isinstance(target, ast.Name)
-                }
-            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                names.add(node.target.id)
+        names |= _module_definitions(module)
     return frozenset(names)
 
 

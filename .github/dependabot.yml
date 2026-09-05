@@ -16,7 +16,7 @@ updates:
       # over currency here. Without this ignore, Dependabot proposes v7 weekly and the pin
       # gets merged away by accident.
       # Revisit when Gitea's runner supports a newer artifact protocol; asserted by
-      # tests/ci/test_workflow_contracts.py::test_artifact_actions_remain_on_the_both_forge_v4_pair.
+      # tests/ci/test_action_policy.py::test_artifact_actions_remain_on_the_both_forge_v4_pair.
       - dependency-name: "actions/upload-artifact"
         update-types: ["version-update:semver-major"]
       - dependency-name: "actions/download-artifact"
