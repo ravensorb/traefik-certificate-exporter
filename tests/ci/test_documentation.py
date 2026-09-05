@@ -191,6 +191,11 @@ GUARD_CITATION = re.compile(r"\btest_[a-z0-9_]+")
 # in prose or in a comment. The path half is the half a move invalidates.
 ADDRESSED_CITATION = re.compile(r"tests/ci/(test_[a-z0-9_]+)\.py::(test_[a-z0-9_]+)")
 
+# A citation into the test suite by LINE. Unmaintainable by construction: nothing
+# rewrites it when code moves, and unlike a broken link it keeps resolving -- to
+# whatever happens to occupy those lines now.
+LINE_CITATION = re.compile(r"tests/[A-Za-z0-9_/]+\.py:\d+(?:-\d+)?")
+
 
 def test_every_guard_a_document_cites_still_exists() -> None:
     """A citation is a promise the reader can follow it.
@@ -268,6 +273,48 @@ def test_every_addressed_citation_names_the_module_that_holds_the_guard() -> Non
                 f"the rule the citation justifies reads as unenforced."
             )
     assert checked, "no document gives a guard's address; this guard examined nothing"
+
+
+def test_no_document_cites_the_test_suite_by_line_number() -> None:
+    """A line number is a citation that rots silently and still resolves.
+
+    ADR-0007 carried seven of them into `tests/ci/test_workflow_contracts.py`. The
+    BL-E008-010 split moved every guard they described into other modules and left the
+    file in place at a quarter of its length, so each citation went on resolving -- to
+    unrelated code. A reader following `:43-89` for the pull-request adapter's isolation
+    contract now lands in the middle of a different guard and has no way to know.
+
+    That is worse than a dead link, which at least announces itself. ADR-0007's own
+    status note excuses citations "to files that have been deleted"; these point at a
+    file that survived, which is the case the note does not cover and the case that
+    misleads.
+
+    The fix is the `::guard` form, which `_defining_module` can check. Requiring it is
+    the only way this stays true, because nothing else will notice.
+
+    NOT COVERED: citations into workflow YAML by line (`verify-build.yaml:3-17` is one),
+    and prose that describes a guard without naming it. Both rot the same way. This
+    guard reads Python under `tests/` and claims nothing about the rest.
+    """
+    documents = [
+        (relative, text)
+        for relative, text in tracked_text_files()
+        if relative.startswith(
+            ("docs/", "_bmad-output/planning-artifacts/", ".github/")
+        )
+        or "/" not in relative
+    ]
+    assert documents, "no prescriptive documents; this guard examined nothing"
+    offenders = {
+        relative: sorted(set(found))
+        for relative, text in documents
+        if (found := LINE_CITATION.findall(text))
+    }
+    assert not offenders, (
+        f"cite a guard as tests/ci/<module>.py::<guard>, never by line: {offenders}. "
+        f"A line number survives the move that invalidates it and keeps resolving to "
+        f"whatever took its place."
+    )
 
 
 def test_no_tracked_document_links_to_a_file_that_does_not_exist() -> None:

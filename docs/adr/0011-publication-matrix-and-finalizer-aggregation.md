@@ -110,7 +110,7 @@ expression because it is a decision, and a decision spelled as a workflow expres
 only by reading it: the two mandatory anchors are asserted by executing the real `run:` body with
 the job results substituted into the step's real `env:`, so renaming a publisher breaks the
 render rather than silently supplying the old value. Every property the deleted pytest files
-proved is now proven the same way, in `tests/ci/test_workflow_contracts.py`.
+proved is now proven the same way, in `tests/ci/test_finalization.py`.
 
 That sentence was two-thirds true when it was written, and sprint closure made it true.
 The gate is copied into both channels and all twelve of its input-validation tests were

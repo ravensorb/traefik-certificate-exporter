@@ -19,7 +19,7 @@ orchestration choice at dispatch time.)
 
 E008 estimated 74.6–77.4 man-hours and actualled 210. The story scope was estimated roughly right;
 what the estimate did not carry is that **closure cost more than implementation**. This project's
-deliverable is largely a contract suite (34 → 298 guards in one epic), and guards fail *silently* by
+deliverable is largely a contract suite (34 → 313 guards, most of them in one epic), and guards fail *silently* by
 construction — a broken guard reports success — so they can only be validated by planting the
 violation they forbid. That validation is the cost, and it is proportional to guards written.
 
@@ -50,10 +50,15 @@ gate that cannot demonstrate failure is not a gate.
 - **Order: hooks → stage → test → commit.** Mutating hooks (`ruff-format`) rewrite files *after* a
   test run, so testing before staging verifies a different tree than the one committed. This
   produced a red commit in E008, and three near-misses.
-- **Never replace a text region by index in `tests/ci/test_workflow_contracts.py`.** Doing so
-  deleted adjacent definitions twice, once silently — a guard vanished while an ADR still cited it
-  as the enforcement. Operate on named definitions, and diff the definition set before and after.
+- **Never replace a text region by index anywhere in `tests/ci/`.** Doing so deleted adjacent
+  definitions twice, once silently — a guard vanished while an ADR still cited it as the
+  enforcement. Operate on named definitions, and diff the definition set before and after.
   `test_every_guard_a_document_cites_still_exists` is the mechanical backstop.
+- **Cite a guard as `tests/ci/<module>.py::<guard>`, never by line.** BL-E008-010 split the
+  suite into nine modules and every line-numbered citation in ADR-0007 went on resolving to
+  unrelated code — a wrong pointer that looks right, which is worse than a dead one.
+  `test_no_document_cites_the_test_suite_by_line_number` and
+  `test_every_addressed_citation_names_the_module_that_holds_the_guard` enforce both halves.
 
 ## 6. Work-type classification is load-bearing
 

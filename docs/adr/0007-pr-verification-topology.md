@@ -72,7 +72,8 @@ The shipped shape is a thin event adapter in front of a shared verifier:
    mutable event into an immutable `package-version` + `source-sha` pair) and `verify` (call
    `./.github/workflows/verify-build.yaml` with them). No build, test, lint, or publish logic lives
    in an adapter. This is enforced for `ci.yaml`:
-   `tests/ci/test_workflow_contracts.py:43-89` pins its trigger, permissions, concurrency and job
+   `tests/ci/test_fork_safety.py::test_pull_request_adapter_is_minimal_and_fork_safe`
+   pins its trigger, permissions, concurrency and job
    set, requires `github.event.pull_request.head.sha` and `persist-credentials: false`, forbids
    `pull_request_target`, and asserts the strings `poetry build`, `pytest`, `ruff-check`,
    `build-manifest`, `docker build` and `upload-artifact` are absent from the file.
@@ -81,7 +82,8 @@ The shipped shape is a thin event adapter in front of a shared verifier:
    verifier: its result no longer means "this source is sound", it means "this source is sound *and*
    whatever it did with the credentials was fine". Because fork pull requests must be able to run it,
    the constraint is asserted rather than documented —
-   `tests/ci/test_workflow_contracts.py:138-156` requires `permissions: {contents: read}` at
+   `tests/ci/test_fork_safety.py::test_fork_verification_has_no_publisher_capability_or_persistent_runner`
+   requires `permissions: {contents: read}` at
    workflow level, *no* job-level `permissions` key at all, `runs-on: ubuntu-24.04` on every job,
    and the literal absence of each of `secrets:`, `id-token: write`, `packages: write`,
    `attestations: write`, `docker/login-action@`, `actions/cache@`, `runs-on: self-hosted` and
@@ -116,9 +118,9 @@ The shipped shape is a thin event adapter in front of a shared verifier:
 
 5. **The guard's scope is a property of the rule, not of convenience.** The act-independence check
    already derives its scope from the filesystem (`WORKFLOWS.glob("*.yaml")`,
-   `tests/ci/test_workflow_contracts.py:177-183`) and therefore covers files added later. The
+   `tests/ci/test_action_policy.py::test_all_governed_steps_are_independent_of_the_act_environment`) and therefore covers files added later. The
    action-owner and floating-major check is currently scoped to the hand-named `GOVERNED_WORKFLOWS`
-   tuple (`tests/ci/test_workflow_contracts.py:15-16`, `:186-196`); as a tier-1 rule it must be
+   tuple (see the amendment below); as a tier-1 rule it must be
    widened to the same derived scope, so that a new workflow cannot introduce an unreviewed action
    owner by simply not being on a list.
 
@@ -130,7 +132,8 @@ The shipped shape is a thin event adapter in front of a shared verifier:
 
 The verifier is reachable without an adapter — `workflow_dispatch` takes the same inputs
 (`verify-build.yaml:3-17`), and `docker/act-build.sh` drives that entry point locally with no
-`--secret` and no `--env-file`, asserted at `tests/ci/test_workflow_contracts.py:159-174`. That
+`--secret` and no `--env-file`, asserted at
+`tests/ci/test_workflow_contracts.py::test_local_wrapper_and_just_recipe_invoke_only_the_direct_verifier`. That
 property is what keeps the adapters thin: there is nothing an adapter could usefully add.
 
 ## Status note (2026-09-01)
@@ -206,13 +209,18 @@ earlier version asserted "exactly five files" — and a count is satisfied by an
 - Positive: pushes and tags are now verified by nine gates across five Python versions, where before
   this sprint's `test.yaml` deletion they would have been verified by nothing, and before that by a
   single-version `pytest`.
-- Positive: the isolation constraints are executable. `tests/ci/test_workflow_contracts.py` runs as
-  the `workflow-policy` pre-commit hook (`.pre-commit-config.yaml:12-17`) and again inside the
-  verifier's own `actionlint` job (`verify-build.yaml:177-179`), so a regression fails locally and
-  in CI rather than being noticed in review.
+- Positive: the isolation constraints are executable. The contract suite — `tests/ci/`, nine
+  subject modules since BL-E008-010 — runs as the `workflow-policy` pre-commit hook locally and
+  as part of the verifier's `pytest` matrix in CI, so a regression fails in both places rather
+  than being noticed in review. (Corrected 2026-09-05: this bullet previously named the
+  `actionlint` job as the CI half. That job runs `actionlint` and nothing else; the contract
+  suite has always reached CI through `pytest`. The claim was wrong about which job carried it,
+  not about whether CI carried it. The line-numbered file references it also carried were both
+  stale and have been dropped rather than repointed — see the amendment below.)
 - Trade-off accepted: two adapters must stay aligned. They share the verifier but each resolves its
   own `plan` inputs, and a change to the input contract touches both. The contract test pins
-  `ci.yaml`'s `verify` job exactly (`tests/ci/test_workflow_contracts.py:63-73`); an equivalent
+  `ci.yaml`'s `verify` job exactly
+  (`tests/ci/test_fork_safety.py::test_pull_request_adapter_is_minimal_and_fork_safe`); an equivalent
   assertion for `build.yaml`'s `verify` job is required to close the gap.
 - Trade-off accepted: the verifier cannot use `actions/cache@`, so every job reinstalls its
   dependencies. Wall-clock time is spent to keep a fork-writable cache out of the trusted build path.
@@ -225,7 +233,8 @@ earlier version asserted "exactly five files" — and a count is satisfied by an
 ## Open questions
 
 - **Tier-1 widening will surface existing violations.** Applied repo-wide today, the approved-owner
-  set `{actions, docker, pypa, LiquidLogicLabs}` (`tests/ci/test_workflow_contracts.py:16`) rejects
+  set `{actions, docker, pypa, LiquidLogicLabs}` (`APPROVED_ACTION_OWNERS`, see the
+  amendment below) rejects
   `googleapis/release-please-action@v5` (`release.yaml:16`), `snok/install-poetry@v1`
   (`build-package.yaml:39`), and `cadifyai/poetry-publish@v0.1.1` (`build-package.yaml:46`) — the
   last also fails the floating-major rule, being pinned to `v0.1.1`. Whether each is allowlisted with
@@ -238,3 +247,38 @@ earlier version asserted "exactly five files" — and a count is satisfied by an
   are verified.
 - **`build-package.yaml` retains two trigger paths** — `workflow_call` and `release: published`
   (`build-package.yaml:2-6`) — an unresolved question inherited from ADR-0005 and not settled here.
+
+
+## Amended 2026-09-05: the contract module was split, and the citations were repaired
+
+The decisions above are unchanged. What changed is where their enforcement lives.
+
+BL-E008-010 split `tests/ci/test_workflow_contracts.py` into nine subject modules. The
+guards this ADR cites moved with it: the pull-request adapter's isolation contract and the
+verifier's capability prohibitions are in `test_fork_safety.py`, and the act-independence
+and approved-owner rules are in `test_action_policy.py`.
+
+**The citations were by line number, and that is the part worth recording.** The status
+note above excuses stale citations on the grounds that they point at deleted files, which
+is honest: a reader following one gets nothing and knows it. These were different. The file
+survived the split at a quarter of its length, so `:43-89` went on resolving — to a
+different guard entirely. A reader would have followed it, found real code, and had no
+signal that it was the wrong code.
+
+Two of the seven pointed at things that no longer exist in any form and were not repointed:
+
+- **`GOVERNED_WORKFLOWS`** was the hand-named tuple invariant 5 says "must be widened to
+  the same derived scope". It was — the name is `GOVERNED_DEFINITIONS` now and it is
+  derived from disk, so the future tense in invariant 5 has been satisfied rather than
+  abandoned.
+- **The approved-owner set** is `APPROVED_ACTION_OWNERS` in `tests/ci/test_action_policy.py`.
+  The three violations the consequence predicts are all gone with the workflows that held
+  them; `googleapis/release-please-action` in particular is now forbidden outright by
+  `test_no_workflow_delegates_versioning_to_an_external_release_bot`.
+
+`test_no_document_cites_the_test_suite_by_line_number` now refuses the line-numbered form
+in any prescriptive document, and
+`test_every_addressed_citation_names_the_module_that_holds_the_guard` checks that a
+`module.py::guard` citation names the module that actually defines it. Neither existed when
+this ADR was written, which is why nothing noticed for the four days the citations were
+wrong.

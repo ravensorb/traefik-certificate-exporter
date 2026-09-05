@@ -16,7 +16,7 @@ contract tests.
 |---|---|
 | `ARCHITECTURE-SPINE.md` CI-AR4 | approved owners "use a documented floating major when available"; other third parties "require a reviewed SHA" |
 | `ARCHITECTURE-SPINE.md` CI-AR38 | package upload uses `pypa/gh-action-pypi-publish@<reviewed-full-commit-sha>` |
-| `tests/ci/test_workflow_contracts.py` | every external `uses:` from an approved owner must match `(?:release/)?v[0-9]+` |
+| `tests/ci/test_action_policy.py::test_tier_one_actions_use_approved_owners_and_floating_major_aliases` | every external `uses:` from an approved owner must match `(?:release/)?v[0-9]+` |
 
 `pypa` is an approved owner, so CI-AR4 and the guard both said *floating major* while CI-AR38
 said *SHA*. The guard's regex was widened to accept `release/vN` specifically because pypa
@@ -51,7 +51,7 @@ is not a property of the owner.
 
 ## Decision
 
-`SHA_PINNED_ACTIONS` in `tests/ci/test_workflow_contracts.py` is a registry of granted
+`SHA_PINNED_ACTIONS` in `tests/ci/support.py` is a registry of granted
 exceptions to the floating-major default. It currently holds one entry,
 `pypa/gh-action-pypi-publish`. `pypa` remains an approved owner; only this action of theirs is
 pinned harder.
