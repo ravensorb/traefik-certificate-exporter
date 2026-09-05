@@ -53,7 +53,12 @@ backlog:
   title: confuse 2.0.1 crashed under Python 3.14 (pkgutil.get_loader removed) -- discovered upgrading the base image, fixed by updating to confuse 2.2.1 (already allowed by the existing ^2.0.1 constraint)
   source: dev-loop (E002-S01-002/003)
   severity: High
-  status: backlog
+  status: resolved
+  resolution: 'Closed 2026-09-04 as a stale record: the fix it describes was applied and
+    verified when the item was written, and nothing reopened it. poetry.lock holds confuse
+    2.2.1, and verify-build.yaml runs the suite on 3.14 -- the interpreter that exposed the
+    crash -- as a matrix leg on every push, green on run 33931389934. The item stayed in
+    backlog because it was filed as a report of work already done rather than as work to do.'
   description: "Verified live: building the reworked Docker image against the newly-upgraded Alpine 3.24 base (which ships Python 3.14) crashed at startup with AttributeError: module pkgutil has no attribute get_loader, inside confuse.Configuration.__init__ -> util.find_package_path. confuse's own changelog confirms 2.1.0 replaced pkgutil.get_loader with importlib.util.find_spec specifically for Python 3.13/3.14 compatibility. Fixed via poetry update confuse (2.0.1 -> 2.2.1, already within the existing ^2.0.1 constraint, no pyproject.toml change needed). Verified end-to-end: built image now starts, loads config, and enters its normal watch loop without crashing."
 - key: BL-E002-002
   epic: '002'
@@ -69,7 +74,16 @@ backlog:
   title: Publishers must promote verified-dist-v1 rather than rebuild, and nothing consumes it yet
   source: post-restore audit (E007)
   severity: High
-  status: backlog
+  status: resolved
+  resolution: 'Closed 2026-09-04 through E008-S01-001 and E008-S01-002, exactly as the item
+    predicted. All three publishing workflows -- dev.yaml, release.yaml and
+    publish-image.yaml -- consume verified-dist-v1 through .github/actions/verified-bundle,
+    which rechecks SHA256SUMS, revalidates build-manifest.json, matches the source SHA and
+    package version the caller believes it is publishing, and proves the wheel on disk is the
+    wheel the image plan declares -- all before the caller reaches a login or an upload.
+    test_every_publisher_revalidates_the_bundle_before_it_logs_in_or_uploads
+    (tests/ci/test_finalization.py) derives its scope from the publisher set rather than a
+    list, so a fourth publisher is covered without an edit. Proven end to end by v0.1.6.'
   description: "ARCHITECTURE-SPINE.md requires publishers to promote verified-dist-v1 rather than rebuild the Python package. verify-build.yaml revalidates SHA256SUMS and build-manifest.json, performs native image smoke from the exact wheel, uploads verified-dist-v1, and exposes its identity outputs. The deleted legacy publishers no longer violate the rule, but no active publisher consumes the bundle yet. This closes through E008-S01-001 and E008-S01-002, which implement development and stable publication from the exact retained distributions and one image build per channel run."
 - key: BL-E007-002
   epic: '007'
@@ -102,7 +116,7 @@ backlog:
   source: post-restore audit
   severity: Medium
   status: backlog
-  description: 'pre-commit --all-files enumerates git ls-files, so any gate reports green over a set that excludes untracked work. This first appeared when the whole E007 delivery was untracked and every gate skipped it. It recurred on 2026-09-01 against a brand-new mypy gate: the gate passed a deliberately planted type error because src/publication_contract/ had not been staged. Both times the gate looked green while checking nothing. There is no mechanical guard for this -- the practical rule is to stage before trusting an --all-files result, and to prove any new gate with a planted violation rather than a green run. Worth considering a repo-level check that fails when tracked-vs-untracked coverage diverges.'
+  description: 'pre-commit --all-files enumerates git ls-files, so any gate reports green over a set that excludes untracked work. This first appeared when the whole E007 delivery was untracked and every gate skipped it. It recurred on 2026-09-01 against a brand-new mypy gate: the gate passed a deliberately planted type error because src/publication_contract/ had not been staged. It recurred a third time on 2026-09-04 during the BL-E008-010 split: tests/ci/test_gates.py was written, run green under `pre-commit run --all-files`, and shipped with an undefined `Any` -- the file was untracked, so ruff never read it. Three times the gate looked green while checking nothing, and each time the file at fault was new. There is no mechanical guard for this -- the practical rule is to `git add` before trusting an --all-files result, and to prove any new gate with a planted violation rather than a green run. Worth considering a repo-level check that fails when tracked-vs-untracked coverage diverges.'
 - key: BL-E008-001
   epic: '008'
   sprint: ''
