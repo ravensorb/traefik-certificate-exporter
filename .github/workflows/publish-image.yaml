@@ -355,7 +355,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU for the emulated platform leg
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
