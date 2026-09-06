@@ -76,7 +76,7 @@ transport.**
 | timeout | configurable, per event (see 6) | the library's |
 | failure | logged as an error | logged, never propagated |
 | may abort the pass | `pre-export` only, and only if configured to | never |
-| transport *today* | subprocess | Apprise |
+| transport | subprocess | Apprise |
 
 The last row is deliberately separated from the rest. A first draft of this ADR wrote
 "mechanism: subprocess / Apprise" into the contract itself, which is wrong: it makes the
@@ -91,42 +91,30 @@ speak HTTP. Same transport, different contract.
 `json://` / `form://` / `xml://` handlers, because that is what the overwhelmingly common case
 wants.
 
-**HTTP is also a transport for the action contract, and that is in scope.** An earlier draft
-deferred it. That was wrong, and the reasoning that overturned it is short:
+**HTTP is not an action transport, and the reasoning behind that reversal is worth keeping.**
 
-- **It costs no dependency.** `requests` is already a non-optional runtime dependency and is
-  already in the production image. An HTTP action is a POST with a timeout and a status check —
-  the same contract the subprocess action already has, over a transport that is already present.
-- **There is no workaround to defer to.** `docker/Dockerfile`'s runtime stage installs `python3`
-  and nothing else. There is no `curl`, and BusyBox `wget` is not a substitute for anything
-  needing a method, headers or a body. Deferring would not mean "later"; it would mean
-  "unavailable, with no way round it".
-- **Apprise gets closer than a first reading suggests, and the reasons it still does not fit are
-  narrower than "fixed payloads".** Read in the source at 1.13.1 rather than assumed:
+An earlier draft of this ADR argued HTTP into the action contract as a second transport. It was
+dropped, and the reason is the honest one: **no requirement asked for it.** The question that
+produced it was a classification question — *are webhooks actions or notifications?* — and the
+answer to a classification question is a classification, not a new capability. The rest followed
+from a need nobody had stated.
 
-  - `custom_json.py` builds `{version, title, message, attachments, type}` and then applies
-    `payload_extras` from `:key=value` URL parameters with three behaviours — **delete** a default
-    field (`:title=`), **rename** one (`:title=subject`), or **append** an arbitrary key. So a
-    caller *can* strip every Apprise field and emit a body of its own keys.
-  - `apprise/decorators/notify.py` exposes `@notify(on="schema")`, registering an arbitrary Python
-    handler for a custom URL scheme. That is unrestricted: any body, any nesting.
-  - `Apprise.notify()` returns a boolean (`apprise.py`, `return_status`), so an outcome *is*
-    available to the caller.
+So: **webhooks are notifications, delivered by Apprise, and that is the whole answer.** Apprise's
+`json://` already emits a caller-defined flat body (see the evaluation below), over TLS, with URL
+parsing, the destination list and retries handled. Nothing of ours issues an HTTP request.
 
-  What remains, and is sufficient: **`payload_extras` values are static literals from the URL.**
-  The only dynamic content is whatever lands in `title`/`message`, so a rename gives two dynamic
-  slots and no more, and the body is flat — `payload[key] = value` cannot express
-  `{"cert": {"domain": …, "path": …}}`. The `@notify` route escapes both limits by being **code
-  rather than configuration**: serving an operator-defined body through it means shipping a plugin
-  loader, a far larger surface than a templated body. And the boolean is coarse — no status code
-  and no response text, so a failure cannot be reported usefully — while timeouts and retries stay
-  Apprise's per-plugin defaults rather than the per-event configurable ceiling the action contract
-  requires, which exists precisely because the watch loop is shared.
+Two consequences are accepted rather than hidden:
 
-So the action contract gets two transports, `command` and `http`, distinguished by configuration
-rather than by two parallel settings trees. Both block, both carry a configurable timeout, and
-for both a failure is an error — a non-2xx response being exactly as meaningful as a non-zero
-exit.
+- **A failed webhook stops nothing.** Delivery is fire-and-forget, so an operator must not use one
+  where the outcome matters. The documentation is required to say this plainly (Story 10.4)
+  rather than leave it to be discovered during an incident.
+- **A checked HTTP call has no supported route**, and the obvious workaround does not exist —
+  `docker/Dockerfile`'s runtime stage installs `python3` and nothing else, so there is no `curl`,
+  and BusyBox `wget` is not a substitute for anything needing a method, headers or a body. This
+  gap is open deliberately. **If a real requirement appears, the work is small and already
+  scoped**: `requests` is a non-optional runtime dependency, so it is a POST with explicit
+  connect/read timeouts, `urllib3.Retry`, and a non-2xx treated exactly as a non-zero exit — and
+  the library survey below records what was already checked, so nobody repeats it.
 
 The existing `postexportcommand` becomes the `post-export` action and keeps its behaviour
 exactly, apart from gaining the configurable timeout in 6. This ADR does not change what it
@@ -194,13 +182,12 @@ secret redaction — and already logs `Extracted certificate for: {name}` per ce
 sink would be a second path to the same terminal with its own formatting and its own
 configuration. Logging stays logging.
 
-## Libraries evaluated for the HTTP action (global rule 1)
+## Libraries surveyed, and why webhooks are Apprise's job (global rule 1)
 
-**The transport needs no new library, and that is not the rule-1 escape hatch being used.** Rule 1
-forbids *writing* an HTTP client; it does not forbid *calling* one. `requests` is the maintained
-library, it is already a non-optional runtime dependency, and the action is
-`requests.request(method, url, json=…, timeout=(connect, read))` followed by a status check. What
-sits above that is configuration mapping and logging.
+**Recorded because the question was asked and answered, not because code depends on it.** With
+HTTP dropped from the action contract, nothing here issues a request; Apprise does. The survey
+stays because it is the reason that choice is safe, and because it is the file the next person
+reads if the checked-HTTP requirement ever arrives.
 
 **The outbound-webhook-sender category was searched rather than assumed, and it is a graveyard.**
 This matters: the first draft of this section asserted no package wraps it usefully without
@@ -250,13 +237,11 @@ a bespoke signing scheme that later has to be replaced is worse than shipping no
   consumer is fifty invocations per pass, on a watch loop that debounces at two seconds.
   `cert-export` therefore carries a shorter default timeout, the override is capped, and the story
   that adds it owns proving the pathological case.
-- **Both webhook shapes are served, and they are different features.** "Tell Slack an export
-  happened" is Apprise. "POST this body to my API and fail if it does not return 2xx" is an HTTP
-  action. Neither substitutes for the other, and documenting them as one thing called "webhooks"
-  would guarantee the wrong one gets chosen.
-- **A new failure surface: an HTTP action can hang where a subprocess would not.** It is bounded
-  by the same per-event timeout and ceiling as any other action, and connect and read timeouts
-  are set explicitly rather than left to the library's defaults, which are unbounded.
+- **"Webhook" has one meaning here, and that is a feature of the design rather than an accident.**
+  It is an Apprise notification: fire-and-forget, caller-defined flat body. There is no second
+  thing wearing the same name for a reader to pick wrongly.
+- **This project issues no HTTP requests of its own.** Every network call belongs to a maintained
+  library, which is the position rule 1 wants and the one that needs no exception recorded.
 - **A new secret shape enters settings.** A notification URL usually *is* the credential.
   `_SECRET_FIELD_PATTERN` in `settings.py` matches on key *name*
   (`secret|password|passphrase|token|api[_-]?key`), so a key called `notificationUrl` would be
