@@ -184,8 +184,26 @@ configuration. Logging stays logging.
 forbids *writing* an HTTP client; it does not forbid *calling* one. `requests` is the maintained
 library, it is already a non-optional runtime dependency, and the action is
 `requests.request(method, url, json=…, timeout=(connect, read))` followed by a status check. What
-sits above that is configuration mapping and logging. No package was found that wraps this
-usefully, and one that did would be a thin shim taking on its own maintenance risk.
+sits above that is configuration mapping and logging.
+
+**The outbound-webhook-sender category was searched rather than assumed, and it is a graveyard.**
+This matters: the first draft of this section asserted no package wraps it usefully without
+looking, which is the reasoning rule 1 exists to prevent, applied to itself.
+
+| package | latest | last release | why not |
+|---|---|---|---|
+| `webhook-sender` 0.1.0.1 (MIT) | 0.1.0.1 | **2016-06-22** | Its summary is this feature exactly — "sending webhooks, with automatic retry and CLI". Two releases, ten years dead. |
+| `webhooks` 0.4.2 (BSD) | 0.4.2 | **2014-05-22** | Twelve years dead. |
+| `pywebhooks` 0.5.5 | 0.5.5 | **2019-02-10** | Seven years dead, and it is a webhook *receiving* service, not a sender. |
+| `svix` 2.3.0 (MIT) | 2.3.0 | 2026-09-03, actively maintained | Not a library for this: it dispatches through Svix's hosted service and needs an account. The genuinely standalone part is signature verification, which is `standardwebhooks` below. |
+| `notifiers` 1.3.6 (MIT) | 1.3.6 | 2025-05-17, maintained | A notification dispatcher like Apprise, so it carries the same disqualifier: per-provider fixed payloads. It cannot POST a body you choose, which is the entire requirement. |
+
+So the category exists, three attempts at it were abandoned between 2014 and 2019, and everything
+still maintained is either a notification dispatcher with fixed payloads or a SaaS client. The
+reason is visible in the shape of the problem: once retry is delegated to `urllib3` and the body
+comes from configuration, what remains above `requests` is roughly forty lines of mapping and
+logging. That is too thin to sustain a package, which is why none of them survived — and why
+adopting a dead one would import a maintenance burden rather than remove one.
 
 Three sub-problems inside the action *are* rule-1 domains and are answered with libraries rather
 than code:
