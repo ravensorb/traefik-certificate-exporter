@@ -178,6 +178,32 @@ secret redaction — and already logs `Extracted certificate for: {name}` per ce
 sink would be a second path to the same terminal with its own formatting and its own
 configuration. Logging stays logging.
 
+## Libraries evaluated for the HTTP action (global rule 1)
+
+**The transport needs no new library, and that is not the rule-1 escape hatch being used.** Rule 1
+forbids *writing* an HTTP client; it does not forbid *calling* one. `requests` is the maintained
+library, it is already a non-optional runtime dependency, and the action is
+`requests.request(method, url, json=…, timeout=(connect, read))` followed by a status check. What
+sits above that is configuration mapping and logging. No package was found that wraps this
+usefully, and one that did would be a thin shim taking on its own maintenance risk.
+
+Three sub-problems inside the action *are* rule-1 domains and are answered with libraries rather
+than code:
+
+| sub-problem | chosen | evaluated and rejected |
+|---|---|---|
+| retry / backoff | `urllib3.Retry` via `requests.adapters.HTTPAdapter` — already in the image (`urllib3` is a main-group dependency) | `tenacity` 9.1.4 (Apache-2.0), `backoff` 2.2.1 (MIT): both good general retry decorators, but generic. `urllib3.Retry` understands HTTP specifically — status-forcelist, `Retry-After`, which methods are safe to repeat — which a decorator wrapping an opaque callable cannot. Adding either would be a new dependency doing less. |
+| body templating | `string.Template` (stdlib) for scalar substitution | `Jinja2` 3.1.6: the right answer for real templating, and currently a **dev-group** dependency, so adopting it means promoting it plus `markupsafe` into the runtime image. Rejected for v1 on scope, not weight: an operator substituting a domain into a JSON body needs `$domain`, not loops, conditionals and filters. Config files that can execute logic are a category of problem this project does not need. **Escalation is named: if a real templating need appears, it is Jinja2, not an extended `string.Template`.** |
+| HTTP client | `requests` (present) | `httpx` 0.28.1 (BSD-3-Clause): a good library whose advantage is async, which nothing here needs. Adding a second HTTP client to a codebase that has one is strictly worse. |
+
+**Deliberately out of scope for v1, and recorded so it is a decision rather than an omission:
+webhook signing.** A receiver may reasonably want to verify a request came from this exporter.
+The answer is `standardwebhooks` 1.1.0 (MIT), which implements the Standard Webhooks
+specification — HMAC over a canonical payload, timestamp header, replay window. Stdlib `hmac`
+supplies the primitive, but the primitive is not the hard part; the protocol is, and that is
+precisely what the library encodes. Not v1 because no requirement has asked for it, and shipping
+a bespoke signing scheme that later has to be replaced is worse than shipping none.
+
 ## Consequences
 
 - **Adding a channel becomes configuration, not a story.** Discord is a URL.
