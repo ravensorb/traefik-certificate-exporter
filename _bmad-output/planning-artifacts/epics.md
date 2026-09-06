@@ -1103,11 +1103,12 @@ the paths diverge again
 **Then** its payload carries the domain, its SANs, the output directory and the resolver name,
 and a consumer raising an exception does not stop the remaining certificates in the pass
 
-### Story 10.2: Support Actions at All Three Lifecycle Points
+### Story 10.2: Support Actions at All Three Lifecycle Points, by Command or HTTP
 
-As an operator who must fix ownership before another service reads a certificate,
-I want a command I can attach to any of the three events,
-So that I can act at the point that matters instead of only after the whole pass.
+As an operator who must fix ownership before another service reads a certificate — or must call
+that service's API and know whether the call worked,
+I want a command or an HTTP request I can attach to any of the three events,
+So that I can act at the point that matters and find out whether the action succeeded.
 
 **Acceptance Criteria:**
 
@@ -1137,8 +1138,25 @@ a consumer failure may stop an export
 **When** a pass runs on the watch path, which debounces at two seconds
 **Then** a test demonstrates the worst-case duration is bounded and documents the bound
 
+**Given** an action configured with the `http` transport rather than `command`
+**When** the event fires
+**Then** the request is issued with the event payload as its body, explicit connect and read
+timeouts (never the library's unbounded defaults), and a non-2xx response is treated exactly as a
+non-zero exit is — logged as an error, and on a blocking `pre-export` action, sufficient to
+abandon the pass
+
+**Given** `requests` is already a non-optional runtime dependency
+**When** the HTTP transport is implemented
+**Then** no new dependency is added and the runtime image does not grow — a test asserts the
+image's package set is unchanged by this story
+
+**Given** an operator needs to POST a body matching a third-party API's schema
+**When** they configure an HTTP action
+**Then** they control the body, which is the capability Apprise's `json://` cannot provide
+because it posts Apprise's own payload schema
+
 **Given** `settings.dryRun`
-**When** any action would fire at any of the three points
+**When** any action would fire at any of the three points, by either transport
 **Then** none is executed, consistent with dry-run suppressing file writes and container restarts
 
 ### Story 10.3: Deliver Notifications Through Apprise as an Optional Extra
@@ -1217,7 +1235,9 @@ the reference a reader already has on disk
 claims to — an example that no longer works is worse than no example, and prose alone will not
 catch it
 
-**Given** the gap ADR-0013 records — no checked HTTP call, and no `curl` in the runtime image
-**When** the documentation describes webhooks
-**Then** it states plainly that webhook delivery is fire-and-forget, so nobody discovers by
-outage that a failed POST did not stop anything
+**Given** "webhook" names two different features — an Apprise notification and an HTTP action —
+**When** the documentation describes either
+**Then** it distinguishes them explicitly: the notification is fire-and-forget and carries
+Apprise's payload schema, the action controls its own body and treats a non-2xx as a failure.
+Documenting them as one thing would guarantee the wrong one gets chosen, and nobody should learn
+from an outage that their failed POST stopped nothing

@@ -89,13 +89,28 @@ speak HTTP. Same transport, different contract.
 
 **Webhooks are therefore notifications by default**, delivered through Apprise's generic
 `json://` / `form://` / `xml://` handlers, because that is what the overwhelmingly common case
-wants. **HTTP-as-an-action is a recognized second transport for the action contract and is out of
-scope here**, for one reason worth recording: nobody should have to fake it. The obvious
-workaround — a shell action running `curl` — does not work in the shipped image.
-`docker/Dockerfile`'s runtime stage installs `python3` and nothing else; there is no `curl`, and
-BusyBox `wget` is not a substitute for anything needing a method, headers or a body. An operator
-who needs a checked HTTP call today has no supported route, and pretending the shell action
-covers it would be false.
+wants.
+
+**HTTP is also a transport for the action contract, and that is in scope.** An earlier draft
+deferred it. That was wrong, and the reasoning that overturned it is short:
+
+- **It costs no dependency.** `requests` is already a non-optional runtime dependency and is
+  already in the production image. An HTTP action is a POST with a timeout and a status check —
+  the same contract the subprocess action already has, over a transport that is already present.
+- **There is no workaround to defer to.** `docker/Dockerfile`'s runtime stage installs `python3`
+  and nothing else. There is no `curl`, and BusyBox `wget` is not a substitute for anything
+  needing a method, headers or a body. Deferring would not mean "later"; it would mean
+  "unavailable, with no way round it".
+- **Apprise does not cover it, for two independent reasons.** Its handlers are fire-and-forget,
+  so the outcome is unavailable by design. And `json://` posts *Apprise's* payload schema —
+  custom headers and query parameters are supported, the body shape is not. An operator POSTing
+  to a third-party API needs to control the body, and that is not what a notification handler is
+  for.
+
+So the action contract gets two transports, `command` and `http`, distinguished by configuration
+rather than by two parallel settings trees. Both block, both carry a configurable timeout, and
+for both a failure is an error — a non-2xx response being exactly as meaningful as a non-zero
+exit.
 
 The existing `postexportcommand` becomes the `post-export` action and keeps its behaviour
 exactly, apart from gaining the configurable timeout in 6. This ADR does not change what it
@@ -175,10 +190,13 @@ configuration. Logging stays logging.
   consumer is fifty invocations per pass, on a watch loop that debounces at two seconds.
   `cert-export` therefore carries a shorter default timeout, the override is capped, and the story
   that adds it owns proving the pathological case.
-- **Gap accepted, and named rather than hidden: there is no checked HTTP call.** An operator
-  needing "POST this and fail if it does not return 2xx" is unserved until HTTP joins the action
-  transports. The shell action is not a workaround, because the runtime image carries no `curl`.
-  Recorded here so the next reader finds the gap stated rather than discovering it.
+- **Both webhook shapes are served, and they are different features.** "Tell Slack an export
+  happened" is Apprise. "POST this body to my API and fail if it does not return 2xx" is an HTTP
+  action. Neither substitutes for the other, and documenting them as one thing called "webhooks"
+  would guarantee the wrong one gets chosen.
+- **A new failure surface: an HTTP action can hang where a subprocess would not.** It is bounded
+  by the same per-event timeout and ceiling as any other action, and connect and read timeouts
+  are set explicitly rather than left to the library's defaults, which are unbounded.
 - **A new secret shape enters settings.** A notification URL usually *is* the credential.
   `_SECRET_FIELD_PATTERN` in `settings.py` matches on key *name*
   (`secret|password|passphrase|token|api[_-]?key`), so a key called `notificationUrl` would be
