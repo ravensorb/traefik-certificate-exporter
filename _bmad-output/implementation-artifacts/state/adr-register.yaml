@@ -1,6 +1,10 @@
-next: 2
+next: 3
 reserved:
 - number: 1
   slug: action-pin-policy
   epic: E008
   reserved_at: '2026-09-02T11:20:36Z'
+- number: 2
+  slug: post-export-notifications
+  epic: E010
+  reserved_at: '2026-09-06T23:52:55Z'

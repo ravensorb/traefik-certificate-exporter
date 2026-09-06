@@ -104,3 +104,26 @@ should be re-scoped, not closed.**
 §6 prescribes one ADR per blocking finding, which here is 18 — disproportionate, and not
 started. The reviewer's own "minimum to unblock" is four items and is the better entry point.
 No remediation has been performed; this gate is a record, not a change.
+
+---
+
+## Outcome (2026-09-06)
+
+**The design was withdrawn rather than remediated.** §6's remediation path is one ADR per
+blocking finding — eighteen here — against a plan whose own size was the problem.
+
+- **ADR-0013: Superseded**, with a postmortem recording where the eighteen findings came from.
+  Roughly ten existed only because of scope the ADR invented: `cert-export`, the optional
+  extra, the configuration redesign, the two-contract split.
+- **ADR-0014** keeps what was actually asked for: notifications on `post-export`, delivered by
+  Apprise as an ordinary runtime dependency. Epic 10 is now one story.
+- **Estimate: 145.65–161.19 man-hours → 10.38–11.49.**
+- **The two findings that were about real code, not about the plan, are fixed** — commit
+  `fix(watch):`, with seven tests that fail against the previous code. They never depended on
+  this design and should not have waited on it.
+- **BL-E001-005 carries forward** into ADR-0014 as a prerequisite, re-scoped rather than
+  closed: an Apprise URL is a credential held as a *value inside a list*, which the key-name
+  redaction mechanism cannot reach whatever the key is called.
+
+The gate is not re-run here. ADR-0014 is a different and much smaller design, and re-gating it
+is a fresh decision rather than a continuation of this one.

@@ -1,6 +1,14 @@
 # ADR-0013: One export event bus, two consumer contracts, and Apprise for delivery
 
-- **Status:** Proposed
+> **SUPERSEDED, 2026-09-06, before any code was written.** The architecture gate returned
+> 5 BLOCKER and 13 MAJOR findings against this design and the four stories built on it
+> (`_bmad-output/implementation-artifacts/epic-010/arch/gate-review.md`). Three more of its
+> factual claims were false, on top of the four corrected while it was being written.
+>
+> It is kept because the *reasoning* is worth reading and because the library survey in it
+> stands — but it is not the plan. **ADR-0014 is.** What went wrong is recorded at the end.
+
+- **Status:** Superseded by ADR-0014 — not implemented
 - **Date:** 2026-09-06
 - **Deciders:** Maintainer (ravensorb)
 - **Principle(s) in tension:** One abstraction that reads simply against two consumer kinds whose failure semantics genuinely differ
@@ -280,3 +288,39 @@ a bespoke signing scheme that later has to be replaced is worse than shipping no
   prerequisite of the notification story rather than follow-up work.
 - **The payload becomes an interface.** Once a webhook body ships, changing it breaks consumers.
   It is versioned from the first release.
+
+
+## Postmortem (2026-09-06): why this was withdrawn
+
+The question that started it was *"how hard would it be to add webhooks and look at
+pre-export, post-export, cert-export hooks?"* — a scoping question about a 63-line file with
+one setting, on a 1,218-line tool. What this ADR turned it into was an event bus, two consumer
+contracts, an Apprise integration, an optional-extra packaging decision, a configuration-surface
+redesign, and per-event configurable timeouts with a hard ceiling: **145–161 man-hours**, and
+the plan grew larger than the thing it planned to modify.
+
+Every step was defensible alone, which is the failure mode global rule 1 describes for
+hand-rolled harnesses — *"always starts small and reasonable… Each step is justified on its
+own."* That rule was applied carefully to library choices here and not at all to scope.
+
+**Where the eighteen blocking findings came from**, which is the useful part:
+
+| driver | blocking findings | asked for? |
+|---|---|---|
+| `cert-export` (per-certificate consumers) | ~6 — the ceiling, blind-window arithmetic, thread-per-certificate, payload nullability, duration test, exception isolation | speculative |
+| Apprise as an *optional extra* | 2 — unreachable in the shipped image, image-guard scope | no — invented here |
+| configuration-surface redesign | 2 — the inert `CONFIGFILE` route, env-var grammar | no — invented here |
+| the two-contract split | 1–2 — collapses into a per-consumer boolean anyway | no — invented here |
+| genuinely pre-existing bugs | 2 — the `isWaiting` leak, distinct-file loss | neither; they were already shipping |
+
+Roughly ten of the eighteen exist only because of scope this document added. The two real
+defects were fixed directly as bugs and needed none of it.
+
+**The generalisable lesson.** A classification question (*are webhooks actions or
+notifications?*) was answered with a capability (*build an HTTP action transport*), and a
+speculative "look at" (*cert-export*) was carried into the design as a requirement. Neither had
+a stated need behind it. Both survived four rounds of revision because each revision improved
+the document's internal consistency rather than questioning its size — reviewing the argument,
+never the scope.
+
+ADR-0014 keeps what was actually asked for.

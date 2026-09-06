@@ -1065,168 +1065,71 @@ shadow verification, enable production publication, and retain a tested rollback
   `_bmad-output/implementation-artifacts/epic-009/sprint-01/stories/E009-S01-002.md`.
 
 
-## Epic 10: Export Eventing, Actions, and Notification Delivery
+## Epic 10: Post-Export Notifications
 
-Operators get a supported way to react to the export lifecycle — before a pass, per certificate,
-and after a pass — through either a command that must succeed or a notification that need not,
-without this project writing a delivery mechanism for any channel.
+Operators learn that certificates were exported — by email, chat, or a webhook — without this
+project implementing a delivery mechanism for any channel.
 
-Decided in ADR-0013. **Dependencies:** Epic 5 (the post-export hook this generalizes).
+Decided in ADR-0014, which supersedes ADR-0013. That earlier design (an event bus, three
+lifecycle points, two consumer contracts, an optional extra and a configuration redesign) was
+withdrawn before implementation after an architecture gate returned 5 BLOCKER and 13 MAJOR
+findings; roughly ten of them existed only because of scope nobody had asked for. Its
+postmortem records the breakdown.
 
-### Story 10.1: Emit Export Lifecycle Events From One Place
+**Dependencies:** Epic 5 (the post-export hook this sits beside).
 
-As a maintainer,
-I want the exporter to emit `pre-export`, `cert-export` and `post-export` events with payloads,
-So that both the run-at-start and watch paths react identically and cannot drift apart.
-
-**Acceptance Criteria:**
-
-**Given** an export pass on either path (`app.py` run-at-start, or `doTheWork` on watch)
-**When** the pass runs
-**Then** the same three events are emitted with the same payload shapes, and the existing
-`settings.postexportcommand` continues to run on `post-export` with byte-identical behaviour —
-`shlex` parsing, no shell, fixed 30s timeout, `TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS`,
-dry-run suppression, non-zero exit logged as an error, watch loop never crashed
-
-**Given** the two call paths disagree today about whether `restartContainers` is gated on a
-non-empty domain list (`app.py` gates it, `doTheWork` does not)
-**When** the emitter is introduced
-**Then** one behaviour is chosen, documented in the story, and asserted by a test that fails if
-the paths diverge again
-
-**Given** no consumer is configured (the default)
-**When** an export pass runs
-**Then** behaviour is unchanged and no event delivery code executes — this is purely additive
-
-**Given** `handleEvent` discards a watch event outright whenever `isWaiting` is set, and
-`doTheWork` clears that flag only after every consumer has run
-**When** consumers are attached to the events
-**Then** the blind window — `2s + export + consumers` — is measured and documented, and a test
-demonstrates the loss: an acme.json change arriving during a slow consumer is currently never
-exported and nothing reports it. Whether the handler should queue instead of discard is a
-separate decision with its own record; this story establishes the boundary rather than moving it
-
-**Given** the `cert-export` event
-**When** a certificate is written
-**Then** its payload carries the domain, its SANs, the output directory and the resolver name,
-and a consumer raising an exception does not stop the remaining certificates in the pass
-
-### Story 10.2: Support Actions at All Three Lifecycle Points
-
-As an operator who must fix ownership before another service reads a certificate,
-I want a command I can attach to any of the three events,
-So that I can act at the point that matters instead of only after the whole pass.
-
-**Acceptance Criteria:**
-
-**Given** an action configured on `cert-export`
-**When** a certificate is written
-**Then** the command runs once per certificate with that certificate's payload in the
-environment, under a shorter default timeout than the once-per-pass events, and a failure is
-logged without stopping the remaining certificates
-
-**Given** the fixed 30s timeout Epic 5 deliberately deferred making configurable
-**When** an operator sets a per-event timeout override
-**Then** it is honoured, and a value above the documented ceiling is a startup configuration
-error rather than a silent clamp — because `doTheWork` debounces at two seconds, so a long
-per-certificate action stalls the watch loop and every event queued behind it, and that budget
-is shared rather than private
-
-**Given** an action configured on `pre-export` and marked as blocking
-**When** it exits non-zero
-**Then** the export pass is abandoned and the reason is logged — this is the only point at which
-a consumer failure may stop an export
-
-**Given** an action configured on `pre-export` and *not* marked as blocking
-**When** it exits non-zero
-**Then** the pass proceeds, consistent with every other consumer
-
-**Given** fifty certificates and a `cert-export` action
-**When** a pass runs on the watch path, which debounces at two seconds
-**Then** a test demonstrates the worst-case duration is bounded and documents the bound
-
-**Given** `settings.dryRun`
-**When** any action would fire at any of the three points
-**Then** none is executed, consistent with dry-run suppressing file writes and container restarts
-
-### Story 10.3: Deliver Notifications Through Apprise as an Optional Extra
+### Story 10.1: Notify Apprise Destinations After an Export Pass
 
 As an operator,
-I want export events delivered to email, a webhook, or any channel Apprise supports,
-So that I learn about certificate exports without this project implementing a delivery mechanism.
+I want export completions delivered to email, chat, or a webhook,
+So that I know certificates changed without watching the logs — and without this project
+writing a delivery mechanism.
 
 **Acceptance Criteria:**
 
-**Given** `apprise` declared as an optional Poetry extra (per ADR-0013, so
-`poetry install --only main` keeps it out of the runtime image)
+**Given** one or more Apprise destination URLs configured in a new setting beside
+`settings.postexportcommand`
+**When** an export pass completes on either path (`app.py` run-at-start, or the watch worker)
+**Then** each destination is notified through Apprise with the exported domain list, and a
+delivery failure is logged and never propagates — the export pass and the watch loop are
+unaffected, exactly as a non-zero exit from `postexportcommand` is today
+
+**Given** `apprise` added as an ordinary runtime dependency, not an optional extra
 **When** the image is built from `docker/Dockerfile`
-**Then** the runtime image does not contain apprise or its transitive chain unless the extra is
-requested, and a test asserts that
+**Then** the feature is present and usable in the shipped artifact. ADR-0013 made it an extra
+by analogy with `jsonschema`/`packaging`; that analogy fails twice — those are optional to keep
+a *compiled* chain out of a CI-only tool, and `poetry install --only main` has no `--extras`
+route, so the extra could never have been installed at all
 
-**Given** a notification destination is configured but the extra is not installed
-**When** an export pass runs
-**Then** the condition is logged once, clearly, and the export completes unaffected
+**Given** no destination is configured (the default)
+**When** an export pass completes
+**Then** behaviour is unchanged and no delivery code runs — this is purely additive, and
+`settings.postexportcommand` keeps byte-identical behaviour
 
-**Given** one or more configured destinations
-**When** an event fires
-**Then** each is delivered through Apprise, a delivery failure is logged and never propagated,
-and no delivery blocks the export pass
+**Given** an Apprise destination URL, which is usually itself the credential
+**When** settings or configuration are dumped at debug level
+**Then** it is redacted — in `_dump_settings()` **and** `_dump_config()`, which dumps the whole
+confuse configuration. `_SECRET_FIELD_PATTERN` matches on key *name*, so a credential that is a
+*value inside a list* is unreachable by that mechanism whatever the key is called. **BL-E001-005
+is re-scoped, not closed**: the fix supersedes the key-name mechanism for value-shaped
+credentials rather than adding another word to the pattern
 
-**Given** a notification URL that embeds a credential (the usual case)
-**When** `_dump_settings()` runs at debug level
-**Then** it is redacted — closing **BL-E001-005**, whose "oddly-named future secret field" this
-is, since `_SECRET_FIELD_PATTERN` matches key names and would not match `notificationUrl`
+**Given** delivery is fire-and-forget
+**When** the documentation describes it
+**Then** it states plainly that a failed notification stops nothing, and points at
+`postexportcommand` as the supported way to do something that must succeed — nobody should
+learn that during an incident
 
-**Given** the webhook payload
-**When** it is first released
-**Then** it carries a version field and its shape is documented, because it becomes an interface
-that consumers depend on the moment it ships
+**Given** `settings.dryRun`
+**When** a pass would otherwise notify
+**Then** no notification is sent, consistent with dry-run suppressing file writes, container
+restarts and the post-export command
 
 **Given** the feature is implemented
-**When** `README.md` and `docker/README.md` are updated and unit tests cover delivery, the
-missing-extra path, redaction, and failure isolation
+**When** `README.md`, `docker/README.md` and `config_default.yaml` are updated and unit tests
+cover delivery, failure isolation, dry-run suppression and redaction of a destination URL
 **Then** the epic can close
 
-### Story 10.4: Document the Event Model and Ship Worked Examples
-
-As an operator reading the README for the first time,
-I want the event model explained and a complete working example of each consumer kind,
-So that I can set this up without reading the source to find out what a payload contains.
-
-**Acceptance Criteria:**
-
-**Given** the eventing feature exists
-**When** `README.md` and `docker/README.md` are updated
-**Then** they document the three events, both consumer contracts, the payload each event carries,
-and — stated plainly — which failures stop an export and which do not
-
-**Given** configuration is now non-scalar (a destination list, a per-event consumer map)
-**When** the documentation shows how to configure it
-**Then** a complete annotated `config.yaml` is the primary example, the `/config` mount and
-`TRAEFIK_CERTIFICATE_EXPORTER_CONFIGFILE` are shown as the container route, and the
-CLI > env var > config file > packaged default precedence is stated rather than left to be
-inferred
-
-**Given** an operator wants a concrete starting point rather than a reference table
-**When** they read the examples
-**Then** at least these four are present end to end, each copy-pasteable:
-a `chown`/permissions fix-up on `cert-export`; a service reload on `post-export`; an email
-notification; and a webhook or chat notification through Apprise
-
-**Given** `src/traefik_certificate_exporter/config_default.yaml` is the packaged default and
-currently ends at `# postexportcommand:`
-**When** the feature ships
-**Then** it carries commented examples of the new structure, so the shipped default doubles as
-the reference a reader already has on disk
-
-**Given** documentation drifts and this project has been bitten by exactly that
-**When** the examples are written
-**Then** a test proves the shipped `config.yaml` example parses and produces the settings it
-claims to — an example that no longer works is worse than no example, and prose alone will not
-catch it
-
-**Given** webhook delivery is an Apprise notification and therefore fire-and-forget
-**When** the documentation describes it
-**Then** it states plainly that a failed POST stops nothing and must not be relied on where the
-outcome matters — nobody should learn that during an incident — and points at a `post-export`
-command action as the supported way to do something that has to succeed
+**Explicitly out of scope**, and cheap to add when a requirement names one: `pre-export` and
+`cert-export` consumers, per-event configurable timeouts, and a checked HTTP action. ADR-0013's
+library survey stands as the record to consult first.
