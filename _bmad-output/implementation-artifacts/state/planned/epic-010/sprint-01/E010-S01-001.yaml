@@ -1,0 +1,27 @@
+key: 'E010-S01-001'
+epic: 'E010'
+sprint: 'S01'
+title: 'Emit Export Lifecycle Events From One Place'
+status: backlog
+classification: complex
+depends_on: []
+updated_at: '2026-09-06T22:02:02Z'
+estimate:
+  man_hours: 26.4
+  hitl_hours: 0.0
+  elapsed_hours: 1.54
+  tokens_k:
+    total: 350
+    input: 52
+    output: 18
+    cache_write: 105
+    cache_read: 175
+  cost: 1.45
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.7599
+    hitl_hours: 0.0
+    elapsed_hours: 0.3082
+    tokens_k: 1.0
+  confidence: medium
