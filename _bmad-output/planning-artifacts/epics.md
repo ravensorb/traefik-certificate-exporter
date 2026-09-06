@@ -1063,3 +1063,111 @@ shadow verification, enable production publication, and retain a tested rollback
 - Certification expires when any pinned tuple component changes.
 - Full criteria live in
   `_bmad-output/implementation-artifacts/epic-009/sprint-01/stories/E009-S01-002.md`.
+
+
+## Epic 10: Export Eventing, Actions, and Notification Delivery
+
+Operators get a supported way to react to the export lifecycle — before a pass, per certificate,
+and after a pass — through either a command that must succeed or a notification that need not,
+without this project writing a delivery mechanism for any channel.
+
+Decided in ADR-0013. **Dependencies:** Epic 5 (the post-export hook this generalizes).
+
+### Story 10.1: Emit Export Lifecycle Events From One Place
+
+As a maintainer,
+I want the exporter to emit `pre-export`, `cert-export` and `post-export` events with payloads,
+So that both the run-at-start and watch paths react identically and cannot drift apart.
+
+**Acceptance Criteria:**
+
+**Given** an export pass on either path (`app.py` run-at-start, or `doTheWork` on watch)
+**When** the pass runs
+**Then** the same three events are emitted with the same payload shapes, and the existing
+`settings.postexportcommand` continues to run on `post-export` with byte-identical behaviour —
+`shlex` parsing, no shell, fixed 30s timeout, `TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS`,
+dry-run suppression, non-zero exit logged as an error, watch loop never crashed
+
+**Given** the two call paths disagree today about whether `restartContainers` is gated on a
+non-empty domain list (`app.py` gates it, `doTheWork` does not)
+**When** the emitter is introduced
+**Then** one behaviour is chosen, documented in the story, and asserted by a test that fails if
+the paths diverge again
+
+**Given** no consumer is configured (the default)
+**When** an export pass runs
+**Then** behaviour is unchanged and no event delivery code executes — this is purely additive
+
+**Given** the `cert-export` event
+**When** a certificate is written
+**Then** its payload carries the domain, its SANs, the output directory and the resolver name,
+and a consumer raising an exception does not stop the remaining certificates in the pass
+
+### Story 10.2: Support Actions at All Three Lifecycle Points
+
+As an operator who must fix ownership before another service reads a certificate,
+I want a command I can attach to any of the three events,
+So that I can act at the point that matters instead of only after the whole pass.
+
+**Acceptance Criteria:**
+
+**Given** an action configured on `cert-export`
+**When** a certificate is written
+**Then** the command runs once per certificate with that certificate's payload in the
+environment, under a timeout shorter than `post-export`'s, and a failure is logged without
+stopping the remaining certificates
+
+**Given** an action configured on `pre-export` and marked as blocking
+**When** it exits non-zero
+**Then** the export pass is abandoned and the reason is logged — this is the only point at which
+a consumer failure may stop an export
+
+**Given** an action configured on `pre-export` and *not* marked as blocking
+**When** it exits non-zero
+**Then** the pass proceeds, consistent with every other consumer
+
+**Given** fifty certificates and a `cert-export` action
+**When** a pass runs on the watch path, which debounces at two seconds
+**Then** a test demonstrates the worst-case duration is bounded and documents the bound
+
+**Given** `settings.dryRun`
+**When** any action would fire at any of the three points
+**Then** none is executed, consistent with dry-run suppressing file writes and container restarts
+
+### Story 10.3: Deliver Notifications Through Apprise as an Optional Extra
+
+As an operator,
+I want export events delivered to email, a webhook, or any channel Apprise supports,
+So that I learn about certificate exports without this project implementing a delivery mechanism.
+
+**Acceptance Criteria:**
+
+**Given** `apprise` declared as an optional Poetry extra (per ADR-0013, so
+`poetry install --only main` keeps it out of the runtime image)
+**When** the image is built from `docker/Dockerfile`
+**Then** the runtime image does not contain apprise or its transitive chain unless the extra is
+requested, and a test asserts that
+
+**Given** a notification destination is configured but the extra is not installed
+**When** an export pass runs
+**Then** the condition is logged once, clearly, and the export completes unaffected
+
+**Given** one or more configured destinations
+**When** an event fires
+**Then** each is delivered through Apprise, a delivery failure is logged and never propagated,
+and no delivery blocks the export pass
+
+**Given** a notification URL that embeds a credential (the usual case)
+**When** `_dump_settings()` runs at debug level
+**Then** it is redacted — closing **BL-E001-005**, whose "oddly-named future secret field" this
+is, since `_SECRET_FIELD_PATTERN` matches key names and would not match `notificationUrl`
+
+**Given** the webhook payload
+**When** it is first released
+**Then** it carries a version field and its shape is documented, because it becomes an interface
+that consumers depend on the moment it ships
+
+**Given** the feature is implemented
+**When** `README.md` and `docker/README.md` are updated and unit tests cover delivery, the
+missing-extra path, redaction, and failure isolation
+**Then** the epic can close
