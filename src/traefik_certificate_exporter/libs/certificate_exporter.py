@@ -352,6 +352,11 @@ class PemToPfxConverter:
 
 
 ###########################################################################################################
+# Seconds between the first change in a burst and the export pass. Named rather than
+# inline so the watch tests can drive the handler without waiting on wall-clock time.
+WATCH_DEBOUNCE_SECONDS = 2
+
+
 class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
     # --------------------------------------------------------------------------------------
     def __init__(
@@ -365,6 +370,10 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
         self.__settings = settings
 
         self.isWaiting = False
+        # Every path seen since the window opened, not just the one that opened it. See
+        # handleEvent for why a set rather than a single event.
+        self.pendingPaths: set[str] = set()
+        self.timer = None
         self.lock = threading.Lock()
         self.__logger = globalLogger
 
@@ -393,27 +402,62 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
             self.__logger.info(f"Certificates changed found in file: {event.src_path}")
 
             with self.lock:
-                if not self.isWaiting:
-                    self.isWaiting = (
-                        True  # trigger the work just once (multiple events get fired)
-                    )
-                    self.timer = threading.Timer(2, self.doTheWork, args=[event])
-                    self.timer.start()
+                # Record the path before deciding whether to arm a timer. This handler is
+                # registered with `patterns=[fileSpec]` -- `*.json` by default -- across the
+                # whole data directory, while the worker used to process one `src_path`. A
+                # change to a *second* acme file during the window was therefore discarded
+                # outright and never exported, and would stay unexported until that file
+                # happened to change again. It is a distinct file, not a duplicate to
+                # coalesce, and the multi-resolver setup this project documents is exactly
+                # several acme files in one directory.
+                self.pendingPaths.add(event.src_path)
+
+                if self.isWaiting:
+                    return
+
+                # Coalescing is still the point: watchdog fires several events per write,
+                # and adding the same path to the set again is what absorbs them.
+                self.isWaiting = True
+                self.timer = threading.Timer(WATCH_DEBOUNCE_SECONDS, self.doTheWork)
+                self.timer.start()
 
     # --------------------------------------------------------------------------------------
     def doTheWork(self, *args, **kwargs):
+        """Drain every path that accumulated during the debounce window.
+
+        Drains in a loop rather than taking one snapshot: a change arriving while this is
+        running cannot arm a timer, because `isWaiting` is still set. Without the loop that
+        change would wait for an unrelated future event to carry it.
         """
-        This is a workaround to handle multiple events for the same file
-        """
-        self.__logger.debug("[DEBUG] SStarting the work")
+        self.__logger.debug("Starting the work")
 
-        if not args or len(args) == 0:
-            self.__logger.error("No event passed to worker")
-            self.isWaiting = False
+        try:
+            while True:
+                with self.lock:
+                    if not self.pendingPaths:
+                        break
+                    paths = sorted(self.pendingPaths)
+                    self.pendingPaths.clear()
 
-            return
+                for path in paths:
+                    try:
+                        self.__processPath(path)
+                    except Exception:
+                        self.__logger.exception(f"Unhandled error processing '{path}'")
+        finally:
+            # Cleared on EVERY exit path. This runs on a `threading.Timer` thread, so an
+            # escaping exception goes to `threading.excepthook` and the thread simply dies:
+            # `isWaiting` would stay True for the life of the process and `handleEvent`
+            # would discard every later change, still logging "Certificates changed found
+            # in file" each time, which reads exactly like the work is happening.
+            with self.lock:
+                self.isWaiting = False
 
-        domains = self.__exporter.exportCertificatesForFile(args[0].src_path)
+        self.__logger.debug("Finished")
+
+    # --------------------------------------------------------------------------------------
+    def __processPath(self, path: str) -> None:
+        domains = self.__exporter.exportCertificatesForFile(path)
 
         run_post_export_command(
             self.__settings.postExportCommand, domains or [], self.__settings.dryRun
@@ -421,8 +465,3 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
 
         if self.__settings.restartContainers:
             self.__dockerManager.restartLabeledContainers(domains)
-
-        with self.lock:
-            self.isWaiting = False
-
-        self.__logger.debug("[DEBUG] Finished")
