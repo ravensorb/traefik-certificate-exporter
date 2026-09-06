@@ -169,11 +169,37 @@ milliseconds, a service reload can legitimately take a minute, and a per-certifi
 multiplies whatever it is by the certificate count.
 
 Each event therefore carries its own default — shorter for `cert-export` than for the once-per-pass
-events — and each is overridable. **The override is bounded by a hard ceiling**, because the
-timeout is not a private choice: `doTheWork` debounces on a two-second timer, so a long per-
-certificate action does not merely delay itself, it stalls the watch loop and the events behind
-it. An operator raising the value is spending shared budget, and the ceiling is where that is
-made visible. Exceeding it is a startup configuration error, not a silent clamp.
+events — and each is overridable. **The override is bounded by a hard ceiling.**
+
+**The reason for the ceiling is worse than latency, and an earlier draft of this ADR got it
+wrong.** It said a slow action "stalls the watch loop and the events behind it". There are no
+events behind it. `AcmeCertificateFileHandler.handleEvent` reads:
+
+```python
+with self.lock:
+    if not self.isWaiting:
+        self.isWaiting = True
+        self.timer = threading.Timer(2, self.doTheWork, args=[event])
+        self.timer.start()
+```
+
+An event arriving while `isWaiting` is set is **silently discarded** — not queued, not coalesced,
+not deferred. And `doTheWork` clears `isWaiting` only at its very end, *after* the consumers have
+run. So the blind window is `2s + export + every consumer`, and any acme.json change inside it is
+**lost**.
+
+Today that window is bounded by one 30-second hook. Under this ADR it becomes the sum of every
+action across a pass — with per-certificate actions on a large domain set, minutes. A renewal
+landing in that window is not delayed, it is never exported at all, and nothing reports it.
+
+So the ceiling is a correctness control, not a performance one, and the per-event budget exists to
+keep the blind window bounded. Exceeding the ceiling is a startup configuration error, not a
+silent clamp.
+
+**The debounce itself is out of scope here and named as prior art rather than fixed**: dropping
+duplicate events is what `isWaiting` is *for*, and the discard is only a defect at the tail. Story
+10.1 owns proving where the boundary is; changing the handler's queuing model is its own decision
+and would need its own record.
 
 **7. Console is not a sink.**
 
@@ -242,6 +268,11 @@ a bespoke signing scheme that later has to be replaced is worse than shipping no
   thing wearing the same name for a reader to pick wrongly.
 - **This project issues no HTTP requests of its own.** Every network call belongs to a maintained
   library, which is the position rule 1 wants and the one that needs no exception recorded.
+- **Consumer duration is now a correctness budget.** Every second an action spends is a second in
+  which a certificate change is dropped rather than delayed, because the watch handler discards
+  events while it is busy. This was found by spot-checking one assumption in this ADR after it was
+  written, which is the reason Epic 10 is gated on an architecture review rather than going
+  straight to stories.
 - **A new secret shape enters settings.** A notification URL usually *is* the credential.
   `_SECRET_FIELD_PATTERN` in `settings.py` matches on key *name*
   (`secret|password|passphrase|token|api[_-]?key`), so a key called `notificationUrl` would be

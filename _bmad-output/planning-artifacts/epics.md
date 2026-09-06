@@ -1098,6 +1098,14 @@ the paths diverge again
 **When** an export pass runs
 **Then** behaviour is unchanged and no event delivery code executes — this is purely additive
 
+**Given** `handleEvent` discards a watch event outright whenever `isWaiting` is set, and
+`doTheWork` clears that flag only after every consumer has run
+**When** consumers are attached to the events
+**Then** the blind window — `2s + export + consumers` — is measured and documented, and a test
+demonstrates the loss: an acme.json change arriving during a slow consumer is currently never
+exported and nothing reports it. Whether the handler should queue instead of discard is a
+separate decision with its own record; this story establishes the boundary rather than moving it
+
 **Given** the `cert-export` event
 **When** a certificate is written
 **Then** its payload carries the domain, its SANs, the output directory and the resolver name,
