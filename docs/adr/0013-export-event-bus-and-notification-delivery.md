@@ -101,11 +101,27 @@ deferred it. That was wrong, and the reasoning that overturned it is short:
   and nothing else. There is no `curl`, and BusyBox `wget` is not a substitute for anything
   needing a method, headers or a body. Deferring would not mean "later"; it would mean
   "unavailable, with no way round it".
-- **Apprise does not cover it, for two independent reasons.** Its handlers are fire-and-forget,
-  so the outcome is unavailable by design. And `json://` posts *Apprise's* payload schema —
-  custom headers and query parameters are supported, the body shape is not. An operator POSTing
-  to a third-party API needs to control the body, and that is not what a notification handler is
-  for.
+- **Apprise gets closer than a first reading suggests, and the reasons it still does not fit are
+  narrower than "fixed payloads".** Read in the source at 1.13.1 rather than assumed:
+
+  - `custom_json.py` builds `{version, title, message, attachments, type}` and then applies
+    `payload_extras` from `:key=value` URL parameters with three behaviours — **delete** a default
+    field (`:title=`), **rename** one (`:title=subject`), or **append** an arbitrary key. So a
+    caller *can* strip every Apprise field and emit a body of its own keys.
+  - `apprise/decorators/notify.py` exposes `@notify(on="schema")`, registering an arbitrary Python
+    handler for a custom URL scheme. That is unrestricted: any body, any nesting.
+  - `Apprise.notify()` returns a boolean (`apprise.py`, `return_status`), so an outcome *is*
+    available to the caller.
+
+  What remains, and is sufficient: **`payload_extras` values are static literals from the URL.**
+  The only dynamic content is whatever lands in `title`/`message`, so a rename gives two dynamic
+  slots and no more, and the body is flat — `payload[key] = value` cannot express
+  `{"cert": {"domain": …, "path": …}}`. The `@notify` route escapes both limits by being **code
+  rather than configuration**: serving an operator-defined body through it means shipping a plugin
+  loader, a far larger surface than a templated body. And the boolean is coarse — no status code
+  and no response text, so a failure cannot be reported usefully — while timeouts and retries stay
+  Apprise's per-plugin defaults rather than the per-event configurable ceiling the action contract
+  requires, which exists precisely because the watch loop is shared.
 
 So the action contract gets two transports, `command` and `http`, distinguished by configuration
 rather than by two parallel settings trees. Both block, both carry a configurable timeout, and
@@ -196,7 +212,7 @@ looking, which is the reasoning rule 1 exists to prevent, applied to itself.
 | `webhooks` 0.4.2 (BSD) | 0.4.2 | **2014-05-22** | Twelve years dead. |
 | `pywebhooks` 0.5.5 | 0.5.5 | **2019-02-10** | Seven years dead, and it is a webhook *receiving* service, not a sender. |
 | `svix` 2.3.0 (MIT) | 2.3.0 | 2026-09-03, actively maintained | Not a library for this: it dispatches through Svix's hosted service and needs an account. The genuinely standalone part is signature verification, which is `standardwebhooks` below. |
-| `notifiers` 1.3.6 (MIT) | 1.3.6 | 2025-05-17, maintained | A notification dispatcher like Apprise, so it carries the same disqualifier: per-provider fixed payloads. It cannot POST a body you choose, which is the entire requirement. |
+| `notifiers` 1.3.6 (MIT) | 1.3.6 | 2025-05-17, maintained | Twenty named providers (`slack`, `email`, `pagerduty`, `telegram`, …) and **no generic webhook or custom provider at all** — checked against the package's `providers/` directory, not inferred. There is no route to a body of your own. |
 
 So the category exists, three attempts at it were abandoned between 2014 and 2019, and everything
 still maintained is either a notification dispatcher with fixed payloads or a SaaS client. The
