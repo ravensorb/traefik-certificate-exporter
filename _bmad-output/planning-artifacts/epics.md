@@ -1114,8 +1114,15 @@ So that I can act at the point that matters instead of only after the whole pass
 **Given** an action configured on `cert-export`
 **When** a certificate is written
 **Then** the command runs once per certificate with that certificate's payload in the
-environment, under a timeout shorter than `post-export`'s, and a failure is logged without
-stopping the remaining certificates
+environment, under a shorter default timeout than the once-per-pass events, and a failure is
+logged without stopping the remaining certificates
+
+**Given** the fixed 30s timeout Epic 5 deliberately deferred making configurable
+**When** an operator sets a per-event timeout override
+**Then** it is honoured, and a value above the documented ceiling is a startup configuration
+error rather than a silent clamp — because `doTheWork` debounces at two seconds, so a long
+per-certificate action stalls the watch loop and every event queued behind it, and that budget
+is shared rather than private
 
 **Given** an action configured on `pre-export` and marked as blocking
 **When** it exits non-zero
@@ -1171,3 +1178,46 @@ that consumers depend on the moment it ships
 **When** `README.md` and `docker/README.md` are updated and unit tests cover delivery, the
 missing-extra path, redaction, and failure isolation
 **Then** the epic can close
+
+### Story 10.4: Document the Event Model and Ship Worked Examples
+
+As an operator reading the README for the first time,
+I want the event model explained and a complete working example of each consumer kind,
+So that I can set this up without reading the source to find out what a payload contains.
+
+**Acceptance Criteria:**
+
+**Given** the eventing feature exists
+**When** `README.md` and `docker/README.md` are updated
+**Then** they document the three events, both consumer contracts, the payload each event carries,
+and — stated plainly — which failures stop an export and which do not
+
+**Given** configuration is now non-scalar (a destination list, a per-event consumer map)
+**When** the documentation shows how to configure it
+**Then** a complete annotated `config.yaml` is the primary example, the `/config` mount and
+`TRAEFIK_CERTIFICATE_EXPORTER_CONFIGFILE` are shown as the container route, and the
+CLI > env var > config file > packaged default precedence is stated rather than left to be
+inferred
+
+**Given** an operator wants a concrete starting point rather than a reference table
+**When** they read the examples
+**Then** at least these four are present end to end, each copy-pasteable:
+a `chown`/permissions fix-up on `cert-export`; a service reload on `post-export`; an email
+notification; and a webhook or chat notification through Apprise
+
+**Given** `src/traefik_certificate_exporter/config_default.yaml` is the packaged default and
+currently ends at `# postexportcommand:`
+**When** the feature ships
+**Then** it carries commented examples of the new structure, so the shipped default doubles as
+the reference a reader already has on disk
+
+**Given** documentation drifts and this project has been bitten by exactly that
+**When** the examples are written
+**Then** a test proves the shipped `config.yaml` example parses and produces the settings it
+claims to — an example that no longer works is worse than no example, and prose alone will not
+catch it
+
+**Given** the gap ADR-0013 records — no checked HTTP call, and no `curl` in the runtime image
+**When** the documentation describes webhooks
+**Then** it states plainly that webhook delivery is fire-and-forget, so nobody discovers by
+outage that a failed POST did not stop anything
