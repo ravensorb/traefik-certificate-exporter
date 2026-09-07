@@ -37,7 +37,18 @@ backlog:
   title: Key-name secret redaction cannot reach a credential held as a config VALUE, and one sink logged the passphrase in clear
   source: sprint-closure adversarial review (E001-S01)
   severity: High
-  status: backlog
+  status: resolved
+  resolution: 'Closed 2026-09-07 by E010-S01-001. SECRET_CONFIG_PATHS is the single declaration
+    and three sinks derive from it: _dump_config uses confuse own dump(redact=True), which masks by
+    config PATH and is the only mechanism reaching a credential held as a value inside a list;
+    _dump_settings matches declared leaf names, since it serialises the dataclass confuse cannot see;
+    and the argparse namespace, which was the sink actually leaking --pkcs12-passphrase in clear.
+    The pattern list was NOT expanded -- that was the original prescription and it could never have
+    worked for value-shaped credentials. The guard derives its scope from the registry and its plant
+    attacks that scope: a newly declared path whose NAME matches none of the pattern words must still
+    be redacted, so breaking the derivation fails the test while a name-shaped case would pass.
+    Verified end to end: a real Apprise token in the config file loads into settings and appears in
+    no log record at DEBUG.'
   description: 'Re-scoped 2026-09-06 by the Epic 10 architecture gates; filed as "the pattern could miss an oddly-named future field", and the real shape is worse. _redact_secrets masks a dict value when its KEY matches (secret|password|passphrase|token|api[_-]?key). A credential held as a VALUE -- an Apprise destination URL inside a list -- has no matching key anywhere on the path, so no amount of adding words to the pattern reaches it. Do NOT expand the pattern list: that was the original prescription and it is the wrong fix. Two further facts from the gates. confuse already ships the answer -- marking a config path .redact = True and dumping with redact=True redacts BY PATH, verified to emit REDACTED for a list-valued key -- so writing a second redactor beside it is what global rule 1 forbids. And a third sink existed that neither dump helper covered: settings.py logged the raw argparse namespace at DEBUG and --pkcs12-passphrase is a flag, so the passphrase printed in clear a few lines above the helpers that mask it. That leak is FIXED (commit fix(watch,settings)); the mechanism replacement is not, and is Story E010-S01-001. Severity Low -> High: this was a live credential disclosure in shipping code, not a hypothetical about a future field.'
 - key: BL-E001-006
   epic: '001'

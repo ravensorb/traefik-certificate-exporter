@@ -206,3 +206,7 @@
 {"epic": "E010", "event": "status", "from": "backlog", "key": "S01", "node": "sprint", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "sprint": "S01", "to": "in-progress", "ts": "2026-09-07T01:54:33Z"}
 {"epic": "E010", "event": "status", "from": "in-progress", "key": "E010-S01-001", "node": "story", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "sprint": "S01", "to": "done", "ts": "2026-09-07T01:59:11Z"}
 {"epic": "E010", "event": "status", "from": "backlog", "key": "E010-S01-002", "node": "story", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "sprint": "S01", "to": "in-progress", "ts": "2026-09-07T01:59:27Z"}
+{"epic": "E010", "event": "status", "from": "in-progress", "key": "E010-S01-002", "node": "story", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "sprint": "S01", "to": "done", "ts": "2026-09-07T02:08:32Z"}
+{"epic": "E010", "event": "status", "from": "in-progress", "key": "S01", "node": "sprint", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "sprint": "S01", "to": "done", "ts": "2026-09-07T02:08:33Z"}
+{"epic": "E010", "event": "actual", "from": null, "key": "E010", "node": "epic", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "sprint": null, "to": null, "ts": "2026-09-07T02:19:26Z"}
+{"epic": "E010", "event": "status", "from": "in-progress", "key": "E010", "node": "epic", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "sprint": null, "to": "done", "ts": "2026-09-07T02:19:55Z"}

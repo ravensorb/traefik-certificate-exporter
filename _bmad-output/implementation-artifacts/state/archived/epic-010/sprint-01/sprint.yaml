@@ -1,8 +1,8 @@
 key: 'S01'
 epic: 'E010'
 title: 'Sprint 01 — Secret Redaction, and Post-Export Notifications'
-status: in-progress
-updated_at: '2026-09-07T01:54:33Z'
+status: done
+updated_at: '2026-09-07T02:08:33Z'
 estimate:
   man_hours_low: 16.24
   man_hours_high: 22.35

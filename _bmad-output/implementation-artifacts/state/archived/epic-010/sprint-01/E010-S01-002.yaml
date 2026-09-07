@@ -2,10 +2,10 @@ key: 'E010-S01-002'
 epic: 'E010'
 sprint: 'S01'
 title: 'Notify Apprise Destinations After an Export Pass'
-status: in-progress
+status: done
 classification: standard
 depends_on: ['E010-S01-001']
-updated_at: '2026-09-07T01:59:27Z'
+updated_at: '2026-09-07T02:08:32Z'
 estimate:
   man_hours: 6.08
   hitl_hours: 0.12
