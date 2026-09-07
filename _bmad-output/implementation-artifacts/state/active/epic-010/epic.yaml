@@ -5,9 +5,9 @@ _lock:
 key: 'E010'
 title: 'Epic 010 — Secret Redaction, and Post-Export Notifications'
 goal: 'Notify Apprise destinations after an export pass, per ADR-0014. ADR-0013 superseded.'
-status: backlog
+status: in-progress
 depends_on: ['E005']
-updated_at: '2026-09-07T00:35:01Z'
+updated_at: '2026-09-07T01:54:11Z'
 estimate:
   man_hours_low: 20.77
   man_hours_high: 22.99

@@ -98,3 +98,98 @@ def test_command_line_args_are_redacted_before_they_reach_the_log(caplog, tmp_pa
 
     leaked = [r.getMessage() for r in caplog.records if "hunter2" in r.getMessage()]
     assert not leaked, f"the passphrase reached the log: {leaked}"
+
+
+# ---------------------------------------------------------------------------
+# Secret redaction (E010-S01-001). The guard derives its scope from
+# SECRET_CONFIG_PATHS rather than naming fields, so a declared setting is covered
+# without editing anything here -- which is the property the scope plant below attacks.
+# ---------------------------------------------------------------------------
+
+
+def _capture_all_records(caplog, tmp_path, config_text, cli_overrides):
+    """Run a full load at DEBUG and return every message emitted.
+
+    Asserted over everything captured rather than over named dump functions, because the
+    leak this closes was in neither of them -- it was the raw argparse namespace, logged a
+    few lines above the helpers that redact.
+    """
+    import logging
+    from argparse import Namespace
+
+    from traefik_certificate_exporter.libs.settings import SettingsManager
+
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(config_text)
+    args = Namespace(configfile=str(cfg), **cli_overrides)
+
+    with caplog.at_level(logging.DEBUG):
+        manager = SettingsManager()
+        manager.loadFromFile(fileName=str(cfg), cmdLineArgs=args)
+        manager._dump_config()
+        manager._dump_settings()
+
+    return "\n".join(r.getMessage() for r in caplog.records)
+
+
+def test_every_declared_secret_path_is_redacted_in_every_sink(caplog, tmp_path):
+    """Scope comes from the registry, so a new declaration is covered with no edit here."""
+    from traefik_certificate_exporter.libs.settings import SECRET_CONFIG_PATHS
+
+    assert SECRET_CONFIG_PATHS, "no secret paths declared; this guard examined nothing"
+
+    for path in SECRET_CONFIG_PATHS:
+        assert path[0] == "settings", f"unhandled path shape: {path}"
+        key = path[-1]
+        planted = f"PLANTED-{key.upper()}"
+        captured = _capture_all_records(
+            caplog,
+            tmp_path,
+            f"settings:\n  {key}: {planted}\n  datapath: {tmp_path}\n",
+            {f"settings.{key}": planted, "settings.datapath": str(tmp_path)},
+        )
+        assert planted not in captured, (
+            f"{'.'.join(path)} reached a log record at DEBUG"
+        )
+        caplog.clear()
+
+
+def test_a_newly_declared_secret_is_covered_without_touching_the_guard(
+    caplog, tmp_path, monkeypatch
+):
+    """The plant attacks the SCOPE, not the rule.
+
+    `destinationlist` matches none of `_SECRET_FIELD_PATTERN`'s words, so nothing about
+    its *name* makes it a secret -- only its presence in the registry does. If redaction
+    ever stops deriving from that registry, this fails while a name-shaped case would
+    still pass, which is the whole point.
+    """
+    from traefik_certificate_exporter.libs import settings as settings_module
+
+    monkeypatch.setattr(
+        settings_module,
+        "SECRET_CONFIG_PATHS",
+        (*settings_module.SECRET_CONFIG_PATHS, ("settings", "destinationlist")),
+    )
+    settings_module._secret_leaf_names.cache_clear()
+
+    planted = "PLANTED-BY-PATH-NOT-BY-NAME"
+    captured = _capture_all_records(
+        caplog,
+        tmp_path,
+        f"settings:\n  destinationlist: {planted}\n  datapath: {tmp_path}\n",
+        # Passed on the command line as well, so the argparse-namespace sink -- the one
+        # that was actually leaking -- is exercised. Through the config file alone this
+        # test is satisfied by confuse's own path redaction and proves nothing about
+        # whether `_redact_secrets` consults the registry.
+        {"settings.destinationlist": planted, "settings.datapath": str(tmp_path)},
+    )
+    settings_module._secret_leaf_names.cache_clear()
+
+    assert not settings_module._SECRET_FIELD_PATTERN.search("destinationlist"), (
+        "pick a name the pattern cannot catch, or this proves nothing about the registry"
+    )
+    assert planted not in captured, (
+        "a declared secret path was not redacted -- redaction is not deriving its scope "
+        "from SECRET_CONFIG_PATHS"
+    )

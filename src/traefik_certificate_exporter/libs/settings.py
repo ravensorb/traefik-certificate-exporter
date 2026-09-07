@@ -1,6 +1,7 @@
 #######################################################################
 
 
+import functools
 import json
 import os
 import re
@@ -17,21 +18,59 @@ from .object import ObjectBase
 
 #######################################################################
 
-# Name/allowlist-based: any key shaped like a credential is masked regardless of which
-# object it comes from, so a new secret-shaped field is redacted with no code change here.
+# The one place a secret-bearing setting is declared. Redaction and its guard both derive
+# from this, so adding a credential-shaped setting is one entry here rather than an edit in
+# each sink and one more case in the test.
+#
+# Each entry is a config path, because that is what confuse redacts on. The name-pattern
+# below stays as a second, independent net for anything shaped like a credential that
+# nobody remembered to declare -- but it is a backstop, not the mechanism: a credential
+# held as a VALUE (an Apprise destination URL inside a list) has no matching key anywhere
+# on its path, so no pattern over key names can ever reach it. That is BL-E001-005, and
+# the path registry is the answer to it.
+SECRET_CONFIG_PATHS: tuple[tuple[str, ...], ...] = (("settings", "pkcs12passphrase"),)
+
+# Backstop only -- see above. Retained because it catches an undeclared field, and because
+# it is what redacts objects that are not the confuse config (the Settings dataclass, and
+# the raw argparse namespace).
 _SECRET_FIELD_PATTERN = re.compile(
     r"(secret|password|passphrase|token|api[_-]?key)", re.IGNORECASE
 )
 _REDACTED_VALUE = "***REDACTED***"
 
 
+@functools.cache
+def _secret_leaf_names() -> frozenset[str]:
+    """The last segment of every declared secret path, lowercased.
+
+    `_dump_settings` serialises the `Settings` dataclass rather than the confuse config,
+    so confuse's path-based redaction cannot reach it (BL-E010-003). Matching the declared
+    leaf names against attribute names -- case-insensitively, since the dataclass is
+    camelCase and the config keys are flat lowercase -- keeps that sink deriving from the
+    same registry instead of from a second hand-kept list.
+    """
+    return frozenset(path[-1].lower() for path in SECRET_CONFIG_PATHS)
+
+
+def _is_declared_secret(key) -> bool:
+    """Is this key a declared secret path's leaf?
+
+    Compares the last DOTTED segment, because the same value reaches this function under
+    two spellings: `pkcs12Passphrase` from the Settings dataclass, and
+    `settings.pkcs12passphrase` from argparse's namespace, whose keys are the flattened
+    `dest=` strings. Matching the bare leaf only would have covered the first and missed
+    the second -- which is the sink that was leaking in the first place.
+    """
+    return str(key).rsplit(".", 1)[-1].lower() in _secret_leaf_names()
+
+
 def _redact_secrets(value):
-    """Recursively mask dict values whose key looks like a credential."""
+    """Recursively mask dict values whose key looks like a credential, or is declared."""
     if isinstance(value, dict):
         return {
             key: (
                 _REDACTED_VALUE
-                if _SECRET_FIELD_PATTERN.search(str(key))
+                if (_SECRET_FIELD_PATTERN.search(str(key)) or _is_declared_secret(key))
                 else _redact_secrets(val)
             )
             for key, val in value.items()
@@ -183,6 +222,15 @@ class SettingsManager(ObjectBase):
 
         self._config.set_env(prefix="TRAEFIK_CERTIFICATE_EXPORTER_", sep="_")
 
+        # Mark every declared secret path before anything can dump the config. Done once,
+        # here, so no sink has to remember: `Configuration.dump(redact=True)` consults
+        # these and masks by path.
+        for path in SECRET_CONFIG_PATHS:
+            view = self._config
+            for segment in path:
+                view = view[segment]
+            view.redact = True
+
         if cmdLineArgs is not None:
             self.__logger.debug("Loading Configuration from Command Line")
             # Redacted, because argparse's namespace carries whatever was typed on the
@@ -258,10 +306,12 @@ class SettingsManager(ObjectBase):
 
     def _dump_config(self):
         self.__logger.debug("Current Config (from file)...")
-        safe = _redact_secrets(
-            json.loads(jsonpickle.dumps(self._config, unpicklable=False))
-        )
-        self.__logger.debug(jsonpickle.dumps(safe, unpicklable=False))
+        # confuse's own facility, not a redactor of ours. `dump(redact=True)` masks by
+        # config PATH, which is the one mechanism that reaches a credential held as a
+        # value inside a list -- the case the key-name pattern cannot see at all. Writing
+        # a second redactor beside a library one that already works is what global rule 1
+        # forbids, and an earlier draft of ADR-0014 proposed exactly that.
+        self.__logger.debug(self._config.dump(redact=True))
 
     def _handle_on_progress(self, message):
         self.__logger.info(message)

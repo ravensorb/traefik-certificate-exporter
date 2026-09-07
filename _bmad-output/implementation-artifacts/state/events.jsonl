@@ -201,3 +201,6 @@
 {"agent": "l3io-arch-review", "epic": "E010", "event": "dispatch_close", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "ts": "2026-09-07T00:10:02Z"}
 {"agent": "l3io-arch-review", "epic": "E010", "event": "dispatch_open", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "ts": "2026-09-07T01:43:20Z"}
 {"agent": "l3io-arch-review", "epic": "E010", "event": "dispatch_close", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "ts": "2026-09-07T01:47:29Z"}
+{"epic": "E010", "event": "status", "from": "in-progress", "key": "E010", "node": "epic", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "sprint": null, "to": "in-progress", "ts": "2026-09-07T01:54:11Z"}
+{"epic": "E010", "event": "status", "from": "backlog", "key": "E010-S01-001", "node": "story", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "sprint": "S01", "to": "in-progress", "ts": "2026-09-07T01:54:31Z"}
+{"epic": "E010", "event": "status", "from": "backlog", "key": "S01", "node": "sprint", "session": "session_0128KKNtwjQMs4C9inpM5Ttt", "sprint": "S01", "to": "in-progress", "ts": "2026-09-07T01:54:33Z"}
