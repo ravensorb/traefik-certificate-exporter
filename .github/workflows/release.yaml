@@ -484,7 +484,7 @@ jobs:
       # passed the gate rather than a second reading of the directory.
       - name: Attest the verified distributions
         id: attest
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-checksums: ${{ steps.bundle.outputs.bundle-path }}/SHA256SUMS
 
