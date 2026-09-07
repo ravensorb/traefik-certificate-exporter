@@ -1,3 +1,7 @@
+_lock:
+  session_id: session_0128KKNtwjQMs4C9inpM5Ttt
+  claimed_at: '2026-09-07T01:43:19Z'
+  ttl_minutes: 30
 key: 'E010'
 title: 'Epic 010 — Secret Redaction, and Post-Export Notifications'
 goal: 'Notify Apprise destinations after an export pass, per ADR-0014. ADR-0013 superseded.'

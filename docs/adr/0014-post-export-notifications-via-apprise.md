@@ -106,7 +106,7 @@ prose and machine-readable record disagreeing is how the wrong fix gets implemen
 
 | | |
 |---|---|
-| floor | `^1.9.0` — the first release of the BSD line this project verified |
+| floor | `^1.9.0` — chosen for currency, not licence: the BSD line starts around 1.6.0, so the floor is not what makes it permissive |
 | licence | **BSD-2-Clause** at 1.13.1; `BSD` at 1.6.0–1.9.x; **MIT** at ≤1.2.x |
 | `requires_python` | `>=3.9` at 1.13.1, inside this project's `>=3.10,<3.15` |
 | new to the main group | `apprise`, `requests-oauthlib`, `click`, `markdown` — `requests`, `PyYAML` and `certifi` are already `groups = ["main", "dev"]` in `poetry.lock` |
@@ -119,12 +119,30 @@ would have been worse than recording nothing.
 
 **6. Delivery carries an explicit timeout.**
 
-`Apprise.notify()` blocks and delivers sequentially, and SMTP can hang for tens of seconds. It
-runs on the `threading.Timer` thread inside the drain, so an unbounded call extends the window in
-which watch events are being collected rather than processed. *Configurable* timeouts were
-deliberately cut from scope; shipping with **no bound at all** is not the same cut, and it would
-be a regression against `post_export.py`'s explicit 30 seconds. A fixed delivery timeout is set
-and stated here as that file's counterpart.
+`Apprise.notify()` blocks and delivers sequentially, on the `threading.Timer` thread inside the
+drain — so its duration is added to the window in which watch events are collected rather than
+processed.
+
+**An earlier draft said "a fixed delivery timeout is set" without naming the value or the
+mechanism. That is the failure that forced Decision 3's rewrite, repeated.** Read in the source
+at 1.13.1, the mechanism is not what that sentence implied:
+
+- **`Apprise.notify()` takes no timeout argument.** Bounding is per destination.
+- `apprise/url.py:823` exposes `request_timeout` as the tuple
+  `(socket_connect_timeout, socket_read_timeout)`, handed to `requests` as its `timeout=`.
+  Class defaults are **4.0 s each** (`url.py:110,114`), and both are settable per destination as
+  the `cto` and `rto` URL query parameters (`url.py:176-200`).
+- The SMTP plugin overrides connect to **15 s** (`plugins/email/base.py:119`) and passes it to
+  `smtplib` (`:691`). The concern that email could hang unbounded does not hold.
+
+**Decision: rely on the library's per-destination bounds rather than inventing a wrapper, and
+state the arithmetic instead of a single number.** The worst case a pass can add is the sum over
+configured destinations of each one's connect + read bound — roughly 8 s per HTTP destination and
+19 s per SMTP one at the defaults. That is the figure the documentation carries and the story
+asserts, because with N destinations there is no single "the timeout" to quote.
+
+`cto`/`rto` remain available per destination for an operator who needs tighter, which is the
+configurability that was cut from scope arriving for free because the library already has it.
 
 **7. What a notification means is stated, because the honest answer is not the flattering one.**
 

@@ -447,10 +447,16 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
                         # collect it. A lost wakeup, and the same "never exported until an
                         # unrelated future event" outcome the drain exists to remove.
                         self.isWaiting = False
+                        self.__logger.debug("Finished")
                         return
 
                     paths = sorted(self.pendingPaths)
                     self.pendingPaths.clear()
+                    # Reset with the batch, not once before the loop. `index` is only
+                    # rebound by the `for` below, so a second batch that unwound before
+                    # its first iteration would have been sliced by the PREVIOUS batch's
+                    # last index -- dropping paths, or yielding [] and re-arming nothing.
+                    index = 0
 
                 for index, path in enumerate(paths):
                     try:
@@ -478,8 +484,6 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
         self.isWaiting = True
         self.timer = threading.Timer(WATCH_DEBOUNCE_SECONDS, self.doTheWork)
         self.timer.start()
-
-        self.__logger.debug("Finished")
 
     # --------------------------------------------------------------------------------------
     def __processPath(self, path: str) -> None:
