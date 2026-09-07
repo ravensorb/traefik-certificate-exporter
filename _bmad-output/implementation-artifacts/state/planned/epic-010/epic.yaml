@@ -1,18 +1,18 @@
 key: 'E010'
-title: 'Epic 010 — Post-Export Notifications'
+title: 'Epic 010 — Secret Redaction, and Post-Export Notifications'
 goal: 'Notify Apprise destinations after an export pass, per ADR-0014. ADR-0013 superseded.'
 status: backlog
 depends_on: ['E005']
-updated_at: '2026-09-06T23:54:18Z'
+updated_at: '2026-09-07T00:35:01Z'
 estimate:
-  man_hours_low: 10.38
-  man_hours_high: 11.49
-  hitl_hours_low: 0.21
-  hitl_hours_high: 0.25
-  elapsed_hours_low: 2.15
-  elapsed_hours_high: 2.72
-  tokens_k_min: 228
-  tokens_k_max: 259
+  man_hours_low: 20.77
+  man_hours_high: 22.99
+  hitl_hours_low: 0.42
+  hitl_hours_high: 0.5
+  elapsed_hours_low: 4.32
+  elapsed_hours_high: 5.45
+  tokens_k_min: 455
+  tokens_k_max: 517
   closure_ratios:
     man_hours: 0.7656
     hitl_hours: 1.1973
@@ -23,7 +23,7 @@ estimate:
     hitl_hours: 0.0739
     elapsed_hours: 0.046
     tokens_k: 0
-  cost_low: 0.93
-  cost_high: 1.07
+  cost_low: 1.88
+  cost_high: 2.14
   model: claude-opus-5
   confidence: medium

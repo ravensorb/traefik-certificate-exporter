@@ -1,11 +1,11 @@
-key: 'E010-S01-001'
+key: 'E010-S01-002'
 epic: 'E010'
 sprint: 'S01'
-title: 'Redact Secrets Held as Configuration Values'
+title: 'Notify Apprise Destinations After an Export Pass'
 status: backlog
 classification: standard
-depends_on: []
-updated_at: '2026-09-07T00:34:57Z'
+depends_on: ['E010-S01-001']
+updated_at: '2026-09-07T00:34:58Z'
 estimate:
   man_hours: 6.08
   hitl_hours: 0.12

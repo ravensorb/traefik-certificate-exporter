@@ -34,11 +34,25 @@ backlog:
 - key: BL-E001-005
   epic: '001'
   sprint: S01
-  title: Secret-redaction regex is pattern-based and could miss an oddly-named future secret field
+  title: Key-name secret redaction cannot reach a credential held as a config VALUE, and one sink logged the passphrase in clear
   source: sprint-closure adversarial review (E001-S01)
-  severity: Low
+  severity: High
   status: backlog
-  description: The redaction pattern (secret|password|passphrase|token|api[_-]?key) covers the current and documented conventions but is not exhaustive; a future field named e.g. 'credential' or 'bearer' would not be caught. Consider expanding the pattern list if new secret-shaped settings are added that don't match it.
+  description: 'Re-scoped 2026-09-06 by the Epic 10 architecture gates; filed as "the pattern could
+    miss an oddly-named future field", and the real shape is worse. _redact_secrets masks a dict value
+    when its KEY matches (secret|password|passphrase|token|api[_-]?key). A credential held as a VALUE --
+    an Apprise destination URL inside a list -- has no matching key anywhere on the path, so no amount
+    of adding words to the pattern reaches it. Do NOT expand the pattern list: that was the original
+    prescription and it is the wrong fix.
+    Two further facts from the gates. confuse already ships the answer -- marking a config path
+    .redact = True and dumping with redact=True redacts BY PATH, verified to emit REDACTED for a
+    list-valued key -- so writing a second redactor beside it is what global rule 1 forbids. And a third
+    sink existed that neither dump helper covered: settings.py logged the raw argparse namespace at
+    DEBUG and --pkcs12-passphrase is a flag, so the passphrase printed in clear a few lines above the
+    helpers that mask it. That leak is FIXED (commit fix(watch,settings)); the mechanism replacement is
+    not, and is Story E010-S01-001.
+    Severity Low -> High: this was a live credential disclosure in shipping code, not a hypothetical
+    about a future field.'
 - key: BL-E001-006
   epic: '001'
   sprint: S01
