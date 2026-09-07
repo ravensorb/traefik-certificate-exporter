@@ -82,3 +82,48 @@ I asserted without checking** — three in ADR-0013, three more here, one of the
 facility that made a whole section of the ADR unnecessary. The reduction from 145 hours to 10
 was right and the gate confirmed it. What the gate keeps catching is not scope. It is that I
 write confident sentences about code and libraries without running them first.
+
+---
+
+## Re-validation (2026-09-06) — narrow, per §6
+
+Not a re-gate. The reviewer received only the changed items and the finding each was resolving.
+
+**6 RESOLVED · 1 PARTIAL · 0 NOT RESOLVED · 0 BLOCKER remaining.**
+
+Resolved: the drain race (flag now published in the same critical section that observes the queue
+empty; both tests confirmed genuine reproductions rather than proxies) · the argparse passphrase
+leak (asserted over all captured records, not one call site) · Decision 3, re-derived and
+re-run by the reviewer against `confuse 2.2.1` — a comma-bearing `mailto://` URL survives indexed
+env keys intact · `confuse.redact` adopted with a registry-derived guard scope · the Apprise
+record · the story split · `issues.yaml` now agreeing with the ADR.
+
+**The reviewer retracted its own GPLv3 finding** after checking PyPI: MIT through ~1.2.x, BSD from
+~1.6.0, never copyleft. Recorded because a review that cannot correct itself is not worth running
+twice.
+
+**The PARTIAL, now closed.** Decision 6 said "a fixed delivery timeout is set" while naming no
+value and no mechanism — the same fault that forced Decision 3's rewrite, committed again in the
+same document. Read at 1.13.1: `Apprise.notify()` takes no timeout at all; bounding is per
+destination via `request_timeout` → `(socket_connect_timeout, socket_read_timeout)`, defaulting
+to 4.0 s each and settable as `cto`/`rto` per URL, with the SMTP plugin overriding connect to
+15 s. Decision 6 now relies on those bounds and states the arithmetic rather than a number.
+
+**Two new defects in the drain I had just rewritten**, both fixed: `index` was initialised once
+outside the loop, so a second batch unwinding before its first iteration sliced by the previous
+batch's last index; and the `"Finished"` debug line had landed at the tail of `__rearm`, emitting
+only when re-arming.
+
+## Gate outcome
+
+**CLEAR to proceed.** No BLOCKER, no MAJOR outstanding. The remaining MINORs and the two
+known-open items are filed rather than carried as prose:
+
+| | |
+|---|---|
+| `BL-E010-001` | Medium — no correlation identifier across the hops; unstructured container sink |
+| `BL-E010-002` | Medium — shutdown cancels no timer; truncate-then-write exposure |
+| `BL-E010-003` | Low — `_dump_settings` serialises the object, so path redaction needs a translation |
+
+Neither Medium is created by this epic; both are pre-existing and were raised by both gates.
+They are deliberately not blocking a story that does not worsen them.

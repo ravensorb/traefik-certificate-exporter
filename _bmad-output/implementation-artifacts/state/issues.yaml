@@ -38,21 +38,7 @@ backlog:
   source: sprint-closure adversarial review (E001-S01)
   severity: High
   status: backlog
-  description: 'Re-scoped 2026-09-06 by the Epic 10 architecture gates; filed as "the pattern could
-    miss an oddly-named future field", and the real shape is worse. _redact_secrets masks a dict value
-    when its KEY matches (secret|password|passphrase|token|api[_-]?key). A credential held as a VALUE --
-    an Apprise destination URL inside a list -- has no matching key anywhere on the path, so no amount
-    of adding words to the pattern reaches it. Do NOT expand the pattern list: that was the original
-    prescription and it is the wrong fix.
-    Two further facts from the gates. confuse already ships the answer -- marking a config path
-    .redact = True and dumping with redact=True redacts BY PATH, verified to emit REDACTED for a
-    list-valued key -- so writing a second redactor beside it is what global rule 1 forbids. And a third
-    sink existed that neither dump helper covered: settings.py logged the raw argparse namespace at
-    DEBUG and --pkcs12-passphrase is a flag, so the passphrase printed in clear a few lines above the
-    helpers that mask it. That leak is FIXED (commit fix(watch,settings)); the mechanism replacement is
-    not, and is Story E010-S01-001.
-    Severity Low -> High: this was a live credential disclosure in shipping code, not a hypothetical
-    about a future field.'
+  description: 'Re-scoped 2026-09-06 by the Epic 10 architecture gates; filed as "the pattern could miss an oddly-named future field", and the real shape is worse. _redact_secrets masks a dict value when its KEY matches (secret|password|passphrase|token|api[_-]?key). A credential held as a VALUE -- an Apprise destination URL inside a list -- has no matching key anywhere on the path, so no amount of adding words to the pattern reaches it. Do NOT expand the pattern list: that was the original prescription and it is the wrong fix. Two further facts from the gates. confuse already ships the answer -- marking a config path .redact = True and dumping with redact=True redacts BY PATH, verified to emit REDACTED for a list-valued key -- so writing a second redactor beside it is what global rule 1 forbids. And a third sink existed that neither dump helper covered: settings.py logged the raw argparse namespace at DEBUG and --pkcs12-passphrase is a flag, so the passphrase printed in clear a few lines above the helpers that mask it. That leak is FIXED (commit fix(watch,settings)); the mechanism replacement is not, and is Story E010-S01-001. Severity Low -> High: this was a live credential disclosure in shipping code, not a hypothetical about a future field.'
 - key: BL-E001-006
   epic: '001'
   sprint: S01
@@ -68,11 +54,7 @@ backlog:
   source: dev-loop (E002-S01-002/003)
   severity: High
   status: resolved
-  resolution: 'Closed 2026-09-04 as a stale record: the fix it describes was applied and
-    verified when the item was written, and nothing reopened it. poetry.lock holds confuse
-    2.2.1, and verify-build.yaml runs the suite on 3.14 -- the interpreter that exposed the
-    crash -- as a matrix leg on every push, green on run 33931389934. The item stayed in
-    backlog because it was filed as a report of work already done rather than as work to do.'
+  resolution: 'Closed 2026-09-04 as a stale record: the fix it describes was applied and verified when the item was written, and nothing reopened it. poetry.lock holds confuse 2.2.1, and verify-build.yaml runs the suite on 3.14 -- the interpreter that exposed the crash -- as a matrix leg on every push, green on run 33931389934. The item stayed in backlog because it was filed as a report of work already done rather than as work to do.'
   description: "Verified live: building the reworked Docker image against the newly-upgraded Alpine 3.24 base (which ships Python 3.14) crashed at startup with AttributeError: module pkgutil has no attribute get_loader, inside confuse.Configuration.__init__ -> util.find_package_path. confuse's own changelog confirms 2.1.0 replaced pkgutil.get_loader with importlib.util.find_spec specifically for Python 3.13/3.14 compatibility. Fixed via poetry update confuse (2.0.1 -> 2.2.1, already within the existing ^2.0.1 constraint, no pyproject.toml change needed). Verified end-to-end: built image now starts, loads config, and enters its normal watch loop without crashing."
 - key: BL-E002-002
   epic: '002'
@@ -89,15 +71,7 @@ backlog:
   source: post-restore audit (E007)
   severity: High
   status: resolved
-  resolution: 'Closed 2026-09-04 through E008-S01-001 and E008-S01-002, exactly as the item
-    predicted. All three publishing workflows -- dev.yaml, release.yaml and
-    publish-image.yaml -- consume verified-dist-v1 through .github/actions/verified-bundle,
-    which rechecks SHA256SUMS, revalidates build-manifest.json, matches the source SHA and
-    package version the caller believes it is publishing, and proves the wheel on disk is the
-    wheel the image plan declares -- all before the caller reaches a login or an upload.
-    test_every_publisher_revalidates_the_bundle_before_it_logs_in_or_uploads
-    (tests/ci/test_finalization.py) derives its scope from the publisher set rather than a
-    list, so a fourth publisher is covered without an edit. Proven end to end by v0.1.6.'
+  resolution: 'Closed 2026-09-04 through E008-S01-001 and E008-S01-002, exactly as the item predicted. All three publishing workflows -- dev.yaml, release.yaml and publish-image.yaml -- consume verified-dist-v1 through .github/actions/verified-bundle, which rechecks SHA256SUMS, revalidates build-manifest.json, matches the source SHA and package version the caller believes it is publishing, and proves the wheel on disk is the wheel the image plan declares -- all before the caller reaches a login or an upload. test_every_publisher_revalidates_the_bundle_before_it_logs_in_or_uploads (tests/ci/test_finalization.py) derives its scope from the publisher set rather than a list, so a fourth publisher is covered without an edit. Proven end to end by v0.1.6.'
   description: "ARCHITECTURE-SPINE.md requires publishers to promote verified-dist-v1 rather than rebuild the Python package. verify-build.yaml revalidates SHA256SUMS and build-manifest.json, performs native image smoke from the exact wheel, uploads verified-dist-v1, and exposes its identity outputs. The deleted legacy publishers no longer violate the rule, but no active publisher consumes the bundle yet. This closes through E008-S01-001 and E008-S01-002, which implement development and stable publication from the exact retained distributions and one image build per channel run."
 - key: BL-E007-002
   epic: '007'
@@ -173,9 +147,7 @@ backlog:
   source: E008 script-to-action evaluation
   severity: Medium
   status: resolved
-  resolution: 'Fixed upstream and verified here on 2026-09-04, not taken on report. src/git-client.ts now imports execFileSync and routes every git call through execGit(args: string[], repoPath) -- an argument ARRAY, no shell -- and all three affected call sites were converted: rev-parse --verify --quiet, cat-file -t, and verify-tag (which also gained the refs/tags/ prefix it lacked). The remaining matches for shell-exec patterns across src/ are the word execSync inside the comment that explains the fix, and @actions/exec''s exec.exec(''git'', [...]) in repo-utils.ts and platform-factory.ts, which likewise takes an argv array and spawns no shell. No shell execution remains.
-    The upstream comment records a second defect that was the same bug: --format=%(contents) contains parentheses, which are shell syntax, so reading an annotated tag''s message always failed and returned empty. The injection and the broken feature had one cause.
-    Nothing in this repository changes -- git-action-tag-info was never called here, and the constraint that it may only be invoked after a tag-shape check is now moot rather than load-bearing.'
+  resolution: 'Fixed upstream and verified here on 2026-09-04, not taken on report. src/git-client.ts now imports execFileSync and routes every git call through execGit(args: string[], repoPath) -- an argument ARRAY, no shell -- and all three affected call sites were converted: rev-parse --verify --quiet, cat-file -t, and verify-tag (which also gained the refs/tags/ prefix it lacked). The remaining matches for shell-exec patterns across src/ are the word execSync inside the comment that explains the fix, and @actions/exec''s exec.exec(''git'', [...]) in repo-utils.ts and platform-factory.ts, which likewise takes an argv array and spawns no shell. No shell execution remains. The upstream comment records a second defect that was the same bug: --format=%(contents) contains parentheses, which are shell syntax, so reading an annotated tag''s message always failed and returned empty. The injection and the broken feature had one cause. Nothing in this repository changes -- git-action-tag-info was never called here, and the constraint that it may only be invoked after a tag-shape check is now moot rather than load-bearing.'
   description: "CORRECTED FROM Critical TO Medium after checking reachability. The flaw is real: src/git-client.ts runs every git call as execSync(`git ${command}`) with the tag name concatenated in unescaped -- isAnnotatedTag uses `cat-file -t refs/tags/${tagName}`, getTagInfo uses `rev-parse refs/tags/${tagName}` and `verify-tag ${tagName}`. No execFile, no argv array, no quoting. Shell metacharacters ARE legal git refnames: git check-ref-format accepts 'v1.0.0;id', 'v1.0.0|whoami', 'v1.0.0$(id)', 'v1.0.0&&id' and backtick forms, and all match a 'v*' trigger. BUT it is NOT exploitable in this repository, which is why the original Critical rating was wrong. Such a tag is invalid under SemVer 2.0.0 (prerelease and build identifiers are [0-9A-Za-z-] only) and is rejected by our own anchored STABLE_TAG shape check; and release.yaml's plan job validates the tag shape as its third step, before the tag name reaches any shell -- the current implementation passes it via argv anyway. So for us this is a constraint on WHERE the action may be used, never before validation, rather than an open hole. Upstream it is a genuine defect: the action's documented purpose invites passing github.ref_name directly, and it neither validates nor warns. The sibling action git-action-tag-validate-version already has the correct pattern in src/git.ts -- execFileAsync('git', ['rev-parse','--verify','--quiet',trimmed]) -- so the fix is mechanical. Report upstream; until fixed, only call git-action-tag-info after a shape check."
 - key: BL-E008-006
   epic: '008'
@@ -219,38 +191,9 @@ backlog:
   title: tests/ci/test_workflow_contracts.py is one 6,600-line module spanning ten concerns
   source: epic closure — arch drift MAJOR 6
   severity: Medium
-  plan: 'Corrected after review -- the first draft proposed writing an AST definition-set differ, which is the hand-rolled harness global rule 1 forbids; pytest already ships the tool.
-    PHASE 0 (no new code): the move-invariant identity list is
-      LC_ALL=C python -m pytest tests/ci --collect-only -q | sed -n ''s#^.*\.py::##p'' | sort
-    captured before and after and compared with diff. Stripping the module path makes a MOVE invisible and a LOSS visible, which is exactly the invariant this refactor needs. Demonstrated: deleting one guard shows as a removed identity.
-    PHASE 1: move the ~30 names used by >=12 guards (_load_document 143, _jobs 135, _load_workflow 124, _run_step/_steps/_emitted/_uncommented 49 each, PROJECT_ROOT, WORKFLOWS, GOVERNED_DEFINITIONS) into tests/support.py, which already exists and is already shared by test_workflow_contracts.py and test_release_version.py. No guards move. One commit.
-    PHASE 2: fix the four self-referential guards WHILE THERE IS STILL ONE MODULE, so they can be proven to give the same answer before and after. They read their own module and would SILENTLY NARROW rather than fail: the meta-guard (:415) reads Path(__file__).read_text() and would pass while examining a tenth of the code; the citation guard (:7287) and the runbook guard (:7116) check globals(); the CODEOWNERS guard (:893) derives ''tests'' from __file__.parts[0]. Each must aggregate over tests/ci/*.py instead.
-    PHASE 3: move subjects smallest first -- documentation (6), gates config (8), meta (5), topology (9), action policy (10), fork safety (8), identity (20), image publication (19), finalization (35) -- one commit each, Phase 0 diff between every one.
-    DO NOT pre-plan the partition: a keyword classifier left 51 of 165 guards unassigned and 17 spanning two subjects, so the concerns do not separate by inspection. Move a subject, run it, and let the unresolved names reveal the coupling. The interpreter is the better classifier.
-    NON-GOALS: no renames, no rewrites, no improvements in the same commits -- any behavioural change destroys the collect-only proof, which is the only thing making this safe.
-    ALSO MOVES: .pre-commit-config.yaml runs pytest against the single file and must become tests/ci/; verify-build.yaml''s workflow-policy job runs the same string and test_every_gate_runs_in_ci_or_is_recorded_as_local_only compares the two, so they fail together if one is missed.
-    SIZE: ~12 commits. Size it 2-3x on this epic''s record.'
+  plan: 'Corrected after review -- the first draft proposed writing an AST definition-set differ, which is the hand-rolled harness global rule 1 forbids; pytest already ships the tool. PHASE 0 (no new code): the move-invariant identity list is LC_ALL=C python -m pytest tests/ci --collect-only -q | sed -n ''s#^.*\.py::##p'' | sort captured before and after and compared with diff. Stripping the module path makes a MOVE invisible and a LOSS visible, which is exactly the invariant this refactor needs. Demonstrated: deleting one guard shows as a removed identity. PHASE 1: move the ~30 names used by >=12 guards (_load_document 143, _jobs 135, _load_workflow 124, _run_step/_steps/_emitted/_uncommented 49 each, PROJECT_ROOT, WORKFLOWS, GOVERNED_DEFINITIONS) into tests/support.py, which already exists and is already shared by test_workflow_contracts.py and test_release_version.py. No guards move. One commit. PHASE 2: fix the four self-referential guards WHILE THERE IS STILL ONE MODULE, so they can be proven to give the same answer before and after. They read their own module and would SILENTLY NARROW rather than fail: the meta-guard (:415) reads Path(__file__).read_text() and would pass while examining a tenth of the code; the citation guard (:7287) and the runbook guard (:7116) check globals(); the CODEOWNERS guard (:893) derives ''tests'' from __file__.parts[0]. Each must aggregate over tests/ci/*.py instead. PHASE 3: move subjects smallest first -- documentation (6), gates config (8), meta (5), topology (9), action policy (10), fork safety (8), identity (20), image publication (19), finalization (35) -- one commit each, Phase 0 diff between every one. DO NOT pre-plan the partition: a keyword classifier left 51 of 165 guards unassigned and 17 spanning two subjects, so the concerns do not separate by inspection. Move a subject, run it, and let the unresolved names reveal the coupling. The interpreter is the better classifier. NON-GOALS: no renames, no rewrites, no improvements in the same commits -- any behavioural change destroys the collect-only proof, which is the only thing making this safe. ALSO MOVES: .pre-commit-config.yaml runs pytest against the single file and must become tests/ci/; verify-build.yaml''s workflow-policy job runs the same string and test_every_gate_runs_in_ci_or_is_recorded_as_local_only compares the two, so they fail together if one is missed. SIZE: ~12 commits. Size it 2-3x on this epic''s record.'
   status: resolved
-  resolution: 'Closed 2026-09-04. tests/ci/test_workflow_contracts.py went from 7,441 lines
-    and 307 guards to nine subject modules plus tests/ci/support.py (shared machinery) and
-    tests/ci/conftest.py (shared fixtures); the remainder file is 703 lines and says in its
-    docstring that it is the remainder by construction. Phases 0-2 landed earlier in the
-    sweep; phase 3 moved nine subjects in nine commits -- documentation, gates, meta,
-    topology, action policy, fork safety, image publication, stable identity, finalization.
-    The plan held: pre-planning the partition was not attempted, each subject was moved and
-    the interpreter named the coupling one NameError at a time. Every commit was checked
-    three ways -- the collect-only identity list diffed against the pre-split baseline
-    (identical, 307, on all nine), the top-level definition set diffed against HEAD, and the
-    full suite plus every pre-commit hook. Nothing was renamed or rewritten in a move commit.
-    Ruff, not pytest, caught four annotation-only imports the moves dropped, because
-    `from __future__ import annotations` makes an annotation a string that never resolves;
-    that is why the hook sequence runs on every commit rather than the suite alone.
-    Phase 4 (not in the original plan) added four guards in test_meta.py so the split is
-    held by a check rather than by prose: every module states its subject, no subject module
-    imports from a sibling, and a test_*.py that defines no test fails. Planting the relative
-    `from .x import y` walked past the first draft of the import check, which read absolute
-    imports only -- all four spellings are asserted now and the plant is kept as a test. That
-    guard also found test_publication_contract.py had no docstring.'
+  resolution: 'Closed 2026-09-04. tests/ci/test_workflow_contracts.py went from 7,441 lines and 307 guards to nine subject modules plus tests/ci/support.py (shared machinery) and tests/ci/conftest.py (shared fixtures); the remainder file is 703 lines and says in its docstring that it is the remainder by construction. Phases 0-2 landed earlier in the sweep; phase 3 moved nine subjects in nine commits -- documentation, gates, meta, topology, action policy, fork safety, image publication, stable identity, finalization. The plan held: pre-planning the partition was not attempted, each subject was moved and the interpreter named the coupling one NameError at a time. Every commit was checked three ways -- the collect-only identity list diffed against the pre-split baseline (identical, 307, on all nine), the top-level definition set diffed against HEAD, and the full suite plus every pre-commit hook. Nothing was renamed or rewritten in a move commit. Ruff, not pytest, caught four annotation-only imports the moves dropped, because `from __future__ import annotations` makes an annotation a string that never resolves; that is why the hook sequence runs on every commit rather than the suite alone. Phase 4 (not in the original plan) added four guards in test_meta.py so the split is held by a check rather than by prose: every module states its subject, no subject module imports from a sibling, and a test_*.py that defines no test fails. Planting the relative `from .x import y` walked past the first draft of the import check, which read absolute imports only -- all four spellings are asserted now and the plant is kept as a test. That guard also found test_publication_contract.py had no docstring.'
   description: 'The contract suite grew from 34 guards to 294 in one epic and lives in a single module that now covers the action pin policy, the fork-safety boundary, the workflow topology, forge coordinates, the publication matrix, the finalizer gate, alias ordering, the secret scanner, the runbook and the documentation citations. Two concrete costs were paid during this closure rather than hypothesised: replacing a text region twice deleted adjacent definitions belonging to a different concern, once silently, and it was caught only because a document still cited the deleted guard by name. Splitting it by concern would make those blast radii structural rather than a matter of care. Deferred from closure because the split is a large mechanical change with real risk of losing a guard in the move, and this closure has already demonstrated that risk twice; it wants its own story with a definition-set diff as its acceptance criterion.'
 - key: BL-E008-011
   epic: '008'
@@ -311,3 +254,27 @@ backlog:
   severity: Medium
   status: backlog
   description: E009 is estimated at 28.81-29.90 man-hours with 0.17-0.18 HITL hours, for an epic whose deliverable is a physical deployment against hardware nobody has run this pipeline on. docs/project-context.md section 8 records that six CI runs against a pipeline six review phases had already cleared produced five statically-invisible defects, and section 2 that E008 actualled 210 man-hours against 74.6-77.4. Neither is reflected. Separately the epic node's closure_ratios.man_hours is 0.2587 while the sprint node's is 1.8449 -- the same metric an order of magnitude apart on parent and child, which will mis-train calibration whichever is used. Re-estimate before execution, and reconcile the two ratios.
+- key: BL-E010-001
+  epic: '010'
+  sprint: ''
+  title: No correlation identifier joins a watch event to its drain pass, export and notification
+  source: epic-010 architecture gates
+  severity: Medium
+  status: backlog
+  description: "Raised by both Epic 10 gates against core §9, which requires a trace id propagating across every boundary including sync->async. The hops exist today (watchdog event -> threading.Timer thread -> export -> post-export subprocess) and E010-S01-002 adds a fourth. An operator asking 'why did I get no notification for acme-dns.json' has no join key between the event line, the drain and the delivery result. Compounded by the container profile: docker/Dockerfile sets LOGGING_CONSOLEONLY=true, which selects the coloredlogs formatter, so records are strings rather than fields. Suggested shape: a per-drain pass id in a contextvars variable, emitted as a field, plus the JSON formatter for the container console handler."
+- key: BL-E010-002
+  epic: '010'
+  sprint: ''
+  title: Shutdown does not cancel the pending drain timer, and certificate writes are truncate-then-write
+  source: epic-010 architecture gates
+  severity: Medium
+  status: backlog
+  description: app.py handles KeyboardInterrupt with observer.stop() and observer.join() and nothing else; AcmeCertificateFileHandler.timer is never cancelled and threading.Timer threads are non-daemon. __exportCertificate writes with open('w'), so a SIGKILL between truncate and write leaves a zero-length or partial fullchain.pem that the consuming service will load. Today the exposure window is bounded by the export plus a 30s hook; E010-S01-002 adds network delivery to it. docker stop's default grace is 10s. Raised in both gates; unaddressed by ADR-0014 by design, recorded here rather than left implicit.
+- key: BL-E010-003
+  epic: '010'
+  sprint: ''
+  title: _dump_settings serialises the Settings object, so confuse path-based redaction cannot reach it
+  source: epic-010 architecture gates
+  severity: Low
+  status: backlog
+  description: ADR-0014 Decision 4 adopts confuse's .redact/dump(redact=True), which redacts by CONFIG PATH. _dump_settings dumps the Settings dataclass through jsonpickle, not the confuse Configuration, so the registry of secret paths does not map onto that sink without an explicit translation. E010-S01-001's AC forces the right outcome empirically -- a planted credential must appear in no record during a DEBUG loadFromFile -- so this is a design note for the implementer rather than a gap in the obligation.
