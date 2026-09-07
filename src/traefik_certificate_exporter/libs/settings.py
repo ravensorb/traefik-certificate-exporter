@@ -185,7 +185,14 @@ class SettingsManager(ObjectBase):
 
         if cmdLineArgs is not None:
             self.__logger.debug("Loading Configuration from Command Line")
-            self.__logger.debug(f"Command Line Args: {cmdLineArgs}")
+            # Redacted, because argparse's namespace carries whatever was typed on the
+            # command line -- and `--pkcs12-passphrase` is one of the flags. This printed
+            # the passphrase verbatim at DEBUG while both dump helpers a few lines below
+            # were carefully masking it, so the redaction the settings dump performs was
+            # undone by the line that logged the raw source.
+            self.__logger.debug(
+                f"Command Line Args: {_redact_secrets(vars(cmdLineArgs))}"
+            )
             self._config.set_args(cmdLineArgs, dots=True)
 
         self.__logger.debug(f"Configuration Directory: {self._config.config_dir()}")

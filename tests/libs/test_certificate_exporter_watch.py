@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from traefik_certificate_exporter.libs import certificate_exporter
 from traefik_certificate_exporter.libs.certificate_exporter import (
     AcmeCertificateFileHandler,
 )
@@ -140,3 +141,119 @@ def test_container_restart_follows_its_setting_on_the_watch_path(restart):
         handler._AcmeCertificateFileHandler__dockerManager.restartLabeledContainers.called
         is restart
     )
+
+
+class _InjectingLock:
+    """A real lock that delivers a queued event each time it is RELEASED.
+
+    The defect these tests exist for lives in the gap between releasing the lock and
+    re-acquiring it, so the injection point has to be the release itself. Nothing about
+    the handler is faked -- this is the real `threading.Lock` with a probe around it.
+    """
+
+    def __init__(self, real, deliver, path, queue_is_empty):
+        self._real = real
+        self._deliver = deliver
+        self._path = path
+        self._queue_is_empty = queue_is_empty
+        self._fired = False
+
+    def __enter__(self):
+        return self._real.__enter__()
+
+    def __exit__(self, *exc):
+        # Fire on the release that follows observing the queue EMPTY -- the only window
+        # where the old code had cleared nothing yet and had already stopped looping.
+        # Firing on any earlier release just gets drained by the next iteration, which is
+        # the drain working correctly and proves nothing.
+        should_fire = not self._fired and self._queue_is_empty()
+        # Guarded by `_queue_is_empty` alone this fires right after `clear()`, while the
+        # drain is still about to process what it just popped -- and the next iteration
+        # collects the injected path correctly, proving nothing. It has to be the release
+        # that follows observing the queue genuinely empty, which is only distinguishable
+        # once at least one export has completed.
+        result = self._real.__exit__(*exc)
+        if should_fire:
+            self._fired = True
+            self._deliver(self._path)
+        return result
+
+
+def test_no_path_is_left_pending_with_nothing_scheduled_to_collect_it():
+    """The invariant: never "work outstanding and no drain running or armed".
+
+    The first version of this fix broke out of the `with` block when it found the queue
+    empty and cleared `isWaiting` in a `finally` -- releasing the lock in between. An
+    event delivered in that window was recorded, saw the flag still set, armed no timer,
+    and was then orphaned when the flag cleared. It is the same "never exported until an
+    unrelated future event" outcome the drain was written to remove, in a smaller window.
+    """
+    exporter = MagicMock()
+    exporter.exportCertificatesForFile.return_value = ["example.com"]
+    handler = _handler(exporter)
+
+    handler.handleEvent(_event("/data/first.json"))
+    handler.timer.cancel()
+
+    handler.lock = _InjectingLock(
+        handler.lock,
+        lambda p: handler.handleEvent(_event(p)),
+        "/data/racy.json",
+        lambda: (
+            not handler.pendingPaths
+            and exporter.exportCertificatesForFile.call_count >= 1
+        ),
+    )
+    handler.doTheWork()
+    if handler.timer is not None:
+        handler.timer.cancel()
+
+    assert not (handler.pendingPaths and not handler.isWaiting), (
+        f"orphaned: {handler.pendingPaths} pending, isWaiting={handler.isWaiting}, "
+        "so nothing is running or armed to collect them"
+    )
+
+
+def test_a_base_exception_clears_the_flag_and_re_arms_for_what_is_left():
+    """`Exception` is swallowed per path, so only a `BaseException` reaches the unwinding
+    path -- which is exactly why the earlier test of this property proved nothing. A
+    KeyboardInterrupt on the Timer thread must not strand the flag, and the paths already
+    taken off the queue must go back on it.
+    """
+    exporter = MagicMock()
+    handler = _handler(exporter)
+    exporter.exportCertificatesForFile.side_effect = KeyboardInterrupt
+
+    handler.handleEvent(_event("/data/a.json"))
+    handler.handleEvent(_event("/data/b.json"))
+    handler.timer.cancel()
+
+    with pytest.raises(KeyboardInterrupt):
+        handler.doTheWork()
+    if handler.timer is not None:
+        handler.timer.cancel()
+
+    assert handler.pendingPaths == {"/data/a.json", "/data/b.json"}, (
+        f"paths taken off the queue were lost on unwind: {handler.pendingPaths}"
+    )
+    assert handler.isWaiting is True, "re-armed work must leave the flag set"
+
+
+def test_the_real_timer_thread_runs_a_drain_end_to_end(monkeypatch):
+    """Every other test drives `doTheWork` on the main thread. This one lets the actual
+    `threading.Timer` fire, which is the only place the production path runs.
+    """
+    monkeypatch.setattr(certificate_exporter, "WATCH_DEBOUNCE_SECONDS", 0.05)
+
+    exporter = MagicMock()
+    exporter.exportCertificatesForFile.return_value = ["example.com"]
+    handler = _handler(exporter)
+
+    handler.handleEvent(_event("/data/acme.json"))
+    handler.timer.join(5)
+
+    assert exporter.exportCertificatesForFile.call_args_list[0].args[0] == (
+        "/data/acme.json"
+    )
+    assert handler.isWaiting is False
+    assert handler.pendingPaths == set()

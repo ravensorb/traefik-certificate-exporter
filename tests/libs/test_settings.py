@@ -71,3 +71,30 @@ def test_dump_settings_with_no_passphrase_does_not_raise(caplog):
 
     with caplog.at_level(logging.DEBUG):
         manager._dump_settings()
+
+
+def test_command_line_args_are_redacted_before_they_reach_the_log(caplog, tmp_path):
+    """The raw argparse namespace was logged verbatim at DEBUG.
+
+    `--pkcs12-passphrase` is a command-line flag, so the credential appeared in full in
+    the log line that announces the CLI source -- a few lines above the dump helpers that
+    take care to mask exactly that field. Redacting one source and printing another is a
+    leak, not a partial win.
+    """
+    import logging
+    from argparse import Namespace
+
+    from traefik_certificate_exporter.libs.settings import SettingsManager
+
+    args = Namespace(
+        configfile=str(tmp_path / "absent.yaml"),
+        **{"settings.pkcs12passphrase": "hunter2", "settings.datapath": str(tmp_path)},
+    )
+
+    with caplog.at_level(logging.DEBUG):
+        SettingsManager().loadFromFile(
+            fileName=str(tmp_path / "absent.yaml"), cmdLineArgs=args
+        )
+
+    leaked = [r.getMessage() for r in caplog.records if "hunter2" in r.getMessage()]
+    assert not leaked, f"the passphrase reached the log: {leaked}"

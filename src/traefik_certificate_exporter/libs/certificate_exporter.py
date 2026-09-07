@@ -431,27 +431,53 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
         """
         self.__logger.debug("Starting the work")
 
+        paths: list[str] = []
+        index = 0
+
         try:
             while True:
                 with self.lock:
                     if not self.pendingPaths:
-                        break
+                        # Publish the flag in the SAME critical section that observes the
+                        # queue empty. An earlier version broke out of the `with` here and
+                        # cleared `isWaiting` in a `finally`, which releases the lock in
+                        # between: an event delivered in that gap was recorded, saw
+                        # `isWaiting` still set, and armed no timer -- then the flag was
+                        # cleared and its path sat unprocessed with nothing scheduled to
+                        # collect it. A lost wakeup, and the same "never exported until an
+                        # unrelated future event" outcome the drain exists to remove.
+                        self.isWaiting = False
+                        return
+
                     paths = sorted(self.pendingPaths)
                     self.pendingPaths.clear()
 
-                for path in paths:
+                for index, path in enumerate(paths):
                     try:
                         self.__processPath(path)
                     except Exception:
                         self.__logger.exception(f"Unhandled error processing '{path}'")
-        finally:
-            # Cleared on EVERY exit path. This runs on a `threading.Timer` thread, so an
-            # escaping exception goes to `threading.excepthook` and the thread simply dies:
-            # `isWaiting` would stay True for the life of the process and `handleEvent`
-            # would discard every later change, still logging "Certificates changed found
-            # in file" each time, which reads exactly like the work is happening.
+        except BaseException:
+            # Reached by KeyboardInterrupt, SystemExit, or anything the per-path handler
+            # above does not catch. This runs on a `threading.Timer` thread, where an
+            # escaping exception goes to `threading.excepthook` and the thread dies
+            # silently -- so the flag must be cleared here or it stays set for the life of
+            # the process. Paths already taken off the queue but not yet processed go back
+            # on it, and a timer is re-armed, because nothing else will collect them.
             with self.lock:
+                self.pendingPaths.update(paths[index:])
                 self.isWaiting = False
+                self.__rearm()
+            raise
+
+    # --------------------------------------------------------------------------------------
+    def __rearm(self) -> None:
+        """Arm a drain if work is outstanding. Caller must hold `self.lock`."""
+        if not self.pendingPaths or self.isWaiting:
+            return
+        self.isWaiting = True
+        self.timer = threading.Timer(WATCH_DEBOUNCE_SECONDS, self.doTheWork)
+        self.timer.start()
 
         self.__logger.debug("Finished")
 
