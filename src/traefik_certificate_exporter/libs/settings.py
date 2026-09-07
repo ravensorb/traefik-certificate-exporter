@@ -22,13 +22,15 @@ from .object import ObjectBase
 # from this, so adding a credential-shaped setting is one entry here rather than an edit in
 # each sink and one more case in the test.
 #
-# Each entry is a config path, because that is what confuse redacts on. The name-pattern
+# Each entry is a CONFIG KEY -- a walk into the config tree, `settings.appriseurls` --
+# and not a filesystem path, which is what `dataPath` and `outputPath` in this same
+# module mean. confuse redacts on exactly this shape. The name-pattern
 # below stays as a second, independent net for anything shaped like a credential that
 # nobody remembered to declare -- but it is a backstop, not the mechanism: a credential
 # held as a VALUE (an Apprise destination URL inside a list) has no matching key anywhere
 # on its path, so no pattern over key names can ever reach it. That is BL-E001-005, and
 # the path registry is the answer to it.
-SECRET_CONFIG_PATHS: tuple[tuple[str, ...], ...] = (
+SECRET_CONFIG_KEYS: tuple[tuple[str, ...], ...] = (
     ("settings", "pkcs12passphrase"),
     # An Apprise destination URL usually IS the credential -- the token sits in the
     # path (`tgram://<token>/…`) or the userinfo (`mailto://user:pw@host`). It is also
@@ -48,7 +50,7 @@ _REDACTED_VALUE = "***REDACTED***"
 
 @functools.cache
 def _secret_leaf_names() -> frozenset[str]:
-    """The last segment of every declared secret path, lowercased.
+    """The last segment of every declared secret config key, lowercased.
 
     `_dump_settings` serialises the `Settings` dataclass rather than the confuse config,
     so confuse's path-based redaction cannot reach it (BL-E010-003). Matching the declared
@@ -56,11 +58,11 @@ def _secret_leaf_names() -> frozenset[str]:
     camelCase and the config keys are flat lowercase -- keeps that sink deriving from the
     same registry instead of from a second hand-kept list.
     """
-    return frozenset(path[-1].lower() for path in SECRET_CONFIG_PATHS)
+    return frozenset(key[-1].lower() for key in SECRET_CONFIG_KEYS)
 
 
 def _is_declared_secret(key) -> bool:
-    """Is this key a declared secret path's leaf?
+    """Is this key the last segment of a declared secret config key?
 
     Compares the last DOTTED segment, because the same value reaches this function under
     two spellings: `pkcs12Passphrase` from the Settings dataclass, and
@@ -253,9 +255,9 @@ class SettingsManager(ObjectBase):
         # Mark every declared secret path before anything can dump the config. Done once,
         # here, so no sink has to remember: `Configuration.dump(redact=True)` consults
         # these and masks by path.
-        for path in SECRET_CONFIG_PATHS:
+        for config_key in SECRET_CONFIG_KEYS:
             view = self._config
-            for segment in path:
+            for segment in config_key:
                 view = view[segment]
             view.redact = True
 

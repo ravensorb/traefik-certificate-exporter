@@ -102,7 +102,7 @@ def test_command_line_args_are_redacted_before_they_reach_the_log(caplog, tmp_pa
 
 # ---------------------------------------------------------------------------
 # Secret redaction (E010-S01-001). The guard derives its scope from
-# SECRET_CONFIG_PATHS rather than naming fields, so a declared setting is covered
+# SECRET_CONFIG_KEYS rather than naming fields, so a declared setting is covered
 # without editing anything here -- which is the property the scope plant below attacks.
 # ---------------------------------------------------------------------------
 
@@ -132,15 +132,15 @@ def _capture_all_records(caplog, tmp_path, config_text, cli_overrides):
     return "\n".join(r.getMessage() for r in caplog.records)
 
 
-def test_every_declared_secret_path_is_redacted_in_every_sink(caplog, tmp_path):
+def test_every_declared_secret_key_is_redacted_in_every_sink(caplog, tmp_path):
     """Scope comes from the registry, so a new declaration is covered with no edit here."""
-    from traefik_certificate_exporter.libs.settings import SECRET_CONFIG_PATHS
+    from traefik_certificate_exporter.libs.settings import SECRET_CONFIG_KEYS
 
-    assert SECRET_CONFIG_PATHS, "no secret paths declared; this guard examined nothing"
+    assert SECRET_CONFIG_KEYS, "no secret paths declared; this guard examined nothing"
 
-    for path in SECRET_CONFIG_PATHS:
-        assert path[0] == "settings", f"unhandled path shape: {path}"
-        key = path[-1]
+    for config_key in SECRET_CONFIG_KEYS:
+        assert config_key[0] == "settings", f"unhandled key shape: {config_key}"
+        key = config_key[-1]
         planted = f"PLANTED-{key.upper()}"
         captured = _capture_all_records(
             caplog,
@@ -149,7 +149,7 @@ def test_every_declared_secret_path_is_redacted_in_every_sink(caplog, tmp_path):
             {f"settings.{key}": planted, "settings.datapath": str(tmp_path)},
         )
         assert planted not in captured, (
-            f"{'.'.join(path)} reached a log record at DEBUG"
+            f"{'.'.join(config_key)} reached a log record at DEBUG"
         )
         caplog.clear()
 
@@ -168,8 +168,8 @@ def test_a_newly_declared_secret_is_covered_without_touching_the_guard(
 
     monkeypatch.setattr(
         settings_module,
-        "SECRET_CONFIG_PATHS",
-        (*settings_module.SECRET_CONFIG_PATHS, ("settings", "destinationlist")),
+        "SECRET_CONFIG_KEYS",
+        (*settings_module.SECRET_CONFIG_KEYS, ("settings", "destinationlist")),
     )
     settings_module._secret_leaf_names.cache_clear()
 
@@ -191,5 +191,5 @@ def test_a_newly_declared_secret_is_covered_without_touching_the_guard(
     )
     assert planted not in captured, (
         "a declared secret path was not redacted -- redaction is not deriving its scope "
-        "from SECRET_CONFIG_PATHS"
+        "from SECRET_CONFIG_KEYS"
     )

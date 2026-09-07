@@ -38,7 +38,7 @@ backlog:
   source: sprint-closure adversarial review (E001-S01)
   severity: High
   status: resolved
-  resolution: 'Closed 2026-09-07 by E010-S01-001. SECRET_CONFIG_PATHS is the single declaration
+  resolution: 'Closed 2026-09-07 by E010-S01-001. SECRET_CONFIG_KEYS is the single declaration
     and three sinks derive from it: _dump_config uses confuse own dump(redact=True), which masks by
     config PATH and is the only mechanism reaching a credential held as a value inside a list;
     _dump_settings matches declared leaf names, since it serialises the dataclass confuse cannot see;
