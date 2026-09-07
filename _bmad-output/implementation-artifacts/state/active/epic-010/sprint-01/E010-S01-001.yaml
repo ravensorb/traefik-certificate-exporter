@@ -2,10 +2,10 @@ key: 'E010-S01-001'
 epic: 'E010'
 sprint: 'S01'
 title: 'Redact Secrets Held as Configuration Values'
-status: in-progress
+status: done
 classification: standard
 depends_on: []
-updated_at: '2026-09-07T01:54:31Z'
+updated_at: '2026-09-07T01:59:11Z'
 estimate:
   man_hours: 6.08
   hitl_hours: 0.12

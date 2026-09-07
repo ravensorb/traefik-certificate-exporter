@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.serialization import pkcs12
 
 from .docker import DockerManager
 from .logging_utils import globalLogger
+from .notify import send_export_notifications
 from .post_export import run_post_export_command
 from .settings import Settings
 
@@ -491,6 +492,13 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
 
         run_post_export_command(
             self.__settings.postExportCommand, domains or [], self.__settings.dryRun
+        )
+        # Scope: this file's domains, once per file per drain -- not the pass total.
+        # app.py's run-at-start notifies once for the union of every file instead. The two
+        # differ because the two passes differ, and ADR-0014 requires each to be stated
+        # rather than left for an operator to infer from message counts.
+        send_export_notifications(
+            self.__settings.appriseUrls, domains or [], self.__settings.dryRun
         )
 
         if self.__settings.restartContainers:

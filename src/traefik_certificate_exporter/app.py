@@ -15,6 +15,7 @@ from .libs.certificate_exporter import (
 from .libs.cli_args import globalArgs
 from .libs.docker import DockerManager
 from .libs.logging_utils import globalLogger, setup_logging
+from .libs.notify import send_export_notifications
 from .libs.post_export import run_post_export_command
 from .libs.settings import globalSettingsMgr
 
@@ -66,6 +67,11 @@ def main():
         domainsProcessed = exporter.exportCertificates()
         run_post_export_command(
             settings.postExportCommand, domainsProcessed or [], settings.dryRun
+        )
+        # Scope: the union of every acme file, once per process start. The watch path
+        # notifies per file instead; see the note at that call site.
+        send_export_notifications(
+            settings.appriseUrls, domainsProcessed or [], settings.dryRun
         )
         if (
             domainsProcessed

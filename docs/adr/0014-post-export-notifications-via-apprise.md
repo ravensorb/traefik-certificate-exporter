@@ -109,7 +109,7 @@ prose and machine-readable record disagreeing is how the wrong fix gets implemen
 | floor | `^1.9.0` — chosen for currency, not licence: the BSD line starts around 1.6.0, so the floor is not what makes it permissive |
 | licence | **BSD-2-Clause** at 1.13.1; `BSD` at 1.6.0–1.9.x; **MIT** at ≤1.2.x |
 | `requires_python` | `>=3.9` at 1.13.1, inside this project's `>=3.10,<3.15` |
-| new to the main group | `apprise`, `requests-oauthlib`, `click`, `markdown` — `requests`, `PyYAML` and `certifi` are already `groups = ["main", "dev"]` in `poetry.lock` |
+| new to the main group | `apprise`, `requests-oauthlib`, `oauthlib`, `markdown` — four, confirmed by running `poetry add`. An earlier draft listed `click`, which was already present, and missed `oauthlib`, which arrives transitively through `requests-oauthlib`. `requests`, `PyYAML`, `certifi` and `click` were already resolved into the main group |
 
 The second gate asserted Apprise was **GPLv3 through 1.8.x**, relicensing at 1.9.0, and treated
 that as a copyleft risk for an MIT project shipping an image. **Checked against PyPI, that is

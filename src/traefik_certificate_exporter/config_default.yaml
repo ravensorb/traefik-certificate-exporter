@@ -15,3 +15,12 @@ settings:
   watchinterval: 60
   # pkcs12passphrase:
   # postexportcommand:
+  # Apprise destinations notified after an export pass completes. A list, never a
+  # comma-separated string -- a comma is legal inside an Apprise URL. From the
+  # environment use confuse's indexed keys instead:
+  #   TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_APPRISEURLS_0=...
+  # These values are credentials and are redacted from every settings dump.
+  # appriseurls:
+  #   - "tgram://<bot-token>/<chat-id>"
+  #   - "mailto://user:pass@example.com"
+  appriseurls: []

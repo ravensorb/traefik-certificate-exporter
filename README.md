@@ -116,3 +116,27 @@ traefik-certificate-exporter \
 ## Credits
 
 This tool is HEAVLY influenced by the excellent work of [DanielHuisman](https://github.com/DanielHuisman) and [Marc Brückner](https://github.com/SnowMB)
+
+## Export notifications
+
+Set `appriseurls` in your config file to be notified when an export pass completes — email,
+chat, or a generic webhook, via [Apprise](https://github.com/caronc/apprise):
+
+```yaml
+settings:
+  appriseurls:
+    - "tgram://<bot-token>/<chat-id>"
+    - "mailto://user:pass@example.com"
+```
+
+There is no command-line flag for this setting, matching `domains` — the other list-valued
+setting — and from the environment it takes indexed keys
+(`..._APPRISEURLS_0`, `..._APPRISEURLS_1`) rather than a comma-separated string, because a
+comma is legal inside an Apprise URL.
+
+A notification means **an export pass completed**, not that a certificate changed: this tool
+rewrites every certificate on every pass and does not compare them. Delivery is
+fire-and-forget — a failure is logged and stops nothing. For something that must succeed,
+use `postexportcommand`, which blocks and reports its exit code.
+
+See [docker/README.md](docker/README.md) for the container setup.

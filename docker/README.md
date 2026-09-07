@@ -102,6 +102,42 @@ docker run -it ravensorb/traefik-certificate-exporter:latest \
                 -e "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FILESPEC=acme-*.json" 
 ```
 
+### Export notifications (Apprise)
+
+Set `appriseurls` in the config file to be notified when an export pass completes:
+
+```yaml
+settings:
+  appriseurls:
+    - "tgram://<bot-token>/<chat-id>"
+    - "mailto://user:pass@example.com"
+    - "json://my-service.internal/hook"      # generic webhook
+```
+
+Any [Apprise](https://github.com/caronc/apprise) URL works — email, Slack, Discord, ntfy,
+Gotify, Telegram, Matrix and around a hundred others.
+
+From the environment, use **indexed keys** rather than a comma-separated list — a comma is
+legal inside an Apprise URL and splitting on it would corrupt the destination:
+
+```yaml
+- TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_APPRISEURLS_0=tgram://<bot-token>/<chat-id>
+- TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_APPRISEURLS_1=mailto://user:pass@example.com
+```
+
+Two things worth knowing before you rely on it:
+
+- **A notification means "an export pass completed", not "a certificate changed."** This
+  tool rewrites every certificate on every pass and does not compare them, and the image
+  ships `RUNATSTART=true` — so a container restart, a redeploy, and any Traefik write to
+  `acme.json` each send one, renewal or not.
+- **Delivery is fire-and-forget.** A failed notification is logged and stops nothing. If
+  you need something that *must* succeed, use `postexportcommand`, which blocks and
+  reports a non-zero exit.
+
+These URLs are credentials. They are redacted from every settings dump, including at
+`--log-level DEBUG`.
+
 ### docker run (using config file)
 
 This will run the container and maps the local ./data/config into the container.  This folder should contain the config.yml file that the application will use.

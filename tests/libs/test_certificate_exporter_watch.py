@@ -20,13 +20,44 @@ def _event(path: str):
     return SimpleNamespace(src_path=path, is_directory=False)
 
 
-def _handler(exporter, *, restart=False):
-    settings = SimpleNamespace(
-        fileSpec="*.json",
-        postExportCommand=None,
-        dryRun=False,
-        restartContainers=restart,
+def _handler(exporter, *, restart=False, **overrides):
+    """Build the handler against a REAL `Settings`, not a hand-listed namespace.
+
+    An earlier version listed the four fields the handler happened to read, so adding a
+    setting it reads broke every test in this file with an `AttributeError` rather than at
+    a designed seam. Deriving the defaults from the dataclass signature means a new field
+    arrives with its own default and only a test that cares has to mention it.
+    """
+    import inspect
+
+    from traefik_certificate_exporter.libs.settings import Settings
+
+    blank = {
+        "dataPath": None,
+        "fileSpec": "*.json",
+        "outputPath": None,
+        "resolverInPathName": False,
+        "traefikResolverId": "",
+        "flat": False,
+        "dryRun": False,
+        "restartContainers": restart,
+        "domains": {"include": [], "exclude": []},
+        "watchForChanges": False,
+        "runAtStart": False,
+        "watchInterval": 60,
+        "pkcs12Passphrase": None,
+    }
+    required = {
+        name
+        for name, param in inspect.signature(Settings.__init__).parameters.items()
+        if param.default is inspect.Parameter.empty and name != "self"
+    }
+    missing = required - blank.keys()
+    assert not missing, (
+        f"Settings gained required fields this fixture does not supply: {sorted(missing)}"
     )
+
+    settings = Settings(**blank, **overrides)
     return AcmeCertificateFileHandler(
         exporter=exporter, dockerManager=MagicMock(), settings=settings
     )

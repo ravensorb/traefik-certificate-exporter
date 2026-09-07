@@ -28,7 +28,14 @@ from .object import ObjectBase
 # held as a VALUE (an Apprise destination URL inside a list) has no matching key anywhere
 # on its path, so no pattern over key names can ever reach it. That is BL-E001-005, and
 # the path registry is the answer to it.
-SECRET_CONFIG_PATHS: tuple[tuple[str, ...], ...] = (("settings", "pkcs12passphrase"),)
+SECRET_CONFIG_PATHS: tuple[tuple[str, ...], ...] = (
+    ("settings", "pkcs12passphrase"),
+    # An Apprise destination URL usually IS the credential -- the token sits in the
+    # path (`tgram://<token>/…`) or the userinfo (`mailto://user:pw@host`). It is also
+    # a VALUE inside a list, which is precisely what no key-name pattern can reach;
+    # declaring the path is the only mechanism that covers it.
+    ("settings", "appriseurls"),
+)
 
 # Backstop only -- see above. Retained because it catches an undeclared field, and because
 # it is what redacts objects that are not the confuse config (the Settings dataclass, and
@@ -80,6 +87,23 @@ def _redact_secrets(value):
     return value
 
 
+def _parse_apprise_urls(value) -> list:
+    """Normalize the configured destination list.
+
+    Deliberately NOT comma-split, unlike `_parse_domain_list`. A comma is legal and
+    idiomatic inside an Apprise URL (`mailto://u:pw@host?to=a@x.com,b@y.com`), so applying
+    this project's comma convention here would fragment one destination into two malformed
+    ones. From the environment the supported form is confuse's own indexed keys --
+    `…_APPRISEURLS_0`, `…_APPRISEURLS_1` -- which yield a real list with no in-band
+    separator to collide with (ADR-0014 §3).
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
 def _parse_domain_list(value) -> list:
     """Normalize a domains.include/exclude value into a list of domain strings.
 
@@ -117,6 +141,7 @@ class Settings:
     watchInterval: int
     pkcs12Passphrase: str | None
     postExportCommand: str | None
+    appriseUrls: list
 
     def __init__(
         self,
@@ -134,6 +159,7 @@ class Settings:
         watchInterval: int,
         pkcs12Passphrase: str | None,
         postExportCommand: str | None = None,
+        appriseUrls: list | None = None,
     ) -> None:
         """
         Initialize the class with the provided parameters.
@@ -152,6 +178,7 @@ class Settings:
             runAtStart (bool): Flag indicating if it should run at start.
             watchInterval (int): The interval to watch for changes.
             pkcs12Passphrase (str | None): Passphrase for PKCS12, if needed.
+            appriseUrls (list): Apprise destination URLs notified after a pass.
             postExportCommand (str | None): Shell-like command line run after a
                 successful export pass, or None to disable (default).
 
@@ -174,6 +201,7 @@ class Settings:
         self.watchInterval = watchInterval
         self.pkcs12Passphrase = pkcs12Passphrase
         self.postExportCommand = postExportCommand
+        self.appriseUrls = appriseUrls or []
 
 
 #######################################################################
@@ -293,6 +321,9 @@ class SettingsManager(ObjectBase):
             postExportCommand=self._config["settings"]["postexportcommand"].get(
                 confuse.Optional(str)
             ),  # type: ignore
+            appriseUrls=_parse_apprise_urls(
+                self._config["settings"]["appriseurls"].get(confuse.Optional(list))  # type: ignore
+            ),
         )
 
         self._dump_settings()
