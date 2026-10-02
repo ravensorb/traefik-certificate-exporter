@@ -18,8 +18,9 @@ import argparse
 import json
 import re
 import shutil
+import subprocess
 import sys
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 
 # --- Agent-specific configuration ---
@@ -44,22 +45,67 @@ EVOLVABLE = False
 # --- End agent-specific configuration ---
 
 
-def parse_yaml_config(config_path: Path) -> dict:
-    """Simple YAML key-value parser. Handles top-level scalar values only."""
-    config = {}
-    if not config_path.exists():
-        return config
-    with open(config_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if ":" in line:
-                key, _, value = line.partition(":")
-                value = value.strip().strip("'\"")
-                if value:
-                    config[key.strip()] = value
-    return config
+# BMad core installs its config resolver here. It is never bundled with a skill -- run it from
+# this path, exactly as references/config-resolution.md §2 specifies.
+RESOLVER_REL = Path("_bmad") / "scripts" / "resolve_config.py"
+
+
+def resolve_core_config(project_root: Path, warnings: list) -> dict:
+    """The `core.*` config subtree, resolved the one documented way.
+
+    There is no `_bmad/config.yaml`. BMad has kept central config in four TOML layers
+    (`_bmad/config.toml`, `config.user.toml`, `custom/config.toml`, `custom/config.user.toml`)
+    since the TOML migration, and merging them in the right order is BMad core's
+    `resolve_config.py`'s job -- not this script's, and certainly not a hand-written reader's.
+    This function used to open `_bmad/config.yaml` and `config.user.yaml` with a fifteen-line
+    line-splitter; both paths have not existed for releases, so the read was a permanent no-op
+    and every sanctum was personalised with the hardcoded defaults while reporting success.
+
+    Returns {} and records a WARNING on any failure -- never a silent default. The caller still
+    scaffolds the sanctum: personalisation is cosmetic and the agent can be told its owner's
+    name in conversation, but the reason must reach the operator rather than being swallowed.
+    """
+    resolver = project_root / RESOLVER_REL
+    if not resolver.exists():
+        warnings.append(
+            f"BMad core's config resolver is not installed at {resolver} — personalisation "
+            f"fields fall back to defaults. Install BMad core, then edit BOND.md/PERSONA.md."
+        )
+        return {}
+
+    argv = [str(resolver), "--project-root", str(project_root), "--key", "core"]
+    # `uv run --python 3.11` is the documented invocation; the resolver needs tomllib (3.11+).
+    # If uv is unavailable, config-resolution.md §2 says python3 works, so try that rather than
+    # give up -- the same fallback step-00-activate.md documents for the other helpers.
+    attempts = [["uv", "run", "--python", "3.11", *argv], ["python3", *argv]]
+    last = ""
+    for cmd in attempts:
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        except (OSError, ValueError) as exc:  # uv not on PATH, or not executable
+            last = f"{cmd[0]}: {exc}"
+            continue
+        if proc.returncode != 0:
+            last = f"{cmd[0]} exited {proc.returncode}: {proc.stderr.strip().splitlines()[-1:] or ''}"
+            continue
+        try:
+            resolved = json.loads(proc.stdout)
+        except json.JSONDecodeError as exc:
+            last = f"{cmd[0]} printed output that is not JSON: {exc}"
+            continue
+        if not isinstance(resolved, dict):
+            last = f"{cmd[0]} printed {type(resolved).__name__}, not a JSON object"
+            continue
+        # `--key core` may print the core subtree directly or the whole document; accept both
+        # rather than depending on which, since only two scalar fields are wanted either way.
+        core = resolved.get("core") if isinstance(resolved.get("core"), dict) else resolved
+        return core
+
+    warnings.append(
+        f"could not resolve config via {resolver} — personalisation fields fall back to "
+        f"defaults ({last})"
+    )
+    return {}
 
 
 def parse_frontmatter(file_path: Path) -> dict:
@@ -105,14 +151,12 @@ def discover_capabilities(references_dir: Path, sanctum_refs_path: str) -> list[
             continue
         meta = parse_frontmatter(md_file)
         if meta.get("name") and meta.get("code"):
-            capabilities.append(
-                {
-                    "name": meta["name"],
-                    "description": meta.get("description", ""),
-                    "code": meta["code"],
-                    "source": f"{sanctum_refs_path}/{md_file.name}",
-                }
-            )
+            capabilities.append({
+                "name": meta["name"],
+                "description": meta.get("description", ""),
+                "code": meta["code"],
+                "source": f"{sanctum_refs_path}/{md_file.name}",
+            })
     return capabilities
 
 
@@ -131,19 +175,17 @@ def generate_capabilities_md(capabilities: list[dict]) -> str:
             f"| {cap['code']} | {cap['name']} | {cap['description']} | `{cap['source']}` |"
         )
 
-    lines.extend(
-        [
-            "",
-            "## Tools",
-            "",
-            "### Required",
-            "- **WebSearch** — live research for cloud/platform best practices (must be enabled in Claude Code permissions)",
-            "",
-            "### User-Provided Tools",
-            "",
-            "_MCP servers, APIs, or services the owner has made available. Document them here._",
-        ]
-    )
+    lines.extend([
+        "",
+        "## Tools",
+        "",
+        "### Required",
+        "- **WebSearch** — live research for cloud/platform best practices (must be enabled in Claude Code permissions)",
+        "",
+        "### User-Provided Tools",
+        "",
+        "_MCP servers, APIs, or services the owner has made available. Document them here._",
+    ])
 
     return "\n".join(lines) + "\n"
 
@@ -162,25 +204,19 @@ def main():
         epilog="After this runs, start the agent to begin the First Breath conversation.",
     )
     parser.add_argument("project_root", help="Root of the project (where _bmad/ lives)")
-    parser.add_argument(
-        "skill_path", help="Path to the skill directory (where SKILL.md lives)"
-    )
-    parser.add_argument(
-        "--json", action="store_true", help="Emit structured JSON output"
-    )
+    parser.add_argument("skill_path", help="Path to the skill directory (where SKILL.md lives)")
+    parser.add_argument("--json", action="store_true", help="Emit structured JSON output")
+    parser.add_argument("--user-name", default="",
+                        help="core.user_name, when the caller has already resolved config")
+    parser.add_argument("--communication-language", default="",
+                        help="core.communication_language, when already resolved")
     args = parser.parse_args()
 
     project_root = Path(args.project_root).resolve()
     skill_path = Path(args.skill_path).resolve()
     use_json = args.json
 
-    result: dict = {
-        "skill": SKILL_NAME,
-        "status": "unknown",
-        "sanctum": "",
-        "created": [],
-        "warnings": [],
-    }
+    result: dict = {"skill": SKILL_NAME, "status": "unknown", "sanctum": "", "created": [], "warnings": []}
 
     # Paths
     bmad_dir = project_root / "_bmad"
@@ -191,7 +227,6 @@ def main():
 
     # Sanctum subdirectories
     sanctum_refs = sanctum_path / "references"
-    sanctum_refs_path = "./references"
 
     result["sanctum"] = str(sanctum_path)
 
@@ -206,16 +241,17 @@ def main():
             print(msg)
         sys.exit(0)
 
-    # Load config
-    config = {}
-    for config_file in ["config.yaml", "config.user.yaml"]:
-        config.update(parse_yaml_config(bmad_dir / config_file))
+    # Load config. An explicit flag wins: a caller that already resolved config at activation
+    # (SKILL.md does) can pass what it read instead of paying for a second resolver run.
+    config = {} if (args.user_name and args.communication_language) else \
+        resolve_core_config(project_root, result["warnings"])
 
     # Build variable substitution map
-    today = date.today().isoformat()
+    today = datetime.now(UTC).date().isoformat()
     variables = {
-        "user_name": config.get("user_name", "friend"),
-        "communication_language": config.get("communication_language", "English"),
+        "user_name": args.user_name or config.get("user_name") or "friend",
+        "communication_language":
+            args.communication_language or config.get("communication_language") or "English",
         "birth_date": today,
         "project_root": str(project_root),
         "sanctum_path": str(sanctum_path),
@@ -262,9 +298,7 @@ def main():
         for w in result["warnings"]:
             print(f"  ! {w}")
         print()
-        print(
-            "First Breath scaffolding complete. The conversational awakening can now begin."
-        )
+        print("First Breath scaffolding complete. The conversational awakening can now begin.")
 
 
 if __name__ == "__main__":

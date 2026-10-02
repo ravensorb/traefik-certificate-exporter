@@ -1,0 +1,22 @@
+code: l3io-arch
+name: "LiquidLogicLabs Architecture Standards"
+description: "Engineering-standards architecture guardrails and review for LiquidLogicLabs projects — universal best practices (separation of concerns, reuse, design-by-contract, testability, dependency/GA policy, unified correlated logging, documentation with diagrams) plus per-stack overlays (Python, Node.js, .NET, GitHub Actions)."
+module_version: 3.2.2
+default_selected: false
+module_greeting: >
+  LiquidLogicLabs Architecture Standards module is configured!
+  Use /l3io-arch-review to apply engineering standards at new-project design time, during an
+  architectural review, or when recording an architecture/technology decision (ADR).
+  Wire the standards into core bmad-architecture and bmad-code-review via bmad-customize —
+  see assets/customize-architect.md.
+
+post-install-notes: >
+  The standards are the single source of truth in references/standards-*.md.
+  Active stack overlays: python, nodejs, dotnet, github-actions, docker, powershell, shell.
+  Optional wiring: run /bmad-customize in the consuming repo to apply the standards
+  automatically inside bmad-architecture and bmad-code-review.
+
+preferred_diagram_format:
+  prompt: "Preferred diagram format for architecture docs (mermaid or ascii)?"
+  default: "mermaid"
+  result: "{value}"

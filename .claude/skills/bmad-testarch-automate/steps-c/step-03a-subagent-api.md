@@ -22,7 +22,7 @@ This is an **isolated subagent** running in parallel with E2E test generation.
 
 **Your task:** Generate API tests ONLY (not E2E, not fixtures, not other test types).
 
-**If `use_pactjs_utils` is enabled AND contract artifacts are explicitly in scope for this subagent:** `pactjs-utils-mandate.md` binds every Pact artifact you emit. Its substitutions are not optional: `.given(...createProviderState({ name, params }))` rather than a hand-cast `.given()`, `setJsonContent` / `setJsonBody` rather than repeated inline PactV4 builder lambdas, `buildVerifierOptions` and `buildMessageVerifierOptions` rather than literal options objects, `createRequestFilter` / `noOpRequestFilter` rather than bespoke auth middleware, and `zodToPactMatchers` where the project already has a Zod schema. Import only from `@seontechnologies/pactjs-utils`. Run the mandate's self-check before writing each file, and record anything that survives in `pactjs_utils_deviations` with a reason.
+**If `use_pactjs_utils` is enabled AND contract artifacts are explicitly in scope for this subagent:** `pactjs-utils-mandate.md` binds every Pact artifact you emit. Its substitutions are not optional: `.given(...createProviderState({ name, params }))` rather than a hand-cast `.given()`, `setJsonContent` / `setJsonBody` rather than repeated inline PactV4 builder lambdas, `buildVerifierOptions` and `buildMessageVerifierOptions` rather than literal options objects, scoped `consumer` + `consumerBranch` rather than a hand-built branch selector, `isBreakingChangeTolerantBranch` rather than repeated branch-name checks, `createRequestFilter` / `noOpRequestFilter` rather than bespoke auth middleware, and `zodToPactMatchers` where the project already has a Zod schema. Import only from `@seontechnologies/pactjs-utils`. Run the mandate's self-check before writing each file, and record anything that survives in `pactjs_utils_deviations` with a reason.
 
 Apply pactjs-utils conventions from the loaded fragments (`pactjs-utils-overview`, `pactjs-utils-consumer-helpers`, `pactjs-utils-provider-verifier`, `pactjs-utils-request-filter`, `pact-consumer-framework-setup`) when generating contract-level API test scaffolding. Full consumer/provider suite generation — including edits to `vitest.config.pact.ts`, `vitest.config.contract.ts`, `package.json` scripts (`test:pact:consumer`, `test:pact:consumer:run`), and `scripts/publish-pact.sh` — must be triggered explicitly by the parent workflow flag `tea_use_pactjs_utils: true`; do not generate those artifacts implicitly. When in scope, enforce these determinism/FFI-safety rules:
 
@@ -203,17 +203,17 @@ The seven points to verify for each interaction:
 
 5. **Document scrutiny evidence** as a block comment in the generated test:
 
-```typescript
-/*
- * Provider Scrutiny Evidence:
- * - Handler: server/src/routes/userHandlers.ts:45
- * - OpenAPI: server/openapi.yaml paths./api/v2/users/{userId}.get (if available)
- * - Response type: UserResponseDto (server/src/types/user.ts:12)
- * - Status: 201 for creation (line 52), 400 for validation error (line 48)
- * - Fields: { id: number, name: string, email: string, role: "user" | "admin" }
- * - Required request headers: Authorization (Bearer token)
- */
-```
+   ```typescript
+   /*
+    * Provider Scrutiny Evidence:
+    * - Handler: server/src/routes/userHandlers.ts:45
+    * - OpenAPI: server/openapi.yaml paths./api/v2/users/{userId}.get (if available)
+    * - Response type: UserResponseDto (server/src/types/user.ts:12)
+    * - Status: 201 for creation (line 52), 400 for validation error (line 48)
+    * - Fields: { id: number, name: string, email: string, role: "user" | "admin" }
+    * - Required request headers: Authorization (Bearer token)
+    */
+   ```
 
 6. **Graceful degradation** when provider source is not accessible (follows the canonical four-step protocol from `contract-testing.md`):
    1. **OpenAPI/Swagger spec available**: Use the spec as the source of truth for response shapes, status codes, and field names

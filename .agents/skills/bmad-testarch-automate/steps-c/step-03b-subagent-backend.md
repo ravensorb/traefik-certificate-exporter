@@ -69,7 +69,6 @@ import pytest
 from unittest.mock import MagicMock, patch
 from myapp.services.user_service import UserService
 
-
 class TestUserService:
     """[P0] Unit tests for UserService"""
 

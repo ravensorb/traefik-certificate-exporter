@@ -1,9 +1,11 @@
 {
-  "version": "2.4.11",
+  "version": "3.2.2",
   "generated_from": "skills/_shared/",
   "files": {
+    "references/config-resolution.md": "c170d0c5275d636db58e550bfe346f669f09561b77d3d5e997edd1b96589ef81",
+    "scripts/merge-config.py": "22f51eed631c64134d352c236917e0a98ec5b5fe5d0810394f4615905c6ef7dc",
+    "scripts/merge-help-csv.py": "44cae89d74a247395cc851970e28b65605e958efa04b632209f9bd5ecbc70d69",
     "scripts/write-module-config.py": "fdc0e81cda51221599907b9023a096b0570e096b7d921fb0c1db2050afa7a80f",
-    "references/config-resolution.md": "4dd6dbd91e50522af5ea68c37b290a8c398ca90d21c20ce3345bacb178e8997f",
-    "assets/module-setup.md": "6a183e230bb6e86ee8dcb4e9c4804dd9f99883de02e4fca4031f3500848a4048"
+    "assets/module-setup.md": "c4ffc5f603867c37c28446600f4a0ff62d30f92a121aac595523b9da75c3cc9a"
   }
 }

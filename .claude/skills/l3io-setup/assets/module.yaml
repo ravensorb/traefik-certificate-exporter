@@ -1,0 +1,35 @@
+code: l3io-pm
+name: "LiquidLogicLabs PM"
+description: "PM orchestration for LiquidLogicLabs delivery teams — dependency-aware phased planning, full epic and sprint execution, closure quality gates, progress reporting, and GitHub Issues sync."
+module_version: 3.2.2
+default_selected: false
+# Required LiquidLogicLabs modules that must be installed alongside l3io-pm.
+# BMad's installer schema captures this field into `moduleInfo.dependencies` at
+# tools/installer/modules/official-modules.js:207 (`moduleInfo.dependencies =
+# config.dependencies || []`), but as of BMad 6.12 nothing downstream reads it —
+# picker validation and install-order gating are TODO. Declared here at the module
+# manifest layer so a future BMad release that grows enforcement picks it up, and so
+# consumers see the dependency in the module.yaml itself. See CLAUDE.md "Dependencies"
+# for the runtime rationale (l3io-help forwards several modes to l3io-doctor).
+dependencies:
+  - l3io-util
+module_greeting: >
+  LiquidLogicLabs PM module is configured!
+  Use /l3io-plan to build the execution plan.
+  Use /l3io-execute to run the plan.
+  Use /l3io-help to get a state-aware next-action recommendation.
+  Use /l3io-sync to mirror state to GitHub Issues.
+post-install-notes: >
+  Required BMad skills from the bmm module: bmad-code-review, bmad-qa-generate-e2e-tests,
+  bmad-retrospective, bmad-review (adversarial lens), bmad-sprint-planning (readiness gate).
+  bmm is not part of core, so install it with `--modules bmm` if you have not already.
+  Story enrichment and implementation run as in-package agents when BMad's
+  legacy bmad-create-story / bmad-dev-story skills are absent, so no shim flag is needed.
+  Required LiquidLogicLabs modules: l3io-util (provides l3io-doctor, which
+  l3io-help forwards to for the progress dashboard and the pm-status.py freshness check).
+  Optional: bmad-ux (UX phases skip when absent), l3io-arch-review (epic architecture gate
+  and drift reviews), l3io-sec-redteam (closure security review).
+  Run /l3io-doctor check-deps to confirm what resolved in this project.
+  /l3io-sync additionally needs an authenticated GitHub CLI (gh) or a configured GitHub
+  MCP server.
+  Requires uv on PATH: the Python helpers run via `uv run`.

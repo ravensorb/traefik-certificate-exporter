@@ -1,6 +1,6 @@
 ---
 name: l3io-arch-review
-description: Engineering-standards architecture guardrails and review. Use when the user wants to apply best-practice engineering standards — separation of concerns, reuse, design-by-contract, testability, dependency/GA policy, unified correlated logging, documentation with diagrams, plus per-stack rules (Python uv/poetry, Node LTS, .NET self-contained, GitHub Actions) — at new-project design time, during an architectural review, or when recording a technology/architecture decision.
+description: Engineering-standards architecture guardrails and review. Use when the user wants to apply best-practice engineering standards — separation of concerns, reuse, design-by-contract, testability, dependency/GA policy, unified correlated logging, documentation with diagrams, plus per-stack rules (Python uv/poetry, Node LTS, .NET self-contained, GitHub Actions, Docker digest-pinning/SBOM, PowerShell 7 major-scoped, shell strict-mode) — at new-project design time, during an architectural review, or when recording a technology/architecture decision.
 ---
 
 # Architecture Standards & Review
@@ -44,9 +44,13 @@ explicitly passes `setup`, `configure`, or `install`.
    - Node.js (`package.json`) → `references/standards-nodejs.md`
    - .NET/C# (`*.csproj`, `*.sln`) → `references/standards-dotnet.md`
    - GitHub Actions (`.github/workflows/*`) → `references/standards-github-actions.md`
-   - Docker / PowerShell / shell → load the matching overlay if present (currently stubs).
+   - Docker / PowerShell / shell → load the matching overlay if present.
    When the user names a stack explicitly, honor that over auto-detection.
-3. **Pick the mode** from the user's intent (or ask if ambiguous):
+3. **Pick the mode** from the user's intent (or ask if ambiguous). The three words
+   `design`, `review` and `decision` name the modes directly — they are the `action`
+   values of this module's three `assets/module-help.csv` rows, so that is what bmad-help
+   hands a user who picks one from the menu. An argument that is not one of them is still
+   read as intent, never rejected:
 
 ### Mode A — Design guardrails (new project)
 
@@ -55,7 +59,8 @@ target project, produce:
 - A boundaries/architecture sketch honoring separation of concerns (§1) with at least a C4
   context + one flow diagram (Mermaid preferred, ASCII fallback — §10).
 - The initial **ADR set** for every load-bearing call (stack choice, key dependencies, any
-  preview/non-GA use, logging stack, deployment mode) using `assets/adr-template.md`.
+  preview/non-GA use, logging stack, deployment mode) using `assets/adr-template.md` —
+  numbered and placed as in Mode C.
 - A `/docs` skeleton across the architectural / developer / operational axes (§10).
 - A dependency policy note (GA-over-beta §8, maintenance+license §7).
 
@@ -70,19 +75,27 @@ findings must be resolved or ADR-justified; MINOR auto-defers to the backlog.
 ### Mode C — Decision support
 
 Given a decision in play, identify the principle(s) in tension, weigh the options against them,
-recommend, and **record an ADR** (`assets/adr-template.md`). Never let a load-bearing call go
+recommend, and **record an ADR** (`assets/adr-template.md`) at
+`{project-root}/docs/adr/NNNN-slug.md`, the one ADR home. When
+`{project-root}/_bmad/scripts/pm-status.py` exists, take the number from the l3io-pm
+register:
+`uv run {project-root}/_bmad/scripts/pm-status.py adr-reserve --state-root {implementation_artifacts}/state --epic n/a --slug {slug} --adr-dir {project-root}/docs/adr`
+prints it. Without l3io-pm there is no register, so use the highest number in `docs/adr/`
+plus one. That is safe only for a single writer, which is the only case without the
+register, and `adr-reserve` skips those numbers later. Fill `Epic:` (`n/a` outside an epic)
+and `Departs from spec:` (a `path#anchor`, or `n/a`). Never let a load-bearing call go
 unrecorded.
 
 ## Wiring into core BMad (customization)
 
-This module is also designed to be wired **into** the core `bmad-architect` and
+This module is also designed to be wired **into** the core `bmad-architecture` and
 `bmad-code-review` skills so the standards apply automatically. `assets/customize-architect.md`
 documents the `bmad-customize` overlay to author in a consuming project. Offer to set it up.
 
 ## Output
 
 - **Review** → report to `{implementation_artifacts}` (or the path the orchestrator passes).
-- **Design/Decision** → ADRs under `{project-root}/docs/adr/` and the docs skeleton.
+- **Design/Decision** → ADRs under `{project-root}/docs/adr/` (numbered by `adr-reserve` when l3io-pm is installed — Mode C) and the docs skeleton.
 
 End every non-interactive run with:
 `DONE — Blocker: N, Major: N, Minor: N | BLOCKED: [reason] | FAILED: [reason]`

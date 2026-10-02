@@ -1,0 +1,7 @@
+{
+  "core_version": "6.12.0",
+  "bmb_version": "v2.2.2",
+  "validator_sha256": "122612a9e0c2afc71bdcc5bf2d9f8448a7bb1732f811a75bf1fdebfa8abe17ac",
+  "verified_on": "2026-09-20",
+  "why": "Every claim this package makes about BMad's module contract, config surface and skill inventory was read from this install. bmb v2.2.2 and core 6.12.0 disagree about config (YAML vs TOML), so the pair matters, not either alone."
+}

@@ -78,6 +78,7 @@ against and no partial-migration case to protect.
 
 Load `pactjs-utils-mandate.md` before scoring M10: it holds the REQUIRED
 substitution list M10 fires on (`createProviderState`, `buildVerifierOptions`,
+scoped `consumerBranch`, `isBreakingChangeTolerantBranch`,
 `createRequestFilter`, `setJsonContent`), the constructs it must not fire on
 (`MatchersV3` used directly), and the RECOMMENDED items that never deduct
 (`zodToPactMatchers`, the DI injection). The determinism and FFI rows (H6, H7, H8,
@@ -128,6 +129,11 @@ const score = Math.max(0, 100 - totalPenalty);
 ---
 
 ## OUTPUT FORMAT
+
+Write this JSON to `/tmp/tea-test-review-maintainability-<timestamp>.json`, using the
+`timestamp` the dispatching step handed you. Do not generate one: step-03
+section 5 aborts the workflow when the path it expects does not exist, and a
+worker that invented its own timestamp writes a file nobody looks for.
 
 ```json
 {

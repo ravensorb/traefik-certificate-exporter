@@ -1,6 +1,6 @@
 ---
 name: bmad-correct-course
-description: 'Manage significant changes during sprint execution. Use when the user says "correct course" or "propose sprint change"'
+description: 'Assess the impact of a significant change during sprint execution across the PRD, epics, architecture, and UX documents, and produce a sprint change proposal. Use when the user says "correct course" or "propose sprint change"'
 ---
 
 # Correct Course - Sprint Change Management Workflow
@@ -20,7 +20,7 @@ description: 'Manage significant changes during sprint execution. Use when the u
 
 ### Step 1: Resolve the Workflow Block
 
-Run: `uv run {project-root}/_bmad/scripts/resolve_customization.py --skill {skill-root} --key workflow`
+Run: `uv run {project-root}/_bmad/scripts/resolve_customization.py --skill {skill-root} --project-root {project-root} --key workflow`
 
 **If the script fails**, resolve the `workflow` block yourself by reading these three files in base → team → user order and applying the same structural merge rules as the resolver:
 
@@ -182,8 +182,12 @@ Activation is complete. If `activation_steps_prepend` or `activation_steps_appen
 
 <check if="mode is Incremental">
   <action>Present each edit proposal individually</action>
-  <ask>Review and refine this change? Options: Approve [a], Edit [e], Skip [s]</ask>
-  <action>Iterate on each proposal based on user feedback</action>
+  <action>HALT and give the user a choice:
+  - **Approve** — accept this proposal
+  - **Edit** — refine this proposal
+  - **Skip** — drop this proposal
+  </action>
+  <action>If the user chooses **Approve**, keep the proposal. If they choose **Edit**, refine it with them. If they choose **Skip**, drop it. Continue to the next proposal.</action>
 </check>
 
 <action if="mode is Batch">Collect all edit proposals and present together at end of step</action>
@@ -232,7 +236,11 @@ Activation is complete. If `activation_steps_prepend` or `activation_steps_appen
 
 <action>Present complete Sprint Change Proposal to user</action>
 <action>Write Sprint Change Proposal document to {default_output_file}</action>
-<ask>Review complete proposal. Continue [c] or Edit [e]?</ask>
+<action>HALT and give the user a choice:
+- **Continue** — proceed to approval
+- **Edit** — revise the proposal first
+</action>
+<action>If the user chooses **Edit**, revise the proposal with them and write the updated document before continuing.</action>
 </step>
 
 <step n="5" goal="Finalize and Route for Implementation">
@@ -294,7 +302,7 @@ Activation is complete. If `activation_steps_prepend` or `activation_steps_appen
 
 <action>Report workflow completion to user with personalized message: "Correct Course workflow complete, {user_name}!"</action>
 <action>Remind user of success criteria and next steps for Developer agent</action>
-<action>Run: `uv run {project-root}/_bmad/scripts/resolve_customization.py --skill {skill-root} --key workflow.on_complete` — if the resolved value is non-empty, follow it as the final terminal instruction before exiting.</action>
+<action>Run: `uv run {project-root}/_bmad/scripts/resolve_customization.py --skill {skill-root} --project-root {project-root} --key workflow.on_complete` — if the resolved value is non-empty, follow it as the final terminal instruction before exiting.</action>
 </step>
 
 </workflow>

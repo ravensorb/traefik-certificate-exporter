@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from pathlib import Path
-from typing import Any
-
 import tomllib
+from pathlib import Path
+from typing import Any, Iterable
 
 
 class ConfigError(ValueError):
@@ -83,9 +81,7 @@ def structural_merge(base: Any, override: Any) -> Any:
     if isinstance(base, dict) and isinstance(override, dict):
         result = dict(base)
         for key, value in override.items():
-            result[key] = (
-                structural_merge(result[key], value) if key in result else value
-            )
+            result[key] = structural_merge(result[key], value) if key in result else value
         return result
     if isinstance(base, list) and isinstance(override, list):
         return _merge_arrays(base, override)

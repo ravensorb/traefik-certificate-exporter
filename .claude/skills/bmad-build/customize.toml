@@ -24,28 +24,23 @@ activation_steps_append = []
 # Entries are literal text or file references prefixed with "file:".
 # File entries may use globs and are loaded during activation.
 
-persistent_facts = [
-  "file:{project-root}/**/project-context.md",
-]
+persistent_facts = []
 
 # Instruction run after Build completes.
 # Empty means no extra completion behavior.
 
 on_complete = ""
 
-# How Build opens a completed spec for human review. The default deliberately
-# opens the repository root first and the spec second in a reused VS Code
-# window so relative review links resolve in the correct workspace. Override
-# this with the application and equivalent behavior you prefer. Set it to an
-# empty string to disable automatic opening and all related completion output.
+# Optional instructions for opening a completed spec. The empty default leaves
+# the spec closed. Override this with the application and behavior you prefer.
 # Example requests for bmad-customize: "Open completed specs in Cursor and
 # reuse the project window" or "Do not open completed specs automatically."
 #
 # Example `open_spec` override instructions for bmad-build.user.toml:
 # {project-root} and {spec_file} are substituted at run time.
 #
-# VS Code and compatible GUI editors — shipped default uses `code`; Cursor,
-# Windsurf, Antigravity, Zed, and similar editors can substitute their launcher.
+# VS Code and compatible GUI editors — a custom override can use `code`; Cursor,
+# Windsurf, Antigravity, Zed, and similar editors can use their own launcher.
 # Preserve reuse-window behavior when the launcher supports it, and always pass
 # the repository root first and the spec second:
 #   Run `code -r "{project-root}" "{spec_file}"`, root first.
@@ -63,13 +58,7 @@ on_complete = ""
 # Emacs — reuse an Emacs server without waiting for the buffer to close:
 #   Run `cd "{project-root}" && emacsclient -n "{spec_file}"`.
 #
-# For every non-empty override, also tell Build to note in the completion summary
-# that the spec was sent to the chosen editor and contains a Suggested Review
-# Order, then include the default navigation tip shown below.
-
-open_spec = """
-Run `code -r "{project-root}" "{spec_file}"` — the repository root first so VS Code opens in the right context, then the spec file. Always double-quote both paths to handle spaces and special characters. If `code` is unavailable or the command fails, skip gracefully and tell the user the spec file path instead. In the completion summary, note that the spec was sent to VS Code and that it contains a Suggested Review Order, then add this navigation tip: "Ctrl+click (Cmd+click on macOS) the links in the Suggested Review Order to jump to each stop."
-"""
+open_spec = ""
 
 # Handoff for the implementation subagent in step 03. The whole execution
 # recipe — a subagent by default, but an override may run it any other way
@@ -86,8 +75,10 @@ Launch a subagent with no prior conversation context, with this prompt:
 
 # Review layers for the review step. `instruction` is the layer's whole
 # execution recipe — subagents by default, but an override may run anything
-# (e.g. an external reviewer via bash). {diff_output} is substituted at run
-# time. `when` (optional) gates a layer; empty `instruction` disables it.
+# (e.g. an external reviewer via bash). {diff_file} and {claims_file} are
+# substituted at run time; both are paths, and {diff_file} is the unified diff
+# file the layer reads. `when` (optional) gates a layer; empty `instruction`
+# disables it.
 
 [[workflow.review_layers]]
 id = "blind-hunter"
@@ -97,15 +88,14 @@ Launch a context-free subagent with this prompt:
 
 Conduct a review of CONTENT.
 Look for what's missing, not only what's wrong.
-Find at least ten issues to fix or improve.
+Compute your finding floor N from the diff file's size: N = min(floor(sqrt(kB) + 1), 10), where kB is the file's size in kilobytes. State the arithmetic in one line, then find at least N issues to fix or improve.
 Output a Markdown list of findings only — no severity, priority, or ranking.
 If the content is empty, stop and say so.
 If you have zero findings, re-check and keep thinking; do not stop with an empty list.
 
-CONTENT:
-{diff_output}
+CONTENT: the unified diff at `{diff_file}`. Read that file — it is the content under review.
 
-Do not invoke any skill. Return only the review result.
+Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
 
 """
 
@@ -117,11 +107,11 @@ Launch a context-free subagent with this prompt:
 
 Read `{skill-root}/review-prompts/edge-case-hunter.md` completely and follow it as your review instructions.
 
-Review content:
+claims_file (leave unread until your instructions call for it): {claims_file}
 
-{diff_output}
+Review content: the unified diff at `{diff_file}`. Read that file — it is the content under review.
 
-Do not invoke any skill. If the instruction file is unreadable, report that exact failure and stop. Return only the review result.
+Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. If the instruction file is unreadable, report that exact failure and stop. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
 
 """
 
@@ -133,15 +123,13 @@ Launch a context-free subagent with this prompt:
 
 Read `{skill-root}/review-prompts/verification-gap.md` completely and follow it as your review instructions.
 
-Review content:
+Review content: the unified diff at `{diff_file}`. Read that file — it is the content under review.
 
-{diff_output}
-
-Do not invoke any skill. If the instruction file is unreadable, report that exact failure and stop. Return only the review result.
+Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. If the instruction file is unreadable, report that exact failure and stop. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
 
 """
 
-# Review layers for the one-shot route.
+# Review layers for the oneshot route.
 
 [[workflow.oneshot_review_layers]]
 id = "blind-hunter"
@@ -151,7 +139,7 @@ Launch a context-free subagent with this prompt:
 
 Conduct a review of CONTENT.
 Look for what's missing, not only what's wrong.
-Find at least ten issues to fix or improve.
+Compute your finding floor N from the size of the changes: N = min(floor(sqrt(kB) + 1), 10), where kB is the changed content's size in kilobytes. State the arithmetic in one line, then find at least N issues to fix or improve.
 Output a Markdown list of findings only — no severity, priority, or ranking.
 If the content is empty, stop and say so.
 If you have zero findings, re-check and keep thinking; do not stop with an empty list.
@@ -159,6 +147,6 @@ If you have zero findings, re-check and keep thinking; do not stop with an empty
 CONTENT:
 The changed files in the current worktree. Inspect them directly before reviewing.
 
-Do not invoke any skill. Return only the review result.
+Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
 
 """

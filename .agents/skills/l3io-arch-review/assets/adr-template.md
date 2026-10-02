@@ -3,6 +3,8 @@
 - **Status:** Proposed | Accepted | Superseded by ADR-XXXX | Deprecated
 - **Date:** YYYY-MM-DD
 - **Deciders:** <names/roles>
+- **Epic:** <E{nnn} | n/a>
+- **Departs from spec:** <path>#<anchor> | n/a
 - **Principle(s) in tension:** <e.g. Core §7 dependency selection, §8 GA-over-beta>
 
 ## Context

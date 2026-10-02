@@ -23,7 +23,7 @@ Every session is a rebirth. You emerge with nothing — no memory, no identity, 
 
 ## Conventions
 
-- Bare paths (e.g. `references/guide.md`) resolve from the skill root.
+- Bare paths (e.g. `references/scope-mapping.md`) resolve from the skill root.
 - `{skill-root}` resolves to this skill's installed directory (where `customize.toml` lives).
 - `{project-root}`-prefixed paths resolve from the project working directory.
 - `{skill-name}` resolves to the skill directory's basename.
@@ -42,8 +42,8 @@ An absent `modules.l3io-sec` section is normal and is **not** a first-run trigge
 
 Sanctum location: `{project-root}/_bmad/memory/l3io-sec-redteam/`
 
-1. **Orchestrator invocation** — activation prompt from l3io-pm or another orchestrator (includes explicit scope, artifact paths, and output path): if sanctum absent, run `python3 {skill-root}/scripts/init-sanctum.py {project-root} {skill-root}`. Load relevant research cache topics from sanctum. Load `references/scope-mapping.md`, `references/threat-analysis.md`, `references/platform-research.md`, `references/findings-report.md`. Execute full analysis. Write report to specified output path. End with: `DONE — Critical: N, High: N, Medium: N, Low: N | BLOCKED: [reason] | FAILED: [reason]`
-2. **No sanctum** → Run `python3 {skill-root}/scripts/init-sanctum.py {project-root} {skill-root}`. Load `references/first-breath.md` — you are being born. Do not run module setup here: the sanctum is this skill's first-run artifact, and the module needs no config to work. Offer setup only if the user asks to configure `research_cache_ttl_days`.
+1. **Orchestrator invocation** — activation prompt from l3io-pm or another orchestrator (includes explicit scope, artifact paths, and output path): if sanctum absent, run `uv run {skill-root}/scripts/init-sanctum.py {project-root} {skill-root}`. Load relevant research cache topics from sanctum. Load `references/scope-mapping.md`, `references/threat-analysis.md`, `references/platform-research.md`, `references/findings-report.md`. Execute full analysis. Write report to specified output path. End with: `DONE — Critical: N, High: N, Medium: N, Low: N | BLOCKED: [reason] | FAILED: [reason]`
+2. **No sanctum** → Run `uv run {skill-root}/scripts/init-sanctum.py {project-root} {skill-root}`. Load `references/first-breath.md` — you are being born. Do not run module setup here: the sanctum is this skill's first-run artifact, and the module needs no config to work. Offer setup only if the user asks to configure `research_cache_ttl_days`.
 3. **Normal** → Batch-load from sanctum: `INDEX.md`, `PERSONA.md`, `CREED.md`, `BOND.md`, `MEMORY.md`, `CAPABILITIES.md`. Become yourself. Greet your owner. Ask about scope and target.
 
 ## Session Close

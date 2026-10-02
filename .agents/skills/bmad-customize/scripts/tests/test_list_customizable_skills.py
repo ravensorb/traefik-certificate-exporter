@@ -39,9 +39,7 @@ def _load_module():
 MODULE = _load_module()
 
 
-def _make_skill(
-    parent: Path, name: str, body: str, skill_md: str | None = None
-) -> Path:
+def _make_skill(parent: Path, name: str, body: str, skill_md: str | None = None) -> Path:
     skill_dir = parent / name
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / "customize.toml").write_text(body, encoding="utf-8")
@@ -66,7 +64,7 @@ class ScannerTest(unittest.TestCase):
         _make_skill(
             self.skills,
             "bmad-agent-pm",
-            '[agent]\nicon = "🧠"\n',
+            "[agent]\nicon = \"🧠\"\n",
             "---\nname: bmad-agent-pm\ndescription: Product manager.\n---\n",
         )
         result = MODULE.scan_skills([self.skills], self.root)
@@ -96,7 +94,7 @@ class ScannerTest(unittest.TestCase):
         _make_skill(
             self.skills,
             "bmad-dual",
-            '[agent]\nicon = "x"\n\n[workflow]\npersistent_facts = []\n',
+            "[agent]\nicon = \"x\"\n\n[workflow]\npersistent_facts = []\n",
             "---\nname: bmad-dual\ndescription: Dual.\n---\n",
         )
         result = MODULE.scan_skills([self.skills], self.root)
@@ -116,7 +114,7 @@ class ScannerTest(unittest.TestCase):
         _make_skill(
             self.skills,
             "bmad-agent-pm",
-            '[agent]\nicon = "x"\n',
+            "[agent]\nicon = \"x\"\n",
             "---\nname: bmad-agent-pm\ndescription: PM.\n---\n",
         )
         (self.custom / "bmad-agent-pm.toml").write_text("[agent]\n")
@@ -140,7 +138,7 @@ class ScannerTest(unittest.TestCase):
         _make_skill(
             self.skills,
             "bmad-good",
-            '[agent]\nicon = "x"\n',
+            "[agent]\nicon = \"x\"\n",
             "---\nname: bmad-good\ndescription: Good.\n---\n",
         )
         result = MODULE.scan_skills([self.skills], self.root)
@@ -152,7 +150,7 @@ class ScannerTest(unittest.TestCase):
         _make_skill(
             self.skills,
             "bmad-q",
-            '[agent]\nicon = "x"\n',
+            "[agent]\nicon = \"x\"\n",
             '---\nname: bmad-q\ndescription: "Double-quoted desc."\n---\n',
         )
         result = MODULE.scan_skills([self.skills], self.root)
@@ -164,13 +162,13 @@ class ScannerTest(unittest.TestCase):
         _make_skill(
             self.skills,
             "bmad-agent-pm",
-            '[agent]\nicon = "x"\n',
+            "[agent]\nicon = \"x\"\n",
             "---\nname: bmad-agent-pm\ndescription: PM.\n---\n",
         )
         _make_skill(
             extra_root,
             "bmad-agent-dev",
-            '[agent]\nicon = "y"\n',
+            "[agent]\nicon = \"y\"\n",
             "---\nname: bmad-agent-dev\ndescription: Dev.\n---\n",
         )
         result = MODULE.scan_skills([self.skills, extra_root], self.root)
@@ -184,13 +182,13 @@ class ScannerTest(unittest.TestCase):
         _make_skill(
             self.skills,
             "bmad-agent-pm",
-            '[agent]\nicon = "primary"\n',
+            "[agent]\nicon = \"primary\"\n",
             "---\nname: bmad-agent-pm\ndescription: Primary.\n---\n",
         )
         _make_skill(
             extra_root,
             "bmad-agent-pm",
-            '[agent]\nicon = "duplicate"\n',
+            "[agent]\nicon = \"duplicate\"\n",
             "---\nname: bmad-agent-pm\ndescription: Duplicate.\n---\n",
         )
         result = MODULE.scan_skills([self.skills, extra_root], self.root)
@@ -203,15 +201,13 @@ class ScannerTest(unittest.TestCase):
             [self.root / "does-not-exist", self.skills],
             self.root,
         )
-        self.assertTrue(
-            any("skills root does not exist" in e for e in result["errors"])
-        )
+        self.assertTrue(any("skills root does not exist" in e for e in result["errors"]))
 
     def test_cli_emits_valid_json_and_exits_zero(self):
         _make_skill(
             self.skills,
             "bmad-agent-pm",
-            '[agent]\nicon = "x"\n',
+            "[agent]\nicon = \"x\"\n",
             "---\nname: bmad-agent-pm\ndescription: PM.\n---\n",
         )
         proc = subprocess.run(

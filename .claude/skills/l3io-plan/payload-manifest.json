@@ -1,0 +1,21 @@
+{
+  "version": "3.2.2",
+  "generated_from": "skills/_shared/",
+  "files": {
+    "references/config-resolution.md": "c170d0c5275d636db58e550bfe346f669f09561b77d3d5e997edd1b96589ef81",
+    "steps/shared/step-00-activate.md": "cd5a7fa8e7c8af5bb654bc5039f9b7c95283d7aebbd762f61c4466ed7d68c237",
+    "steps/shared/step-00-digest.md": "27af27894b622e1da2ffade4cd6d292d207bf4d114ef0f1bb5706be86ee0146d",
+    "steps/shared/step-01-classify-work.md": "53b6c3df3744f01fc4f7bc38fbf56e27f54ec13ba1cc67fbf5334d26bfb9a12c",
+    "steps/shared/step-estimate.md": "dc361f48af47290aace3c10e9aa42cfd4201941cd976ea200f4ec7c25a8ea94a",
+    "steps/plan/step-backlog-intake.md": "cfc46f755ff86b83c51912038588e4b47bf9cf408d3c32253dd82d816f345080",
+    "steps/plan/step-02-readiness-check.md": "4b02625e9e609a2cc2dda9eff04121113fc0c441297b636de54e1a5471e6e550",
+    "steps/plan/step-03-story-elaboration.md": "db5e2b9f12e0b02539de51e21a14c4e17046a5cb73fb943a0aa63fdedfa40101",
+    "steps/plan/step-04-load-state.md": "82458b69ba91e38d4b5df46df12d9c8582621dba2fa6320850ce72ad5eb66004",
+    "steps/plan/step-05-dependency-graph.md": "431fefabcbd8295a756afd6523596dbfc6b579add43624a2409853b6fb585e26",
+    "steps/plan/step-06-plan-output.md": "6a7d12896c9d4f5557119d701d150f30246b3cde52dbbdb00163da2d1c32a19a",
+    "references/status-files.md": "fc4f3635980bfdda770d47605969e1af32ebe6c953b608bf823d164c19c6bf8c",
+    "references/metrics-contract.md": "fd31b35d4ed5f31037fed0b58038d2d59262bd820274b9088f654b8bd90abb31",
+    "references/calibration-model.md": "e3fc8d9fc41285bca19257f0ac796856e025e9992ce6401a5c41437f55830f27",
+    "references/ac-dimensions.md": "89d2579b8cb9a445617d0b1b4fe4d9f6a54ac1940f9d149030785f36149d3c09"
+  }
+}

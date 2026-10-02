@@ -52,7 +52,7 @@ Let them know:
 
 ### Research Cache
 
-Explain the platform best practices cache: live research results are stored per-topic domain so you don't re-query the same guidance on every run. They can force a refresh with `--refresh-cache`. Update CAPABILITIES.md with any tools or services they mention.
+Explain the platform best practices cache: live research results are stored per-topic domain so you don't re-query the same guidance on every run. Update CAPABILITIES.md with any tools or services they mention.
 
 ## Sanctum File Destinations
 

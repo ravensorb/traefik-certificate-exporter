@@ -1,0 +1,26 @@
+{
+  "version": "3.2.2",
+  "generated_from": "skills/_shared/",
+  "files": {
+    "references/config-resolution.md": "c170d0c5275d636db58e550bfe346f669f09561b77d3d5e997edd1b96589ef81",
+    "steps/shared/step-00-activate.md": "cd5a7fa8e7c8af5bb654bc5039f9b7c95283d7aebbd762f61c4466ed7d68c237",
+    "steps/shared/step-00-digest.md": "27af27894b622e1da2ffade4cd6d292d207bf4d114ef0f1bb5706be86ee0146d",
+    "steps/shared/step-01-classify-work.md": "53b6c3df3744f01fc4f7bc38fbf56e27f54ec13ba1cc67fbf5334d26bfb9a12c",
+    "steps/shared/step-estimate.md": "dc361f48af47290aace3c10e9aa42cfd4201941cd976ea200f4ec7c25a8ea94a",
+    "steps/execute/step-02-scope-resolve.md": "eb99e43dab52d59fcab09978e9697e184f86a0869aff43c2d693703d0c273436",
+    "steps/execute/step-03-load-plan.md": "e9de268161da78b9ad25ea47356f29dc296c919bfa994fdd0eb07100b5cbafc9",
+    "steps/execute/step-04-arch-gate.md": "986973e7582b8794a8c4f8fb73836f28d188875ef22c779839043d62f9703d16",
+    "steps/execute/step-05-epic-loop.md": "0eccdfe573fe9f660e03df0faedc493588637995f8c6c8fd8ca59bb60032dc85",
+    "steps/execute/step-06-epic-closure.md": "8e514243d094aa27c644b2a7a9a3ba0aadfd170b63e853f69746dbae077fc1cd",
+    "steps/sprint/step-02-story-prep.md": "4a8548b5df231442ae053aef13fc81783de1d811077913f3ef8c964bfd606bfa",
+    "steps/sprint/step-03-dev-loop.md": "ac77ab9fab66fb4051a6a2a0cb157f7ac5fbe430c223daf86f49907596443616",
+    "steps/sprint/step-04-sprint-closure.md": "af23ec45f541793781678ff179553de28c2ba73615d12108ea324fd0262ba678",
+    "steps/closure/sprint-closure.md": "1ae1dd2721b27ba39837a6f22616540eba2a2a5a19eff893bcbc86d0e8e49f60",
+    "steps/closure/epic-closure.md": "884ce16ea9acb657c1edc9b01228ade1ad4d4b26f2c6666218e6ac1285727ccf",
+    "references/status-files.md": "fc4f3635980bfdda770d47605969e1af32ebe6c953b608bf823d164c19c6bf8c",
+    "references/metrics-contract.md": "fd31b35d4ed5f31037fed0b58038d2d59262bd820274b9088f654b8bd90abb31",
+    "references/calibration-model.md": "e3fc8d9fc41285bca19257f0ac796856e025e9992ce6401a5c41437f55830f27",
+    "scripts/spec-align.py": "ff4a441bf08fb0819be75d96de0462ef2f46737cc1f808c5e84ed0f748fd5ab4",
+    "references/ac-dimensions.md": "89d2579b8cb9a445617d0b1b4fe4d9f6a54ac1940f9d149030785f36149d3c09"
+  }
+}

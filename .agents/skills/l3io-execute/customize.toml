@@ -1,0 +1,19 @@
+[workflow]
+activation_steps_prepend = []
+activation_steps_append  = []
+persistent_facts         = [
+  "file:{project-root}/project-context.md",
+  "file:{project-root}/docs/project-context.md",
+]
+
+# Fix loops
+max_fix_iterations          = 3    # CODE and MIXED work — each iteration is a turn multiplier
+max_turns_per_story         = 120  # soft cap per story agent; self-monitored, not mechanically enforced
+
+# Concurrency
+max_parallel_subagents   = 4    # max sprint subagents in flight concurrently
+epic_lock_ttl_minutes    = 30   # TTL for epic ownership lock; stale locks can be reclaimed
+
+# Spec alignment (docs/adr/0004-agents-edit-architecture-specs.md in the package repo)
+spec_alignment = true   # spec index to reviewers, Spec: pointers at story prep, epic-closure spec sync
+spec_paths     = []     # replaces spec discovery: project-root-relative paths/globs; [] = discover under planning_artifacts

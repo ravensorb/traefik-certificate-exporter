@@ -1,0 +1,15 @@
+code: l3io-util
+name: "LiquidLogicLabs Utilities"
+description: "Utility skills for LiquidLogicLabs BMad projects — project state diagnostics, the plan-aware progress dashboard, one-time layout migrations, and housekeeping."
+module_version: 3.2.2
+default_selected: false
+module_greeting: >
+  LiquidLogicLabs Utilities module is configured!
+  Run /l3io-doctor for a project health check, or /l3io-doctor stats for the
+  plan-aware progress dashboard.
+post-install-notes: >
+  Run /l3io-doctor once after installing or upgrading, before any sprint or epic run.
+  The installer refreshes skills but does not migrate project data; the doctor detects the
+  layout, sequences every migration you need behind one confirmation, and self-installs the
+  shared pm-status.py helper.
+  Requires uv on PATH: the Python helpers run via `uv run`.
