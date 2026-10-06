@@ -1,10 +1,18 @@
 import apprise
 
-from .logging_utils import globalLogger
+from .logging_utils import (
+    get_correlation_id,
+    globalLogger,
+    reset_correlation_id,
+    set_correlation_id,
+)
 
 
 def send_export_notifications(
-    urls: "list[str] | None", domains: list, dryRun: bool
+    urls: "list[str] | None",
+    domains: list,
+    dryRun: bool,
+    correlationId: str | None = None,
 ) -> None:
     """Notify every configured Apprise destination that an export pass completed.
 
@@ -27,6 +35,17 @@ def send_export_notifications(
 
     if not urls:
         return
+
+    # Same contract as the post-export hop: bind what the caller passed, fall back to
+    # whatever is already in flight, and never fail the pass over a missing id.
+    token = set_correlation_id(correlationId or get_correlation_id())
+    try:
+        _notify(logger, urls, domains, dryRun)
+    finally:
+        reset_correlation_id(token)
+
+
+def _notify(logger, urls: list, domains: list, dryRun: bool) -> None:
 
     if dryRun:
         logger.info("Dry run: skipping export notifications")

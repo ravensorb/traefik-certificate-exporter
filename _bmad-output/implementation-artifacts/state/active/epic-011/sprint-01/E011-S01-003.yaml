@@ -1,0 +1,48 @@
+key: 'E011-S01-003'
+epic: 'E011'
+sprint: 'S01'
+title: 'CLI and settings hardening: unrecognized-arg failure, settings-dump redaction'
+status: done
+classification: simple
+resolves: [BL-E001-006, BL-E010-003]
+estimate:
+  man_hours: 2.47
+  hitl_hours: 0.15
+  elapsed_hours: 0.86
+  cost: 0.36
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 0.6599
+    hitl_hours: 0.586
+    elapsed_hours: 0.6871
+    tokens_k: 1.0
+  tokens_k:
+    total: 88
+    input: 13
+    output: 4
+    cache_write: 27
+    cache_read: 44
+updated_at: '2026-10-06T20:08:32Z'
+completion_evidence:
+  fix_iterations: 0
+  files_changed: 6
+  test_runs:
+  - command: poetry run pytest -q
+    exit_code: 1
+  - command: poetry run pytest tests/libs/test_cli_args.py tests/libs/test_settings.py tests/libs/test_settings_precedence.py -q
+    exit_code: 0
+  - command: ruff check src/traefik_certificate_exporter tests/libs/test_cli_args.py tests/libs/test_settings.py
+    exit_code: 0
+  - command: poetry run pytest -q --ignore=tests/test_release_version.py
+    exit_code: 0
+  - command: poetry run pytest -q
+    exit_code: 1
+  tests_passing: false
+actual:
+  elapsed_hours: 0.45
+  man_hours: 3.5
+  hitl_hours: 0.05
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-10-06T20:08:28Z'

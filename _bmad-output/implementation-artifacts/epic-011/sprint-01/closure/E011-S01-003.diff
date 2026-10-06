@@ -1,0 +1,332 @@
+diff --git a/docs/adr/0014-post-export-notifications-via-apprise.md b/docs/adr/0014-post-export-notifications-via-apprise.md
+index caba3f7..c4a6240 100644
+--- a/docs/adr/0014-post-export-notifications-via-apprise.md
++++ b/docs/adr/0014-post-export-notifications-via-apprise.md
+@@ -1,6 +1,6 @@
+ # ADR-0014: Notifications on `post-export`, delivered by Apprise
+ 
+-- **Status:** Proposed
++- **Status:** Accepted (Decision 4 implementation verified E011-S01-003, 2026-10-06)
+ - **Date:** 2026-09-06
+ - **Deciders:** Maintainer (ravensorb)
+ - **Supersedes:** ADR-0013, withdrawn before implementation after an architecture gate
+diff --git a/docs/adr/0025-strict-cli-parse-without-import-time-regression.md b/docs/adr/0025-strict-cli-parse-without-import-time-regression.md
+new file mode 100644
+index 0000000..548dd1e
+--- /dev/null
++++ b/docs/adr/0025-strict-cli-parse-without-import-time-regression.md
+@@ -0,0 +1,62 @@
++# ADR-0025: Keep a lenient import-time `globalArgs`; add a separate strict parse called only from `main()`
++
++- **Status:** Accepted (implemented E011-S01-003, 2026-10-06)
++- **Date:** 2026-10-06
++- **Deciders:** Maintainer (ravensorb)
++- **Epic:** E011
++- **Departs from spec:** n/a
++- **Principle(s) in tension:** BL-E001-006 (production should hard-fail on an unrecognized
++  CLI flag) vs. the existing, load-bearing guarantee that importing
++  `traefik_certificate_exporter` (pytest, a REPL, an embedding host) must never raise on
++  foreign argv.
++
++## Context
++
++E011-S01-003 instructs relocating `globalArgs, _ = globalArgParser.parse_known_args()`
++out of `src/traefik_certificate_exporter/libs/cli_args.py`'s module-import scope into a
++`main()`-only strict-parse call, to fix BL-E001-006 (a genuine CLI typo like
++`--dtaa-path` is currently silently ignored in production, not just during tests).
++However, `src/traefik_certificate_exporter/app.py` line 15 does
++`from .libs.cli_args import globalArgs` at module-import time, and uses `globalArgs` at
++several points inside `main()` (`globalArgs.logginglevel`, `globalArgs.configfile`). If
++the import-time assignment in `cli_args.py` is literally removed, as a naive reading of
++the story's "move the call site" instruction would do, that `from .libs.cli_args import
++globalArgs` import in `app.py` raises `ImportError` before `main()` ever runs — a strictly
++worse regression than the one being fixed, because it breaks unconditionally rather than
++only on a flag typo.
++
++## Options considered
++
++| Option | Pros | Cons | Standards fit |
++|--------|------|------|---------------|
++| A. Remove the import-time `globalArgs` assignment entirely; have `main()` call `globalArgParser.parse_args()` and bind the result to a local/module variable before first use | Matches a literal reading of "move the call site" | Breaks `app.py`'s existing top-level `from .libs.cli_args import globalArgs` unconditionally; every import of `app` (including under pytest) now `ImportError`s; the exact regression the story's own Non-goals/Security section says must not happen | Fails the story's own stated regression guard |
++| B. Keep the lenient, import-time `globalArgs = globalArgParser.parse_known_args()[0]` assignment exactly as it is today (so `app.py`'s existing top-level import keeps working, and tests that import either module keep succeeding); additionally define `parse_args_strict() -> argparse.Namespace` in `cli_args.py`, calling `globalArgParser.parse_args()` (no suppression of unrecognized args); have `app.py`'s `main()` call `globalArgs = parse_args_strict()` as its first statement, rebinding the module-level name in `app`'s own namespace to the strict result before any attribute of it is read | Import-time behavior is unchanged (zero regression risk for the lenient path); the strict path exists and is exercised exactly where BL-E001-006 needs it — the one place `sys.argv` is guaranteed to be this process's own; no `ImportError` risk since nothing is removed, only added | Two parse calls run in the `main()` path (one lenient at import, one strict in `main()`) — a minor duplication, stated as an explicit trade-off below |
++
++## Decision
++
++**Option B.** `cli_args.py` keeps its existing module-level
++`globalArgs, _ = globalArgParser.parse_known_args()` line untouched — this is what makes
++`app.py`'s `from .libs.cli_args import globalArgs` safe at import time, and what every
++existing test that imports either module already depends on. A new function
++`parse_args_strict() -> argparse.Namespace` is added to `cli_args.py`, calling
++`globalArgParser.parse_args()` (argparse's strict form, which calls `sys.exit(2)` with a
++usage message on any unrecognized argument). `app.py`'s `main()` calls
++`globalArgs = parse_args_strict()` as its very first statement, rebinding the
++module-level `globalArgs` name inside `app`'s own namespace (the one `main()` reads
++from for `logginglevel`, `configfile`, etc.) to the strict-parsed result — so production
++invocations get BL-E001-006's hard-fail-on-typo behavior, while the lenient import-time
++value remains solely a safe default for any consumer that imports without calling
++`main()`.
++
++## Consequences
++
++- Positive: No `ImportError` risk — nothing is removed from module-import scope.
++  Production (`main()`) hard-fails on an unrecognized flag, closing BL-E001-006.
++  Import-only consumers (pytest, a REPL, an embedding host) keep succeeding exactly as
++  today, closing the regression the story's own Security section warns against.
++- Negative / trade-offs accepted: `parse_known_args()` and `parse_args()` both run
++  argparse's parsing logic once each in the `main()` path — negligible cost (parsing a
++  short argv), accepted rather than engineering a single-parse mechanism that would
++  complicate the import-time/strict-time split for no measurable benefit.
++- Follow-ups / exit plan: none — this is the complete, final mechanism for both paths;
++  no non-GA/preview capability is involved.
+diff --git a/src/traefik_certificate_exporter/app.py b/src/traefik_certificate_exporter/app.py
+index 88676d8..4267d27 100755
+--- a/src/traefik_certificate_exporter/app.py
++++ b/src/traefik_certificate_exporter/app.py
+@@ -12,7 +12,10 @@ from .libs.certificate_exporter import (
+     AcmeCertificateExporter,
+     AcmeCertificateFileHandler,
+ )
+-from .libs.cli_args import globalArgs
++from .libs.cli_args import (  # noqa: F401 -- see main()
++    globalArgs,
++    parse_args_strict,
++)
+ from .libs.docker import DockerManager
+ from .libs.logging_utils import globalLogger, setup_logging
+ from .libs.notify import send_export_notifications
+@@ -34,6 +37,16 @@ def require_existing_path(logger, path: str | None, label: str) -> None:
+ 
+ 
+ def main():
++    # The imported `globalArgs` was parsed leniently so that importing this module can
++    # never die on somebody else's argv -- it stays as `app.globalArgs`' safe default for
++    # anything that imports without calling `main()`, which is why the import above is
++    # kept even though every read below happens after the rebind. Here argv is this
++    # process's own, so an unrecognized flag is a typo and must fail loudly: rebind the
++    # module-level name to the strict parse before any attribute of it is read
++    # (ADR-0025, BL-E001-006).
++    global globalArgs
++    globalArgs = parse_args_strict()
++
+     setup_logging(
+         cfg_file_name="logging.yaml",
+         default_level=globalArgs.logginglevel,
+diff --git a/src/traefik_certificate_exporter/libs/cli_args.py b/src/traefik_certificate_exporter/libs/cli_args.py
+index d32d7ce..17a05b5 100644
+--- a/src/traefik_certificate_exporter/libs/cli_args.py
++++ b/src/traefik_certificate_exporter/libs/cli_args.py
+@@ -152,3 +152,16 @@ group.add_argument(
+ # script entry point only ever sees its own argv in production, so behavior there is
+ # unchanged.
+ globalArgs, _ = globalArgParser.parse_known_args()
++
++
++def parse_args_strict() -> argparse.Namespace:
++    """Parse this process's argv strictly, failing on any unrecognized flag.
++
++    The module-level `globalArgs` above deliberately tolerates foreign argv so that
++    importing this module from pytest, a REPL or an embedding host can never raise.
++    That leniency is wrong for a real invocation, where `--dtaa-path` is a typo and not
++    somebody else's flag, so `main()` calls this instead: `parse_args()` exits 2 with a
++    usage message naming the offending argument. Nothing here runs at import time --
++    only when a caller asks for it (ADR-0025).
++    """
++    return globalArgParser.parse_args()
+diff --git a/tests/libs/test_cli_args.py b/tests/libs/test_cli_args.py
+new file mode 100644
+index 0000000..4c62115
+--- /dev/null
++++ b/tests/libs/test_cli_args.py
+@@ -0,0 +1,141 @@
++"""Guards for the two-path CLI parse (ADR-0025, BL-E001-006).
++
++The import-time parse must stay lenient -- it runs whenever anything imports the package,
++including under pytest, where argv belongs to pytest and not to us. The production parse
++must be strict -- there argv is this process's own, so an unrecognized flag is a typo.
++Both halves are asserted here, because fixing either one alone reintroduces the other's
++bug.
++
++argparse objects are first-class and parse an explicit list, so none of this needs a
++subprocess or any argv monkeypatching.
++"""
++
++import argparse
++import subprocess
++import sys
++
++import pytest
++
++from traefik_certificate_exporter.libs.cli_args import (
++    globalArgParser,
++    globalArgs,
++    parse_args_strict,
++)
++
++
++def test_import_time_parse_is_lenient_about_foreign_argv():
++    """The guarantee the import-time assignment exists for.
++
++    This test module was itself imported by pytest, whose argv (`-x`, `-v`, a node id)
++    `cli_args` has already parsed at import time. Reaching this assertion at all means no
++    SystemExit was raised during that import -- which is the regression BL-E001-006's fix
++    must not reintroduce.
++    """
++    assert isinstance(globalArgs, argparse.Namespace)
++    assert globalArgs.configfile == "config.yaml"
++
++
++def test_lenient_parse_silently_ignores_a_typo():
++    """`--dtaa-path` is a typo for `--data-path`, and the lenient path keeps going."""
++    parsed, unknown = globalArgParser.parse_known_args(["--dtaa-path", "/x"])
++
++    assert unknown == ["--dtaa-path", "/x"]
++    assert getattr(parsed, "settings.datapath") is None
++
++
++def test_strict_parse_rejects_a_typo(capsys):
++    """The behavior BL-E001-006 asks for: a typo is an error, not a silent no-op."""
++    with pytest.raises(SystemExit) as excinfo:
++        globalArgParser.parse_args(["--dtaa-path", "/x"])
++
++    assert excinfo.value.code == 2
++    assert "--dtaa-path" in capsys.readouterr().err
++
++
++def test_strict_parse_accepts_a_valid_invocation():
++    """Strictness must not cost a correct command line its parse."""
++    parsed = globalArgParser.parse_args(
++        ["--data-path", "/acme", "--log-level", "DEBUG"]
++    )
++
++    assert getattr(parsed, "settings.datapath") == "/acme"
++    assert parsed.logginglevel == "DEBUG"
++
++
++def test_strict_parse_still_prints_help_and_exits_zero(capsys):
++    """`-h` is handled by argparse's own action, before unrecognized-arg handling."""
++    with pytest.raises(SystemExit) as excinfo:
++        globalArgParser.parse_args(["-h"])
++
++    assert excinfo.value.code == 0
++    assert "usage:" in capsys.readouterr().out
++
++
++def test_parse_args_strict_reads_process_argv(monkeypatch):
++    """`parse_args_strict()` is `parse_args()` over `sys.argv` -- nothing in between.
++
++    Asserted through `sys.argv` rather than by passing a list, because the production
++    call in `main()` takes no argument and the thing worth guarding is that it reads the
++    real invocation.
++    """
++    monkeypatch.setattr(sys, "argv", ["traefik-certificate-exporter", "-d", "/acme"])
++
++    parsed = parse_args_strict()
++
++    assert getattr(parsed, "settings.datapath") == "/acme"
++
++
++def test_parse_args_strict_exits_on_an_unrecognized_flag(monkeypatch):
++    monkeypatch.setattr(
++        sys, "argv", ["traefik-certificate-exporter", "--dtaa-path", "/x"]
++    )
++
++    with pytest.raises(SystemExit) as excinfo:
++        parse_args_strict()
++
++    assert excinfo.value.code == 2
++
++
++def test_importing_app_under_foreign_argv_does_not_exit(monkeypatch):
++    """Importing never parses strictly -- only `main()` does.
++
++    `app.py` holds the only production call to `parse_args_strict()`, so a future edit
++    that hoists it to module scope would turn every import of the package into a
++    SystemExit under any host that owns argv. Re-importing with hostile argv present is
++    what catches that.
++    """
++    monkeypatch.setattr(sys, "argv", ["pytest", "--dtaa-path", "/x", "-k", "something"])
++    monkeypatch.delitem(sys.modules, "traefik_certificate_exporter.app", raising=False)
++    monkeypatch.delitem(
++        sys.modules, "traefik_certificate_exporter.libs.cli_args", raising=False
++    )
++
++    import importlib
++
++    module = importlib.import_module("traefik_certificate_exporter.app")
++
++    assert callable(module.main)
++
++
++def test_main_hard_fails_on_a_typo_end_to_end():
++    """The whole point, exercised through the real entry point in a real process.
++
++    Every other assertion here works on parser objects; this one proves the wiring --
++    that `main()` actually calls the strict parse, and does it before reading any
++    attribute of `globalArgs` or touching the filesystem.
++    """
++    result = subprocess.run(
++        [
++            sys.executable,
++            "-c",
++            "from traefik_certificate_exporter.app import main; main()",
++            "--dtaa-path",
++            "/x",
++        ],
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++
++    assert result.returncode == 2
++    assert "--dtaa-path" in result.stderr
+diff --git a/tests/libs/test_settings.py b/tests/libs/test_settings.py
+index 1f3b1aa..5df7cb1 100644
+--- a/tests/libs/test_settings.py
++++ b/tests/libs/test_settings.py
+@@ -193,3 +193,46 @@ def test_a_newly_declared_secret_is_covered_without_touching_the_guard(
+         "a declared secret path was not redacted -- redaction is not deriving its scope "
+         "from SECRET_CONFIG_KEYS"
+     )
++
++
++def test_a_secret_nested_in_a_list_of_objects_is_redacted():
++    """The shape neither existing guard exercises (BL-E010-003).
++
++    `_dump_config` redacts by config PATH, which reaches `appriseurls` -- a list of raw
++    strings -- without ever descending into it. `_dump_settings` serialises the `Settings`
++    dataclass instead, so it redacts by where a declared leaf name sits in the walked
++    structure. A declared secret held one level deeper, inside objects *within* a list,
++    is the position that tests neither: the list recursion has to run, and then the
++    declared-key check has to fire on the dict inside it.
++    """
++    from traefik_certificate_exporter.libs.settings import (
++        _REDACTED_VALUE,
++        _redact_secrets,
++    )
++
++    redacted = _redact_secrets(
++        {
++            "destinations": [
++                {"name": "primary", "pkcs12Passphrase": "PLANTED-IN-A-LIST"},
++                {"name": "secondary", "appriseUrls": ["tgram://PLANTED-TOKEN/chat"]},
++            ]
++        }
++    )
++
++    assert redacted["destinations"][0]["pkcs12Passphrase"] == _REDACTED_VALUE
++    assert redacted["destinations"][1]["appriseUrls"] == _REDACTED_VALUE
++    assert redacted["destinations"][0]["name"] == "primary", (
++        "redaction must not flatten non-secret siblings"
++    )
++
++
++def test_an_undeclared_credential_shaped_name_in_a_nested_list_is_still_caught():
++    """The backstop pattern has to survive the same nesting the registry check does."""
++    from traefik_certificate_exporter.libs.settings import (
++        _REDACTED_VALUE,
++        _redact_secrets,
++    )
++
++    redacted = _redact_secrets([[{"api_key": "PLANTED-UNDECLARED"}]])
++
++    assert redacted[0][0]["api_key"] == _REDACTED_VALUE

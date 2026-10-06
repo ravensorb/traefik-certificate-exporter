@@ -59,6 +59,11 @@ options:
                         If specified. certificates that match domains in this list will be ignored
 ```
 
+Argument parsing is strict: an unrecognised flag exits immediately with **code 2**, before
+logging is configured, so nothing is written to the log file. If the container crash-loops
+at start-up with no log output, check your `command:`/`args:` override for a typo and read
+the container's stderr.
+
 ## Examples
 
 Watch the letsencrypt folder for any changes to files matching acme-*.json and export any certs managed by the resolver called "resolver-http"
@@ -99,6 +104,8 @@ it).
 - The just-exported domain names are exposed to it as a comma-separated
   `TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS` environment variable (empty string if
   no domains were processed).
+- The export pass's `TRAEFIK_CERTIFICATE_EXPORTER_CORRELATION_ID` is exposed too, so a
+  hook that logs elsewhere can be joined to the exporter's own log lines for that pass.
 - A fixed 30 second timeout applies; a command that doesn't return in time is killed and
   the timeout is logged as an error.
 - Skipped entirely when `--dry-run` is set, consistent with dry-run suppressing file
@@ -112,6 +119,21 @@ traefik-certificate-exporter \
                             -w \
                             --post-export-command "/usr/local/bin/notify-service.sh"
 ```
+
+## Logging and tracing an export pass
+
+Each export pass (the start-up sweep, and each debounced pass the watcher runs) is tagged
+with a `correlation_id` — a UUID4 shared by every log line that pass produces, from the
+detected file change through the export, the post-export hook and the notification. Grep
+one value to see the whole pass.
+
+The rotating log file is JSON, so `correlation_id` is a field there already. Console output
+is coloured human-readable text by default, with the id in brackets after the level; set
+`TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON=true` to emit the console stream as JSON
+instead (useful when `docker logs` is being shipped to a log aggregator). A `-` means the
+line was emitted outside any export pass.
+
+See [docs/operational.md](docs/operational.md#tracing-one-export-pass-correlation_id).
 
 ## Credits
 

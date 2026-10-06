@@ -38,6 +38,12 @@ repos:
       - id: workflow-policy
         name: Check governed workflow contracts and action policy
         language: system
+        # Also the entry point for the two gates this file cannot express: the
+        # tracked-vs-untracked coverage check (an --all-files run enumerates
+        # `git ls-files`, so an un-added file is skipped while the run reports green --
+        # BL-E000-001, three recurrences) and the vendored-tree integrity check over
+        # `.agents/`/`.claude/`. Both are pytest guards in tests/ci/test_gates.py, which
+        # is what this entry already runs, so neither needs a hook of its own.
         entry: poetry run pytest -q tests/ci
         always_run: true
         pass_filenames: false

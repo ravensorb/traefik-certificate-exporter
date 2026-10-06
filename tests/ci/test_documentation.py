@@ -37,6 +37,11 @@ from tests.support import tracked_text_files
 OPERATIONAL_RUNBOOK = PROJECT_ROOT / "docs" / "operational.md"
 
 
+ADR_EXACT_WHEEL_PROVENANCE = (
+    PROJECT_ROOT / "docs" / "adr" / "0008-exact-wheel-image-provenance.md"
+)
+
+
 def _recovery_section(text: str) -> str:
     """The section this story owns, located by heading and ended by the next one.
 
@@ -390,3 +395,50 @@ def test_the_runbook_names_every_channel_and_no_workflow_that_is_not_on_disk() -
             f"{name} owns an event and publishes, but the operations guide never names "
             f"it, so an operator has no runbook for the channel it drives"
         )
+
+
+def test_the_attestation_decision_is_recorded_as_a_dated_adr_amendment() -> None:
+    """BL-E007-004: `ATTESTATIONS = []` must be a decision, not an omission.
+
+    `docker-bake.hcl` declares the knob and leaves it empty, and the verifier never sets
+    it. An empty default and a deliberate deferral look identical on disk, which is the
+    whole complaint -- so the deferral is written down, dated, and asserted here.
+
+    The amendment is required to sit between `## Decision` and `## Consequences`, which
+    is where ADR-0008's existing "Amended at E008 sprint closure" subsection sits. An
+    amendment appended after the consequences reads as commentary on them rather than as
+    a change to what was decided, and the next reader stops at the wrong place.
+    """
+    text = ADR_EXACT_WHEEL_PROVENANCE.read_text(encoding="utf-8")
+
+    headings = [
+        line for line in text.splitlines() if re.fullmatch(r"#{2,3} \S.*", line.strip())
+    ]
+    amendments = [
+        heading
+        for heading in headings
+        if re.match(r"#{2,3} Amended at \d{4}-\d{2}-\d{2}\b", heading.strip())
+    ]
+    assert amendments, (
+        "ADR-0008 carries no dated 'Amended at <YYYY-MM-DD>' subsection, so the "
+        "attestation decision (BL-E007-004) is not recorded where the finding named it"
+    )
+
+    decision = text.index("\n## Decision")
+    consequences = text.index("\n## Consequences")
+    for heading in amendments:
+        position = text.index(f"\n{heading}")
+        assert decision < position < consequences, (
+            f"{heading.strip()!r} is outside the amendment position: it must follow "
+            f"'## Decision' and precede '## Consequences'"
+        )
+
+    body = text[text.index(f"\n{amendments[-1]}") : consequences]
+    assert "ATTESTATIONS" in body, (
+        "the dated amendment never names ATTESTATIONS, so it does not answer the "
+        "finding it exists to answer"
+    )
+    assert len(body.split()) >= 120, (
+        "the dated amendment is too short to be reviewable prose stating why; "
+        "BL-E007-004 asks for a stated reason, not a one-line verdict"
+    )

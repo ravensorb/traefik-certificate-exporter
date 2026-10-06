@@ -1,6 +1,6 @@
 # ADR-0014: Notifications on `post-export`, delivered by Apprise
 
-- **Status:** Proposed
+- **Status:** Accepted (Decision 4 implementation verified E011-S01-003, 2026-10-06)
 - **Date:** 2026-09-06
 - **Deciders:** Maintainer (ravensorb)
 - **Supersedes:** ADR-0013, withdrawn before implementation after an architecture gate

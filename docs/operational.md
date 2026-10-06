@@ -46,6 +46,17 @@ crash.
 4. Confirm the ACME JSON has a non-empty private key and cert for that domain (`Unable to
    find private key or full chain ...` at WARNING level is a Traefik-side/ACME-side symptom,
    not an exporter bug).
+5. A domain whose name is not a plain DNS label is refused outright (`Refusing to export
+   domain ...` at ERROR level). The name is joined into a filesystem path, so only
+   `[A-Za-z0-9_-]` labels separated by dots are accepted.
+
+### Exit code 2 at start-up
+
+**Exit code 2 at start-up means an unrecognised flag; check your `command:`/`args:`
+override.** Argument parsing is strict and happens *before* `setup_logging()`, so nothing
+is written to the log file — under s6 the container simply crash-loops with no explanation
+in `traefik-certificate-exporter.log`. Read the container's stderr (`docker logs`) for the
+`unrecognized arguments:` line.
 
 ## Runbook: container not restarting after cert change
 
@@ -68,9 +79,80 @@ or rely entirely on environment variables.
 
 ## Monitoring / observability
 
-None today — no metrics endpoint, no health check (PRD backlog item #15). The only signal
-is the process's stdout/log-file output; monitor container/process liveness externally
-(e.g. `docker inspect` health status is not configured either).
+No metrics endpoint and no health check (PRD backlog item #15). The only signal is the
+process's stdout/log-file output; monitor container/process liveness externally (e.g.
+`docker inspect` health status is not configured either).
+
+### Tracing one export pass: `correlation_id`
+
+Every export pass — the start-up sweep, and each debounced drain the file watcher runs —
+mints a UUID4 and tags every log line it produces with it: the "certificates changed found
+in file" event, the export itself, the post-export command, and the notification delivery.
+One value joins all of them (ADR-0023).
+
+- **Rotating log file** (`traefik-certificate-exporter.log`): already JSON, so
+  `correlation_id` is a real field.
+  ```bash
+  jq -r 'select(.correlation_id == "<id>") | "\(.asctime) \(.levelname) \(.message)"' \
+      traefik-certificate-exporter.log
+  ```
+- **Console** (what `docker logs` shows): human-readable and coloured by default, with the
+  id in brackets after the level. Set
+  `TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON=true` to emit the console stream as
+  JSON instead, so `correlation_id` is a parseable field there too. The default is
+  unchanged colour output — this is opt-in, because an operator reading `docker logs` by
+  eye usually wants the colour.
+- `-` in place of an id means the line was emitted outside any export pass (start-up,
+  configuration, shutdown before a pass ran).
+- The post-export hook receives the same value as
+  `TRAEFIK_CERTIFICATE_EXPORTER_CORRELATION_ID`, so a hook that logs elsewhere can be
+  joined back. It is a UUID4 and carries nothing derived from a domain, path, or secret.
+
+If a drain is interrupted part-way, the work left over is re-armed under a **new** id, and
+an INFO line names both ("Re-arming export drain as X for work left by Y") so the two
+halves can still be joined by hand.
+
+### Shutdown
+
+SIGTERM and SIGINT are both installed as explicit handlers at start-up. SIGTERM's default
+disposition terminates the interpreter without running any Python, so `docker stop`,
+`kubectl delete`, systemd and s6 would otherwise never reach the shutdown path at all —
+only an interactive `Ctrl-C` did. Both signals now raise `KeyboardInterrupt` into the same
+handler, so the behaviour described below is what you get from every one of them.
+
+`Ctrl-C`/SIGTERM stops the watcher and cancels any armed-but-not-yet-fired debounce timer,
+logging that cancellation at INFO — so a truncated run is distinguishable from a clean
+exit ("no export drain was pending" is the clean case). Once shutdown has begun, a late
+file-change event cannot start another pass.
+
+If a drain is already *running*, shutdown waits a bounded 5s for it and then abandons it
+and exits, rather than holding the process open past the container runtime's grace period
+(`docker stop` allows 10s by default, while one drain can spend 30s in the post-export hook
+alone). The drain threads are daemons, so the interpreter does not wait for them either;
+abandoning one costs an export that did not happen — never a half-written file — and the
+abandoned work is picked up the next time the acme file changes or the process restarts
+with `runatstart`. The abandonment is logged at WARNING.
+
+Certificate files (PEM and `.pfx` alike) are written to a temporary file in the target
+directory and then `os.replace`d into place, so a process killed mid-pass leaves each file
+either fully in its previous state or fully in its new state — never zero-length or
+partial. Keep `outputpath` on a single filesystem (the normal bind-mount case): the rename
+is only atomic within one.
+
+### Trust boundary: `/config` and `settings.postexportcommand`
+
+`/config` is a **trusted mount**. Treat it exactly as you would a binary on `PATH`: it must
+be root-owned and must not be world-writable or group-writable by any account you would not
+grant arbitrary code execution inside the container. Anyone who can write into `/config`
+can set `settings.postexportcommand`, and that setting is executed by the exporter —
+**`settings.postexportcommand` is remote-code-execution-equivalent configuration**, not a
+convenience hook. The same applies to any file referenced from there.
+
+The logging configuration is deliberately *not* auto-discovered from the working directory
+for this reason: `logging.config.dictConfig` resolves and calls arbitrary dotted names for
+its `class:`/`()` keys, so a planted `./logging.yaml` would have been code execution
+regardless of `yaml.safe_load`. Only the packaged configuration, or one named explicitly
+via `TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CFGFILE`, is ever loaded.
 
 ## Recover a failed release push
 
@@ -421,6 +503,44 @@ destination, the published image digest, its immutable reference and its platfor
 URL (stable), and the alias outcomes. The development table adds the `Suppressed by stable tag`
 row, which is how a run that deliberately published nothing is told apart from one that failed. That table is the input to every decision above -- read it before
 rerunning anything.
+
+### What a local `docker/act-build.sh` run reports (BL-E007-002)
+
+The run summary above is the GitHub-side evidence. The local verifier is the other half, and its
+status should be read as **safe, executes, not yet green end to end** rather than as a working
+rehearsal of CI.
+
+Attempted 2026-10-06 against source SHA `2213e429ed3eb83733b89744db835f267124f9c4`, package version
+`0.2.0`, with `act` and a reachable Docker daemon (Engine 29.8.2, Buildx v0.37.1). The wrapper's
+disposable-clone guard behaved as designed — the clone resolved elsewhere, the real tree was never
+mounted — and `act` got as far as starting the `ubuntu-24.04` runner and executing
+`actions/checkout@v7`. It then failed, definitively and reproducibly, at the first step of the first
+job:
+
+```
+::error::Invalid repository '/home/.../traefik-certificate-exporter'. Expected format {owner}/{repo}.
+```
+
+`act` derives `github.repository` from the clone's `origin` remote, which `git clone --local` points
+at a filesystem path — the very property that lets a local-only commit be fetched is the one
+`actions/checkout` rejects. Pointing `origin` at the GitHub URL instead trades this failure for the
+original one: the SHA is not on any remote, so the ref cannot be fetched. Closing that needs a
+change to the wrapper's clone/mount strategy, not a rerun.
+
+That wrapper change is tracked as backlog item **BL-E011-011**. Until it lands, BL-E007-002 is
+closed only for its evidence-capture half: the local verifier is safe to run and its transcript is
+retained, but it has never completed a green end-to-end run.
+
+Two things follow for anyone running it. First, a failed local run is still useful output — read the
+transcript rather than assuming the environment is broken. Second, if `act` stops on
+`Provide value for '<SECRET>'` before any job starts, that is `~/.actrc` declaring `-s NAME` with no
+value; `verify-build.yaml` is the secret-free verifier (ADR-0007) and needs none of them, so supply
+placeholders in the invoking environment rather than real credentials.
+
+The transcript is retained at
+`_bmad-output/implementation-artifacts/epic-011/sprint-01/closure/E011-S01-001-act-run-evidence.md`.
+The wrapper `tee`s to `act-build-traefik-certificate-exporter.log` in the repository root, which
+`.gitignore`'s `**/*.log` excludes — so archive the transcript deliberately; it is not kept for you.
 
 ## If a publication credential is compromised
 

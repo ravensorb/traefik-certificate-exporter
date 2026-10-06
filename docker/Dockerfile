@@ -107,8 +107,12 @@ RUN set -eu; \
 # Runtime stage: retain the digest-pinned LinuxServer/s6 base and its PUID/PGID model.
 FROM ${BASE_IMAGE} AS runtime
 
+# CONSOLEJSON leaves the console as coloured human-readable text by default; set it to
+# true to emit that stream as JSON instead, so `correlation_id` reaches `docker logs` as a
+# real field rather than interpolated into a string (ADR-0023 Decision 2).
 ENV \
     TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY=true \
+    TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON=false \
     TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH=/data \
     TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_OUTPUTPATH=/certs \
     TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=true \

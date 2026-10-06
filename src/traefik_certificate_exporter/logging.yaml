@@ -1,24 +1,57 @@
 version: 1
 disable_existing_loggers: True
 
+# Every formatter below references %(correlation_id)s and declares `defaults` for it, so
+# this file stands on its own: a copy handed to logging.config.dictConfig by something
+# that never imported logging_utils formats cleanly instead of raising ValueError on
+# every record. The record factory installed at import of logging_utils remains the
+# mechanism that supplies the REAL id -- `defaults` only covers a record created before
+# or outside it. The literal must stay in step with CORRELATION_ID_UNSET.
+
 formatters:
   standard_formatter:
-    class: coloredlogs.ColoredFormatter
-    format: "%(asctime)s [%(levelname)8s] : %(message)s"
+    (): traefik_certificate_exporter.libs.logging_utils.CorrelationIdColoredFormatter
+    format: "%(asctime)s [%(levelname)8s] [%(correlation_id)s] : %(message)s"
     datefmt: "%Y-%m-%d %H:%M:%S"
+    defaults:
+      correlation_id: "-"
   standard_detailed_formatter:
-    class: pythonjsonlogger.json.JsonFormatter
-    format: "%(asctime)s %(levelname)s %(name)s %(message)s"
+    (): traefik_certificate_exporter.libs.logging_utils.CorrelationIdJsonFormatter
+    format: "%(asctime)s %(levelname)s %(name)s %(correlation_id)s %(message)s"
     datefmt: "%Y-%m-%d %H:%M:%S"
+    defaults:
+      correlation_id: "-"
 
   extended_formatter:
-    class: coloredlogs.ColoredFormatter
-    format: "%(asctime)s [%(levelname)8s] %(name)s.%(funcName)s(%(lineno)s) : %(message)s"
+    (): traefik_certificate_exporter.libs.logging_utils.CorrelationIdColoredFormatter
+    format: "%(asctime)s [%(levelname)8s] [%(correlation_id)s] %(name)s.%(funcName)s(%(lineno)s) : %(message)s"
     datefmt: "%Y-%m-%d %H:%M:%S"
+    defaults:
+      correlation_id: "-"
   extended_detailed_formatter:
-    class: pythonjsonlogger.json.JsonFormatter
-    format: "%(asctime)s %(name)s %(levelname)s %(process)d %(processName)s %(funcName)s %(lineno)s %(message)s"
+    (): traefik_certificate_exporter.libs.logging_utils.CorrelationIdJsonFormatter
+    format: "%(asctime)s %(name)s %(levelname)s %(process)d %(processName)s %(funcName)s %(lineno)s %(correlation_id)s %(message)s"
     datefmt: "%Y-%m-%d %H:%M:%S"
+    defaults:
+      correlation_id: "-"
+
+  # Structured console output. Not wired to a handler here: setting
+  # TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON=true makes setup_logging() point the
+  # console handlers below at these instead of their coloredlogs counterparts, so
+  # `correlation_id` reaches `docker logs` as a real field (ADR-0023 Decision 2). The
+  # default stays coloured and human-readable.
+  standard_json_formatter:
+    (): traefik_certificate_exporter.libs.logging_utils.CorrelationIdJsonFormatter
+    format: "%(asctime)s %(levelname)s %(name)s %(correlation_id)s %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+    defaults:
+      correlation_id: "-"
+  extended_json_formatter:
+    (): traefik_certificate_exporter.libs.logging_utils.CorrelationIdJsonFormatter
+    format: "%(asctime)s %(name)s %(levelname)s %(process)d %(processName)s %(funcName)s %(lineno)s %(correlation_id)s %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+    defaults:
+      correlation_id: "-"
 
 handlers:
   standard_file_handler:

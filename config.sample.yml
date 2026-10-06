@@ -13,3 +13,9 @@ settings:
   watchinterval: 60
   # pkcs12passphrase:                      # Passphrase used to encrypt the exported PKCS12 (.pfx) file (default: unencrypted)
   # postexportcommand:                     # Shell-like command line run after a successful export pass (see README.md)
+
+# Logging is configured from the environment, not from this file (it is set up before this
+# file is read). Both switches are opt-in and default to off:
+#   TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY=true   # console only, no log file
+#   TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON=true   # console as JSON, so
+#                                                           # correlation_id is a field

@@ -1,0 +1,34 @@
+review: _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md
+findings:
+  SD-01-1:
+    severity: MAJOR
+    title: "ADR-0023 Amendment 4a states `cancel()` \"latches a shutdown flag, so neither a late watchdog event nor the drain's own re-arm path can start a new pass after shutdown has begun.\" Two of three paths are guarded (`handleEvent` checks `shuttingDown`; `__rearm` checks it). The third is not: `cancel()` reads `timer`/`draining`/`armed` inside one critical section and then acts **outside** the lock, so an armed timer that fires in that window makes `timer.cancel()` a documented no-op, and `doTheWork` — which performs no `shuttingDown` check at entry — runs a full export pass (export + 30s hook + Apprise delivery) after shutdown began, while `cancel()` logs \"cancelled the pending export drain\" for a pass that in fact ran. That log line is exactly the \"truncated run distinguishable from a clean exit\" signal E011-S01-004's Observability AC asks for, and in this race it is wrong. Blast radius is bounded by the atomic writes and by the drain thread now being a daemon, so this is a correctness/observability gap, not a corruption one."
+    disposition: resolved-in-code
+    spec:
+    adr:
+    commit:
+    issue:
+  SD-01-2:
+    severity: MAJOR
+    title: "BL-E007-002's own closure condition, quoted in the story's Context, is \"an actual green run whose result is retained.\" The retained evidence records a run that failed at the **first step of the first job** (`actions/checkout` rejecting the local-clone `origin`), states the verifier is \"not yet green end to end,\" and states \"Closing that needs a change to the wrapper's clone/mount strategy, not a rerun.\" No change to `docker/act-build.sh` is in the diff, and the diff records no backlog/issue id for the wrapper change the evidence says is required. The story is nevertheless `status: done`. A reader of the closure record cannot tell that an identified, unscheduled repository change still stands between this sprint and the finding's stated closure."
+    disposition: resolved-in-code
+    spec:
+    adr:
+    commit:
+    issue:
+  SD-01-4:
+    severity: MINOR
+    title: The helper probes the umask with `current = os.umask(0o022); os.umask(current)`. `os.umask` is process-global, so on the very first call any other thread creating a file in that window gets `0o022` applied rather than the real umask — the exact hazard the surrounding comment identifies and then only partially mitigates (the lock serialises *this* function, not unrelated file creation). Also `except (PermissionError, OSError)` on the `os.chown` restore is redundant (`PermissionError` is an `OSError`), reading as a wider contract than it is.
+    disposition: resolved-in-code
+    spec:
+    adr:
+    commit:
+    issue:
+  SD-01-5:
+    severity: MINOR
+    title: "AD-3's rule, which \"binds every logging call site,\" still states: \"No cross-process correlation ID — single-process tool, nothing to correlate across.\" This sprint adds a correlation id to every record *and* exports it across a process boundary into the post-export hook as `TRAEFIK_CERTIFICATE_EXPORTER_CORRELATION_ID`. The decision is properly recorded (ADR-0023), so this is not an unjustified deviation — but the binding spine section now asserts the opposite of the shipped behaviour, and the spine is what a future story reads first. (Distinct from deferred AG-6/BL-E011-001, which concerns the ADR-0003 reciprocal amendment, not the spine.)"
+    disposition: spec-updated
+    spec: _bmad-output/planning-artifacts/architecture/architecture-traefik-certificate-exporter-2026-08-30/ARCHITECTURE-SPINE.md#ad-3--logging-structured-file-output-secrets-never-logged
+    adr:
+    commit:
+    issue:

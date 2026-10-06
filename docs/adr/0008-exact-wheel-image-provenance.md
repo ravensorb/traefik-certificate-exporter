@@ -149,6 +149,44 @@ whether a detached signature is worth adding for that path, and it should be ans
 than assumed here.
 
 
+## Amended at 2026-10-06: build attestations stay off on the verified build (BL-E007-004)
+
+BL-E007-004 asked why `docker-bake.hcl` declares `ATTESTATIONS` and then defaults it to `[]`
+(`docker-bake.hcl:35-38`) in an epic whose subject is reproducible build and verification, and
+required the answer be stated rather than left as an unexamined default. This is that answer.
+
+**Decision.** Attestations stay deferred to the publication path. `ATTESTATIONS` keeps its `[]`
+default and `.github/workflows/verify-build.yaml` continues to invoke Bake without setting it.
+
+**Why, concretely.** The verifier builds with `docker buildx bake --file docker-bake.hcl image
+--load` (`.github/workflows/verify-build.yaml:614`), and `--load` selects the `docker` exporter —
+the same exporter `docker-bake.hcl`'s `OUTPUTS` default (`type=docker`) names. BuildKit cannot
+attach SBOM or SLSA provenance attestations to that exporter: attestations are descriptors in an
+OCI image index, and the classic Docker image store holds a single image, not an index. Setting
+`ATTESTATIONS` on this build does not produce an unattested-but-working image; it makes the build
+fail, which is the loud failure the error-handling rule asks for and also a build that verifies
+nothing. The verifier's whole purpose is that `--load`ed local image: the s6 startup test and the
+installed-image smoke test both run `docker run` against `traefik-certificate-exporter:verify`
+immediately afterwards (`.github/workflows/verify-build.yaml:617-630`), so the exporter cannot be
+swapped for `type=oci`/`type=registry` without removing the thing being verified.
+
+The gap this leaves is narrower than it looks, and it is narrow in the direction that matters.
+The verified image is never published — it exists for the length of one run inside one runner and
+is discarded. Attestation is a claim made to a *consumer*, and this image has none. The published
+image does: as the E008 amendment above records, BuildKit emits SLSA provenance on the registry
+push regardless of `ATTESTATIONS`, so the index consumers actually pull already carries per-platform
+provenance descriptors, and the distributions carry `actions/attest-build-provenance` evidence.
+Enabling attestations here would therefore add a signed statement about an artifact nobody receives,
+at the cost of either breaking the build or deleting the container tests.
+
+**What would reopen this.** Two things, each of which changes the premise rather than the
+preference: the verifier gaining a reason to export an OCI index (a multi-platform verify build
+would already need `type=oci`, and attestations should be enabled in the same change), or the
+runner moving to the containerd image store, which does hold indexes and would let `--load` carry
+attestations. Either is a publication-epic concern, which is where BL-E007-004 proposed deferring
+it to. Neither needs a new credential: Buildx computes SBOM and provenance locally from the build
+graph and attaches them to the result, so this decision is about exporter capability, not access.
+
 ## Consequences
 
 - Positive: the image's application bytes are, by hash, the bytes that `poetry build` produced,

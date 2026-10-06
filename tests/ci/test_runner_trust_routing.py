@@ -23,7 +23,6 @@ from tests.ci.support import (
     _is_credential_bearing,
     _jobs,
     _load_workflow,
-    _steps,
 )
 
 # The action this story introduces for the job-level CA import (ADR-0018). Matched by
@@ -161,7 +160,7 @@ def test_each_destinations_ca_import_uses_a_distinct_certificate_name() -> None:
     for path in _workflow_paths():
         names = []
         document = _load_workflow(path)
-        for _job_name, job in _jobs(document).items():
+        for job in _jobs(document).values():
             for _index, step in _ca_import_steps(job):
                 with_block = step.get("with") or {}
                 name = with_block.get("certificate-name")

@@ -1,5 +1,6 @@
 next:
   '009': 22
+  '011': 41
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -18,16 +19,6 @@ backlog:
   status: resolved
   resolution: 'Closed 2026-09-07 by E010-S01-001. SECRET_CONFIG_KEYS is the single declaration and three sinks derive from it: _dump_config uses confuse own dump(redact=True), which masks by config PATH and is the only mechanism reaching a credential held as a value inside a list; _dump_settings matches declared leaf names, since it serialises the dataclass confuse cannot see; and the argparse namespace, which was the sink actually leaking --pkcs12-passphrase in clear. The pattern list was NOT expanded -- that was the original prescription and it could never have worked for value-shaped credentials. The guard derives its scope from the registry and its plant attacks that scope: a newly declared path whose NAME matches none of the pattern words must still be redacted, so breaking the derivation fails the test while a name-shaped case would pass. Verified end to end: a real Apprise token in the config file loads into settings and appears in no log record at DEBUG.'
   description: 'Re-scoped 2026-09-06 by the Epic 10 architecture gates; filed as "the pattern could miss an oddly-named future field", and the real shape is worse. _redact_secrets masks a dict value when its KEY matches (secret|password|passphrase|token|api[_-]?key). A credential held as a VALUE -- an Apprise destination URL inside a list -- has no matching key anywhere on the path, so no amount of adding words to the pattern reaches it. Do NOT expand the pattern list: that was the original prescription and it is the wrong fix. Two further facts from the gates. confuse already ships the answer -- marking a config path .redact = True and dumping with redact=True redacts BY PATH, verified to emit REDACTED for a list-valued key -- so writing a second redactor beside it is what global rule 1 forbids. And a third sink existed that neither dump helper covered: settings.py logged the raw argparse namespace at DEBUG and --pkcs12-passphrase is a flag, so the passphrase printed in clear a few lines above the helpers that mask it. That leak is FIXED (commit fix(watch,settings)); the mechanism replacement is not, and is Story E010-S01-001. Severity Low -> High: this was a live credential disclosure in shipping code, not a hypothetical about a future field.'
-- key: BL-E001-006
-  epic: '001'
-  sprint: S01
-  title: parse_known_args() silently ignores unrecognized CLI args in production, not just under pytest
-  source: sprint-closure adversarial review (E001-S01)
-  severity: Low
-  status: scheduled
-  description: The fix for the import-time argv-parsing crash (parse_args -> parse_known_args) is necessary for testability but as a side effect means a genuine CLI typo (e.g. --dtaa-path) is now silently ignored in the real console-script entry point too, rather than erroring. A more complete fix would move argument parsing out of module-import time and into main() specifically, so production invocations can still hard-fail on unrecognized flags while imports (tests, embedding) remain safe -- but that is a larger architectural change than this story's scope (a testability blocker fix) warranted.
-  story: E011-S01-003
-  scheduled_at: '2026-10-06T18:18:08Z'
 - key: BL-E002-001
   epic: '002'
   sprint: S01
@@ -46,36 +37,6 @@ backlog:
   status: resolved
   resolution: 'Closed 2026-09-04 through E008-S01-001 and E008-S01-002, exactly as the item predicted. All three publishing workflows -- dev.yaml, release.yaml and publish-image.yaml -- consume verified-dist-v1 through .github/actions/verified-bundle, which rechecks SHA256SUMS, revalidates build-manifest.json, matches the source SHA and package version the caller believes it is publishing, and proves the wheel on disk is the wheel the image plan declares -- all before the caller reaches a login or an upload. test_every_publisher_revalidates_the_bundle_before_it_logs_in_or_uploads (tests/ci/test_finalization.py) derives its scope from the publisher set rather than a list, so a fourth publisher is covered without an edit. Proven end to end by v0.1.6.'
   description: "ARCHITECTURE-SPINE.md requires publishers to promote verified-dist-v1 rather than rebuild the Python package. verify-build.yaml revalidates SHA256SUMS and build-manifest.json, performs native image smoke from the exact wheel, uploads verified-dist-v1, and exposes its identity outputs. The deleted legacy publishers no longer violate the rule, but no active publisher consumes the bundle yet. This closes through E008-S01-001 and E008-S01-002, which implement development and stable publication from the exact retained distributions and one image build per channel run."
-- key: BL-E007-002
-  epic: '007'
-  sprint: ''
-  title: Local Act execution is still unproven, and running it destroyed the repository once
-  source: post-restore audit (E007)
-  severity: Medium
-  status: scheduled
-  description: "The local verifier path has never completed successfully. The one attempt on 2026-09-01 destroyed the working tree and all local commits: ~/.actrc sets --bind so act mounts the real repository as the container workspace, and verify-build.yaml's actions/checkout deletes the workspace contents before discovering it cannot fetch the pinned ref. docker/act-build.sh now runs act inside a disposable clone with --no-hardlinks, refuses to proceed unless the clone resolves elsewhere, and is pinned by test_local_wrapper_never_runs_act_against_the_working_tree. That makes the path SAFE but still UNPROVEN -- no successful run exists. Closing this needs an actual green run whose result is retained. Note the clone verifies HEAD, not the dirty working tree, which is what CI verifies anyway."
-  story: E011-S01-001
-  scheduled_at: '2026-10-06T18:17:59Z'
-- key: BL-E007-004
-  epic: '007'
-  sprint: ''
-  title: Bake exposes ATTESTATIONS but the verifier enables no SBOM or provenance attestation
-  source: post-restore audit (E007)
-  severity: Low
-  status: scheduled
-  description: docker-bake.hcl defaults ATTESTATIONS to [] and verify-build.yaml neither enables type=sbom/type=provenance nor scans the built image, in an epic whose subject is reproducible build and verification. The Docker standards overlay is a stub, so this is provisional guidance rather than a hard rule. Decide explicitly -- enable attestations on the verified build, or record in ADR-0008 why they are deferred to the publication epic.
-  story: E011-S01-001
-  scheduled_at: '2026-10-06T18:17:59Z'
-- key: BL-E000-001
-  epic: '000'
-  sprint: ''
-  title: pre-commit --all-files silently skips untracked files, and this has now caused a false green twice
-  source: post-restore audit
-  severity: Medium
-  status: scheduled
-  description: 'pre-commit --all-files enumerates git ls-files, so any gate reports green over a set that excludes untracked work. This first appeared when the whole E007 delivery was untracked and every gate skipped it. It recurred on 2026-09-01 against a brand-new mypy gate: the gate passed a deliberately planted type error because src/publication_contract/ had not been staged. It recurred a third time on 2026-09-04 during the BL-E008-010 split: tests/ci/test_gates.py was written, run green under `pre-commit run --all-files`, and shipped with an undefined `Any` -- the file was untracked, so ruff never read it. Three times the gate looked green while checking nothing, and each time the file at fault was new. There is no mechanical guard for this -- the practical rule is to `git add` before trusting an --all-files result, and to prove any new gate with a planted violation rather than a green run. Worth considering a repo-level check that fails when tracked-vs-untracked coverage diverges.'
-  story: E011-S01-002
-  scheduled_at: '2026-10-06T18:18:07Z'
 - key: BL-E008-001
   epic: '008'
   sprint: ''
@@ -139,16 +100,6 @@ backlog:
   status: resolved
   resolution: 'Accepted, not implemented. Maintainer decision at E008 closure: this is a sole-developer project, so requiring code-owner review requires a second person who does not exist -- the control would either block every change or be self-approved, and neither is worth the setting. .github/CODEOWNERS stays: it is a useful record of which surfaces grant authority, and test_the_authority_surfaces_are_owned keeps that record honest. What it does NOT do is enforce anything, and the guard docstring says so rather than implying a pending setting. Revisit if a second committer joins.'
   description: "E008 sprint closure added .github/CODEOWNERS covering the workflows, the guard registries, the ADRs, the gate configuration and the agent-instruction trees, and test_the_authority_surfaces_are_owned derives the required set from where those things live. The file requests review and enforces nothing on its own: it has teeth only when the default branch's protection rules require code-owner review. No test in this repository can observe that setting, and the guard's own docstring says so rather than implying coverage it does not have. Until it is enabled, one approval can still widen a privilege grant and relax the guard that reports on it in the same diff. Owner action, outside the tree."
-- key: BL-E008-009
-  epic: '008'
-  sprint: '01'
-  title: The vendored .agents/.claude trees are claimed to match an installed BMad release and nothing checks it
-  source: sprint closure — redteam M6
-  severity: Low
-  status: scheduled
-  description: "docs/guidelines.md describes .agents/ and .claude/ as vendored BMad skills 'this project neither authors nor maintains'. That is a checkable claim and it is unchecked: 1,229 tracked files that any pull request can edit, excluded from every linting gate by .pre-commit-config.yaml's exclude and from the secret scanner by .gitleaks.toml's allowlist, in a repository whose agents hold write access and are instructed to read them and follow their directions exactly. Sprint closure addressed the review half by adding them to CODEOWNERS. The integrity half remains: a guard asserting the trees are byte-identical to the release they claim to vendor. Deliberately not done in closure -- it needs a source of truth for 'the installed release' that does not exist in the repo yet, and inventing one would be worse than the gap."
-  story: E011-S01-002
-  scheduled_at: '2026-10-06T18:18:07Z'
 - key: BL-E008-010
   epic: '008'
   sprint: ''
@@ -186,33 +137,403 @@ backlog:
   status: resolved
   resolution: 'Closed at E008 backlog sweep. `primary` is now the forge repository explicitly rather than whichever tag the metadata action emitted first. The forge is the one destination that is never optional (ADR-0011), so it is the only stable anchor for the digest reference the aliases follow; the guard proves the answer is the same whichever order the tags arrive in.'
   description: "publish-image.yaml sets primary to the repository of the first tag in the rendered list, and primary becomes the reference the digest is resolved from and therefore the target the finalizer's aliases follow. That makes a positional property of a third-party action's output ordering load-bearing. Every tag now has to name a repository the plan job proved, so the value cannot be arbitrary -- which is why this is Low -- but with two enabled destinations the choice between them is the renderer's, not this repository's. Remedy: select primary explicitly as the forge repository, which is the one destination that is never optional."
-- key: BL-E010-001
-  epic: '010'
+- key: BL-E011-001
+  epic: '011'
   sprint: ''
-  title: No correlation identifier joins a watch event to its drain pass, export and notification
-  source: epic-010 architecture gates
-  severity: Medium
-  status: scheduled
-  description: "Raised by both Epic 10 gates against core §9, which requires a trace id propagating across every boundary including sync->async. The hops exist today (watchdog event -> threading.Timer thread -> export -> post-export subprocess) and E010-S01-002 adds a fourth. An operator asking 'why did I get no notification for acme-dns.json' has no join key between the event line, the drain and the delivery result. Compounded by the container profile: docker/Dockerfile sets LOGGING_CONSOLEONLY=true, which selects the coloredlogs formatter, so records are strings rather than fields. Suggested shape: a per-drain pass id in a contextvars variable, emitted as a field, plus the JSON formatter for the container console handler."
-  story: E011-S01-004
-  scheduled_at: '2026-10-06T18:18:09Z'
-- key: BL-E010-002
-  epic: '010'
-  sprint: ''
-  title: Shutdown does not cancel the pending drain timer, and certificate writes are truncate-then-write
-  source: epic-010 architecture gates
-  severity: Medium
-  status: scheduled
-  description: app.py handles KeyboardInterrupt with observer.stop() and observer.join() and nothing else; AcmeCertificateFileHandler.timer is never cancelled and threading.Timer threads are non-daemon. __exportCertificate writes with open('w'), so a SIGKILL between truncate and write leaves a zero-length or partial fullchain.pem that the consuming service will load. Today the exposure window is bounded by the export plus a 30s hook; E010-S01-002 adds network delivery to it. docker stop's default grace is 10s. Raised in both gates; unaddressed by ADR-0014 by design, recorded here rather than left implicit.
-  story: E011-S01-004
-  scheduled_at: '2026-10-06T18:18:09Z'
-- key: BL-E010-003
-  epic: '010'
-  sprint: ''
-  title: _dump_settings serialises the Settings object, so confuse path-based redaction cannot reach it
-  source: epic-010 architecture gates
+  title: ADR-0023 doesn't list docs/adr/0003 as a file to amend reciprocally
+  source: arch-gate (bmad-agent-architect)
+  source_phase: arch-gate
+  source_ref: bmad-agent-architect
   severity: Low
-  status: scheduled
-  description: ADR-0014 Decision 4 adopts confuse's .redact/dump(redact=True), which redacts by CONFIG PATH. _dump_settings dumps the Settings dataclass through jsonpickle, not the confuse Configuration, so the registry of secret paths does not map onto that sink without an explicit translation. E010-S01-001's AC forces the right outcome empirically -- a planted credential must appear in no record during a DEBUG loadFromFile -- so this is a design note for the implementer rather than a gap in the obligation.
-  story: E011-S01-003
-  scheduled_at: '2026-10-06T18:18:08Z'
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/arch/arch-gate-review.md (AG-6).
+- key: BL-E011-002
+  epic: '011'
+  sprint: ''
+  title: tests/ci/test_gates.py ambiguously cited by both E011-S01-001 and E011-S01-002
+  source: arch-gate (bmad-agent-architect)
+  source_phase: arch-gate
+  source_ref: bmad-agent-architect
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/arch/arch-gate-review.md (AG-7).
+- key: BL-E011-003
+  epic: '011'
+  sprint: ''
+  title: E011-S01-003 and E011-S01-004 both touch app.py main() — sequencing note
+  source: arch-gate (l3io-arch-review)
+  source_phase: arch-gate
+  source_ref: l3io-arch-review
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/arch/arch-gate-review.md (AG-5).
+- key: BL-E011-004
+  epic: '011'
+  sprint: '01'
+  title: Wrapper exits 0 on a failed act run; the new runbook section does not say so
+  source: code-review (E011-S01-001)
+  source_phase: code-review
+  source_ref: E011-S01-001
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-001.md
+- key: BL-E011-005
+  epic: '011'
+  sprint: '01'
+  title: ADR-0008 amendment's line citation for ATTESTATIONS is off by one block line
+  source: code-review (E011-S01-001)
+  source_phase: code-review
+  source_ref: E011-S01-001
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-001.md
+- key: BL-E011-006
+  epic: '011'
+  sprint: '01'
+  title: "Coverage-check staged-file behaviour deliberately diverges from the story's literal edge-case AC (kind: claim)"
+  source: code-review (E011-S01-002)
+  source_phase: code-review
+  source_ref: E011-S01-002
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-002.md
+- key: BL-E011-007
+  epic: '011'
+  sprint: '01'
+  title: test_cli_args re-import test leaves two live copies of app/cli_args reachable by different import idioms
+  source: code-review (E011-S01-003)
+  source_phase: code-review
+  source_ref: E011-S01-003
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-003.md
+- key: BL-E011-008
+  epic: '011'
+  sprint: '01'
+  title: New nested-list redaction tests assert on a shape no sink produces, giving helper-level rather than sink-level assurance
+  source: code-review (E011-S01-003)
+  source_phase: code-review
+  source_ref: E011-S01-003
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-003.md
+- key: BL-E011-009
+  epic: '011'
+  sprint: '01'
+  title: Atomic write replaces a symlinked certificate path with a regular file instead of writing through it
+  source: code-review (E011-S01-004)
+  source_phase: code-review
+  source_ref: E011-S01-004
+  severity: Low
+  status: backlog
+  description: os.replace() onto a symlinked target breaks the link, where the previous Path.open("w") wrote through it. See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-004.md section 5.
+- key: BL-E011-010
+  epic: '011'
+  sprint: '01'
+  title: End-to-end atomic-write assertion covers only the flat output branch (5 of 10 write sites)
+  source: code-review (E011-S01-004)
+  source_phase: code-review
+  source_ref: E011-S01-004
+  severity: Low
+  status: backlog
+  description: The real-material export test exercises the flat layout only; the per-domain directory branch and its writes are covered by unit-level tests but not end to end. See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-004.md section 6.
+- key: BL-E011-011
+  epic: '011'
+  sprint: '01'
+  title: docker/act-build.sh clone/mount strategy blocks a green local act run (BL-E007-002 residue)
+  source: arch-drift (SD-01-2)
+  source_phase: arch-drift
+  source_ref: SD-01-2
+  severity: Medium
+  status: backlog
+  description: The retained act evidence fails at actions/checkout rejecting the local-clone origin. Closing BL-E007-002 fully needs a wrapper clone/mount change, not a rerun. See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md (SD-01-2) and docs/operational.md.
+- key: BL-E011-012
+  epic: '011'
+  sprint: '01'
+  title: Service runs as root (s6-setuidgid root) and postexportcommand is RCE-equivalent config
+  source: redteam (RT-004)
+  source_phase: redteam
+  source_ref: RT-004
+  severity: High
+  status: backlog
+  description: 'Deferred half of RT-004: the CWD logging.yaml auto-discovery RCE path was closed this sprint, but the s6 service still runs as root and /config remains an operator-writable volume feeding postexportcommand. Dropping to the LinuxServer PUID/PGID account also reduces RT-001/RT-003/RT-009. Operator-breaking image change; needs its own ADR and story. See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md.'
+- key: BL-E011-013
+  epic: '011'
+  sprint: '01'
+  title: 'Vendored agent-instruction trees: 2,222 files verified against nothing (AI-poisoning foothold)'
+  source: redteam (RT-006)
+  source_phase: redteam
+  source_ref: RT-006
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+- key: BL-E011-014
+  epic: '011'
+  sprint: '01'
+  title: Third-party GitHub Actions pinned to mutable tags in publish jobs holding secrets
+  source: redteam (RT-007)
+  source_phase: redteam
+  source_ref: RT-007
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+- key: BL-E011-015
+  epic: '011'
+  sprint: '01'
+  title: Secret scanner excludes the vendored trees, leaving an uncovered commit path for credentials
+  source: redteam (RT-008)
+  source_phase: redteam
+  source_ref: RT-008
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+- key: BL-E011-016
+  epic: '011'
+  sprint: '01'
+  title: Container restarts driven by attacker-influenced domain strings over the Docker socket
+  source: redteam (RT-009)
+  source_phase: redteam
+  source_ref: RT-009
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+- key: BL-E011-017
+  epic: '011'
+  sprint: '01'
+  title: Root logger opened to third-party loggers at DEBUG; apprise/docker/urllib3 levels unpinned
+  source: redteam (RT-013)
+  source_phase: redteam
+  source_ref: RT-013
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+- key: BL-E011-018
+  epic: '011'
+  sprint: '01'
+  title: ACME file ingestion is unbounded and unvalidated (no size cap, b64decode without validate)
+  source: redteam (RT-014)
+  source_phase: redteam
+  source_ref: RT-014
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+- key: BL-E011-019
+  epic: '011'
+  sprint: '01'
+  title: Document that the post-export hook inherits the full environment including credentials
+  source: redteam (RT-016)
+  source_phase: redteam
+  source_ref: RT-016
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+- key: BL-E011-020
+  epic: '011'
+  sprint: '01'
+  title: Untracked-file gate fails on any scratch file, incentivising git add of unintended files
+  source: adversarial (AD-08)
+  source_phase: adversarial
+  source_ref: AD-08
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
+- key: BL-E011-021
+  epic: '011'
+  sprint: '01'
+  title: Vendored-integrity gates hash ~4,700 files per commit and assert hand-maintained counts
+  source: adversarial (AD-09)
+  source_phase: adversarial
+  source_ref: AD-09
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
+- key: BL-E011-022
+  epic: '011'
+  sprint: '01'
+  title: _atomic_write_text/_bytes are redundant pass-through wrappers with no type enforcement
+  source: clean-release (CR-02)
+  source_phase: clean-release
+  source_ref: CR-02
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
+- key: BL-E011-023
+  epic: '011'
+  sprint: '01'
+  title: Extracted _notify/_run helpers open with a stray blank line and carry no docstring
+  source: clean-release (CR-06)
+  source_phase: clean-release
+  source_ref: CR-06
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
+- key: BL-E011-024
+  epic: '011'
+  sprint: '01'
+  title: app.py imports globalArgs only to shadow it; the noqa hides a future accidental removal
+  source: clean-release (CR-07)
+  source_phase: clean-release
+  source_ref: CR-07
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
+- key: BL-E011-025
+  epic: '011'
+  sprint: '01'
+  title: Record-factory install is idempotent only against itself at the outermost layer
+  source: adversarial (AD-12)
+  source_phase: adversarial
+  source_ref: AD-12
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
+- key: BL-E011-026
+  epic: '011'
+  sprint: '01'
+  title: doTheWork's leading positional correlationId silently adopts a watchdog event object
+  source: adversarial (AD-13)
+  source_phase: adversarial
+  source_ref: AD-13
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
+- key: BL-E011-027
+  epic: '011'
+  sprint: '01'
+  title: Post-export hook env carries the correlation id (possibly the '-' sentinel) to every descendant
+  source: adversarial (AD-15)
+  source_phase: adversarial
+  source_ref: AD-15
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
+- key: BL-E011-028
+  epic: '011'
+  sprint: '01'
+  title: The inode swap preserves mode/uid/gid but drops ACLs, xattrs and SELinux labels
+  source: adversarial (AD-16)
+  source_phase: adversarial
+  source_ref: AD-16
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
+- key: BL-E011-029
+  epic: '011'
+  sprint: '01'
+  title: Correlation bind-and-restore block duplicated at five call sites; needs one contextmanager
+  source: arch-drift (SD-01-3)
+  source_phase: arch-drift
+  source_ref: SD-01-3
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md
+- key: BL-E011-030
+  epic: '011'
+  sprint: '01'
+  title: Watch-event log line now emitted inside self.lock, serialising watchdog behind rotating-file I/O
+  source: arch-drift (SD-01-6)
+  source_phase: arch-drift
+  source_ref: SD-01-6
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md
+- key: BL-E011-031
+  epic: '011'
+  sprint: '01'
+  title: Vendored-file counts conflict between .github/CODEOWNERS and tests/ci/test_gates.py
+  source: arch-drift (SD-01-7)
+  source_phase: arch-drift
+  source_ref: SD-01-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md
+- key: BL-E011-032
+  epic: '011'
+  sprint: '01'
+  title: config.sample.yml says both logging switches default off; the image ships CONSOLEONLY=true
+  source: arch-drift (SD-01-8)
+  source_phase: arch-drift
+  source_ref: SD-01-8
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md
+- key: BL-E011-033
+  epic: '011'
+  sprint: '01'
+  title: Redacting a list collapses it to a scalar, destroying its count/scheme signal
+  source: ux-review (UX-002)
+  source_phase: ux-review
+  source_ref: UX-002
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
+- key: BL-E011-034
+  epic: '011'
+  sprint: '01'
+  title: Unrecognised-flag failure names no near-match and never points at --help
+  source: ux-review (UX-003)
+  source_phase: ux-review
+  source_ref: UX-003
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
+- key: BL-E011-035
+  epic: '011'
+  sprint: '01'
+  title: Usage block, now shown on every typo, leaks internal config paths as metavars
+  source: ux-review (UX-004)
+  source_phase: ux-review
+  source_ref: UX-004
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
+- key: BL-E011-036
+  epic: '011'
+  sprint: '01'
+  title: Active-settings dump is one unwrapped 400-character JSON line
+  source: ux-review (UX-006)
+  source_phase: ux-review
+  source_ref: UX-006
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
+- key: BL-E011-037
+  epic: '011'
+  sprint: '01'
+  title: Three sinks use three different redaction markers; the confuse one is ambiguous
+  source: ux-review (UX-007)
+  source_phase: ux-review
+  source_ref: UX-007
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
+- key: BL-E011-038
+  epic: '011'
+  sprint: '01'
+  title: README's --help mirror has drifted from the real help text
+  source: ux-review (UX-008)
+  source_phase: ux-review
+  source_ref: UX-008
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
+- key: BL-E011-039
+  epic: '011'
+  sprint: '01'
+  title: The strict-parse failure is the only output that bypasses the logging contract
+  source: ux-review (UX-009)
+  source_phase: ux-review
+  source_ref: UX-009
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
+- key: BL-E011-040
+  epic: '011'
+  sprint: '01'
+  title: No --version flag, on a surface operators now see far more often
+  source: ux-review (UX-010)
+  source_phase: ux-review
+  source_ref: UX-010
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md

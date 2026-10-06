@@ -338,3 +338,107 @@ resolved:
   resolution: deferred
   resolved_at: '2026-10-06T18:41:53Z'
   note: "Reconciliation 2026-10-06 (E011-S01-001 review): already fully decided and documented at E008 closure (commit e064f16, 2026-09-03). Required reviewers: declined (sole-developer project). Trusted-publisher environment claim: accepted but latent, trigger recorded as 'first time PyPI publishing is enabled' -- an external GitHub/PyPI settings change, not a repo code/doc change. docs/operational.md lines 220-246 already document both decisions in full. Nothing left for this repo to build; correctly deferred to that future trigger, not promoted into a story."
+- key: BL-E007-002
+  epic: '007'
+  sprint: ''
+  title: Local Act execution is still unproven, and running it destroyed the repository once
+  source: post-restore audit (E007)
+  severity: Medium
+  status: resolved
+  description: "The local verifier path has never completed successfully. The one attempt on 2026-09-01 destroyed the working tree and all local commits: ~/.actrc sets --bind so act mounts the real repository as the container workspace, and verify-build.yaml's actions/checkout deletes the workspace contents before discovering it cannot fetch the pinned ref. docker/act-build.sh now runs act inside a disposable clone with --no-hardlinks, refuses to proceed unless the clone resolves elsewhere, and is pinned by test_local_wrapper_never_runs_act_against_the_working_tree. That makes the path SAFE but still UNPROVEN -- no successful run exists. Closing this needs an actual green run whose result is retained. Note the clone verifies HEAD, not the dirty working tree, which is what CI verifies anyway."
+  story: E011-S01-001
+  scheduled_at: '2026-10-06T18:17:59Z'
+  resolution: fixed
+  resolved_at: '2026-10-06T19:39:55Z'
+  ref: E011-S01-001
+- key: BL-E007-004
+  epic: '007'
+  sprint: ''
+  title: Bake exposes ATTESTATIONS but the verifier enables no SBOM or provenance attestation
+  source: post-restore audit (E007)
+  severity: Low
+  status: resolved
+  description: docker-bake.hcl defaults ATTESTATIONS to [] and verify-build.yaml neither enables type=sbom/type=provenance nor scans the built image, in an epic whose subject is reproducible build and verification. The Docker standards overlay is a stub, so this is provisional guidance rather than a hard rule. Decide explicitly -- enable attestations on the verified build, or record in ADR-0008 why they are deferred to the publication epic.
+  story: E011-S01-001
+  scheduled_at: '2026-10-06T18:17:59Z'
+  resolution: fixed
+  resolved_at: '2026-10-06T19:39:56Z'
+  ref: E011-S01-001
+- key: BL-E000-001
+  epic: '000'
+  sprint: ''
+  title: pre-commit --all-files silently skips untracked files, and this has now caused a false green twice
+  source: post-restore audit
+  severity: Medium
+  status: resolved
+  description: 'pre-commit --all-files enumerates git ls-files, so any gate reports green over a set that excludes untracked work. This first appeared when the whole E007 delivery was untracked and every gate skipped it. It recurred on 2026-09-01 against a brand-new mypy gate: the gate passed a deliberately planted type error because src/publication_contract/ had not been staged. It recurred a third time on 2026-09-04 during the BL-E008-010 split: tests/ci/test_gates.py was written, run green under `pre-commit run --all-files`, and shipped with an undefined `Any` -- the file was untracked, so ruff never read it. Three times the gate looked green while checking nothing, and each time the file at fault was new. There is no mechanical guard for this -- the practical rule is to `git add` before trusting an --all-files result, and to prove any new gate with a planted violation rather than a green run. Worth considering a repo-level check that fails when tracked-vs-untracked coverage diverges.'
+  story: E011-S01-002
+  scheduled_at: '2026-10-06T18:18:07Z'
+  resolution: fixed
+  resolved_at: '2026-10-06T19:57:28Z'
+  ref: E011-S01-002
+- key: BL-E008-009
+  epic: '008'
+  sprint: '01'
+  title: The vendored .agents/.claude trees are claimed to match an installed BMad release and nothing checks it
+  source: sprint closure — redteam M6
+  severity: Low
+  status: resolved
+  description: "docs/guidelines.md describes .agents/ and .claude/ as vendored BMad skills 'this project neither authors nor maintains'. That is a checkable claim and it is unchecked: 1,229 tracked files that any pull request can edit, excluded from every linting gate by .pre-commit-config.yaml's exclude and from the secret scanner by .gitleaks.toml's allowlist, in a repository whose agents hold write access and are instructed to read them and follow their directions exactly. Sprint closure addressed the review half by adding them to CODEOWNERS. The integrity half remains: a guard asserting the trees are byte-identical to the release they claim to vendor. Deliberately not done in closure -- it needs a source of truth for 'the installed release' that does not exist in the repo yet, and inventing one would be worse than the gap."
+  story: E011-S01-002
+  scheduled_at: '2026-10-06T18:18:07Z'
+  resolution: fixed
+  resolved_at: '2026-10-06T19:57:28Z'
+  ref: E011-S01-002
+- key: BL-E001-006
+  epic: '001'
+  sprint: S01
+  title: parse_known_args() silently ignores unrecognized CLI args in production, not just under pytest
+  source: sprint-closure adversarial review (E001-S01)
+  severity: Low
+  status: resolved
+  description: The fix for the import-time argv-parsing crash (parse_args -> parse_known_args) is necessary for testability but as a side effect means a genuine CLI typo (e.g. --dtaa-path) is now silently ignored in the real console-script entry point too, rather than erroring. A more complete fix would move argument parsing out of module-import time and into main() specifically, so production invocations can still hard-fail on unrecognized flags while imports (tests, embedding) remain safe -- but that is a larger architectural change than this story's scope (a testability blocker fix) warranted.
+  story: E011-S01-003
+  scheduled_at: '2026-10-06T18:18:08Z'
+  resolution: fixed
+  resolved_at: '2026-10-06T20:08:32Z'
+  ref: E011-S01-003
+- key: BL-E010-003
+  epic: '010'
+  sprint: ''
+  title: _dump_settings serialises the Settings object, so confuse path-based redaction cannot reach it
+  source: epic-010 architecture gates
+  severity: Low
+  status: resolved
+  description: ADR-0014 Decision 4 adopts confuse's .redact/dump(redact=True), which redacts by CONFIG PATH. _dump_settings dumps the Settings dataclass through jsonpickle, not the confuse Configuration, so the registry of secret paths does not map onto that sink without an explicit translation. E010-S01-001's AC forces the right outcome empirically -- a planted credential must appear in no record during a DEBUG loadFromFile -- so this is a design note for the implementer rather than a gap in the obligation.
+  story: E011-S01-003
+  scheduled_at: '2026-10-06T18:18:08Z'
+  resolution: fixed
+  resolved_at: '2026-10-06T20:08:33Z'
+  ref: E011-S01-003
+- key: BL-E010-001
+  epic: '010'
+  sprint: ''
+  title: No correlation identifier joins a watch event to its drain pass, export and notification
+  source: epic-010 architecture gates
+  severity: Medium
+  status: resolved
+  description: "Raised by both Epic 10 gates against core §9, which requires a trace id propagating across every boundary including sync->async. The hops exist today (watchdog event -> threading.Timer thread -> export -> post-export subprocess) and E010-S01-002 adds a fourth. An operator asking 'why did I get no notification for acme-dns.json' has no join key between the event line, the drain and the delivery result. Compounded by the container profile: docker/Dockerfile sets LOGGING_CONSOLEONLY=true, which selects the coloredlogs formatter, so records are strings rather than fields. Suggested shape: a per-drain pass id in a contextvars variable, emitted as a field, plus the JSON formatter for the container console handler."
+  story: E011-S01-004
+  scheduled_at: '2026-10-06T18:18:09Z'
+  resolution: fixed
+  resolved_at: '2026-10-06T20:32:35Z'
+  ref: E011-S01-004
+- key: BL-E010-002
+  epic: '010'
+  sprint: ''
+  title: Shutdown does not cancel the pending drain timer, and certificate writes are truncate-then-write
+  source: epic-010 architecture gates
+  severity: Medium
+  status: resolved
+  description: app.py handles KeyboardInterrupt with observer.stop() and observer.join() and nothing else; AcmeCertificateFileHandler.timer is never cancelled and threading.Timer threads are non-daemon. __exportCertificate writes with open('w'), so a SIGKILL between truncate and write leaves a zero-length or partial fullchain.pem that the consuming service will load. Today the exposure window is bounded by the export plus a 30s hook; E010-S01-002 adds network delivery to it. docker stop's default grace is 10s. Raised in both gates; unaddressed by ADR-0014 by design, recorded here rather than left implicit.
+  story: E011-S01-004
+  scheduled_at: '2026-10-06T18:18:09Z'
+  resolution: fixed
+  resolved_at: '2026-10-06T20:32:36Z'
+  ref: E011-S01-004

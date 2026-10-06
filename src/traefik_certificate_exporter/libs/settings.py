@@ -47,6 +47,26 @@ _SECRET_FIELD_PATTERN = re.compile(
 )
 _REDACTED_VALUE = "***REDACTED***"
 
+# An absent credential is not a credential. Masking by key alone told an operator who
+# raised `-ll DEBUG` to answer "is my notification config actually loading?" that both
+# `pkcs12passphrase` and `appriseurls` were populated when neither was set -- while every
+# neighbouring unset field rendered honestly as `null`. Emitting the real empty shape
+# discloses nothing and is the one question the dump exists to answer.
+_EMPTY_SECRET_VALUES: tuple = (None, "", [], {}, ())
+
+
+def _is_empty_secret(value) -> bool:
+    """Is this credential absent? `None`, or any empty container/string.
+
+    Deliberately not `not value`: `0` and `False` are not credential-shaped emptiness and
+    must not be reported as absent.
+    """
+    if value is None:
+        return True
+    if isinstance(value, (str, bytes, list, tuple, dict, set)):
+        return len(value) == 0
+    return False
+
 
 @functools.cache
 def _secret_leaf_names() -> frozenset[str]:
@@ -74,11 +94,15 @@ def _is_declared_secret(key) -> bool:
 
 
 def _redact_secrets(value):
-    """Recursively mask dict values whose key looks like a credential, or is declared."""
+    """Recursively mask dict values whose key looks like a credential, or is declared.
+
+    Value-aware: only a value that is actually PRESENT is masked. An unset one is passed
+    through as its real empty shape -- see `_is_empty_secret`.
+    """
     if isinstance(value, dict):
         return {
             key: (
-                _REDACTED_VALUE
+                (_REDACTED_VALUE if not _is_empty_secret(val) else val)
                 if (_SECRET_FIELD_PATTERN.search(str(key)) or _is_declared_secret(key))
                 else _redact_secrets(val)
             )
@@ -252,15 +276,6 @@ class SettingsManager(ObjectBase):
 
         self._config.set_env(prefix="TRAEFIK_CERTIFICATE_EXPORTER_", sep="_")
 
-        # Mark every declared secret path before anything can dump the config. Done once,
-        # here, so no sink has to remember: `Configuration.dump(redact=True)` consults
-        # these and masks by path.
-        for config_key in SECRET_CONFIG_KEYS:
-            view = self._config
-            for segment in config_key:
-                view = view[segment]
-            view.redact = True
-
         if cmdLineArgs is not None:
             self.__logger.debug("Loading Configuration from Command Line")
             # Redacted, because argparse's namespace carries whatever was typed on the
@@ -277,6 +292,8 @@ class SettingsManager(ObjectBase):
         self.__logger.debug(
             f"User Configuration Path: {self._config.user_config_path()}"
         )
+
+        self._mark_present_secrets()
 
         self._dump_config()
 
@@ -329,6 +346,29 @@ class SettingsManager(ObjectBase):
         )
 
         self._dump_settings()
+
+    def _mark_present_secrets(self):
+        """Mark every declared secret path that actually HOLDS a value.
+
+        `Configuration.dump(redact=True)` consults these and masks by path, so this is the
+        one place a sink has to be told. Run after every source is merged -- a passphrase
+        typed on the command line is as much a credential as one in the file.
+
+        Only PRESENT values are marked. confuse masks a marked path unconditionally, so
+        marking an unset one printed `appriseurls: REDACTED` for a key nobody had
+        configured, and disagreed with the settings dump about the very same field.
+        Leaving an empty path unmarked makes both sinks render absence identically.
+        """
+        for config_key in SECRET_CONFIG_KEYS:
+            view = self._config
+            for segment in config_key:
+                view = view[segment]
+            try:
+                current = view.get()
+            except confuse.ConfigError:
+                current = None
+            if not _is_empty_secret(current):
+                view.redact = True
 
     def _dump_settings(self):
         self.__logger.debug("Current Settings (active)...")

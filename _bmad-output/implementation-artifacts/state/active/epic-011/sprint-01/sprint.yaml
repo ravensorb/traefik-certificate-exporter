@@ -1,0 +1,48 @@
+key: '01'
+epic: 'E011'
+title: Sprint 01 — Residual Backlog Cleanup
+status: done
+updated_at: '2026-10-06T21:23:17Z'
+estimate:
+  man_hours_low: 27.65
+  man_hours_high: 38.06
+  hitl_hours_low: 0.65
+  hitl_hours_high: 0.87
+  elapsed_hours_low: 5.69
+  elapsed_hours_high: 7.44
+  tokens_k_min: 678
+  tokens_k_max: 770
+  closure_ratios:
+    man_hours: 3.3513
+    hitl_hours: 2.8404
+    elapsed_hours: 2.3747
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0.0
+    hitl_hours: 0
+    elapsed_hours: 0.1626
+    tokens_k: 0
+  cost_low: 2.8
+  cost_high: 3.17
+  model: claude-opus-5
+  confidence: medium
+actual:
+  elapsed_hours: 3.1
+  man_hours: 39.5
+  hitl_hours: 0.3
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-10-06T21:22:07Z'
+orchestration:
+  elapsed_hours: 0.3
+  man_hours: 0
+  hitl_hours: 0
+  tokens_k: N/A
+  cost: N/A
+orchestration_sampled_at: '2026-10-06T21:22:11Z'
+closed:
+  date: '2026-10-06'
+retrospective:
+  summary: 'All 4 stories done with 2 total fix iterations, but closure found 56 findings across four reviewers (4 HIGH security, 2 MAJOR drift) and took 2 fix passes to settle: the sprint hardened how certificate bytes are written without asking where the path came from (RT-001), and built a shutdown path for a signal the container never receives (RT-005). 28 findings fixed and independently re-verified; 30 deferred (1 High, 11 Medium, 18 Low). No carry-over, no blocked stories.'
+  velocity: '4'
+  carry_over: '0'

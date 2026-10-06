@@ -83,6 +83,19 @@ existing `observer.stop()`/`observer.join()`, closing the exposure window BL-E01
 describes rather than leaving it to the container runtime's grace period (`docker stop`'s
 default 10s is not and should not be this tool's only safety net).
 
+**4a. Amendment (implementation, E011-S01-004): the drain threads are made daemons rather
+than joined as non-daemon threads.** Decision 4 as written ("joins non-daemon threads with
+a bounded timeout before exit") does not bound shutdown: CPython's interpreter shutdown
+joins every non-daemon thread regardless of what the application already waited for, so a
+drain inside its 30s post-export hook or an Apprise delivery would still hold the process
+past `docker stop`'s 10s grace and be SIGKILLed — the outcome Decision 4 exists to avoid.
+`cancel()` therefore cancels an armed timer, waits a bounded 5s for an in-flight drain, and
+then lets the process exit while the daemon thread is abandoned. This is only safe because
+Decision 3 (and ADR-0024) make every certificate write atomic: an abandoned drain loses an
+export, it cannot leave a partial file. `cancel()` also latches a shutdown flag, so neither
+a late watchdog event nor the drain's own re-arm path can start a new pass after shutdown
+has begun.
+
 ## Consequences
 
 - Positive: an operator can grep one `correlation_id` across a watch event, its drain,

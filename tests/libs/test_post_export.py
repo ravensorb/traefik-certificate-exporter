@@ -1,4 +1,5 @@
 import json
+import logging
 import sys
 from unittest.mock import patch
 
@@ -78,3 +79,42 @@ def test_unparseable_command_is_logged_but_does_not_raise(caplog):
     run_post_export_command('unterminated "quote', ["example.com"], dryRun=False)
 
     assert any("could not be parsed" in message for message in caplog.messages)
+
+
+def test_the_hook_receives_the_correlation_id_of_the_pass_that_ran_it(tmp_path):
+    """A hook that logs somewhere else can still be joined back to this export pass."""
+    output_file = tmp_path / "hook-correlation.json"
+    script = tmp_path / "hook.py"
+    script.write_text(
+        "import json, os\n"
+        f"with open({str(output_file)!r}, 'w') as f:\n"
+        "    json.dump({'id': os.environ.get("
+        "'TRAEFIK_CERTIFICATE_EXPORTER_CORRELATION_ID')}, f)\n"
+    )
+
+    run_post_export_command(
+        f"{sys.executable} {script}",
+        ["foo.com"],
+        dryRun=False,
+        correlationId="pass-1234",
+    )
+
+    assert json.loads(output_file.read_text())["id"] == "pass-1234"
+
+
+def test_post_export_log_lines_carry_the_passed_correlation_id(caplog):
+    with caplog.at_level(logging.INFO):
+        run_post_export_command(
+            "/bin/true", ["foo.com"], dryRun=True, correlationId="pass-5678"
+        )
+
+    assert [r.correlation_id for r in caplog.records] == ["pass-5678"]
+
+
+def test_post_export_without_an_id_logs_rather_than_failing(caplog):
+    """A missing correlation id must never take down the pass it exists to observe."""
+    with caplog.at_level(logging.INFO):
+        run_post_export_command("/bin/true", ["foo.com"], dryRun=True)
+
+    assert caplog.records
+    assert all(getattr(r, "correlation_id", None) for r in caplog.records)

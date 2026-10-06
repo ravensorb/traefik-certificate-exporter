@@ -77,9 +77,12 @@ graph TD
   logs at any level; unstructured, unparseable file logs
 - **Rule:** any field matching a secret allowlist is redacted before serialization, at every
   log level, with no exception; file-handler output is structured (JSON); console output may
-  stay human-readable. No cross-process correlation ID — single-process tool, nothing to
-  correlate across. (Tracked fix: PRD backlog #1 and #9 / Epic 1 Story 1.1, Epic 4 Story
-  4.2 — not yet implemented as of this spine.) — `docs/adr/0003`.
+  stay human-readable. Every record carries a `correlation_id`: one UUID4 per export pass,
+  stamped by a log-record factory and propagated to the debounce timer thread, to the
+  post-export hook (as `TRAEFIK_CERTIFICATE_EXPORTER_CORRELATION_ID`) and to the notification
+  path; `-` marks a record emitted outside a pass. Distributed tracing across *independent*
+  processes remains out of scope — this is still a single-process tool. — `docs/adr/0003`,
+  amended by `docs/adr/0023` (Epic 011 Story E011-S01-004).
 
 ### AD-4 — Docker image built from the locked dependency set
 

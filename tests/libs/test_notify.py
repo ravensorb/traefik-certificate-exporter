@@ -1,7 +1,12 @@
 """Export notifications: delivery, isolation, dry run, and what they claim to mean."""
 
+import logging
 from unittest.mock import MagicMock, patch
 
+from traefik_certificate_exporter.libs.logging_utils import (
+    reset_correlation_id,
+    set_correlation_id,
+)
 from traefik_certificate_exporter.libs.notify import send_export_notifications
 
 
@@ -90,3 +95,30 @@ def test_a_rejected_destination_is_named_by_position_never_echoed(caplog):
     assert "SECRETTOKEN" not in caplog.text
     assert "index 0" in caplog.text
     assert "nothing was notified" in caplog.text
+
+
+def test_notification_log_lines_carry_the_passed_correlation_id(caplog):
+    with caplog.at_level(logging.INFO):
+        send_export_notifications(
+            ["json://localhost/"],
+            ["example.com"],
+            dryRun=True,
+            correlationId="pass-9012",
+        )
+
+    assert [r.correlation_id for r in caplog.records] == ["pass-9012"]
+
+
+def test_notification_falls_back_to_the_id_already_in_flight(caplog):
+    """The watch drain binds the id on its thread; a caller that does not pass it
+    explicitly must still be joinable rather than unlabelled."""
+    token = set_correlation_id("ambient-77")
+    try:
+        with caplog.at_level(logging.INFO):
+            send_export_notifications(
+                ["json://localhost/"], ["example.com"], dryRun=True
+            )
+    finally:
+        reset_correlation_id(token)
+
+    assert [r.correlation_id for r in caplog.records] == ["ambient-77"]

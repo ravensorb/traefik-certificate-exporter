@@ -1,5 +1,7 @@
 import logging
 
+import pytest
+
 from traefik_certificate_exporter.libs.settings import (
     Settings,
     SettingsManager,
@@ -41,10 +43,12 @@ def test_redact_secrets_matches_by_name_not_a_hardcoded_field_list():
     assert redacted["count"] == 3
 
 
-def test_redact_secrets_handles_none_value_without_raising():
+def test_an_unset_secret_renders_as_null_rather_than_redacted():
+    """UX-001: masking by key alone told an operator a credential they never configured
+    was populated. The absence of a credential is not a credential."""
     redacted = _redact_secrets({"pkcs12Passphrase": None})
 
-    assert redacted["pkcs12Passphrase"] == "***REDACTED***"
+    assert redacted["pkcs12Passphrase"] is None
 
 
 def test_redact_secrets_handles_absent_key_without_raising():
@@ -193,3 +197,148 @@ def test_a_newly_declared_secret_is_covered_without_touching_the_guard(
         "a declared secret path was not redacted -- redaction is not deriving its scope "
         "from SECRET_CONFIG_KEYS"
     )
+
+
+def test_a_secret_nested_in_a_list_of_objects_is_redacted():
+    """The shape neither existing guard exercises (BL-E010-003).
+
+    `_dump_config` redacts by config PATH, which reaches `appriseurls` -- a list of raw
+    strings -- without ever descending into it. `_dump_settings` serialises the `Settings`
+    dataclass instead, so it redacts by where a declared leaf name sits in the walked
+    structure. A declared secret held one level deeper, inside objects *within* a list,
+    is the position that tests neither: the list recursion has to run, and then the
+    declared-key check has to fire on the dict inside it.
+    """
+    from traefik_certificate_exporter.libs.settings import (
+        _REDACTED_VALUE,
+        _redact_secrets,
+    )
+
+    redacted = _redact_secrets(
+        {
+            "destinations": [
+                {"name": "primary", "pkcs12Passphrase": "PLANTED-IN-A-LIST"},
+                {"name": "secondary", "appriseUrls": ["tgram://PLANTED-TOKEN/chat"]},
+            ]
+        }
+    )
+
+    assert redacted["destinations"][0]["pkcs12Passphrase"] == _REDACTED_VALUE
+    assert redacted["destinations"][1]["appriseUrls"] == _REDACTED_VALUE
+    assert redacted["destinations"][0]["name"] == "primary", (
+        "redaction must not flatten non-secret siblings"
+    )
+
+
+def test_an_undeclared_credential_shaped_name_in_a_nested_list_is_still_caught():
+    """The backstop pattern has to survive the same nesting the registry check does."""
+    from traefik_certificate_exporter.libs.settings import (
+        _REDACTED_VALUE,
+        _redact_secrets,
+    )
+
+    redacted = _redact_secrets([[{"api_key": "PLANTED-UNDECLARED"}]])
+
+    assert redacted[0][0]["api_key"] == _REDACTED_VALUE
+
+
+# ---------------------------------------------------------------------------
+# UX-001: redaction is value-aware. An operator who raises `-ll DEBUG` to answer "is my
+# notification/passphrase config actually loading?" was told, falsely, that both were
+# populated -- and the two sinks disagreed with each other about the same unset field.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("key", ["pkcs12passphrase", "appriseurls"])
+def test_an_unset_declared_secret_is_not_reported_as_configured(caplog, tmp_path, key):
+    captured = _capture_all_records(
+        caplog,
+        tmp_path,
+        f"settings:\n  datapath: {tmp_path}\n",
+        {"settings.datapath": str(tmp_path)},
+    )
+
+    assert "REDACTED" not in captured, (
+        f"an unconfigured '{key}' was reported as a populated credential:\n{captured}"
+    )
+
+
+@pytest.mark.parametrize("key", ["pkcs12passphrase", "appriseurls"])
+def test_an_empty_declared_secret_is_not_reported_as_configured(caplog, tmp_path, key):
+    """Explicitly present but empty -- `pkcs12passphrase: ""` / `appriseurls: []`."""
+    empty = '""' if key == "pkcs12passphrase" else "[]"
+    captured = _capture_all_records(
+        caplog,
+        tmp_path,
+        f"settings:\n  {key}: {empty}\n  datapath: {tmp_path}\n",
+        {
+            f"settings.{key}": "" if key == "pkcs12passphrase" else [],
+            "settings.datapath": str(tmp_path),
+        },
+    )
+
+    assert "REDACTED" not in captured, (
+        f"an empty '{key}' was reported as a populated credential:\n{captured}"
+    )
+
+
+@pytest.mark.parametrize("key", ["pkcs12passphrase", "appriseurls"])
+def test_a_set_declared_secret_is_still_masked_in_every_sink(caplog, tmp_path, key):
+    planted = f"PLANTED-{key.upper()}"
+    value = planted if key == "pkcs12passphrase" else f"[{planted}]"
+    captured = _capture_all_records(
+        caplog,
+        tmp_path,
+        f"settings:\n  {key}: {value}\n  datapath: {tmp_path}\n",
+        {
+            f"settings.{key}": planted if key == "pkcs12passphrase" else [planted],
+            "settings.datapath": str(tmp_path),
+        },
+    )
+
+    assert planted not in captured, f"settings.{key} reached a log record at DEBUG"
+    assert "REDACTED" in captured, "a configured credential was not masked at all"
+
+
+def test_both_dump_sinks_agree_that_an_unset_secret_is_absent(caplog, tmp_path):
+    """They disagreed: confuse omitted the unset passphrase while the settings dump
+    printed `***REDACTED***` for it, so the operator read "absent here, set there"."""
+    import logging as _logging
+    from argparse import Namespace
+
+    from traefik_certificate_exporter.libs.settings import SettingsManager
+
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(f"settings:\n  datapath: {tmp_path}\n")
+
+    with caplog.at_level(_logging.DEBUG):
+        manager = SettingsManager()
+        manager.loadFromFile(
+            fileName=str(cfg),
+            cmdLineArgs=Namespace(
+                configfile=str(cfg), **{"settings.datapath": str(tmp_path)}
+            ),
+        )
+        caplog.clear()
+        manager._dump_config()
+        configDump = "\n".join(r.getMessage() for r in caplog.records)
+        caplog.clear()
+        manager._dump_settings()
+        settingsDump = "\n".join(r.getMessage() for r in caplog.records)
+
+    assert "REDACTED" not in configDump, configDump
+    assert "REDACTED" not in settingsDump, settingsDump
+    assert manager.settings.pkcs12Passphrase is None
+    assert manager.settings.appriseUrls == []
+
+
+def test_an_empty_secret_value_is_recognised_but_zero_is_not():
+    from traefik_certificate_exporter.libs.settings import _is_empty_secret
+
+    assert _is_empty_secret(None)
+    assert _is_empty_secret("")
+    assert _is_empty_secret([])
+    assert not _is_empty_secret("hunter2")
+    assert not _is_empty_secret(["tgram://token/"])
+    assert not _is_empty_secret(0), "0 is not credential-shaped emptiness"
+    assert not _is_empty_secret(False)

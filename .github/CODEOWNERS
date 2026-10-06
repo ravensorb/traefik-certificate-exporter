@@ -29,6 +29,24 @@
 # directions exactly", these trees are excluded from the linting gates, and the agents
 # that read them hold write access. That combination makes them executable surface in
 # every sense that matters, so they are reviewed like it.
+#
+# How much of that is checked, and how much is review alone. A `payload-manifest.json`
+# is not an inventory of its skill: it records the shared payload the installer copied
+# into that skill (`"generated_from": "skills/_shared/"`), with a declared release and a
+# SHA-256 for each file it names.
+# `test_the_vendored_trees_match_the_manifests_their_installer_shipped` verifies exactly
+# those, offline, against the manifest already in the tree. Counted in files rather than
+# in skills, that is 142 of the 2,364 files across the two trees.
+#
+# The other 2,222 -- including every `SKILL.md`, the file this paragraph calls
+# executable surface -- are named by no manifest and verified against no upstream
+# reference. This repository holds no record of "the installed release" for them, and
+# one invented here would assert its own correctness. They are pinned only by `.agents/`
+# and `.claude/` being byte-identical copies of one payload, which
+# `test_the_vendored_trees_are_byte_identical_copies_of_each_other` asserts. An edit
+# made to both copies at once passes every check and is caught here, by review, or not
+# at all. `test_the_vendored_integrity_guard_records_what_it_cannot_verify` recomputes
+# those counts from the trees, so this paragraph fails the gate rather than drifting.
 /AGENTS.md                                  @ravensorb
 /CLAUDE.md                                  @ravensorb
 /.agents/                                   @ravensorb

@@ -152,3 +152,16 @@ group.add_argument(
 # script entry point only ever sees its own argv in production, so behavior there is
 # unchanged.
 globalArgs, _ = globalArgParser.parse_known_args()
+
+
+def parse_args_strict() -> argparse.Namespace:
+    """Parse this process's argv strictly, failing on any unrecognized flag.
+
+    The module-level `globalArgs` above deliberately tolerates foreign argv so that
+    importing this module from pytest, a REPL or an embedding host can never raise.
+    That leniency is wrong for a real invocation, where `--dtaa-path` is a typo and not
+    somebody else's flag, so `main()` calls this instead: `parse_args()` exits 2 with a
+    usage message naming the offending argument. Nothing here runs at import time --
+    only when a caller asks for it (ADR-0025).
+    """
+    return globalArgParser.parse_args()

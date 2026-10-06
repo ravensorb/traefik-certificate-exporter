@@ -1,0 +1,1705 @@
+diff --git a/README.md b/README.md
+index c32d0ca..da875a5 100644
+--- a/README.md
++++ b/README.md
+@@ -99,6 +99,8 @@ it).
+ - The just-exported domain names are exposed to it as a comma-separated
+   `TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS` environment variable (empty string if
+   no domains were processed).
++- The export pass's `TRAEFIK_CERTIFICATE_EXPORTER_CORRELATION_ID` is exposed too, so a
++  hook that logs elsewhere can be joined to the exporter's own log lines for that pass.
+ - A fixed 30 second timeout applies; a command that doesn't return in time is killed and
+   the timeout is logged as an error.
+ - Skipped entirely when `--dry-run` is set, consistent with dry-run suppressing file
+@@ -113,6 +115,21 @@ traefik-certificate-exporter \
+                             --post-export-command "/usr/local/bin/notify-service.sh"
+ ```
+ 
++## Logging and tracing an export pass
++
++Each export pass (the start-up sweep, and each debounced pass the watcher runs) is tagged
++with a `correlation_id` — a UUID4 shared by every log line that pass produces, from the
++detected file change through the export, the post-export hook and the notification. Grep
++one value to see the whole pass.
++
++The rotating log file is JSON, so `correlation_id` is a field there already. Console output
++is coloured human-readable text by default, with the id in brackets after the level; set
++`TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON=true` to emit the console stream as JSON
++instead (useful when `docker logs` is being shipped to a log aggregator). A `-` means the
++line was emitted outside any export pass.
++
++See [docs/operational.md](docs/operational.md#tracing-one-export-pass-correlation_id).
++
+ ## Credits
+ 
+ This tool is HEAVLY influenced by the excellent work of [DanielHuisman](https://github.com/DanielHuisman) and [Marc Brückner](https://github.com/SnowMB)
+diff --git a/config.sample.yml b/config.sample.yml
+index 282d192..8a9fed6 100644
+--- a/config.sample.yml
++++ b/config.sample.yml
+@@ -13,3 +13,9 @@ settings:
+   watchinterval: 60
+   # pkcs12passphrase:                      # Passphrase used to encrypt the exported PKCS12 (.pfx) file (default: unencrypted)
+   # postexportcommand:                     # Shell-like command line run after a successful export pass (see README.md)
++
++# Logging is configured from the environment, not from this file (it is set up before this
++# file is read). Both switches are opt-in and default to off:
++#   TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY=true   # console only, no log file
++#   TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON=true   # console as JSON, so
++#                                                           # correlation_id is a field
+diff --git a/docker/Dockerfile b/docker/Dockerfile
+index 793eb7d..a74950a 100644
+--- a/docker/Dockerfile
++++ b/docker/Dockerfile
+@@ -107,8 +107,12 @@ RUN set -eu; \
+ # Runtime stage: retain the digest-pinned LinuxServer/s6 base and its PUID/PGID model.
+ FROM ${BASE_IMAGE} AS runtime
+ 
++# CONSOLEJSON leaves the console as coloured human-readable text by default; set it to
++# true to emit that stream as JSON instead, so `correlation_id` reaches `docker logs` as a
++# real field rather than interpolated into a string (ADR-0023 Decision 2).
+ ENV \
+     TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY=true \
++    TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON=false \
+     TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH=/data \
+     TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_OUTPUTPATH=/certs \
+     TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=true \
+diff --git a/docs/operational.md b/docs/operational.md
+index 71d6e8b..33df251 100644
+--- a/docs/operational.md
++++ b/docs/operational.md
+@@ -68,9 +68,51 @@ or rely entirely on environment variables.
+ 
+ ## Monitoring / observability
+ 
+-None today — no metrics endpoint, no health check (PRD backlog item #15). The only signal
+-is the process's stdout/log-file output; monitor container/process liveness externally
+-(e.g. `docker inspect` health status is not configured either).
++No metrics endpoint and no health check (PRD backlog item #15). The only signal is the
++process's stdout/log-file output; monitor container/process liveness externally (e.g.
++`docker inspect` health status is not configured either).
++
++### Tracing one export pass: `correlation_id`
++
++Every export pass — the start-up sweep, and each debounced drain the file watcher runs —
++mints a UUID4 and tags every log line it produces with it: the "certificates changed found
++in file" event, the export itself, the post-export command, and the notification delivery.
++One value joins all of them (ADR-0023).
++
++- **Rotating log file** (`traefik-certificate-exporter.log`): already JSON, so
++  `correlation_id` is a real field.
++  ```bash
++  jq -r 'select(.correlation_id == "<id>") | "\(.asctime) \(.levelname) \(.message)"' \
++      traefik-certificate-exporter.log
++  ```
++- **Console** (what `docker logs` shows): human-readable and coloured by default, with the
++  id in brackets after the level. Set
++  `TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON=true` to emit the console stream as
++  JSON instead, so `correlation_id` is a parseable field there too. The default is
++  unchanged colour output — this is opt-in, because an operator reading `docker logs` by
++  eye usually wants the colour.
++- `-` in place of an id means the line was emitted outside any export pass (start-up,
++  configuration, shutdown before a pass ran).
++- The post-export hook receives the same value as
++  `TRAEFIK_CERTIFICATE_EXPORTER_CORRELATION_ID`, so a hook that logs elsewhere can be
++  joined back. It is a UUID4 and carries nothing derived from a domain, path, or secret.
++
++If a drain is interrupted part-way, the work left over is re-armed under a **new** id, and
++an INFO line names both ("Re-arming export drain as X for work left by Y") so the two
++halves can still be joined by hand.
++
++### Shutdown
++
++`Ctrl-C`/SIGTERM stops the watcher and cancels any armed-but-not-yet-fired debounce timer,
++logging that cancellation at INFO — so a truncated run is distinguishable from a clean
++exit. If a drain is already running, shutdown waits a bounded 5s for it and then exits
++regardless rather than holding the process open past the container runtime's grace period.
++
++Certificate files (PEM and `.pfx` alike) are written to a temporary file in the target
++directory and then `os.replace`d into place, so a process killed mid-pass leaves each file
++either fully in its previous state or fully in its new state — never zero-length or
++partial. Keep `outputpath` on a single filesystem (the normal bind-mount case): the rename
++is only atomic within one.
+ 
+ ## Recover a failed release push
+ 
+@@ -422,6 +464,40 @@ URL (stable), and the alias outcomes. The development table adds the `Suppressed
+ row, which is how a run that deliberately published nothing is told apart from one that failed. That table is the input to every decision above -- read it before
+ rerunning anything.
+ 
++### What a local `docker/act-build.sh` run reports (BL-E007-002)
++
++The run summary above is the GitHub-side evidence. The local verifier is the other half, and its
++status should be read as **safe, executes, not yet green end to end** rather than as a working
++rehearsal of CI.
++
++Attempted 2026-10-06 against source SHA `2213e429ed3eb83733b89744db835f267124f9c4`, package version
++`0.2.0`, with `act` and a reachable Docker daemon (Engine 29.8.2, Buildx v0.37.1). The wrapper's
++disposable-clone guard behaved as designed — the clone resolved elsewhere, the real tree was never
++mounted — and `act` got as far as starting the `ubuntu-24.04` runner and executing
++`actions/checkout@v7`. It then failed, definitively and reproducibly, at the first step of the first
++job:
++
++```
++::error::Invalid repository '/home/.../traefik-certificate-exporter'. Expected format {owner}/{repo}.
++```
++
++`act` derives `github.repository` from the clone's `origin` remote, which `git clone --local` points
++at a filesystem path — the very property that lets a local-only commit be fetched is the one
++`actions/checkout` rejects. Pointing `origin` at the GitHub URL instead trades this failure for the
++original one: the SHA is not on any remote, so the ref cannot be fetched. Closing that needs a
++change to the wrapper's clone/mount strategy, not a rerun.
++
++Two things follow for anyone running it. First, a failed local run is still useful output — read the
++transcript rather than assuming the environment is broken. Second, if `act` stops on
++`Provide value for '<SECRET>'` before any job starts, that is `~/.actrc` declaring `-s NAME` with no
++value; `verify-build.yaml` is the secret-free verifier (ADR-0007) and needs none of them, so supply
++placeholders in the invoking environment rather than real credentials.
++
++The transcript is retained at
++`_bmad-output/implementation-artifacts/epic-011/sprint-01/closure/E011-S01-001-act-run-evidence.md`.
++The wrapper `tee`s to `act-build-traefik-certificate-exporter.log` in the repository root, which
++`.gitignore`'s `**/*.log` excludes — so archive the transcript deliberately; it is not kept for you.
++
+ ## If a publication credential is compromised
+ 
+ The publication-recovery procedure above answers "a run failed part way". This one answers "someone
+diff --git a/src/traefik_certificate_exporter/app.py b/src/traefik_certificate_exporter/app.py
+index 88676d8..20a2177 100755
+--- a/src/traefik_certificate_exporter/app.py
++++ b/src/traefik_certificate_exporter/app.py
+@@ -12,9 +12,18 @@ from .libs.certificate_exporter import (
+     AcmeCertificateExporter,
+     AcmeCertificateFileHandler,
+ )
+-from .libs.cli_args import globalArgs
++from .libs.cli_args import (  # noqa: F401 -- see main()
++    globalArgs,
++    parse_args_strict,
++)
+ from .libs.docker import DockerManager
+-from .libs.logging_utils import globalLogger, setup_logging
++from .libs.logging_utils import (
++    globalLogger,
++    new_correlation_id,
++    reset_correlation_id,
++    set_correlation_id,
++    setup_logging,
++)
+ from .libs.notify import send_export_notifications
+ from .libs.post_export import run_post_export_command
+ from .libs.settings import globalSettingsMgr
+@@ -34,6 +43,16 @@ def require_existing_path(logger, path: str | None, label: str) -> None:
+ 
+ 
+ def main():
++    # The imported `globalArgs` was parsed leniently so that importing this module can
++    # never die on somebody else's argv -- it stays as `app.globalArgs`' safe default for
++    # anything that imports without calling `main()`, which is why the import above is
++    # kept even though every read below happens after the rebind. Here argv is this
++    # process's own, so an unrecognized flag is a typo and must fail loudly: rebind the
++    # module-level name to the strict parse before any attribute of it is read
++    # (ADR-0025, BL-E001-006).
++    global globalArgs
++    globalArgs = parse_args_strict()
++
+     setup_logging(
+         cfg_file_name="logging.yaml",
+         default_level=globalArgs.logginglevel,
+@@ -63,22 +82,35 @@ def main():
+     dockerManager = DockerManager(settings=settings)
+ 
+     if settings.runAtStart:
+-        logger.info("Exporting certificates....")
+-        domainsProcessed = exporter.exportCertificates()
+-        run_post_export_command(
+-            settings.postExportCommand, domainsProcessed or [], settings.dryRun
+-        )
+-        # Scope: the union of every acme file, once per process start. The watch path
+-        # notifies per file instead; see the note at that call site.
+-        send_export_notifications(
+-            settings.appriseUrls, domainsProcessed or [], settings.dryRun
+-        )
+-        if (
+-            domainsProcessed
+-            and len(domainsProcessed) > 0
+-            and settings.restartContainers
+-        ):
+-            dockerManager.restartLabeledContainers(domainsProcessed)
++        # The start-up sweep is a pass like any other, so it gets its own id: every line
++        # it emits -- export, hook, notification -- joins on the same value.
++        startupCorrelationId = new_correlation_id()
++        token = set_correlation_id(startupCorrelationId)
++        try:
++            logger.info("Exporting certificates....")
++            domainsProcessed = exporter.exportCertificates()
++            run_post_export_command(
++                settings.postExportCommand,
++                domainsProcessed or [],
++                settings.dryRun,
++                correlationId=startupCorrelationId,
++            )
++            # Scope: the union of every acme file, once per process start. The watch path
++            # notifies per file instead; see the note at that call site.
++            send_export_notifications(
++                settings.appriseUrls,
++                domainsProcessed or [],
++                settings.dryRun,
++                correlationId=startupCorrelationId,
++            )
++            if (
++                domainsProcessed
++                and len(domainsProcessed) > 0
++                and settings.restartContainers
++            ):
++                dockerManager.restartLabeledContainers(domainsProcessed)
++        finally:
++            reset_correlation_id(token)
+ 
+     if settings.watchForChanges:
+         logger.info("Watching for changes to files....")
+@@ -95,6 +127,10 @@ def main():
+                 time.sleep(settings.watchInterval)
+         except KeyboardInterrupt:
+             observer.stop()
++            # Not `event_handler.timer.cancel()`: the timer is `None` until the first
++            # watched-file event ever fires, and "start, then Ctrl-C" is the common path.
++            # The guard lives in the handler, which owns the invariant (ADR-0026).
++            event_handler.cancel()
+         observer.join()
+ 
+     logger.info("Traefik Certificate Exporter stopping....")
+diff --git a/src/traefik_certificate_exporter/libs/certificate_exporter.py b/src/traefik_certificate_exporter/libs/certificate_exporter.py
+index f91d70b..ba2c0b9 100644
+--- a/src/traefik_certificate_exporter/libs/certificate_exporter.py
++++ b/src/traefik_certificate_exporter/libs/certificate_exporter.py
+@@ -2,6 +2,7 @@ import glob
+ import json
+ import logging
+ import os
++import tempfile
+ import threading
+ from base64 import b64decode
+ from pathlib import Path
+@@ -14,11 +15,98 @@ from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
+ from cryptography.hazmat.primitives.serialization import pkcs12
+ 
+ from .docker import DockerManager
+-from .logging_utils import globalLogger
++from .logging_utils import (
++    get_correlation_id,
++    globalLogger,
++    new_correlation_id,
++    reset_correlation_id,
++    set_correlation_id,
++)
+ from .notify import send_export_notifications
+ from .post_export import run_post_export_command
+ from .settings import Settings
+ 
++###########################################################################################################
++
++# What `open(path, "w")` would have produced: 0o666 masked by the process umask. The
++# helper below creates its temp file through `tempfile`, which deliberately uses 0o600,
++# so the mode has to be restored explicitly or every exported certificate would silently
++# change permissions (ADR-0023's security consideration cuts both ways -- a private key
++# must not be loosened, and a public chain must not be tightened into something the
++# consuming service cannot read).
++_DEFAULT_FILE_MODE_LOCK = threading.Lock()
++_DEFAULT_FILE_MODE: int | None = None
++
++
++def _default_file_mode() -> int:
++    global _DEFAULT_FILE_MODE
++
++    if _DEFAULT_FILE_MODE is None:
++        with _DEFAULT_FILE_MODE_LOCK:
++            if _DEFAULT_FILE_MODE is None:
++                # Probed once, under a lock, and cached: `os.umask` is process-wide and
++                # has no read-only form, so the set/restore pair must not be repeated per
++                # file while other threads are creating files.
++                current = os.umask(0o022)
++                os.umask(current)
++                _DEFAULT_FILE_MODE = 0o666 & ~current
++
++    return _DEFAULT_FILE_MODE
++
++
++def _atomic_write(target: Path, data: str | bytes) -> None:
++    """Write `data` to `target` so a reader never observes a partial file.
++
++    `tempfile.NamedTemporaryFile(dir=target.parent)` keeps the temp file on the SAME
++    filesystem as the target -- `os.replace` is only atomic within one, and `outputPath`
++    is commonly a bind mount -- then `os.replace` swaps it in one step. A kill at any
++    point leaves either the previous file or the complete new one (ADR-0023 Decision 3,
++    extended to the PKCS12 outputs by ADR-0024).
++    """
++    target = Path(target)
++    directory = target.parent
++    binary = isinstance(data, bytes)
++
++    try:
++        mode = target.stat().st_mode & 0o7777
++    except OSError:
++        mode = _default_file_mode()
++
++    tmp = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed in the try/finally below
++        mode="wb" if binary else "w",
++        encoding=None if binary else "utf-8",
++        dir=directory,
++        prefix=f".{target.name}.",
++        suffix=".tmp",
++        delete=False,
++    )
++    tmpPath = tmp.name
++
++    try:
++        with tmp as handle:
++            handle.write(data)
++            handle.flush()
++            os.fsync(handle.fileno())
++
++        os.chmod(tmpPath, mode)
++        os.replace(tmpPath, target)
++    except BaseException:
++        # Includes KeyboardInterrupt/SystemExit: an abandoned `.tmp` beside a
++        # certificate would be collected by any glob a consumer runs over the directory.
++        try:
++            os.unlink(tmpPath)
++        except OSError:
++            pass
++        raise
++
++
++def _atomic_write_text(target: Path, text: str) -> None:
++    _atomic_write(target, text)
++
++
++def _atomic_write_bytes(target: Path, data: bytes) -> None:
++    _atomic_write(target, data)
++
+ 
+ ###########################################################################################################
+ class AcmeCertificateExporter:
+@@ -121,22 +209,20 @@ class AcmeCertificateExporter:
+                     if self.__settings.flat:
+                         # Write private key, certificate and chain to flat files
+                         self.__logger.debug(f"Exporting private key for: {name}")
+-                        with (directory / (str(name) + ".key")).open("w") as f:
+-                            f.write(privatekey)
++                        _atomic_write_text(directory / (str(name) + ".key"), privatekey)
+ 
+                         self.__logger.debug(f"Exporting cert for: {name}")
+-                        with (directory / (str(name) + ".crt")).open("w") as f:
+-                            f.write(fullchain)
++                        _atomic_write_text(directory / (str(name) + ".crt"), fullchain)
+ 
+                         self.__logger.debug(f"Exporting chain for: {name}")
+-                        with (directory / (str(name) + ".chain.pem")).open("w") as f:
+-                            f.write(chain)
++                        _atomic_write_text(
++                            directory / (str(name) + ".chain.pem"), chain
++                        )
+ 
+                         self.__logger.debug(f"Exporting full chain for: {name}")
+-                        with (directory / (str(name) + ".fullchain.pem")).open(
+-                            "w"
+-                        ) as f:
+-                            f.write(fullchain)
++                        _atomic_write_text(
++                            directory / (str(name) + ".fullchain.pem"), fullchain
++                        )
+ 
+                         self.__logger.debug(f"Exporting pfx for: {name}")
+                         PemToPfxConverter.export_to_pkcs12(
+@@ -152,20 +238,16 @@ class AcmeCertificateExporter:
+ 
+                         # Write private key, certificate and chain to file
+                         self.__logger.debug(f"Exporting private key for: {name}")
+-                        with (directory / "privkey.pem").open("w") as f:
+-                            f.write(privatekey)
++                        _atomic_write_text(directory / "privkey.pem", privatekey)
+ 
+                         self.__logger.debug(f"Exporting cert for: {name}")
+-                        with (directory / "cert.pem").open("w") as f:
+-                            f.write(cert)
++                        _atomic_write_text(directory / "cert.pem", cert)
+ 
+                         self.__logger.debug(f"Exporting chain for: {name}")
+-                        with (directory / "chain.pem").open("w") as f:
+-                            f.write(chain)
++                        _atomic_write_text(directory / "chain.pem", chain)
+ 
+                         self.__logger.debug(f"Exporting full chain for: {name}")
+-                        with (directory / "fullchain.pem").open("w") as f:
+-                            f.write(fullchain)
++                        _atomic_write_text(directory / "fullchain.pem", fullchain)
+ 
+                         self.__logger.debug(f"Exporting pfx for: {name}")
+                         PemToPfxConverter.export_to_pkcs12(
+@@ -331,7 +413,10 @@ class PemToPfxConverter:
+             pkcs12_encryption,
+         )
+ 
+-        Path(filename).write_bytes(pkcs12_bytes)
++        # Atomic for the same reason the PEM siblings are: a `.pfx` is a certificate
++        # file a service loads directly, and truncate-then-write leaves it zero-length
++        # if the process dies mid-write (ADR-0024).
++        _atomic_write_bytes(Path(filename), pkcs12_bytes)
+ 
+         if globalLogger.isEnabledFor(logging.DEBUG):
+             (_pkcs12_key, pkcs12_cert, _pkcs12_chain) = (
+@@ -357,6 +442,12 @@ class PemToPfxConverter:
+ # inline so the watch tests can drive the handler without waiting on wall-clock time.
+ WATCH_DEBOUNCE_SECONDS = 2
+ 
++# How long shutdown waits for an in-flight drain to finish before giving up on it. Bounded
++# on purpose: `threading.Timer` threads are non-daemon, so an unbounded join would hand the
++# container runtime's grace period (10s by default for `docker stop`) the job of killing
++# us -- which is the exposure BL-E010-002 asks this code to close itself.
++SHUTDOWN_JOIN_TIMEOUT_SECONDS = 5
++
+ 
+ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
+     # --------------------------------------------------------------------------------------
+@@ -375,6 +466,10 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
+         # handleEvent for why a set rather than a single event.
+         self.pendingPaths: set[str] = set()
+         self.timer = None
++        # The id of the drain this window will run under. Generated when the window
++        # OPENS, not when it fires, so the "certificates changed" line that opened it
++        # already carries the key an operator greps for (ADR-0023 Decision 1).
++        self.correlationId: str | None = None
+         self.lock = threading.Lock()
+         self.__logger = globalLogger
+ 
+@@ -400,8 +495,6 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
+     def handleEvent(self, event):
+ 
+         if not event.is_directory:
+-            self.__logger.info(f"Certificates changed found in file: {event.src_path}")
+-
+             with self.lock:
+                 # Record the path before deciding whether to arm a timer. This handler is
+                 # registered with `patterns=[fileSpec]` -- `*.json` by default -- across the
+@@ -414,22 +507,80 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
+                 self.pendingPaths.add(event.src_path)
+ 
+                 if self.isWaiting:
++                    # Belongs to the window already open, so it is reported under that
++                    # window's id rather than opening a second one.
++                    self.__logEvent(event.src_path, self.correlationId)
+                     return
+ 
+                 # Coalescing is still the point: watchdog fires several events per write,
+                 # and adding the same path to the set again is what absorbs them.
+                 self.isWaiting = True
+-                self.timer = threading.Timer(WATCH_DEBOUNCE_SECONDS, self.doTheWork)
++                self.correlationId = new_correlation_id()
++                correlationId = self.correlationId
++                self.__logEvent(event.src_path, correlationId)
++                # `contextvars` does not reach a manually started thread, so the id is
++                # handed to the timer's target explicitly and re-bound there.
++                self.timer = threading.Timer(
++                    WATCH_DEBOUNCE_SECONDS, self.doTheWork, args=(correlationId,)
++                )
+                 self.timer.start()
+ 
+     # --------------------------------------------------------------------------------------
+-    def doTheWork(self, *args, **kwargs):
++    def __logEvent(self, path: str, correlationId: str | None) -> None:
++        token = set_correlation_id(correlationId)
++        try:
++            self.__logger.info(f"Certificates changed found in file: {path}")
++        finally:
++            reset_correlation_id(token)
++
++    # --------------------------------------------------------------------------------------
++    def cancel(self) -> None:
++        """Cancel a pending drain, if one is armed. Safe to call at any time.
++
++        The `self.timer is None` guard lives here rather than at the call site because
++        this class is what creates the timer and what leaves the attribute `None` until
++        the first watched-file event ever fires -- "start the process, Ctrl-C before
++        anything happens" is the common path, and it must not raise (ADR-0026).
++        """
++        with self.lock:
++            timer = self.timer
++            correlationId = self.correlationId
++
++        token = set_correlation_id(correlationId)
++        try:
++            if timer is None:
++                self.__logger.info("Shutdown requested; no export drain was pending")
++                return
++
++            # A no-op if it has already fired -- documented behaviour of
++            # `threading.Timer.cancel`, and the race is real: the timer can fire between
++            # the read above and this line.
++            timer.cancel()
++            self.__logger.info("Shutdown requested; cancelled the pending export drain")
++
++            timer.join(SHUTDOWN_JOIN_TIMEOUT_SECONDS)
++            if timer.is_alive():
++                self.__logger.warning(
++                    "An export drain was still running after "
++                    f"{SHUTDOWN_JOIN_TIMEOUT_SECONDS}s; exiting without waiting further"
++                )
++        finally:
++            reset_correlation_id(token)
++
++    # --------------------------------------------------------------------------------------
++    def doTheWork(self, correlationId: str | None = None, *args, **kwargs):
+         """Drain every path that accumulated during the debounce window.
+ 
+         Drains in a loop rather than taking one snapshot: a change arriving while this is
+         running cannot arm a timer, because `isWaiting` is still set. Without the loop that
+         change would wait for an unrelated future event to carry it.
+         """
++        # Re-bound on THIS thread: the timer target runs outside the context the id was
++        # set in, so every log line below (and everything the export calls) would
++        # otherwise be unjoinable. A missing id degrades to the unset placeholder rather
++        # than raising -- a correlation id must never break the pass it observes.
++        token = set_correlation_id(correlationId or new_correlation_id())
++
+         self.__logger.debug("Starting the work")
+ 
+         paths: list[str] = []
+@@ -461,7 +612,7 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
+ 
+                 for index, path in enumerate(paths):
+                     try:
+-                        self.__processPath(path)
++                        self.__processPath(path, get_correlation_id())
+                     except Exception:
+                         self.__logger.exception(f"Unhandled error processing '{path}'")
+         except BaseException:
+@@ -476,6 +627,8 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
+                 self.isWaiting = False
+                 self.__rearm()
+             raise
++        finally:
++            reset_correlation_id(token)
+ 
+     # --------------------------------------------------------------------------------------
+     def __rearm(self) -> None:
+@@ -483,22 +636,39 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
+         if not self.pendingPaths or self.isWaiting:
+             return
+         self.isWaiting = True
+-        self.timer = threading.Timer(WATCH_DEBOUNCE_SECONDS, self.doTheWork)
++        # A new window, so a new id: what is re-armed here is work that the interrupted
++        # drain did not do. The line below names both, so the two passes can be joined by
++        # hand when one has to be traced across the interruption.
++        previousCorrelationId = self.correlationId
++        self.correlationId = new_correlation_id()
++        self.__logger.info(
++            f"Re-arming export drain as {self.correlationId} for work left by "
++            f"{previousCorrelationId}"
++        )
++        self.timer = threading.Timer(
++            WATCH_DEBOUNCE_SECONDS, self.doTheWork, args=(self.correlationId,)
++        )
+         self.timer.start()
+ 
+     # --------------------------------------------------------------------------------------
+-    def __processPath(self, path: str) -> None:
++    def __processPath(self, path: str, correlationId: str | None = None) -> None:
+         domains = self.__exporter.exportCertificatesForFile(path)
+ 
+         run_post_export_command(
+-            self.__settings.postExportCommand, domains or [], self.__settings.dryRun
++            self.__settings.postExportCommand,
++            domains or [],
++            self.__settings.dryRun,
++            correlationId=correlationId,
+         )
+         # Scope: this file's domains, once per file per drain -- not the pass total.
+         # app.py's run-at-start notifies once for the union of every file instead. The two
+         # differ because the two passes differ, and ADR-0014 requires each to be stated
+         # rather than left for an operator to infer from message counts.
+         send_export_notifications(
+-            self.__settings.appriseUrls, domains or [], self.__settings.dryRun
++            self.__settings.appriseUrls,
++            domains or [],
++            self.__settings.dryRun,
++            correlationId=correlationId,
+         )
+ 
+         if self.__settings.restartContainers:
+diff --git a/src/traefik_certificate_exporter/libs/cli_args.py b/src/traefik_certificate_exporter/libs/cli_args.py
+index d32d7ce..17a05b5 100644
+--- a/src/traefik_certificate_exporter/libs/cli_args.py
++++ b/src/traefik_certificate_exporter/libs/cli_args.py
+@@ -152,3 +152,16 @@ group.add_argument(
+ # script entry point only ever sees its own argv in production, so behavior there is
+ # unchanged.
+ globalArgs, _ = globalArgParser.parse_known_args()
++
++
++def parse_args_strict() -> argparse.Namespace:
++    """Parse this process's argv strictly, failing on any unrecognized flag.
++
++    The module-level `globalArgs` above deliberately tolerates foreign argv so that
++    importing this module from pytest, a REPL or an embedding host can never raise.
++    That leniency is wrong for a real invocation, where `--dtaa-path` is a typo and not
++    somebody else's flag, so `main()` calls this instead: `parse_args()` exits 2 with a
++    usage message naming the offending argument. Nothing here runs at import time --
++    only when a caller asks for it (ADR-0025).
++    """
++    return globalArgParser.parse_args()
+diff --git a/src/traefik_certificate_exporter/libs/logging_utils.py b/src/traefik_certificate_exporter/libs/logging_utils.py
+index cfce953..c73dedc 100644
+--- a/src/traefik_certificate_exporter/libs/logging_utils.py
++++ b/src/traefik_certificate_exporter/libs/logging_utils.py
+@@ -1,10 +1,12 @@
+ ###################################################################################################
+ 
++import contextvars
+ import logging
+ import logging.config
+ import logging.handlers
+ import os
+ import traceback
++import uuid
+ from pathlib import Path
+ 
+ import coloredlogs
+@@ -14,6 +16,116 @@ import yaml
+ 
+ ###################################################################################################
+ 
++# The join key an operator greps for. One value per drain pass, carried across the
++# watch event -> debounce timer -> export -> post-export command -> notification hops
++# (ADR-0023). `contextvars` rather than a thread-local because it is the stdlib facility
++# for exactly this, and because the value has to survive being rebound per pass without
++# leaking into whatever ran before it -- `set()` returns a token that `reset()` undoes.
++#
++# It does NOT propagate across `threading.Timer` on its own (only `asyncio` tasks and an
++# explicit `copy_context().run(...)` do), which is why the drain receives the id as an
++# argument and re-binds it on the timer thread.
++CORRELATION_ID_UNSET = "-"
++
++_correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
++    "traefik_certificate_exporter_correlation_id", default=CORRELATION_ID_UNSET
++)
++
++
++def new_correlation_id() -> str:
++    """A fresh, informationless pass id (stdlib UUID4 -- never derived from a domain)."""
++    return str(uuid.uuid4())
++
++
++def get_correlation_id() -> str:
++    """The id in flight, or `CORRELATION_ID_UNSET` outside any pass."""
++    return _correlation_id_var.get()
++
++
++def set_correlation_id(correlation_id: str | None):
++    """Bind `correlation_id` for this context; returns the token `reset` undoes."""
++    return _correlation_id_var.set(correlation_id or CORRELATION_ID_UNSET)
++
++
++def reset_correlation_id(token) -> None:
++    """Undo a `set_correlation_id`, tolerating a token from another context."""
++    try:
++        _correlation_id_var.reset(token)
++    except ValueError:
++        # The token was created in a different context (e.g. the drain re-bound on the
++        # timer thread). Losing the restore is harmless; raising out of a `finally` in
++        # the export path is not.
++        _correlation_id_var.set(CORRELATION_ID_UNSET)
++
++
++class _CorrelationIdRecordFactory:
++    """Stamps `correlation_id` onto every record, whichever logger emitted it.
++
++    A handler-level `logging.Filter` would only reach records routed through handlers that
++    declare it, and a formatter referencing `%(correlation_id)s` on a record that lacks the
++    attribute raises. The requirement is the opposite: a missing correlation id must never
++    break the export pass it exists to observe, so the attribute is set at record creation
++    and is therefore present on every record in the process.
++    """
++
++    def __init__(self, inner):
++        self.inner = inner
++
++    def __call__(self, *args, **kwargs):
++        record = self.inner(*args, **kwargs)
++        if not hasattr(record, "correlation_id"):
++            try:
++                record.correlation_id = _correlation_id_var.get()
++            except Exception:  # noqa: BLE001 - logging must never raise into the caller
++                record.correlation_id = CORRELATION_ID_UNSET
++        return record
++
++
++def install_correlation_id_record_factory() -> None:
++    """Idempotently wrap the record factory so `correlation_id` is always present."""
++    current = logging.getLogRecordFactory()
++    if isinstance(current, _CorrelationIdRecordFactory):
++        return
++    logging.setLogRecordFactory(_CorrelationIdRecordFactory(current))
++
++
++# Console handlers use the coloredlogs formatters on the left; opting into structured
++# console output swaps each for the JSON formatter on the right, both declared in
++# logging.yaml. Selected by its OWN env switch, never inferred from CONSOLEONLY: an
++# operator watching `docker logs` by eye still wants colour (ADR-0023 Decision 2).
++_CONSOLE_JSON_FORMATTERS = {
++    "standard_formatter": "standard_json_formatter",
++    "extended_formatter": "extended_json_formatter",
++}
++
++_TRUTHY = ("true", "1", "t", "y", "yes")
++
++
++def _env_flag(env_key: str, default: str = "0") -> bool:
++    return str(os.getenv(env_key, default)).lower() in _TRUTHY
++
++
++def _apply_console_json(config: dict) -> dict:
++    """Point every console handler at its JSON formatter, in the loaded config dict.
++
++    Done on the dict before `dictConfig` rather than by rebuilding handlers afterwards:
++    the formatters stay declared in logging.yaml (one place to audit), and it needs no
++    API newer than the project's 3.10 floor.
++    """
++    formatters = config.get("formatters") or {}
++    for handler in (config.get("handlers") or {}).values():
++        if not isinstance(handler, dict):
++            continue
++        if "StreamHandler" not in str(handler.get("class", "")):
++            continue
++        replacement = _CONSOLE_JSON_FORMATTERS.get(handler.get("formatter"))
++        if replacement and replacement in formatters:
++            handler["formatter"] = replacement
++    return config
++
++
++###################################################################################################
++
+ 
+ class RollingFileHanderEx(logging.handlers.RotatingFileHandler):
+     def __init__(
+@@ -38,12 +150,17 @@ def setup_logging(
+     cfg_file_name: str = "logging.yaml",
+     default_level=logging.INFO,
+     env_key: str = "TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CFGFILE",
++    console_json_env_key: str = "TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON",
+ ):
+     """
+     | **@author:** Prathyush SP
+     | Logging Setup
+     """
+ 
++    install_correlation_id_record_factory()
++
++    console_json = _env_flag(console_json_env_key)
++
+     if isinstance(default_level, str):
+         # default_level = getattr(logging, default_level.upper())
+         default_level = logging.getLevelName(default_level.upper())
+@@ -76,6 +193,8 @@ def setup_logging(
+         with open(path, "rt") as f:
+             try:
+                 config = yaml.safe_load(f.read())
++                if console_json:
++                    config = _apply_console_json(config)
+                 logging.config.dictConfig(config)
+                 logging.getLogger().setLevel(default_level)
+             except Exception:  # noqa: BLE001 - logging setup must never abort startup
+@@ -96,6 +215,12 @@ def setup_logging(
+         logging_tree.printout()
+ 
+ 
++# Installed at import, not only from `setup_logging`: the formatters in logging.yaml
++# reference `%(correlation_id)s`, so any caller that applies that config directly --
++# the logging tests do -- must also get the attribute, or every record would fail to
++# format. Idempotent, so the call in `setup_logging` stays harmless.
++install_correlation_id_record_factory()
++
+ globalLoggerName = (
+     "traefik_certificate_exporter_consoleonly"
+     if str(os.getenv("TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY", "0")).lower()
+diff --git a/src/traefik_certificate_exporter/libs/notify.py b/src/traefik_certificate_exporter/libs/notify.py
+index e12bcfc..96d28ea 100644
+--- a/src/traefik_certificate_exporter/libs/notify.py
++++ b/src/traefik_certificate_exporter/libs/notify.py
+@@ -1,10 +1,18 @@
+ import apprise
+ 
+-from .logging_utils import globalLogger
++from .logging_utils import (
++    get_correlation_id,
++    globalLogger,
++    reset_correlation_id,
++    set_correlation_id,
++)
+ 
+ 
+ def send_export_notifications(
+-    urls: "list[str] | None", domains: list, dryRun: bool
++    urls: "list[str] | None",
++    domains: list,
++    dryRun: bool,
++    correlationId: str | None = None,
+ ) -> None:
+     """Notify every configured Apprise destination that an export pass completed.
+ 
+@@ -28,6 +36,17 @@ def send_export_notifications(
+     if not urls:
+         return
+ 
++    # Same contract as the post-export hop: bind what the caller passed, fall back to
++    # whatever is already in flight, and never fail the pass over a missing id.
++    token = set_correlation_id(correlationId or get_correlation_id())
++    try:
++        _notify(logger, urls, domains, dryRun)
++    finally:
++        reset_correlation_id(token)
++
++
++def _notify(logger, urls: list, domains: list, dryRun: bool) -> None:
++
+     if dryRun:
+         logger.info("Dry run: skipping export notifications")
+         return
+diff --git a/src/traefik_certificate_exporter/libs/post_export.py b/src/traefik_certificate_exporter/libs/post_export.py
+index 6465954..dca962a 100644
+--- a/src/traefik_certificate_exporter/libs/post_export.py
++++ b/src/traefik_certificate_exporter/libs/post_export.py
+@@ -2,12 +2,22 @@ import os
+ import shlex
+ import subprocess
+ 
+-from .logging_utils import globalLogger
++from .logging_utils import (
++    get_correlation_id,
++    globalLogger,
++    reset_correlation_id,
++    set_correlation_id,
++)
+ 
+ POST_EXPORT_COMMAND_TIMEOUT_SECONDS = 30
+ 
+ 
+-def run_post_export_command(command: str | None, domains: list, dryRun: bool) -> None:
++def run_post_export_command(
++    command: str | None,
++    domains: list,
++    dryRun: bool,
++    correlationId: str | None = None,
++) -> None:
+     """Run the configured post-export hook, if any, after a completed export pass.
+ 
+     `domains` (the just-processed domain names) is exposed to the command as
+@@ -21,6 +31,19 @@ def run_post_export_command(command: str | None, domains: list, dryRun: bool) ->
+     if not command:
+         return
+ 
++    # The caller normally has the id already bound on this thread; the parameter is for
++    # the hop that does not (a future call site reached from another thread). Neither
++    # being present is not an error -- the line is logged without a join key rather than
++    # the pass failing over its own observability.
++    token = set_correlation_id(correlationId or get_correlation_id())
++    try:
++        _run(logger, command, domains, dryRun)
++    finally:
++        reset_correlation_id(token)
++
++
++def _run(logger, command: str, domains: list, dryRun: bool) -> None:
++
+     if dryRun:
+         logger.info("Dry run: skipping post-export command")
+         return
+@@ -36,6 +59,9 @@ def run_post_export_command(command: str | None, domains: list, dryRun: bool) ->
+ 
+     env = os.environ.copy()
+     env["TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS"] = ",".join(domains or [])
++    # The hook's own output can be joined to this pass's log lines. Safe to export: a
++    # UUID4 carries nothing derived from a domain, a path, or a secret.
++    env["TRAEFIK_CERTIFICATE_EXPORTER_CORRELATION_ID"] = get_correlation_id()
+ 
+     try:
+         result = subprocess.run(
+diff --git a/src/traefik_certificate_exporter/logging.yaml b/src/traefik_certificate_exporter/logging.yaml
+index 763ba8f..f37d155 100644
+--- a/src/traefik_certificate_exporter/logging.yaml
++++ b/src/traefik_certificate_exporter/logging.yaml
+@@ -4,20 +4,34 @@ disable_existing_loggers: True
+ formatters:
+   standard_formatter:
+     class: coloredlogs.ColoredFormatter
+-    format: "%(asctime)s [%(levelname)8s] : %(message)s"
++    format: "%(asctime)s [%(levelname)8s] [%(correlation_id)s] : %(message)s"
+     datefmt: "%Y-%m-%d %H:%M:%S"
+   standard_detailed_formatter:
+     class: pythonjsonlogger.json.JsonFormatter
+-    format: "%(asctime)s %(levelname)s %(name)s %(message)s"
++    format: "%(asctime)s %(levelname)s %(name)s %(correlation_id)s %(message)s"
+     datefmt: "%Y-%m-%d %H:%M:%S"
+ 
+   extended_formatter:
+     class: coloredlogs.ColoredFormatter
+-    format: "%(asctime)s [%(levelname)8s] %(name)s.%(funcName)s(%(lineno)s) : %(message)s"
++    format: "%(asctime)s [%(levelname)8s] [%(correlation_id)s] %(name)s.%(funcName)s(%(lineno)s) : %(message)s"
+     datefmt: "%Y-%m-%d %H:%M:%S"
+   extended_detailed_formatter:
+     class: pythonjsonlogger.json.JsonFormatter
+-    format: "%(asctime)s %(name)s %(levelname)s %(process)d %(processName)s %(funcName)s %(lineno)s %(message)s"
++    format: "%(asctime)s %(name)s %(levelname)s %(process)d %(processName)s %(funcName)s %(lineno)s %(correlation_id)s %(message)s"
++    datefmt: "%Y-%m-%d %H:%M:%S"
++
++  # Structured console output. Not wired to a handler here: setting
++  # TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON=true makes setup_logging() point the
++  # console handlers below at these instead of their coloredlogs counterparts, so
++  # `correlation_id` reaches `docker logs` as a real field (ADR-0023 Decision 2). The
++  # default stays coloured and human-readable.
++  standard_json_formatter:
++    class: pythonjsonlogger.json.JsonFormatter
++    format: "%(asctime)s %(levelname)s %(name)s %(correlation_id)s %(message)s"
++    datefmt: "%Y-%m-%d %H:%M:%S"
++  extended_json_formatter:
++    class: pythonjsonlogger.json.JsonFormatter
++    format: "%(asctime)s %(name)s %(levelname)s %(process)d %(processName)s %(funcName)s %(lineno)s %(correlation_id)s %(message)s"
+     datefmt: "%Y-%m-%d %H:%M:%S"
+ 
+ handlers:
+diff --git a/tests/libs/test_certificate_exporter.py b/tests/libs/test_certificate_exporter.py
+index d32f5af..9d6547b 100644
+--- a/tests/libs/test_certificate_exporter.py
++++ b/tests/libs/test_certificate_exporter.py
+@@ -1,5 +1,18 @@
++import base64
++import datetime
+ import json
+-
++import os
++import tempfile
++from pathlib import Path
++from unittest.mock import patch
++
++import pytest
++from cryptography import x509
++from cryptography.hazmat.primitives import hashes, serialization
++from cryptography.hazmat.primitives.asymmetric import ec
++from cryptography.x509.oid import NameOID
++
++from traefik_certificate_exporter.libs import certificate_exporter
+ from traefik_certificate_exporter.libs.certificate_exporter import (
+     AcmeCertificateExporter,
+ )
+@@ -33,7 +46,8 @@ def _make_settings(**overrides) -> Settings:
+ 
+ 
+ def _write_fixture(tmp_path, data: dict, name: str = "acme.json"):
+-    path = tmp_path / name
++    Path(tmp_path).mkdir(parents=True, exist_ok=True)
++    path = Path(tmp_path) / name
+     path.write_text(json.dumps(data))
+     return str(path)
+ 
+@@ -117,3 +131,194 @@ def test_export_certificates_globs_data_path(tmp_path):
+     processed = exporter.exportCertificates()
+ 
+     assert processed == ["v1.example.test"]
++
++
++###########################################################################################
++# Atomic writes (ADR-0023 Decision 3, ADR-0024): a consumer must never observe a
++# half-written certificate, whatever kills the process mid-pass.
++
++
++def test_an_interrupted_write_leaves_the_previous_file_intact(tmp_path, monkeypatch):
++    """The property, proved by injecting the failure rather than by a clean run.
++
++    `Path.open("w")` truncates first, so the old content was gone before a single byte of
++    the new content landed. The helper writes beside the target and renames, so a failure
++    anywhere before the rename leaves the previous file exactly as it was.
++    """
++    target = tmp_path / "fullchain.pem"
++    target.write_text("PREVIOUS CONTENT")
++
++    def explode(*args, **kwargs):
++        raise OSError("disk full")
++
++    monkeypatch.setattr(os, "replace", explode)
++
++    with pytest.raises(OSError):
++        certificate_exporter._atomic_write_text(target, "NEW CONTENT")
++
++    assert target.read_text() == "PREVIOUS CONTENT"
++
++
++def test_an_interrupted_write_leaves_no_file_where_there_was_none(
++    tmp_path, monkeypatch
++):
++    target = tmp_path / "fullchain.pem"
++
++    def explode(*args, **kwargs):
++        raise OSError("disk full")
++
++    # Fails after the temp file holds the new bytes and before the rename -- the window
++    # that `Path.open("w")` had no answer for.
++    monkeypatch.setattr(os, "fsync", explode)
++
++    with pytest.raises(OSError):
++        certificate_exporter._atomic_write_text(target, "NEW CONTENT")
++
++    assert not target.exists()
++
++
++def test_an_interrupted_write_leaves_no_temp_file_behind(tmp_path, monkeypatch):
++    """An orphaned `.tmp` sits in the directory a consumer globs for certificates."""
++    target = tmp_path / "cert.pem"
++
++    monkeypatch.setattr(
++        os, "replace", lambda *a, **k: (_ for _ in ()).throw(OSError("boom"))
++    )
++
++    with pytest.raises(OSError):
++        certificate_exporter._atomic_write_text(target, "NEW CONTENT")
++
++    assert list(tmp_path.iterdir()) == []
++
++
++def test_an_interrupted_pkcs12_write_leaves_the_previous_pfx_intact(
++    tmp_path, monkeypatch
++):
++    """ADR-0024: the bytes path gets the same guarantee as the text one."""
++    target = tmp_path / "cert.pfx"
++    target.write_bytes(b"PREVIOUS PFX")
++
++    monkeypatch.setattr(
++        os, "replace", lambda *a, **k: (_ for _ in ()).throw(OSError("boom"))
++    )
++
++    with pytest.raises(OSError):
++        certificate_exporter._atomic_write_bytes(target, b"NEW PFX")
++
++    assert target.read_bytes() == b"PREVIOUS PFX"
++    assert list(tmp_path.iterdir()) == [target]
++
++
++def test_an_atomic_write_replaces_content_completely(tmp_path):
++    target = tmp_path / "chain.pem"
++    target.write_text("old")
++
++    certificate_exporter._atomic_write_text(target, "new")
++
++    assert target.read_text() == "new"
++    assert list(tmp_path.iterdir()) == [target]
++
++
++def test_an_atomic_write_matches_what_open_w_would_have_produced(tmp_path):
++    """Permission parity, in both directions: the tempfile default is 0o600, so without
++    an explicit chmod every exported chain would become unreadable to the service that
++    consumes it -- and a private key must not be loosened either."""
++    reference = tmp_path / "reference.pem"
++    with reference.open("w") as f:
++        f.write("x")
++
++    target = tmp_path / "privkey.pem"
++    certificate_exporter._atomic_write_text(target, "x")
++
++    assert (target.stat().st_mode & 0o7777) == (reference.stat().st_mode & 0o7777)
++
++
++def test_an_atomic_write_preserves_an_existing_files_permissions(tmp_path):
++    """A re-export must not undo a hardening an operator applied to the key file."""
++    target = tmp_path / "privkey.pem"
++    target.write_text("old")
++    os.chmod(target, 0o600)
++
++    certificate_exporter._atomic_write_text(target, "new")
++
++    assert (target.stat().st_mode & 0o7777) == 0o600
++
++
++def test_the_temp_file_is_created_next_to_its_target(tmp_path):
++    """`os.replace` is only atomic within one filesystem, and `outputPath` is commonly a
++    bind mount -- so the temp file must never land in the system temp directory."""
++    target = tmp_path / "nested" / "fullchain.pem"
++    target.parent.mkdir()
++    seen = {}
++
++    real = tempfile.NamedTemporaryFile
++
++    def record(*args, **kwargs):
++        seen["dir"] = kwargs.get("dir")
++        return real(*args, **kwargs)
++
++    with patch.object(tempfile, "NamedTemporaryFile", record):
++        certificate_exporter._atomic_write_text(target, "data")
++
++    assert Path(seen["dir"]) == target.parent
++
++
++def _real_material(domain: str):
++    """A genuine key/cert pair, because the shared fixtures carry placeholder PEM text
++    that `PemToPfxConverter` cannot load -- and the `.pfx` sites are half of what the
++    end-to-end assertion below exists to cover (ADR-0024)."""
++    key = ec.generate_private_key(ec.SECP256R1())
++    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, domain)])
++    now = datetime.datetime.now(datetime.timezone.utc)
++    cert = (
++        x509.CertificateBuilder()
++        .subject_name(subject)
++        .issuer_name(subject)
++        .public_key(key.public_key())
++        .serial_number(x509.random_serial_number())
++        .not_valid_before(now - datetime.timedelta(days=1))
++        .not_valid_after(now + datetime.timedelta(days=30))
++        .sign(key, hashes.SHA256())
++    )
++    keyPem = key.private_bytes(
++        serialization.Encoding.PEM,
++        serialization.PrivateFormat.PKCS8,
++        serialization.NoEncryption(),
++    ).decode()
++    certPem = cert.public_bytes(serialization.Encoding.PEM).decode()
++    return keyPem, certPem + certPem
++
++
++def _real_acme_fixture(domain: str) -> dict:
++    keyPem, fullchainPem = _real_material(domain)
++    data = acme_v1_fixture(domain)
++    certificate = data["myresolver"]["DomainsCertificate"]["Certs"][0]["Certificate"]
++    certificate["PrivateKey"] = base64.b64encode(keyPem.encode()).decode()
++    certificate["Certificate"] = base64.b64encode(fullchainPem.encode()).decode()
++    return data
++
++
++def test_a_real_export_writes_every_artifact_atomically(tmp_path):
++    """End-to-end over the exporter: all 10 sites go through the helper, so none of the
++    emitted files may be left as a `.tmp`, and each must be complete."""
++    fixture_path = _write_fixture(
++        tmp_path / "data", _real_acme_fixture("flat.example.test")
++    )
++    outputPath = tmp_path / "certs"
++    settings = _make_settings(
++        dryRun=False, flat=True, outputPath=str(outputPath), pkcs12Passphrase=None
++    )
++    exporter = AcmeCertificateExporter(settings=settings)
++
++    names = exporter.exportCertificatesForFile(fixture_path)
++
++    assert names == ["flat.example.test"]
++    written = sorted(p.name for p in outputPath.iterdir())
++    assert written == [
++        "flat.example.test.chain.pem",
++        "flat.example.test.crt",
++        "flat.example.test.fullchain.pem",
++        "flat.example.test.key",
++        "flat.example.test.pfx",
++    ]
++    assert all(p.stat().st_size > 0 for p in outputPath.iterdir())
+diff --git a/tests/libs/test_certificate_exporter_watch.py b/tests/libs/test_certificate_exporter_watch.py
+index 5110b65..7e052c2 100644
+--- a/tests/libs/test_certificate_exporter_watch.py
++++ b/tests/libs/test_certificate_exporter_watch.py
+@@ -5,8 +5,12 @@ code, and neither had a test. They are asserted by driving the real handler, bec
+ matters is the interaction between `handleEvent`'s lock and `doTheWork`'s exit paths.
+ """
+ 
++import logging
++import threading
++import time
++import uuid
+ from types import SimpleNamespace
+-from unittest.mock import MagicMock
++from unittest.mock import MagicMock, patch
+ 
+ import pytest
+ 
+@@ -288,3 +292,197 @@ def test_the_real_timer_thread_runs_a_drain_end_to_end(monkeypatch):
+     )
+     assert handler.isWaiting is False
+     assert handler.pendingPaths == set()
++
++
++###########################################################################################
++# Correlation id (BL-E010-001) and shutdown cancellation (BL-E010-002).
++
++
++def test_one_drain_tags_every_hop_with_the_same_correlation_id(caplog):
++    """The join key an operator greps for: the watch event, the export, the post-export
++    command and the notification must all carry one value for one drain pass."""
++    exporter = MagicMock()
++    exporter.exportCertificatesForFile.return_value = ["example.com"]
++    handler = _handler(
++        exporter, postExportCommand=None, appriseUrls=["json://localhost/"]
++    )
++
++    seen = {}
++
++    def capture(urls, domains, dryRun, correlationId=None):
++        seen["notify"] = correlationId
++
++    with (
++        caplog.at_level(logging.DEBUG),
++        patch.object(certificate_exporter, "send_export_notifications", capture),
++    ):
++        handler.handleEvent(_event("/data/acme.json"))
++        armed = handler.correlationId
++        handler.timer.cancel()
++        handler.doTheWork(armed)
++
++    assert armed, "arming a debounce window must mint a correlation id"
++    assert seen["notify"] == armed, (
++        "the notification hop ran under a different id than the drain that caused it"
++    )
++
++    tagged = {
++        r.correlation_id
++        for r in caplog.records
++        if r.name.startswith("traefik_certificate_exporter")
++    }
++    assert tagged == {armed}, (
++        f"log lines for one pass carried more than one correlation id: {tagged}"
++    )
++
++
++def test_the_correlation_id_is_a_plain_uuid_carrying_no_domain_or_path():
++    """It is logged everywhere and exported to the post-export hook, so it must not be
++    derived from anything a log sink should not see."""
++    exporter = MagicMock()
++    handler = _handler(exporter)
++
++    handler.handleEvent(_event("/data/secret-customer.json"))
++    handler.timer.cancel()
++
++    uuid.UUID(handler.correlationId)
++    assert "secret-customer" not in handler.correlationId
++
++
++def test_events_coalesced_into_one_window_share_that_windows_id():
++    exporter = MagicMock()
++    handler = _handler(exporter)
++
++    handler.handleEvent(_event("/data/a.json"))
++    first = handler.correlationId
++    handler.handleEvent(_event("/data/b.json"))
++    handler.timer.cancel()
++
++    assert handler.correlationId == first, (
++        "a second file joining the open window started a second pass id"
++    )
++
++
++def test_a_drain_run_without_an_id_still_runs(caplog):
++    """Degrade, never fail: a call site that forgets to thread the id through must not
++    take the export pass down with it."""
++    exporter = MagicMock()
++    exporter.exportCertificatesForFile.return_value = ["example.com"]
++    handler = _handler(exporter)
++
++    handler.handleEvent(_event("/data/acme.json"))
++    handler.timer.cancel()
++    with caplog.at_level(logging.DEBUG):
++        handler.doTheWork()
++
++    assert exporter.exportCertificatesForFile.called
++    assert all(getattr(r, "correlation_id", None) for r in caplog.records), (
++        "a record was emitted with no correlation_id attribute at all"
++    )
++
++
++def test_re_armed_work_gets_a_new_id_that_names_the_interrupted_one(caplog):
++    exporter = MagicMock()
++    exporter.exportCertificatesForFile.side_effect = KeyboardInterrupt
++    handler = _handler(exporter)
++
++    handler.handleEvent(_event("/data/a.json"))
++    interrupted = handler.correlationId
++    handler.timer.cancel()
++
++    with caplog.at_level(logging.INFO), pytest.raises(KeyboardInterrupt):
++        handler.doTheWork(interrupted)
++    if handler.timer is not None:
++        handler.timer.cancel()
++
++    assert handler.correlationId != interrupted
++    assert any(
++        interrupted in r.getMessage() and handler.correlationId in r.getMessage()
++        for r in caplog.records
++    ), "the re-armed pass cannot be joined back to the one it inherited work from"
++
++
++def test_cancel_is_a_no_op_before_any_event_has_fired(caplog):
++    """`self.timer` is None until the first watched-file event -- the "start it, then
++    Ctrl-C to check it came up" path. It must not raise (ADR-0026)."""
++    handler = _handler(MagicMock())
++    assert handler.timer is None
++
++    with caplog.at_level(logging.INFO):
++        handler.cancel()
++
++    assert any("no export drain was pending" in r.getMessage() for r in caplog.records)
++
++
++def test_cancel_stops_an_armed_drain_before_it_fires(caplog):
++    exporter = MagicMock()
++    handler = _handler(exporter)
++
++    handler.handleEvent(_event("/data/acme.json"))
++    armed = handler.correlationId
++
++    with caplog.at_level(logging.INFO):
++        handler.cancel()
++
++    handler.timer.join(5)
++    assert not handler.timer.is_alive()
++    assert not exporter.exportCertificatesForFile.called, (
++        "a cancelled drain still ran; shutdown left work in flight"
++    )
++    cancelled = [
++        r
++        for r in caplog.records
++        if "cancelled the pending export drain" in r.getMessage()
++    ]
++    assert cancelled, (
++        "a truncated run is indistinguishable from a clean exit in the logs"
++    )
++    assert cancelled[0].levelno == logging.INFO
++    assert cancelled[0].correlation_id == armed
++
++
++def test_cancel_does_not_raise_when_the_timer_has_already_fired():
++    """`Timer.cancel()` after firing is a documented no-op, and shutdown races the
++    debounce by nature -- the handler must not assume a race-free world."""
++    exporter = MagicMock()
++    exporter.exportCertificatesForFile.return_value = ["example.com"]
++    handler = _handler(exporter)
++
++    handler.handleEvent(_event("/data/acme.json"))
++    handler.timer.cancel()
++    handler.doTheWork(handler.correlationId)
++
++    handler.cancel()
++
++
++def test_cancel_does_not_wait_forever_on_a_slow_drain(monkeypatch, caplog):
++    """A non-daemon Timer thread stuck in a slow export must not hold the process open
++    past the container runtime's grace period."""
++    monkeypatch.setattr(certificate_exporter, "WATCH_DEBOUNCE_SECONDS", 0.01)
++    monkeypatch.setattr(certificate_exporter, "SHUTDOWN_JOIN_TIMEOUT_SECONDS", 0.1)
++
++    release = threading.Event()
++    started = threading.Event()
++
++    def slow(path):
++        started.set()
++        release.wait(10)
++        return ["example.com"]
++
++    exporter = MagicMock()
++    exporter.exportCertificatesForFile.side_effect = slow
++    handler = _handler(exporter)
++
++    handler.handleEvent(_event("/data/acme.json"))
++    assert started.wait(5)
++
++    began = time.monotonic()
++    with caplog.at_level(logging.WARNING):
++        handler.cancel()
++    elapsed = time.monotonic() - began
++
++    release.set()
++    handler.timer.join(10)
++
++    assert elapsed < 5, f"shutdown blocked on an in-flight drain for {elapsed:.1f}s"
++    assert any("still running after" in r.getMessage() for r in caplog.records)
+diff --git a/tests/libs/test_logging_config.py b/tests/libs/test_logging_config.py
+index a30a5bd..96239d1 100644
+--- a/tests/libs/test_logging_config.py
++++ b/tests/libs/test_logging_config.py
+@@ -3,8 +3,16 @@ import logging
+ import logging.config
+ 
+ import importlib_resources
++import pytest
+ import yaml
+ 
++from traefik_certificate_exporter.libs.logging_utils import (
++    CORRELATION_ID_UNSET,
++    reset_correlation_id,
++    set_correlation_id,
++    setup_logging,
++)
++
+ 
+ def _load_logging_config() -> dict:
+     path = importlib_resources.files("traefik_certificate_exporter").joinpath(
+@@ -50,3 +58,77 @@ def test_file_handler_json_does_not_break_redaction(tmp_path, monkeypatch):
+ 
+     assert "***REDACTED***" in parsed["message"]
+     assert "hunter2" not in line
++
++
++###########################################################################################
++# Structured console output (ADR-0023 Decision 2) and the correlation_id field.
++
++
++def test_console_output_is_coloured_text_by_default(tmp_path, monkeypatch, capsys):
++    """Opt-in means opt-in: an operator who sets nothing sees what they saw before."""
++    monkeypatch.chdir(tmp_path)
++    monkeypatch.delenv(
++        "TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON", raising=False
++    )
++
++    setup_logging(default_level=logging.INFO)
++    logging.getLogger("traefik_certificate_exporter_consoleonly").info("hello")
++
++    line = capsys.readouterr().out.splitlines()[-1]
++    with pytest.raises(json.JSONDecodeError):
++        json.loads(line)
++    assert "hello" in line
++
++
++def test_console_output_becomes_structured_json_when_opted_in(
++    tmp_path, monkeypatch, capsys
++):
++    """The container ships CONSOLEONLY=true, so a correlation_id that only reaches the
++    file handler is useless to anyone reading `docker logs`."""
++    monkeypatch.chdir(tmp_path)
++    monkeypatch.setenv("TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON", "true")
++
++    setup_logging(default_level=logging.INFO)
++    token = set_correlation_id("11111111-2222-3333-4444-555555555555")
++    try:
++        logging.getLogger("traefik_certificate_exporter_consoleonly").info("exported")
++    finally:
++        reset_correlation_id(token)
++
++    parsed = json.loads(capsys.readouterr().out.splitlines()[-1])
++    assert parsed["message"] == "exported"
++    assert parsed["correlation_id"] == "11111111-2222-3333-4444-555555555555"
++
++
++def test_the_file_handler_carries_correlation_id_as_a_field(tmp_path, monkeypatch):
++    monkeypatch.chdir(tmp_path)
++    logging.config.dictConfig(_load_logging_config())
++
++    logger = logging.getLogger("traefik_certificate_exporter")
++    logger.setLevel(logging.DEBUG)
++    token = set_correlation_id("abc-123")
++    try:
++        logger.info("export finished")
++    finally:
++        reset_correlation_id(token)
++
++    parsed = json.loads(
++        (tmp_path / "traefik-certificate-exporter.log").read_text().splitlines()[0]
++    )
++    assert parsed["correlation_id"] == "abc-123"
++
++
++def test_a_record_outside_any_pass_still_formats(tmp_path, monkeypatch):
++    """A formatter referencing a missing attribute raises -- so the field must be present
++    on every record in the process, pass or no pass."""
++    monkeypatch.chdir(tmp_path)
++    logging.config.dictConfig(_load_logging_config())
++
++    logger = logging.getLogger("traefik_certificate_exporter")
++    logger.setLevel(logging.DEBUG)
++    logger.info("startup")
++
++    parsed = json.loads(
++        (tmp_path / "traefik-certificate-exporter.log").read_text().splitlines()[0]
++    )
++    assert parsed["correlation_id"] == CORRELATION_ID_UNSET
+diff --git a/tests/libs/test_notify.py b/tests/libs/test_notify.py
+index 2b2076b..a3b36ee 100644
+--- a/tests/libs/test_notify.py
++++ b/tests/libs/test_notify.py
+@@ -1,7 +1,12 @@
+ """Export notifications: delivery, isolation, dry run, and what they claim to mean."""
+ 
++import logging
+ from unittest.mock import MagicMock, patch
+ 
++from traefik_certificate_exporter.libs.logging_utils import (
++    reset_correlation_id,
++    set_correlation_id,
++)
+ from traefik_certificate_exporter.libs.notify import send_export_notifications
+ 
+ 
+@@ -90,3 +95,30 @@ def test_a_rejected_destination_is_named_by_position_never_echoed(caplog):
+     assert "SECRETTOKEN" not in caplog.text
+     assert "index 0" in caplog.text
+     assert "nothing was notified" in caplog.text
++
++
++def test_notification_log_lines_carry_the_passed_correlation_id(caplog):
++    with caplog.at_level(logging.INFO):
++        send_export_notifications(
++            ["json://localhost/"],
++            ["example.com"],
++            dryRun=True,
++            correlationId="pass-9012",
++        )
++
++    assert [r.correlation_id for r in caplog.records] == ["pass-9012"]
++
++
++def test_notification_falls_back_to_the_id_already_in_flight(caplog):
++    """The watch drain binds the id on its thread; a caller that does not pass it
++    explicitly must still be joinable rather than unlabelled."""
++    token = set_correlation_id("ambient-77")
++    try:
++        with caplog.at_level(logging.INFO):
++            send_export_notifications(
++                ["json://localhost/"], ["example.com"], dryRun=True
++            )
++    finally:
++        reset_correlation_id(token)
++
++    assert [r.correlation_id for r in caplog.records] == ["ambient-77"]
+diff --git a/tests/libs/test_post_export.py b/tests/libs/test_post_export.py
+index 59ffde7..c4653e5 100644
+--- a/tests/libs/test_post_export.py
++++ b/tests/libs/test_post_export.py
+@@ -1,4 +1,5 @@
+ import json
++import logging
+ import sys
+ from unittest.mock import patch
+ 
+@@ -78,3 +79,42 @@ def test_unparseable_command_is_logged_but_does_not_raise(caplog):
+     run_post_export_command('unterminated "quote', ["example.com"], dryRun=False)
+ 
+     assert any("could not be parsed" in message for message in caplog.messages)
++
++
++def test_the_hook_receives_the_correlation_id_of_the_pass_that_ran_it(tmp_path):
++    """A hook that logs somewhere else can still be joined back to this export pass."""
++    output_file = tmp_path / "hook-correlation.json"
++    script = tmp_path / "hook.py"
++    script.write_text(
++        "import json, os\n"
++        f"with open({str(output_file)!r}, 'w') as f:\n"
++        "    json.dump({'id': os.environ.get("
++        "'TRAEFIK_CERTIFICATE_EXPORTER_CORRELATION_ID')}, f)\n"
++    )
++
++    run_post_export_command(
++        f"{sys.executable} {script}",
++        ["foo.com"],
++        dryRun=False,
++        correlationId="pass-1234",
++    )
++
++    assert json.loads(output_file.read_text())["id"] == "pass-1234"
++
++
++def test_post_export_log_lines_carry_the_passed_correlation_id(caplog):
++    with caplog.at_level(logging.INFO):
++        run_post_export_command(
++            "/bin/true", ["foo.com"], dryRun=True, correlationId="pass-5678"
++        )
++
++    assert [r.correlation_id for r in caplog.records] == ["pass-5678"]
++
++
++def test_post_export_without_an_id_logs_rather_than_failing(caplog):
++    """A missing correlation id must never take down the pass it exists to observe."""
++    with caplog.at_level(logging.INFO):
++        run_post_export_command("/bin/true", ["foo.com"], dryRun=True)
++
++    assert caplog.records
++    assert all(getattr(r, "correlation_id", None) for r in caplog.records)
+diff --git a/tests/test_app.py b/tests/test_app.py
+index edb7b5f..fda0a69 100644
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -1,7 +1,10 @@
+ import logging
++from types import SimpleNamespace
++from unittest.mock import MagicMock
+ 
+ import pytest
+ 
++from traefik_certificate_exporter import app
+ from traefik_certificate_exporter.app import require_existing_path
+ from traefik_certificate_exporter.libs.settings import Settings
+ 
+@@ -62,3 +65,75 @@ def test_require_existing_path_exits_when_path_does_not_exist(caplog, tmp_path):
+ 
+ def test_require_existing_path_does_not_exit_when_path_exists(tmp_path):
+     require_existing_path(logging.getLogger("test"), str(tmp_path), "Data Path")
++
++
++###########################################################################################
++# Shutdown (BL-E010-002): Ctrl-C must cancel the pending debounce, not leave an orphaned
++# non-daemon Timer thread for the container runtime's grace period to kill.
++
++
++def _run_main_until_interrupt(monkeypatch, handler):
++    settings = _make_settings(dataPath="/data", outputPath="/certs")
++    settings.watchForChanges = True
++    settings.runAtStart = False
++    settings.watchInterval = 60
++
++    observer = MagicMock()
++    calls = []
++
++    monkeypatch.setattr(
++        app, "parse_args_strict", lambda: SimpleNamespace(
++            configfile=None, logginglevel="INFO"
++        )
++    )
++    monkeypatch.setattr(app, "setup_logging", lambda **kwargs: None)
++    monkeypatch.setattr(
++        app,
++        "globalSettingsMgr",
++        SimpleNamespace(loadFromFile=lambda **kwargs: None, settings=settings),
++    )
++    monkeypatch.setattr(app, "require_existing_path", lambda *a, **k: None)
++    monkeypatch.setattr(app, "AcmeCertificateExporter", lambda **kwargs: MagicMock())
++    monkeypatch.setattr(app, "DockerManager", lambda **kwargs: MagicMock())
++    monkeypatch.setattr(app, "AcmeCertificateFileHandler", lambda **kwargs: handler)
++    monkeypatch.setattr(app.watchdog.observers, "Observer", lambda: observer)
++
++    def interrupt(_seconds):
++        raise KeyboardInterrupt
++
++    monkeypatch.setattr(app.time, "sleep", interrupt)
++
++    handler.cancel.side_effect = lambda: calls.append("cancel")
++    observer.join.side_effect = lambda *a, **k: calls.append("join")
++
++    app.main()
++    return observer, calls
++
++
++def test_ctrl_c_cancels_the_pending_drain_before_joining_the_observer(monkeypatch):
++    handler = MagicMock()
++
++    observer, calls = _run_main_until_interrupt(monkeypatch, handler)
++
++    observer.stop.assert_called_once()
++    handler.cancel.assert_called_once()
++    assert calls == ["cancel", "join"], (
++        "the observer was joined before the debounce timer was cancelled, so the pending "
++        f"drain outlived shutdown: {calls}"
++    )
++
++
++def test_ctrl_c_before_any_event_does_not_raise(monkeypatch):
++    """`timer` is None until the first watched-file event; `main()` must call the
++    handler's own guarded `cancel()`, never `handler.timer.cancel()` (ADR-0026)."""
++    from traefik_certificate_exporter.libs.certificate_exporter import (
++        AcmeCertificateFileHandler,
++    )
++
++    settings = _make_settings(dataPath="/data", outputPath="/certs")
++    handler = AcmeCertificateFileHandler(
++        exporter=MagicMock(), dockerManager=MagicMock(), settings=settings
++    )
++    assert handler.timer is None
++
++    handler.cancel()
