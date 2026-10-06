@@ -82,7 +82,8 @@ graph TD
   post-export hook (as `TRAEFIK_CERTIFICATE_EXPORTER_CORRELATION_ID`) and to the notification
   path; `-` marks a record emitted outside a pass. Distributed tracing across *independent*
   processes remains out of scope — this is still a single-process tool. — `docs/adr/0003`,
-  amended by `docs/adr/0023` (Epic 011 Story E011-S01-004).
+  amended by [ADR-0023](../../../../docs/adr/0023-export-pipeline-correlation-id-and-atomic-writes.md)
+  (Epic 011 Story E011-S01-004).
 
 ### AD-4 — Docker image built from the locked dependency set
 
