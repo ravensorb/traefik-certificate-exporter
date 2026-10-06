@@ -42,14 +42,54 @@ Examples across languages (all matched):
 Search the whole tree from `{project-root}`, **case-insensitive**, with line numbers, skipping
 vendored/build/VCS output:
 
+**Build the file list with `find`, then search it. Do not use `grep -r`.** The recursion is
+`find`'s, never the grep implementation's:
+
 ```bash
-grep -rniE '(#|//|--|;|%|/\*|<!--|'\'') ?bmad-defer:' . \
-  --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=build \
-  --exclude-dir=vendor --exclude-dir=.venv --exclude-dir=target --exclude-dir=out \
-  --exclude-dir='{implementation_artifacts}' --exclude-dir='{planning_artifacts}'
+find . -type f \
+  -not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/dist/*' \
+  -not -path '*/build/*' -not -path '*/vendor/*' -not -path '*/.venv/*' \
+  -not -path '*/target/*' -not -path '*/out/*' \
+  -not -path '*/{implementation_artifacts}/*' -not -path '*/{planning_artifacts}/*' \
+  -print0 > "$list"
+
+files_searched=$(tr -dc '\0' < "$list" | wc -c)
+xargs -0 --no-run-if-empty grep -niE '(#|//|--|;|%|/\*|<!--|'\'') ?bmad-defer:' < "$list"
 ```
 
-Append `--exclude-dir={dir}` for each directory listed in `harvest_exclude_dirs` (resolved in Step H1).
+`$list` comes from `mktemp` with its `trap` on the next line, per
+`l3io-arch-review/references/standards-shell.md`:
+
+```bash
+list="$(mktemp)"
+trap 'rm -f "$list"' EXIT
+```
+
+**The list goes to a file rather than straight down a pipe** so the count and the search read
+the same set. A first draft piped `find` into `tee >(tr -dc '\0' | wc -c >&2)`, which produced
+the right number but wrote it to the process substitution's own stderr, where the pipeline's
+redirect could not capture it — the count printed to the terminal and `{files_searched}` came
+back empty. Running `find` twice would also work and would risk the two runs disagreeing if
+the tree changed between them.
+
+Append `-not -path '*/{dir}/*'` for each directory listed in `harvest_exclude_dirs` (resolved in Step H1).
+
+**Why `find` and not `grep -r`, which this contract used until 3.2.4.** `grep -r`'s recursion
+semantics are not the same across the implementations actually on PATH: **ugrep honours
+`.gitignore` during a recursive search and GNU grep does not.** Measured on one box carrying
+both, same command, one marker in a tracked directory and one in a git-ignored directory:
+
+    GNU grep 3.12  -> both markers
+    ugrep 7.8.4    -> the tracked one only
+
+A consuming project whose org root git-ignores its six source repositories therefore swept
+none of them and reported a clean tree. `find` has no notion of `.gitignore`, so the result
+stops depending on which `grep` is installed. Passing ugrep's `--no-ignore` would fix that box
+and reintroduce the same class, because the flag is not portable to GNU grep.
+
+`--no-run-if-empty` is load-bearing: with no input, `xargs` runs `grep` with no file operands,
+`grep` then reads **stdin**, and the sweep hangs instead of reporting zero files. The flag is a
+GNU extension — on a system without it, guard the pipeline with a non-empty test instead.
 
 Artifact directories are excluded — markers are a **source-code** convention, not an artifact one,
 and a marker quoted inside a backlog description must never re-harvest itself.
@@ -112,13 +152,55 @@ three-way count Check 2b uses, and refuse to write past one:
 
 Run the [Grep contract](#grep-contract). For each hit, parse one marker record:
 `{file}` (path relative to `{project-root}`), `{line}`, `{what}`, `{ceiling}` (or empty),
-`{upgrade}` (or empty), and `no_trigger` = true when `{upgrade}` is empty. If the sweep finds
-nothing, print `No bmad-defer: markers found. Clean tree — nothing to harvest.` and exit.
+`{upgrade}` (or empty), and `no_trigger` = true when `{upgrade}` is empty.
+
+**Always report how many files were searched, not only how many markers were found.** Bind
+`{files_searched}` to the count the contract prints, and branch on it:
+
+- `{files_searched}` is 0 → **this is a fault, not a clean tree.** Print
+  `Searched 0 files — the sweep matched nothing to search, so "no markers" means nothing here.
+  Check the exclusion list and {harvest_exclude_dirs}.` and exit **without** reporting a clean
+  tree.
+- markers found is 0, files searched > 0 → `Searched {files_searched} files. No bmad-defer:
+  markers found — clean tree, nothing to harvest.` and exit.
+- otherwise → carry `{files_searched}` into the Step H4 ledger header.
+
+**Why the count is not cosmetic.** Before it existed, "0 markers found" and "0 files searched"
+printed the identical sentence. A consuming project's sweep returned six hits — all of them
+this skill's own doc examples across two install mirrors — and zero real markers, while a real
+marker sat in the tree the whole time; the post-sweep payload filter then dropped the six and
+the mode reported a clean tree. The output looked like good news, which is the only reason it
+went unnoticed. A search that examined nothing must not be able to render as a search that
+found nothing.
 
 **Step H3 — Dedupe against the existing backlog**
 
 Read both issue lists with `uv run {pm_status} list-issues --state-root {pm_state_root} --all --format json` (if `{pm_status}` is absent, read the `backlog:` list from `{status_backlog}` and treat the resolved list as empty). A marker is
-**already harvested** if an existing item has `source` containing `code-marker ({file}:{line})` — this matches both entries written by `harvest-debt` itself (`source: 'code-marker ({file}:{line})'`) and entries written by sprint closure Step 9 (`source: 'clean-release (code-marker {file}:{line})'`), so running either tool first does not produce duplicates when the other runs later. Dedupe is matched by `source` field, not by key — so legacy `DEBT-NN` keyed entries from prior runs are also correctly deduped by their source field. Partition the swept markers:
+**already harvested** when an existing item matches on **file path plus normalised marker
+text**. Normalise both sides the same way before comparing: strip the comment leader and the
+`bmad-defer:` keyword, collapse internal whitespace, casefold. Match against the item's
+`source` **and** its title, since the text is what survives.
+
+**The line number is metadata, not identity.** Where an existing item's `source` carries a
+stale line, refresh it to the swept one rather than filing a second item.
+
+*Identity used to be `code-marker ({file}:{line})`, so any edit ABOVE a marker changed its
+identity and the next sweep re-filed it as new. Observed: a marker harvested at line 120,
+reported at 123 three days later, already queued to duplicate. A line number is the one part
+of a marker's location guaranteed to drift.*
+
+**Back-compat is the acceptance criterion, not a nicety.** The two formats already in the wild
+must still match, or every previously-harvested item orphans and re-files on the next sweep —
+which is the bug, inverted and applied to the whole backlog at once:
+- `code-marker ({file}:{line})` — written by `harvest-debt` itself
+- `clean-release (code-marker {file}:{line})` — written by sprint closure Step 9
+
+Both carry the path, so path-plus-text matches them with the line ignored. A third shape has
+been seen in the field (`harvest-debt (bmad-defer: {file}:{line})`), authored outside this tool
+and matching neither documented format; path-plus-text absorbs it too, which is the point of
+keying on content rather than on a source string's exact spelling. Dedupe is matched on the
+`source`/title content, not by key — so legacy `DEBT-NN` keyed entries from prior runs are also
+correctly deduped. Partition the swept markers:
 - `existing` — matches an open item, or a resolved item whose `resolution` is not `fixed`
   (skip; do not duplicate or re-key).
 - `new` — matches nothing, **or matches only resolved `fixed` items**: the shortcut came back

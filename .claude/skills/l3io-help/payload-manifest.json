@@ -1,7 +1,7 @@
 {
-  "version": "3.2.2",
+  "version": "3.2.6",
   "generated_from": "skills/_shared/",
   "files": {
-    "references/config-resolution.md": "c170d0c5275d636db58e550bfe346f669f09561b77d3d5e997edd1b96589ef81"
+    "references/config-resolution.md": "ef410e4a7b1468057f72f59738284d6afec102c82be55bd4e78fbea355b8f9d7"
   }
 }

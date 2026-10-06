@@ -378,8 +378,14 @@ def verify(args: argparse.Namespace) -> int:
             # Flush first: unflushed stdout would otherwise let this summary surface ahead of
             # the report it summarizes whenever the two streams are captured separately.
             sys.stdout.flush()
+            # NOT `--modules bmm`: that form is authoritative, so BMad would delete every
+            # other installed module (cis, tea, ...) to match the flag. Printing it here is
+            # worse than printing nothing, because it reaches the user at the one moment they
+            # are already worried about a broken install and will paste what they are given.
             print(f"\n{len(missing)} required skill(s) resolve nowhere. Install them, or run "
-                  f"`npx bmad-method install --modules bmm` to refresh.", file=sys.stderr)
+                  f"`npx -y bmad-method@latest install --directory . --action quick-update "
+                  f"--yes` to refresh every installed module without removing any.",
+                  file=sys.stderr)
 
     if missing:
         return 3

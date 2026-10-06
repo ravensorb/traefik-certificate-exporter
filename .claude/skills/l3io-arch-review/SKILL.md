@@ -36,7 +36,7 @@ artifact paths from `modules.l3io-pm` (see the contract for defaults).
 
 An absent `modules.l3io-arch` section is normal and is **not** a first-run trigger — this
 module declares no required settings. Load `assets/module-setup.md` only when the user
-explicitly passes `setup`, `configure`, or `install`.
+explicitly passes `setup` or `configure`.
 
 1. **Always load** `references/standards-core.md` (the universal charter).
 2. **Detect the stack(s)** in scope and load the matching overlay(s):

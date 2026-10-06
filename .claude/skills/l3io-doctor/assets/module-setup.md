@@ -10,7 +10,7 @@ multi-skill one.
 
 ## When this runs
 
-Only when the user explicitly asks: they passed `setup`, `configure`, or `install`, or
+Only when the user explicitly asks: they passed `setup` or `configure`, or
 they asked to reconfigure the module.
 
 **A missing `modules.{module-code}` section is not a trigger.** None of the l3io modules

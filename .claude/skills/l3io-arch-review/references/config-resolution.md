@@ -136,7 +136,7 @@ setup procedure of their own (`l3io-setup/assets/module.yaml` and
 `l3io-setup/assets/module-setup.md`, and the same two paths inside `l3io-doctor`,
 `l3io-sec-redteam` and `l3io-arch-review`). A module home loads that setup procedure only when:
 
-- the user explicitly passes `setup`, `configure`, or `install`; or
+- the user explicitly passes `setup` or `configure`; or
 - a skill-specific first-run artifact is genuinely absent (for `l3io-sec-redteam`, the
   agent sanctum).
 

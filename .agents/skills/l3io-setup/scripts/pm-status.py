@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["ruamel.yaml>=0.18"]
 # ///
-# pm-status-version: 3.2.2   (machine-readable marker; `self-install` compares this across copies — keep at top)
+# pm-status-version: 3.2.6   (machine-readable marker; `self-install` compares this across copies — keep at top)
 """
 pm-status.py — deterministic, atomic, round-trip-safe writer for the l3io-pm
 sharded state tree, and the reader behind its progress report.
@@ -190,6 +190,20 @@ Subcommands
                 abandoned one; a story node that does not parse, is not valid UTF-8 or
                 is not a mapping, or a claimant whose key: is malformed, exits 2 naming
                 the file, before any write)
+  schedule-issue --state-root S  --key K [--key K2 ...]  --story E{nnn}-S{nn}-{nnn}
+                [--session-id ID] [--cause C]
+                (attaches open items to a story that ALREADY EXISTS -- the counterpart to
+                promote-issue, which only ever creates one; appends each key to the
+                story's `resolves:` and marks the items scheduled, story node first so an
+                interrupted run leaves finding 1d, which repair-issue --action link
+                repairs, rather than 1e, which has no single-key repair; idempotent by
+                skip for a key already scheduled to THIS story, exit 2 for one scheduled
+                to a different story; exit 3 for an absent story, exit 2 for a story that
+                is `done` or whose epic is under archived/, exit 4 on a back-reference
+                mismatch; does NOT re-estimate the story or roll up its parents; locks in
+                promote-issue's order -- epic_node_lock then one issues_lock spanning the
+                decisive check through the save; every refusal is checked before the first
+                write)
   audit-issues  --state-root S  [--format {text,json}]
                 (read-only integrity checks 1a-1k over both issue files and the story
                 nodes' resolves:, read under issues_lock when either issue file exists;
@@ -283,7 +297,7 @@ except ModuleNotFoundError:  # pragma: no cover - environment guard
     )
     sys.exit(2)
 
-PM_STATUS_VERSION = "3.2.2"  # keep in sync with the top-of-file `# pm-status-version:` marker
+PM_STATUS_VERSION = "3.2.6"  # keep in sync with the top-of-file `# pm-status-version:` marker
 
 VALID_STORY_STATUS = {"backlog", "ready-for-dev", "in-progress", "review", "done", "blocked"}
 VALID_SPRINT_STATUS = {"backlog", "in-progress", "review", "done"}
@@ -893,9 +907,16 @@ def _event_keys(kind: str, args) -> dict:
     if kind == "story":
         epic_key, sprint_key, _ = parse_story_key(args.story)
         return {"node": "story", "key": args.story, "epic": epic_key, "sprint": sprint_key}
+    # Canonical, not raw. `_dispatch_identity` is (agent, epic, sprint, story), so a close
+    # spelled differently from its open never cancels it and the dispatch reports as
+    # permanently stalled in `report --stall-minutes`. Measured: open --epic 003 then close
+    # --epic E003 leaves 1 dispatch open. The story branch above already yields key form via
+    # parse_story_key; these two now match it instead of echoing the caller.
     if kind == "sprint":
-        return {"node": "sprint", "key": args.sprint, "epic": args.epic, "sprint": args.sprint}
-    return {"node": "epic", "key": args.epic, "epic": args.epic, "sprint": None}
+        sk = canonical_sprint_key(args.sprint)
+        return {"node": "sprint", "key": sk, "epic": canonical_epic_key(args.epic), "sprint": sk}
+    ek = canonical_epic_key(args.epic)
+    return {"node": "epic", "key": ek, "epic": ek, "sprint": None}
 
 
 # Fixed thresholds, in hours. Deliberately not configurable in this iteration: the
@@ -951,9 +972,12 @@ def build_events_index(state_root: str) -> dict:
                     continue
                 if ev.get("event") != "status" or not ev.get("key"):
                     continue
-                prev = idx.get(ev["key"])
+                k = _indexable_key(ev["key"])      # a non-empty list is truthy AND unhashable
+                if k is None:
+                    continue
+                prev = idx.get(k)
                 if prev is None or str(ev.get("ts", "")) >= str(prev.get("ts", "")):
-                    idx[ev["key"]] = ev
+                    idx[k] = ev
     except OSError as e:
         sys.stderr.write(f"pm-status.py: warning — could not read event log: {e}\n")
     return idx
@@ -981,28 +1005,119 @@ def cmd_dispatch(args) -> int:
                "event": "dispatch_open" if args.event == "open" else "dispatch_close",
                "agent": args.agent,
                "session": getattr(args, "session_id", None)}
+    # Canonical, not raw. This is the fifth write site of the same class and the one that
+    # matters: _dispatch_identity is (agent, epic, sprint, story), so an open and a close
+    # spelled differently are different dispatches and the close never cancels the open --
+    # the dispatch then reports as permanently stalled. --story is strict (a non-canonical
+    # key is rejected outright), so it passes through unchanged.
+    _canon = {"epic": canonical_epic_key, "sprint": canonical_sprint_key}
     for k in ("epic", "sprint", "story"):
         v = getattr(args, k, None)
         if v:
-            payload[k] = v
+            payload[k] = _canon[k](v) if k in _canon else v
+    # Resolve the match BEFORE appending: this close is itself a close record, so
+    # a scan taken afterwards has already cancelled the open it is reporting on.
+    matched = None
+    if args.event == "close":
+        matched = _pending_dispatches(args.state_root).get(_dispatch_identity(payload))
     append_event(args.state_root, payload)
-    sys.stdout.write(f"OK dispatch {args.event} {args.agent}\n")
+    if args.event != "close":
+        sys.stdout.write(f"OK dispatch {args.event} {args.agent}\n")
+    elif matched is not None:
+        # An orphan close stays exit 0 -- legitimate on a log that may begin
+        # mid-run -- but the verb could not previously tell the two cases apart,
+        # so a close that cancelled nothing read exactly like one that worked.
+        sys.stdout.write(f"OK dispatch close {args.agent} "
+                         f"(cancelled open from {matched.get('ts')})\n")
+    else:
+        sys.stdout.write(f"OK dispatch close {args.agent} (no matching open found)\n")
     return 0
+
+
+def _hashable_field(v):
+    """A hashable stand-in for a field read out of `events.jsonl`.
+
+    Used by every reader over that log that keys a dict on a record field. The log is
+    append-only, written by concurrent flock'd writers and documented as possibly torn,
+    so a field can hold any JSON type -- and a list or a dict is unhashable, which turns
+    `idx[rec["key"]]` into `TypeError: unhashable type` and takes down the reader.
+
+    The readers all guarded the RECORD (`isinstance(rec, dict)`) and none guarded a
+    field inside it, so the same defect existed four times over: in
+    `_dispatch_identity`, where it crashed `report --watch`; in `build_events_index`,
+    where `ev.get("key")` was only truthy-checked and a non-empty list is truthy; and in
+    `actual_event_times`, where `k not in idx` raises exactly as a subscript does -- a
+    membership test is not the safe alternative to indexing.
+
+    `str()` is a floor that keeps the scan alive and the record distinguishable, not a
+    conversion any caller should rely on: a malformed field has no correct value, and
+    inventing one would be worse than carrying it through as its own repr.
+
+    Carrying through is right HERE and wrong for an index -- see `_indexable_key`.
+    """
+    return v if isinstance(v, (str, int, float, bool)) else str(v)
+
+
+def _indexable_key(v):
+    """A node key usable as an index key, or None when the field cannot be one.
+
+    The counterpart to `_hashable_field`, and the difference is the reader's job, not a
+    preference. `_dispatch_identity` only needs INTERNAL consistency -- an open and its
+    close hashing alike -- so a malformed field carried through under its repr still
+    matches its own close, and dropping it would make that dispatch permanently
+    uncloseable. An index keyed by node key is looked up BY a real node key, so a value
+    that no node could ever have is not a key: carrying it adds a phantom entry
+    corresponding to nothing, and dropping it loses nothing real.
+
+    Returns None for a list, a dict, or an empty/whitespace-only string. The caller
+    skips the record, which is what "a torn line must not kill the read" has always
+    meant one level up.
+    """
+    if not isinstance(v, (str, int, float)) or isinstance(v, bool):
+        return None
+    k = str(v).strip()
+    return k or None
 
 
 def _dispatch_identity(rec: dict) -> tuple:
     """What makes two dispatch records the same dispatch. Agent plus node keys —
     a story-level retry of the same agent reuses the identity deliberately, so a
-    close always cancels the most recent matching open."""
-    return (rec.get("agent"), rec.get("epic"), rec.get("sprint"), rec.get("story"))
+    close always cancels the most recent matching open.
+
+    Node keys are canonicalised HERE, on read, rather than trusted as stored. The
+    write sites canonicalise too, but a write site can only govern records written
+    after it: `events.jsonl` is append-only, so an open written before the
+    write-side fix holds the caller's spelling ('01') while every close now holds
+    'S01'. Comparing the two raw left those dispatches permanently uncloseable,
+    with no CLI route to clear them, because the canonical write path cannot emit
+    a close that matches a non-canonical open. Canonicalising on read makes every
+    historical spelling comparable with no rewrite of the log, which is sound
+    because both key functions are idempotent ('S01' -> 'S01') and total
+    (`_norm_num` falls back to the stripped string rather than raising).
+
+    Every element is forced hashable. This tuple is a dict key on the stall
+    dashboard's read path, and a record whose field held a list used to raise
+    `TypeError: unhashable type` out of `pending[...]` — crashing the exact
+    surface `_pending_dispatches` documents itself as reading defensively for.
+    Guarding the whole record (`isinstance(rec, dict)`) never covered a single
+    field inside it.
+    """
+    agent, epic = rec.get("agent"), rec.get("epic")
+    sprint, story = rec.get("sprint"), rec.get("story")
+    return (None if agent is None else _hashable_field(agent),
+            None if epic is None else canonical_epic_key(epic),
+            None if sprint is None else canonical_sprint_key(sprint),
+            None if story is None else _hashable_field(story))
 
 
-def open_dispatches(state_root: str, threshold_minutes: float, now=None) -> list:
-    """Dispatches opened and never closed, older than the threshold, oldest first.
+def _pending_dispatches(state_root: str) -> dict:
+    """`_dispatch_identity` -> the open record still outstanding for it.
 
-    Cannot interrupt a hang — makes it visible. A close with no matching open is
-    ignored rather than treated as an error: events.jsonl is append-only and may
-    begin mid-run on a pre-existing project.
+    The one scan behind both `open_dispatches` (which then applies an age
+    threshold) and the `dispatch --event close` report, so the question "is there
+    an open matching this close?" is answered by the same matching rule that
+    decides whether a dispatch shows as stalled. Answering it twice, two ways, is
+    how the two could disagree.
 
     Reads defensively, exactly as `build_events_index` does over the same file:
     the log is appended to by concurrent flock'd writers and is documented as
@@ -1010,11 +1125,12 @@ def open_dispatches(state_root: str, threshold_minutes: float, now=None) -> list
     torn write or a hand-edit) must be skipped, not dereferenced, and an OSError
     must warn rather than abort. This is the read behind `report --watch`, the
     stall dashboard — a crash here takes down precisely the surface the stall
-    feature exists to provide.
+    feature exists to provide. `_dispatch_identity` carries the same obligation
+    down to the individual field.
     """
     path = events_path(state_root)
     if not os.path.exists(path):
-        return []
+        return {}
     pending: dict = {}
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -1035,6 +1151,18 @@ def open_dispatches(state_root: str, threshold_minutes: float, now=None) -> list
                     pending.pop(_dispatch_identity(rec), None)
     except OSError as e:
         sys.stderr.write(f"pm-status.py: warning — could not read event log: {e}\n")
+    return pending
+
+
+def open_dispatches(state_root: str, threshold_minutes: float, now=None) -> list:
+    """Dispatches opened and never closed, older than the threshold, oldest first.
+
+    Cannot interrupt a hang — makes it visible. A close with no matching open is
+    ignored rather than treated as an error: events.jsonl is append-only and may
+    begin mid-run on a pre-existing project. The close verb reports which case it
+    was (see `_dispatch_close_report`), so "ignored" never means "unreported".
+    """
+    pending = _pending_dispatches(state_root)
     if now is None:
         now = datetime.now(UTC)
     out = []
@@ -2421,6 +2549,9 @@ def actual_event_times(state_root: str) -> dict:
                 k = ev.get("key")
                 if not k:
                     continue
+                k = _indexable_key(k)              # `k not in idx` raises on an unhashable k
+                if k is None:
+                    continue
                 ts = str(ev.get("ts", ""))
                 if k not in idx or ts >= idx[k]:
                     idx[k] = ts
@@ -2969,7 +3100,7 @@ def cmd_adr_reserve(args) -> int:
             entry = CommentedMap()
             entry["number"] = n
             entry["slug"] = args.slug
-            entry["epic"] = args.epic
+            entry["epic"] = canonical_epic_key(args.epic)
             entry["reserved_at"] = _now_iso()
             reg.setdefault("reserved", []).append(entry)
         reg["next"] = start + args.count
@@ -6032,8 +6163,13 @@ def _append_issue(args) -> int:
             key = store.allocate(epic_norm)
         item = CommentedMap()
         item["key"] = key
-        item["epic"] = args.epic
-        item["sprint"] = args.sprint if args.sprint else ""
+        # epic_norm/sprint_norm, not args.*: both are computed at the top of this function
+        # and already trusted for the key, the --key cross-check, dedupe matching and
+        # store.allocate(). Storing the caller's spelling instead let one epic appear as
+        # '3', '03', '003', 'E3', 'E003' and 'e003' in one file -- all six accepted, all
+        # six producing the same correct key.
+        item["epic"] = epic_norm
+        item["sprint"] = sprint_norm
         item["title"] = args.title
         item["source"] = source_str
         if source_phase:
@@ -6511,6 +6647,177 @@ def _promote_issue(args) -> int:
     return 0
 
 
+def _schedulable_items(store, keys, story_key):
+    """Split `keys` into (to_schedule, already_here) for a named existing story.
+
+    Gate order mirrors `_promotable_items`: resolved FIRST (Ruling 8), because a key in
+    issues-resolved.yaml is resolved even if a stale open copy survives resolve's crash
+    window, then the single-open guard (Ruling 5, finding 1i). It differs in exactly one
+    place. An item already scheduled to THIS story is a skip rather than a refusal,
+    because the mapping that drives this verb is executed as a batch and re-running the
+    whole batch has to be safe -- the alternative is asking the operator to track which
+    of 28 rows applied. An item scheduled to a DIFFERENT story is still a refusal:
+    moving it silently would rewrite a scheduling decision somebody made and leave the
+    old story's `resolves` naming an item it no longer owns, which is audit finding 1e.
+    """
+    to_schedule, already_here = [], []
+    for k in keys:
+        done = store.resolved_items(k)
+        if done:
+            raise PMError(2, f"{k} is already resolved ({done[-1].get('resolution')})")
+        item = store.single_open(k)
+        if item is None:
+            raise PMError(2, f"{k} is not an open backlog item")
+        kind = str(item.get("kind") or "defect")
+        if kind != "defect":
+            raise PMError(2, f"{k} is a {kind} item -- spec items are confirmed or rejected "
+                             f"in /l3io-doctor triage, never scheduled to a story")
+        if str(item.get("status", "backlog")) == "scheduled":
+            at = str(item.get("story") or "")
+            if at == story_key:
+                already_here.append(item)
+                continue
+            raise PMError(2, f"{k} is already scheduled to story {at} -- unschedule it first "
+                             f"(repair-issue --action unschedule --key {k}) rather than "
+                             f"moving it silently")
+        to_schedule.append(item)
+    return to_schedule, already_here
+
+
+def _schedule_target(sr, epic_key, story_key):
+    """(epic path, story path, story node) for schedule-issue, refusing a home the work
+    will never reach. Run once before the epic lock to refuse fast, and again under it,
+    where the answer is decisive.
+
+    Deliberately NOT `_promote_target`: that one also requires the sprint to be
+    `backlog`, which is right for allocating a new story and wrong here -- attaching a
+    finding to an existing story in a sprint already under way is the ordinary case.
+
+    The two refusals are the failure this verb exists to avoid: an item silently
+    acquiring a home nobody will work. `done` and `archived` are checked separately
+    because neither implies the other -- a story under `archived/` can still read
+    `status: backlog`, which is how 34 open items on one consumer tree came to be keyed
+    to an epic that had been archived out from under them.
+    """
+    epath = epic_file(sr, epic_key)
+    if epath is None:
+        raise PMError(3, f"epic {epic_key} not found under {sr}")
+    if os.path.basename(os.path.dirname(os.path.dirname(epath))) == "archived":
+        raise PMError(2, f"epic {epic_key} is archived -- schedule into a planned or active "
+                         f"epic, or move the epic back first (move-epic)")
+    spath = story_file(sr, story_key)
+    if spath is None:
+        raise PMError(3, f"story {story_key} not found under {sr} -- schedule-issue attaches "
+                         f"to a story that exists; use promote-issue to create one")
+    node = load_node(spath)[1]
+    if node is None:
+        raise PMError(3, f"story {story_key} -- file {spath} is empty")
+    ek, sk, _ = parse_story_key(story_key)
+    problems = check_backrefs(node, ek, sk)
+    if problems:
+        raise PMError(4, f"back-reference mismatch for story {story_key}: "
+                         f"{'; '.join(problems)}")
+    status = str(node.get("status", ""))
+    if status == "done":
+        raise PMError(2, f"story {story_key} is done -- its acceptance criteria are already "
+                         f"closed, so an unfixed finding attached here is lost. Schedule it "
+                         f"to an open story, or promote-issue a new one")
+    return epath, spath, node
+
+
+def cmd_schedule_issue(args) -> int:
+    """Attach open BL items to a story that ALREADY EXISTS (the counterpart to
+    promote-issue, which only ever creates one).
+
+    Locking mirrors promote-issue exactly, including the nesting order, so the two
+    cannot deadlock against each other: an advisory `issues_lock` check to refuse fast,
+    an advisory foreign-lock check, then `epic_node_lock`, a re-resolve under it because
+    move-epic holds the same lock and may have moved the directory while this call
+    waited, a decisive foreign-lock re-check, and ONE `issues_lock` hold spanning the
+    decisive item check through the schedule save (Ruling 12a) so a concurrent
+    resolve-issue on the same key cannot land between the check and the write.
+
+    Story node first among the writes, matching promote: a failure after it leaves a
+    story whose `resolves` names the items while they still read `backlog`, which is
+    audit finding 1d -- the state `repair-issue --action link` exists to repair. The
+    reverse order would leave items pointing at a story that never claimed them, which
+    is finding 1e and has no single-key repair.
+
+    It does NOT re-estimate the story or re-roll-up its parents. The story's estimate was
+    set when it was written, by whoever sized it; attaching a finding whose fix its
+    acceptance criteria already imply is not a resize, and overwriting a human's estimate
+    as a side effect of a bookkeeping verb would be worse than leaving it stale.
+    """
+    return _run_core(lambda: _schedule_issue(args))
+
+
+def _schedule_issue(args) -> int:
+    from ruamel.yaml.comments import CommentedSeq
+    sr = args.state_root
+    keys = []
+    for raw in args.key:
+        k = canonical_bl_key(raw)
+        if k is None:
+            raise PMError(2, f"--key {raw!r} is not a backlog key")
+        if k not in keys:
+            keys.append(k)
+    try:
+        epic_key, _sprint_key, _ = parse_story_key(args.story)
+    except ValueError as e:
+        raise PMError(2, str(e)) from None
+
+    open_path = issues_paths(sr)[0]
+    _schedule_target(sr, epic_key, args.story)                    # advisory: refuse fast
+    with issues_lock(open_path):
+        _schedulable_items(IssueStore(open_path), keys, args.story)   # advisory
+    err = _foreign_lock_error(epic_file(sr, epic_key), args.session_id, epic_key)
+    if err:
+        raise err
+    with epic_node_lock(sr, epic_key):
+        # Re-resolve under the lock: move-epic holds it too, so a move that landed while
+        # this call waited has moved the directory the paths above name.
+        epath, spath, node = _schedule_target(sr, epic_key, args.story)
+        err = _foreign_lock_error(epath, args.session_id, epic_key)    # decisive
+        if err:
+            raise err
+        with issues_lock(open_path):
+            store = IssueStore(open_path)
+            items, already = _schedulable_items(store, keys, args.story)   # decisive
+            if items:
+                existing = [str(x) for x in (node.get("resolves") or [])]
+                seq = node.get("resolves")
+                if not isinstance(seq, CommentedSeq):
+                    seq = CommentedSeq(existing)
+                    seq.fa.set_flow_style()
+                    node["resolves"] = seq
+                for it in items:
+                    k = str(it.get("key"))
+                    if k not in existing:        # a story may already claim it (finding 1d)
+                        seq.append(k)
+                save_node(_yaml(), node, spath)
+                stamp = _now_iso()
+                for it in items:
+                    it["status"] = "scheduled"
+                    it["story"] = args.story
+                    it["scheduled_at"] = stamp
+                store.save_open()
+    for it in items:
+        # via: a third route to `scheduled`. promote-issue writes no via, repair-link
+        # writes "repair-link"; without a distinct value the log cannot say how an item
+        # got its story, which is the only record of whether a human chose it.
+        _issue_event(sr, "issue_scheduled", it, args.session_id, args.cause,
+                     story=args.story, via="schedule")
+    done_keys = [str(i.get("key")) for i in items]
+    skipped = [str(i.get("key")) for i in already]
+    parts = []
+    if done_keys:
+        parts.append(f"{', '.join(done_keys)} -> {args.story}")
+    if skipped:
+        parts.append(f"{', '.join(skipped)} already scheduled to {args.story} (skipped)")
+    sys.stdout.write(f"OK schedule-issue {'; '.join(parts)}\n")
+    return 0
+
+
 # BL keys run 001-999, so next[epic] -- the NEXT key to hand out -- is at most 1000.
 _BL_NEXT_MAX = 1000
 
@@ -6792,14 +7099,76 @@ def _normalize_all_legacy(args) -> int:
     return 0
 
 
+def _normalize_keys(args) -> int:
+    """Rewrite every stored epic/sprint to its canonical form, wherever one is stored.
+
+    Fixes records written before the write sites normalised: --epic accepted '3', '03',
+    '003', 'E3', 'E003' and 'e003', all six produced the same correct key, and all six were
+    stored verbatim. One consuming project measured 116 bare-digit against 7 E-prefixed in
+    one file. No verb could repair them -- update-issue changes severity only and the other
+    repair actions do not touch these fields -- and hand-editing is forbidden by the state
+    contract, so they were simply stuck.
+
+    Whole-file by default with no --key, because unlike normalize-status there is no
+    per-item judgement: the canonical form of a key is not a decision. Two files, each kept
+    in the form it already uses (see canonical_epic_key): issues.yaml stores bare digits,
+    adr-register.yaml stores key form.
+    """
+    changed = {"issues": 0, "register": 0}
+    open_path = issues_paths(args.state_root)[0]
+    with issues_lock(open_path):
+        store = IssueStore(open_path)
+        for lst in (store.backlog, store.resolved):
+            for it in lst:
+                if not isinstance(it, dict):
+                    continue
+                for field, width in (("epic", 3), ("sprint", 2)):
+                    cur = it.get(field)
+                    if cur in (None, ""):
+                        continue
+                    want = _norm_num(cur, width)
+                    if str(cur) != want:
+                        it[field] = want
+                        changed["issues"] += 1
+        if changed["issues"]:
+            store.save_open()
+            store.save_resolved()
+
+    with adr_register_lock(args.state_root):
+        y, reg = load_adr_register(args.state_root)
+        for entry in reg.get("reserved") or []:
+            if not isinstance(entry, dict) or not entry.get("epic"):
+                continue
+            want = canonical_epic_key(entry["epic"])
+            if str(entry["epic"]) != want:
+                entry["epic"] = want
+                changed["register"] += 1
+        if changed["register"]:
+            _atomic_dump(y, reg, adr_register_path(args.state_root))
+
+    total = changed["issues"] + changed["register"]
+    if total == 0:
+        sys.stdout.write("OK normalize-keys: every stored epic/sprint is already canonical\n")
+        return 0
+    sys.stdout.write(
+        f"OK normalize-keys: {changed['issues']} field(s) in issues.yaml, "
+        f"{changed['register']} in adr-register.yaml\n")
+    return 0
+
+
 def _repair_issue(args) -> int:
     from ruamel.yaml.comments import CommentedMap
     if getattr(args, "all_legacy", False):
         if args.action != "normalize-status":
             raise PMError(2, "--all-legacy applies only to --action normalize-status")
         return _normalize_all_legacy(args)
+    # normalize-keys is whole-file by construction: the canonical form of a key is not a
+    # judgement call, so there is nothing for a --key to scope and nothing to confirm.
+    if args.action == "normalize-keys":
+        return _normalize_keys(args)
     if not args.key:
-        raise PMError(2, "--key is required, or --all-legacy with --action normalize-status")
+        raise PMError(2, "--key is required, or --all-legacy with --action normalize-status, "
+                         "or --action normalize-keys")
     k = canonical_bl_key(args.key)
     if k is None:
         raise PMError(2, f"--key {args.key!r} is not a backlog key")
@@ -6940,6 +7309,25 @@ def _norm_num(v, width: int) -> str:
     if core.isdigit():
         return f"{int(core):0{width}d}"
     return s
+
+
+def canonical_epic_key(v) -> str:
+    """'3'/'03'/'003'/'E3'/'e003' -> 'E003'. The KEY form, for files that store keys.
+
+    Two canonical forms exist on purpose and the difference is per-file, not arbitrary:
+    `issues.yaml` stores bare digits ('003') because `canonical_bl_key` slices them straight
+    out of `BL-E003-007`, and `events.jsonl` stores key form ('E003') because its story
+    records already derive `epic` from `parse_story_key`, which yields 'E001'. Forcing one
+    form everywhere would either churn every existing backlog record or make a dispatch
+    event disagree with the story event beside it. So: normalise to the form the file
+    already uses, and never store the caller's spelling.
+    """
+    return "E" + _norm_num(v, 3)
+
+
+def canonical_sprint_key(v) -> str:
+    """'1'/'01'/'S1'/'s01' -> 'S01'. See canonical_epic_key for why two forms exist."""
+    return "S" + _norm_num(v, 2)
 
 
 def _origin_archived(state_root, epic) -> bool:
@@ -7794,6 +8182,15 @@ def build_parser() -> argparse.ArgumentParser:
     pi.add_argument("--cause", default="cli", choices=["cli", "triage", "plan-intake"])
     pi.set_defaults(func=cmd_promote_issue)
 
+    si = sub.add_parser("schedule-issue",
+                        help="attach open BL items to a story that already exists")
+    si.add_argument("--state-root", required=True)
+    si.add_argument("--key", required=True, action="append", help="repeatable")
+    si.add_argument("--story", required=True, help="an existing story key E{nnn}-S{nn}-{nnn}")
+    si.add_argument("--session-id", dest="session_id", default=None)
+    si.add_argument("--cause", default="cli", choices=["cli", "triage", "plan-intake"])
+    si.set_defaults(func=cmd_schedule_issue)
+
     au = sub.add_parser("audit-issues", help="structural integrity checks over the backlog")
     au.add_argument("--state-root", required=True)
     au.add_argument("--format", choices=["text", "json"], default="text")
@@ -7804,7 +8201,8 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--key", default=None,
                     help="the item; for reseed, any key of the epic; omit with --all-legacy")
     rp.add_argument("--action", required=True,
-                    choices=["unschedule", "link", "reseed", "reopen", "normalize-status"])
+                    choices=["unschedule", "link", "reseed", "reopen", "normalize-status",
+                             "normalize-keys"])
     rp.add_argument("--story", default=None, help="with --action link")
     rp.add_argument("--all-legacy", dest="all_legacy", action="store_true",
                     help="with --action normalize-status: every legacy status in one pass")

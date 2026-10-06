@@ -63,6 +63,16 @@ would re-close the item.
 Ask: `Apply {n} repair(s)? (Y = all / p = pick / n = none)`. Run the confirmed ones, then rerun
 `audit-issues` and report what remains.
 
+**`schedule-issue` is not a repair and must never be added to the table above.** Every row
+here fixes a structural finding; giving an item a story is a planning decision, and an audit
+finding is not evidence that any particular story is the right home. If an item has no story
+and should have one that already exists, that is
+`uv run {pm_status} schedule-issue --state-root {pm_state_root} --key {key} --story {story}` —
+run deliberately, with the story chosen by whoever knows the work, never swept along in a
+confirmed batch of repairs. It refuses a `done` or archived story for exactly that reason.
+`repair-issue --action link` looks like the same thing and is not: it is gated on finding 1d,
+so it only completes a scheduling the story already claims.
+
 ### Step T3 — Mechanical proposals
 
 ```bash

@@ -1,8 +1,8 @@
 {
-  "version": "3.2.2",
+  "version": "3.2.6",
   "generated_from": "skills/_shared/",
   "files": {
-    "references/config-resolution.md": "c170d0c5275d636db58e550bfe346f669f09561b77d3d5e997edd1b96589ef81",
+    "references/config-resolution.md": "ef410e4a7b1468057f72f59738284d6afec102c82be55bd4e78fbea355b8f9d7",
     "steps/shared/step-00-activate.md": "cd5a7fa8e7c8af5bb654bc5039f9b7c95283d7aebbd762f61c4466ed7d68c237",
     "steps/shared/step-00-digest.md": "27af27894b622e1da2ffade4cd6d292d207bf4d114ef0f1bb5706be86ee0146d",
     "steps/shared/step-01-classify-work.md": "53b6c3df3744f01fc4f7bc38fbf56e27f54ec13ba1cc67fbf5334d26bfb9a12c",

@@ -161,6 +161,42 @@ def md():
     return _MD
 
 
+_FM_CLOSE = re.compile(r"^(?:---|\.\.\.)\s*$")
+
+
+def parse_md(text):
+    """`md().parse`, with a leading YAML frontmatter block blanked out first.
+
+    WHY: in Markdown, a line followed by `---` is a SETEXT h2. So frontmatter
+
+        ---
+        status: draft
+        ---
+
+    parses as an h2 titled "status: draft", and every heading reader here picks it up --
+    the index grew a phantom `#status-draft` section pointing at the YAML. Pre-existing,
+    but BMad 6.12.1 started writing that exact frontmatter into `epics.md`, which put it
+    in front of every project that runs the planning skill.
+
+    BLANKED, NOT REMOVED. Every caller reports 1-based line numbers straight out of
+    `token.map`, so deleting the lines would silently shift every range in the document.
+    Replacing them with empty lines keeps the arithmetic identical.
+
+    Only a block at the very TOP counts. A `---` later in the file is a thematic break and
+    the line above it is a legitimate setext heading -- a test pins that, because narrowing
+    the rule to "first line" is what keeps this from eating real headings.
+    """
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n") != "---":
+        return md().parse(text)
+    for i in range(1, len(lines)):
+        if _FM_CLOSE.match(lines[i].rstrip("\r\n")):
+            blanked = ["\n"] * (i + 1) + lines[i + 1:]
+            return md().parse("".join(blanked))
+    # No closing delimiter: not frontmatter, just a document opening with a rule.
+    return md().parse(text)
+
+
 class Section:
     __slots__ = ("anchor", "end", "level", "start", "summary", "title")
 
@@ -180,7 +216,7 @@ def first_sentence(text):
 def parse_sections(text):
     """Every heading as a Section. A section runs from its heading line to the line before
     the next heading of the same or a higher level (1-based, inclusive)."""
-    tokens = md().parse(text)
+    tokens = parse_md(text)
     nlines = len(text.splitlines())
     heads = [(i, int(t.tag[1:]), t.attrs.get("id"), t.map[0], tokens[i + 1].content.strip())
              for i, t in enumerate(tokens) if t.type == "heading_open"]
@@ -418,7 +454,7 @@ def story_dimensions(text):
     for the story's `## Business acceptance criteria` ("bac") and `## Technical acceptance
     criteria` ("tac") sections. Dimensions are kept per section, so one placed under the wrong
     h2 satisfies neither gate. Lines inside fenced or indented code are dropped."""
-    tokens = md().parse(text)
+    tokens = parse_md(text)
     lines = text.splitlines()
     fenced = set()
     for t in tokens:
@@ -627,7 +663,7 @@ def dump_yaml(path, data):
 def md_tables(text):
     """Every markdown table as a list of rows (header row first), cells as plain text."""
     tables, rows, row = [], None, None
-    for t in md().parse(text):
+    for t in parse_md(text):
         if t.type == "table_open":
             rows = []
         elif t.type == "tr_open" and rows is not None:

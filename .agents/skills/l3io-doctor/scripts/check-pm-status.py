@@ -56,6 +56,24 @@ def _parse_version(text: str) -> tuple[int, ...] | None:
     return tuple(int(p) for p in parts)
 
 
+def _version_text(text: str) -> str:
+    """The dotted version out of either '3.2.4' or 'pm-status.py 3.2.4'.
+
+    `pm-status.py --version` renders argparse's banner, which already carries the
+    program name, and every report here prefixed the name again -- `pm-status.py
+    stale -- installed pm-status.py 3.2.4, expected 3.2.4`, a line that reads as
+    self-contradictory and is exactly what a correct upgrade prints before the
+    first activation self-install. `_parse_version` has always known the prefix
+    could be there; only the display path trusted the banner.
+
+    Falls back to the stripped original when there is no version token, so a copy
+    reporting junk still shows its junk -- that is a real condition and blanking
+    it would hide the only evidence of it.
+    """
+    m = _VERSION_TOKEN_RE.search(text or "")
+    return m.group(1) if m else (text or "").strip()
+
+
 def _expected_version() -> str | None:
     try:
         text = _MODULE_YAML.read_text(encoding="utf-8")
@@ -109,28 +127,29 @@ def main(argv=None) -> int:
 
     exp_tuple = _parse_version(expected)
     inst_tuple = _parse_version(installed_raw)
+    installed = _version_text(installed_raw)   # report the version, never the banner
 
     # A stale installed copy is one strictly older than expected. Newer or equal is fine --
     # a newer installed copy usually means the user is testing an unreleased build; the
     # self-install guard refuses to downgrade, and this check honours the same rule.
     if exp_tuple and inst_tuple and inst_tuple < exp_tuple:
-        result = {"status": "stale", "expected": expected, "installed": installed_raw}
+        result = {"status": "stale", "expected": expected, "installed": installed}
         if args.format == "json":
             json.dump(result, sys.stdout)
             sys.stdout.write("\n")
         else:
             sys.stdout.write(
-                f"pm-status.py stale -- installed {installed_raw}, expected {expected}\n"
+                f"pm-status.py stale -- installed {installed}, expected {expected}\n"
                 f"Fix: run /l3io-doctor; its activation self-install refreshes the copy.\n"
             )
         return 3
 
-    result = {"status": "current", "expected": expected, "installed": installed_raw}
+    result = {"status": "current", "expected": expected, "installed": installed}
     if args.format == "json":
         json.dump(result, sys.stdout)
         sys.stdout.write("\n")
     else:
-        sys.stdout.write(f"pm-status.py current -- {installed_raw} (expected {expected})\n")
+        sys.stdout.write(f"pm-status.py current -- {installed} (expected {expected})\n")
     return 0
 
 
