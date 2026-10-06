@@ -1,4 +1,4 @@
-next: 3
+next: 23
 reserved:
 - number: 1
   slug: action-pin-policy
@@ -8,3 +8,35 @@ reserved:
   slug: post-export-notifications
   epic: E010
   reserved_at: '2026-09-06T23:52:55Z'
+- number: 15
+  slug: arch-gate
+  epic: E009
+  reserved_at: '2026-10-06T12:52:44Z'
+- number: 16
+  slug: arch-gate
+  epic: E009
+  reserved_at: '2026-10-06T12:52:44Z'
+- number: 17
+  slug: arch-gate
+  epic: E009
+  reserved_at: '2026-10-06T12:52:44Z'
+- number: 18
+  slug: arch-gate
+  epic: E009
+  reserved_at: '2026-10-06T12:52:44Z'
+- number: 19
+  slug: arch-gate
+  epic: E009
+  reserved_at: '2026-10-06T12:52:44Z'
+- number: 20
+  slug: arch-gate
+  epic: E009
+  reserved_at: '2026-10-06T12:52:44Z'
+- number: 21
+  slug: arch-gate
+  epic: E009
+  reserved_at: '2026-10-06T12:52:44Z'
+- number: 22
+  slug: arch-gate
+  epic: E009
+  reserved_at: '2026-10-06T12:52:44Z'

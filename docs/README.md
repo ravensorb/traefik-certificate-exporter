@@ -11,6 +11,7 @@ that grounds it.
 | [guidelines.md](guidelines.md) | Project-specific engineering guidelines (Python, packaging, logging, config, CI/CD, OSS hygiene) governing how the backlog gets implemented |
 | [architecture.md](architecture.md) | C4 context/container diagrams, key flow, deployment view |
 | [adr/](adr/) | Recorded architectural decisions (dependency management, container base image, logging, build parity, CI wiring) |
+| [ci/gitea-runners.md](ci/gitea-runners.md) | Gitea runner trust bootstrap, job-level CA import placement, credential matrix, action governance, and trust-class routing — what is statically verified vs. requires a live Gitea instance (E009-S01-001) |
 | [developer.md](developer.md) | Setup, build, run, test (currently absent), lint, conventions |
 | [operational.md](operational.md) | Deploy, configuration, runbooks, monitoring, rollback |
 

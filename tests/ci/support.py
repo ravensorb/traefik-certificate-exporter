@@ -560,6 +560,15 @@ CREDENTIAL_ACTIONS_ON_MOVING_REFS: dict[str, str] = {
         "runs after both registry logins, so it can read ~/.docker/config.json; "
         "maintainer-owned org"
     ),
+    # Added E009-S01-001 (ADR-0015, ADR-0018). Receives the downstream private-CA
+    # bundle through `with: certificate`; a CA bundle is trust material, not a
+    # mutation credential, but it reaches this action through `secrets.*` the same
+    # way a publication token does, so the derivation (correctly) still finds it.
+    # Maintainer-owned org, same residual-risk reasoning as the three entries above.
+    "LiquidLogicLabs/git-action-ca-certificate-import": (
+        "receives the GITEA_PACKAGE_INDEX_CA_CERTIFICATE / GITEA_FORGE_API_CA_CERTIFICATE "
+        "bundle through `with: certificate`; maintainer-owned org"
+    ),
     # An approved owner under CI-AR4, and the one action here nobody in this project
     # controls. Kept floating on the ordinary CI-AR4 grounds -- a large, widely audited
     # owner whose security fixes should arrive without a manifest edit.

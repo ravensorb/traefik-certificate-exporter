@@ -1,0 +1,3 @@
+# pm-status.py state files -- never commit
+*.lock
+.notices.yaml

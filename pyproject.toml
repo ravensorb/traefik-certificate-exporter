@@ -99,6 +99,9 @@ follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "requires_live_gitea: exercises a control that can only be proven against a running Gitea/act-runner instance (E009-S01-001); not executed in this environment.",
+]
 
 [build-system]
 requires = ["poetry-core==2.4.0"]

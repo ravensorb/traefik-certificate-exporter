@@ -85,7 +85,11 @@ jobs:
           fi
           server_host="${FORGE_SERVER_URL#*://}"
           server_host="${server_host%%/*}"
-          # Registry references are lowercase; a forge owner or repository need not be.
+          # Registry references are lowercase; a forge owner or repository need not be,
+          # and neither need the authority segment of a configured server URL -- a
+          # Gitea deployment registered as `https://Git.Example.COM` must still resolve
+          # to the same registry as the lowercase spelling (ADR-0021 normalization).
+          server_host="$(printf '%s' "$server_host" | tr '[:upper:]' '[:lower:]')"
           repository="$(printf '%s' "$FORGE_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
           owner="${repository%%/*}"
           if [[ "${GITEA_ACTIONS:-}" == "true" ]]; then
@@ -383,6 +387,22 @@ jobs:
           mkdir upload-set
           cp -- "$BUNDLE_PATH/$WHEEL_FILENAME" "upload-set/$WHEEL_FILENAME"
           cp -- "$BUNDLE_PATH/$SDIST_FILENAME" "upload-set/$SDIST_FILENAME"
+
+      # Job-level downstream trust only (ADR-0015, ADR-0018). Runner-host bootstrap
+      # trust already covers the checkout above; it is not claimed to establish the
+      # trust this step needs. `pypa/gh-action-pypi-publish` uploads over Python's own
+      # `requests`/`certifi` stack, which trusts its bundled root list rather than the
+      # runner-host trust store unless told otherwise, so a private-CA Gitea package
+      # index needs this import even though `git` already trusts it. A CA bundle proves
+      # issuer trust only (ADR-0018); it is not an egress allowlist. Absent on GitHub by
+      # construction: the secret is never configured there, so the condition is false.
+      - name: Import downstream trust for the package index before it is called
+        if: ${{ secrets.GITEA_PACKAGE_INDEX_CA_CERTIFICATE != '' }}
+        uses: LiquidLogicLabs/git-action-ca-certificate-import@v3
+        with:
+          certificate: ${{ secrets.GITEA_PACKAGE_INDEX_CA_CERTIFICATE }}
+          certificate-name: gitea-package-index
+
       # Pinned to a reviewed full commit SHA rather than @release/v1, because whoever can
       # move that branch can exfiltrate this credential on the next run (ADR-0009,
       # CI-AR38). SHA dc37677 is the head of release/v1, tagged v1.14.2, committed

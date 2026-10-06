@@ -1,0 +1,29 @@
+key: 'E009'
+title: 'Epic 009 — Gitea Classifier and Credential-Logic Correctness'
+goal: 'Statically certify this repository''s own forge-classification and per-job credential-selection logic for Gitea compatibility. Cross-forge runtime behavior (CA trust import, Docker metadata, action execution) is delegated to the independently-maintained LiquidLogicLabs/git-action-* reusable actions already consumed by these workflows and is out of this epic''s certification scope. No live Gitea runner provisioning, scheduling-race proof, network/trust-boundary probe, or certification-evidence acquisition is required. (Rescoped 2026-10-06; see docs/adr/0016, 0017 scope notes.)'
+status: done
+depends_on: ['E008']
+estimate:
+  man_hours_low: 90.18
+  man_hours_high: 99.8
+  hitl_hours_low: 12.35
+  hitl_hours_high: 14.55
+  elapsed_hours_low: 27.44
+  elapsed_hours_high: 34.63
+  tokens_k_min: 905
+  tokens_k_max: 1028
+  closure_ratios:
+    man_hours: 0.7656
+    hitl_hours: 1.1973
+    elapsed_hours: 2.0492
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0.0
+    hitl_hours: 0.0739
+    elapsed_hours: 0.046
+    tokens_k: 0
+  cost_low: 3.73
+  cost_high: 4.23
+  model: claude-opus-5
+  confidence: medium
+updated_at: '2026-10-06T17:23:39Z'

@@ -75,7 +75,9 @@ The `CI-AR` identifiers remain stable traceability keys.
   `test_the_workflow_topology_is_a_partition_of_reusable_files_and_event_owners` enforces the
   partition; it deliberately does not enforce a count, because a count is satisfied by any five.
 - **CI-AR6 — Host-neutral coordinates.** Repository, API, server, and registry coordinates come
-  from action context, with only a documented Gitea override where safe derivation is impossible.
+  from action context. The retired `FORGE_REGISTRY` override does not return implicitly: a
+  deployment whose coordinates cannot be derived is unsupported until a new, narrowly scoped
+  variable is specified and accepted in an ADR.
 
 ### Local interface and version ownership
 
@@ -122,9 +124,11 @@ The `CI-AR` identifiers remain stable traceability keys.
   independently enabled by `PUBLISH_IMAGE_DOCKERHUB`, **and applies to the stable channel only**:
   development images publish to the active forge registry and nowhere else, so the toggle is inert
   in `dev.yaml`. See ADR-0011.
-- **CI-AR21 — Package channels.** Development uses optional TestPyPI; stable uses optional PyPI.
-  Gitea's owning-forge Python index is always required. GitHub has no forge Python index, so this
-  destination is absent by host capability and Release assets carry the distributions.
+- **CI-AR21 — Package channels.** On GitHub, development uses optional TestPyPI and stable uses
+  optional PyPI. On Gitea, both are absent by host capability because their trusted-publishing
+  identity is GitHub OIDC; Gitea's owning-forge Python index is the only package publication
+  channel and is always required. GitHub has no forge Python index, so that destination is absent
+  there and Release assets carry the distributions.
 - **CI-AR22 — Retired: publication plan.** The original requirement introduced
   `publication-plan-v1.json`. It is intentionally retired and has no active replacement schema;
   see `archive/publication-transaction-v1` at
@@ -134,8 +138,15 @@ The `CI-AR` identifiers remain stable traceability keys.
   `dbc991c7595d087edc1a2f91e763d0418209116e` for its historical meaning.
 - **CI-AR24 — Least privilege.** Each publisher receives only its destination's credentials and
   job permissions. Disabled external targets receive no secret and make no endpoint request.
-- **CI-AR25 — Credential modes.** GitHub uses trusted publishing for PyPI/TestPyPI, GHCR uses
-  the repository token, and Gitea/Docker Hub use scoped protected tokens.
+- **CI-AR25 — Credential modes.** GitHub uses trusted publishing for PyPI/TestPyPI and the
+  repository token for GHCR. Gitea image publication and repository mutation use the runner's
+  automatic repository token (`GITHUB_TOKEN`) with job-local permissions; its forge package index
+  uses the distinct `FORGE_PACKAGE_TOKEN`. Gitea has no PyPI/TestPyPI credential path. Docker Hub
+  uses a username plus scoped token on either forge. *(Scope note, 2026-10-06: Epic E009 was
+  rescoped to drop live-Gitea-runner certification; certifying the automatic token's effective
+  Gitea permissions against a real instance is deferred until this project operates against a
+  live Gitea deployment, not a current E009 deliverable. What ships now is the statically correct
+  job-local `permissions:` declaration per the credential matrix, ADR-0019.)*
 - **CI-AR26 — Retired: idempotent immutable publication.** The original custom remote-identity
   reconciliation requirement is intentionally retired; see `archive/publication-transaction-v1`
   at `dbc991c7595d087edc1a2f91e763d0418209116e`.
@@ -159,16 +170,30 @@ The `CI-AR` identifiers remain stable traceability keys.
 
 ### Trust boundaries and Gitea certification
 
+*(Scope note, 2026-10-06: Epic E009 was rescoped to drop live-Gitea-runner certification — see
+`epic.yaml` goal and `docs/adr/0015`, `0016`, `0017`, `0020`, `0022`. CI-AR34 and CI-AR35 below
+describe the staging/live-proof target state this project would certify **if and when** it is
+actually operated against a pinned Gitea deployment; no such deployment is currently planned, and
+neither requirement is a current E009 deliverable. The statically provable half of this project's
+own responsibility — the forge classifier and per-job credential matrix — is implemented and
+tested in `tests/ci/`, independent of whether this section's live proof is ever performed.)*
+
 - **CI-AR32 — Secret-free pull requests.** Pull requests receive read-only contents permission,
   no publisher secrets, and no publication jobs, including forked requests.
 - **CI-AR33 — Safe local `act`.** Local workflow testing uses a disposable clone/worktree and
   synthetic local inputs; it never rewrites the developer worktree or accepts production tokens.
-- **CI-AR34 — Pinned isolated Gitea runners.** The supported Gitea server, act-runner, runner
-  image, and action-major tuple are recorded. Untrusted verification and protected publication
-  use separate pools with ephemeral workspaces and minimal mounts.
-- **CI-AR35 — Practical conformance gate.** Migration requires staging proof of PR verification,
-  dev/stable destinations, private CA, artifacts, multi-arch images, forge Release, aliases-last,
-  one failed-jobs-only rerun, and rollback steps for the pinned tuple.
+- **CI-AR34 — Pinned isolated Gitea runners.** *(Deferred under the 2026-10-06 rescope; not a
+  current E009 deliverable.)* Operating this project against a live Gitea instance requires
+  recording and certifying a supported Gitea server, act-runner, runner image digest, transitive
+  executed-action set, and reusable-workflow edge set before any Gitea tuple is considered
+  supported. Untrusted verification and protected publication would require separately scoped
+  runner registrations with ephemeral workspaces and minimal mounts; inability to prove that
+  routing would reject the tuple.
+- **CI-AR35 — Practical conformance gate.** *(Deferred under the 2026-10-06 rescope; not a
+  current E009 deliverable.)* Migrating to a live Gitea instance would require staging proof of PR
+  verification, dev/stable destinations, private CA, artifacts, multi-arch images, forge Release,
+  aliases-last, one failed-jobs-only rerun, and rollback steps for the pinned tuple.
+
 
 ### Lean publication requirements
 
@@ -178,8 +203,8 @@ The `CI-AR` identifiers remain stable traceability keys.
 - **CI-AR37 — Destination-local failure.** Package, image, and forge Release jobs report their
   own actionable failures without a repository-specific all-destination protocol.
 - **CI-AR38 — Maintained action behavior.** Standard actions own upload behavior. Package upload
-  uses `pypa/gh-action-pypi-publish@<reviewed-full-commit-sha>`; implementation must resolve,
-  review, and record the real full commit SHA. Operators rerun failed jobs only. If the forge
+  uses `pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33`
+  (`release/v1`, tagged `v1.14.2`, reviewed 2026-09-02). Operators rerun failed jobs only. If the forge
   cannot do that, evidence expired, or an immutable conflict exists, publication halts and is
   escalated (using a new development version where appropriate); a whole-workflow rerun is not
   the normal recovery path.
@@ -208,6 +233,7 @@ The `CI-AR` identifiers remain stable traceability keys.
 | `dev.yaml` | protected default-branch push | destination jobs only | immutable dev packages/images; Story 8.3 moves `dev` |
 | `release.yaml` | exact `vX.Y.Z` tag | destination jobs only | stable packages/images/Release; aliases last |
 | `verify-build.yaml` | reusable call or dispatch | none | workflow artifacts only |
+| `publish-image.yaml` | reusable call from dev/release | explicit forge token and optional Docker Hub credentials only | one multi-platform build, immutable image publication, attestation, and image aliases |
 
 `verify-build.yaml` accepts only channel, package version, and source SHA. Publisher adapters
 consume its single evidence bundle.
@@ -224,7 +250,12 @@ consume its single evidence bundle.
 | `DOCKERHUB_ORG` | Docker Hub namespace only; the image name follows the built image | derived from the forge owner |
 
 The active forge registry is always required. The Gitea package index is always required on
-Gitea; GitHub has no equivalent Python index.
+Gitea; GitHub has no equivalent Python index. The canonical Gitea upload endpoint appends
+`/api/packages/<lowercase repository owner>/pypi` to `github.server_url`, derived once by the plan
+job and consumed through its `package-index-url` output. Destination jobs do not recompute forge
+kind or coordinates. The maintained `pypa/gh-action-pypi-publish` adapter consumes this upload
+endpoint with username `__token__` and `FORGE_PACKAGE_TOKEN`; an install/simple-index URL is not
+interchangeable with the upload endpoint.
 
 **`FORGE_REGISTRY` is retired (spec change).** It was specified as an operator-supplied
 `host[:port]` override for a Gitea deployment whose registry answers on a different port from its
@@ -239,10 +270,11 @@ that deployment, not this one restored.
 
 | Target | GitHub.com | Gitea |
 |---|---|---|
-| TestPyPI/PyPI | OIDC trusted publishing | scoped token |
-| forge image | repository token to GHCR | scoped registry token |
+| TestPyPI/PyPI | OIDC trusted publishing | unsupported by host capability; no credential path |
+| forge image | automatic repository token to GHCR | automatic repository token to the derived Gitea registry; effective scope: live certification deferred, 2026-10-06 rescope |
 | forge package | unavailable | scoped package token |
 | Docker Hub | username + scoped token | username + scoped token |
+| forge Release and Git aliases | automatic repository token with `contents: write` | automatic repository token; write behavior and denial boundaries: live certification deferred, 2026-10-06 rescope |
 | runner bootstrap CA | runner-host trust before registration/action resolution | runner-host trust before registration/action resolution |
 | downstream private CA | optional job-level bundle | protected bundle imported only for downstream endpoints |
 

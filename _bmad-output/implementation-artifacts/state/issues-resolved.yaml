@@ -1,0 +1,269 @@
+resolved:
+- key: BL-E009-007
+  epic: '009'
+  sprint: '01'
+  title: ADR-0015 scheduling-primitive configuration + behavioral denial proof (sanitized eligibility matrix, credential-free sentinel job, planted overlapping-scope negative)
+  source: dev (E009-S01-001)
+  source_phase: dev
+  source_ref: E009-S01-001
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:35Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-008
+  epic: '009'
+  sprint: '01'
+  title: Cross-destination credential-denial proof against a running Gitea forge (ADR-0019)
+  source: dev (E009-S01-001)
+  source_phase: dev
+  source_ref: E009-S01-001
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:36Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-009
+  epic: '009'
+  sprint: '01'
+  title: git-action-release@v2 Gitea-path network/trust-boundary probe and resulting release-fallback ADR decision if the primary probe fails (ADR-0022)
+  source: dev (E009-S01-001)
+  source_phase: dev
+  source_ref: E009-S01-001
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:37Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-010
+  epic: '009'
+  sprint: '01'
+  title: 'Story 9.1 structural probe set: node24 action execution, environment:pypi parse acceptance, nested workflow_call traversal, cross-workflow artifact download, local composite-action resolution on a real Gitea runner'
+  source: dev (E009-S01-001)
+  source_phase: dev
+  source_ref: E009-S01-001
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:37Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-011
+  epic: '009'
+  sprint: '01'
+  title: Populate the preflight tuple record with observed (not fabricated) Gitea/act-runner evidence (ADR-0016)
+  source: dev (E009-S01-001)
+  source_phase: dev
+  source_ref: E009-S01-001
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:38Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-012
+  epic: '009'
+  sprint: '01'
+  title: Verify TokenPermissionMode=restricted is an enforced organisation/repository precondition via an actual denial test, not a settings read-back
+  source: dev (E009-S01-001)
+  source_phase: dev
+  source_ref: E009-S01-001
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:38Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-013
+  epic: '009'
+  sprint: '01'
+  title: Confirm whether the CA-import action's OS-trust-store installation suffices for Node.js/Python's independently-bundled CA stores, or whether NODE_EXTRA_CA_CERTS/SSL_CERT_FILE must also be set
+  source: dev (E009-S01-001)
+  source_phase: dev
+  source_ref: E009-S01-001
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:39Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-014
+  epic: '009'
+  sprint: '01'
+  title: Certify every positive Gitea staging case (PR verification, protected dev/stable delivery, artifact round-trip, private-CA boundaries, multi-arch image, forge package channel, forge Release, both reusable workflows, aliases-last)
+  source: dev (E009-S01-002)
+  source_phase: dev
+  source_ref: E009-S01-002
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:39Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-015
+  epic: '009'
+  sprint: '01'
+  title: Prove the live forge denials behind wrong-ca, missing-credential-or-scope, endpoint-scope-omission, and restricted-permission-write-refusal
+  source: dev (E009-S01-002)
+  source_phase: dev
+  source_ref: E009-S01-002
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:40Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-016
+  epic: '009'
+  sprint: '01'
+  title: 'Observe absent default-branch context and the environment: pypi parse-acceptance behavior on a real Gitea runner'
+  source: dev (E009-S01-002)
+  source_phase: dev
+  source_ref: E009-S01-002
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:41Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-017
+  epic: '009'
+  sprint: '01'
+  title: Rehearse the real failed-jobs-only recovery (credential revocation or unreachable-endpoint fault injection, native per-job rerun, and pre/post state capture) against a live Gitea instance
+  source: dev (E009-S01-002)
+  source_phase: dev
+  source_ref: E009-S01-002
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:41Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-018
+  epic: '009'
+  sprint: '01'
+  title: Probe failed-jobs-only-unsupported directly against the pinned Gitea's rerun API
+  source: dev (E009-S01-002)
+  source_phase: dev
+  source_ref: E009-S01-002
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:42Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-019
+  epic: '009'
+  sprint: '01'
+  title: Derive the real Story 9.1 preflight action closure and the real Story 9.2 full-scenario action closure from actually-executed runs and compare their digests
+  source: dev (E009-S01-002)
+  source_phase: dev
+  source_ref: E009-S01-002
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:42Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-020
+  epic: '009'
+  sprint: '01'
+  title: Acquire a real ADR-0017 evidence export from the pinned Gitea API and resolve a real certification report against it
+  source: dev (E009-S01-002)
+  source_phase: dev
+  source_ref: E009-S01-002
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:43Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-021
+  epic: '009'
+  sprint: '01'
+  title: Run the git-action-release@v2 Gitea-path network/trust-boundary probe (ADR-0022) against a live Gitea runner
+  source: dev (E009-S01-002)
+  source_phase: dev
+  source_ref: E009-S01-002
+  severity: Medium
+  status: resolved
+  description: Requires live Gitea runner execution to verify; see story Test anchors.
+  resolution: wontfix
+  resolved_at: '2026-10-06T17:18:43Z'
+  note: "Epic 9 rescoped 2026-10-06: dropped the live-Gitea-runner-certification requirement. Cross-forge CI behavior (Gitea Actions compatibility) is already handled by the independently-maintained LiquidLogicLabs/git-action-* reusable actions this project consumes, not by this repo's own certification. Retained in scope: this repo's own forge-classifier (ADR-0021) and per-job credential-selection logic (ADR-0019), both verified statically in tests/ci/. Live-runner provisioning, scheduling-race proofs, network/trust-boundary probes, and certification-evidence acquisition are out of scope for this project."
+- key: BL-E009-003
+  epic: '009'
+  sprint: ''
+  title: The spine's protected-credentials table promises Gitea a scoped PyPI/TestPyPI token the code does not implement
+  source: E009 arch gate — MAJOR
+  severity: Low
+  status: resolved
+  description: The spine's Protected-credentials table describes a scoped token for PyPI and TestPyPI on Gitea. The shipped code deliberately marks both destinations 'unsupported' whenever FORGE != github (release.yaml, dev.yaml), by host capability rather than by toggle, and provides no token path at all. The code is right -- capability divergence is exactly how ADR-0011 s2 says absent destinations must be reported -- and the table is stale. It matters because story 001's DoD and story 002's 'required package channels' are both written against the table rather than against the code, so E009 would set out to certify a channel that does not exist. Correct the table when E009 resumes.
+  resolution: obsolete
+  resolved_at: '2026-10-06T17:28:51Z'
+  note: "Verified against current ARCHITECTURE-SPINE.md: the Protected-credentials table already marks TestPyPI/PyPI unsupported on Gitea with no credential path (matches dev.yaml/release.yaml), and CI-AR6/CI-AR25/CI-AR34/CI-AR38 already carry the corrections review-reality.md R1/R3/R4 required. The table was stale when filed but was already fixed by a prior session pass; additionally annotated the remaining 'certified by E009' table cells with 2026-10-06 rescope-deferred language so they stay accurate after the rescope."
+- key: BL-E009-002
+  epic: '009'
+  sprint: ''
+  title: AUTHORITY_SCOPES covers 4 of GitHub's ~15 permission scopes, so a permissive runner still grants the rest
+  source: E009 arch gate — MAJOR
+  severity: Medium
+  status: resolved
+  description: "E008 made every credential-bearing job declare contents, packages, id-token and attestations explicitly, including the denials, because Gitea does not document GitHub's deny-by-default reading and ships TokenPermissionMode permissive. That closes four scopes. GitHub declares roughly fifteen -- actions, checks, deployments, discussions, issues, models, pages, pull-requests, repository-projects, security-events, statuses, artifact-metadata -- and under a permissive runner every one of them still grants on every one of those jobs. The four chosen are the ones the authority split depends on, so the choice was not arbitrary, but the residual is real and is bounded by nothing. Gitea's code:/releases: vocabulary also does not map one-to-one onto GitHub's, so 'declare them all' is not simply a longer list. Decide the intended posture before E009 certifies the split: enumerate every scope, or record why four is the boundary."
+  resolution: fixed
+  resolved_at: '2026-10-06T17:28:56Z'
+  ref: E009-S01-001
+  note: "Resolved by recording the four-scope boundary rationale in docs/adr/0019 (Permission-scope boundary, 2026-10-06): the 4 declared scopes are a complete enumeration of this repo's authority on GitHub (deny-by-default for unlisted scopes); the Gitea TokenPermissionMode=permissive residual is a live-instance property out of scope under the E009 rescope, re-open only if this project is ever operated against a real Gitea instance."
+- key: BL-E009-005
+  epic: '009'
+  sprint: ''
+  title: Certification probes and evidence lack one non-secret correlation identifier
+  source: arch-gate (l3io-arch-review,bmad-agent-architect)
+  source_phase: arch-gate
+  source_ref: l3io-arch-review,bmad-agent-architect
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-009/arch/arch-gate-review.md (AG-9)
+  resolution: fixed
+  resolved_at: '2026-10-06T17:31:56Z'
+  ref: E009-S01-002
+  note: "Implemented the correlation identifier: resolve_certification_report() now requires every required case's row to share one tuple_fingerprint (one certification attempt = one pinned tuple, ADR-0015), rejecting an export assembled from more than one attempt even when each row individually matches its own retained record. New test: test_an_export_mixing_two_tuple_fingerprints_fails_resolution. Documented in docs/adr/0017 and docs/ci/gitea-certification.md. Fully static; no live Gitea needed."
+- key: BL-E009-006
+  epic: '009'
+  sprint: ''
+  title: The certification, partial-publication, recovery, cutover and rollback sequence lacks a required diagram
+  source: arch-gate (l3io-arch-review,bmad-agent-architect)
+  source_phase: arch-gate
+  source_ref: l3io-arch-review,bmad-agent-architect
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-009/arch/arch-gate-review.md (AG-10)
+  resolution: fixed
+  resolved_at: '2026-10-06T17:31:57Z'
+  ref: E009-S01-002
+  note: Added the required Mermaid sequence diagram (certification gate -> ADR-0016 closure comparison -> ADR-0020 recovery contract -> production-owner cutover -> rollback) to docs/ci/gitea-certification.md, tying each branch to its concrete stop condition and mechanical check. Documentation-only; no live Gitea needed.
+- key: BL-E009-001
+  epic: '009'
+  sprint: ''
+  title: Run the adversarial pass per story in E009, not only at sprint closure
+  source: epic closure — E008 retrospective follow-through
+  severity: Medium
+  status: resolved
+  description: "The per-story loop runs bmad-code-review only; adversarial, red-team and arch-drift run at sprint closure. In E008 that meant a defect written in story 001 was found after 002, 003 and 004 had copied its shape -- one finding, four times, with three stories built on top of it. Closure remediation was 24 commits against 3 implementation commits, and roughly half the epic's man-hours landed in the closure band. There is no customize.toml knob for this: it is an orchestration choice made at dispatch time, so it has to be remembered rather than configured, which is why it is an issue rather than a setting. Recorded in docs/project-context.md alongside the rest of E008's process learnings. E009 adds guards to the same surface, so the multiplier applies again."
+  resolution: deferred
+  resolved_at: '2026-10-06T17:32:25Z'
+  note: "This is a standing cross-epic orchestration-process guideline, not a defect in E009's own artifacts: already recorded in docs/project-context.md section 1 ('Run the adversarial pass per story, not per sprint'). E009's own two stories did not reproduce E008's copied-defect pattern (9 fix iterations total across both stories, no cross-story shape repeated), so there is nothing to retroactively fix in this now-closed epic. Deferred as a dispatch-time practice to apply at the next CONFIG/complex epic, not reopened against E009."
+- key: BL-E009-004
+  epic: '009'
+  sprint: ''
+  title: E009's estimate has no allowance for first-forge execution, and its closure ratio contradicts the sprint's
+  source: E009 arch gate — MAJOR
+  severity: Medium
+  status: resolved
+  description: E009 is estimated at 28.81-29.90 man-hours with 0.17-0.18 HITL hours, for an epic whose deliverable is a physical deployment against hardware nobody has run this pipeline on. docs/project-context.md section 8 records that six CI runs against a pipeline six review phases had already cleared produced five statically-invisible defects, and section 2 that E008 actualled 210 man-hours against 74.6-77.4. Neither is reflected. Separately the epic node's closure_ratios.man_hours is 0.2587 while the sprint node's is 1.8449 -- the same metric an order of magnitude apart on parent and child, which will mis-train calibration whichever is used. Re-estimate before execution, and reconcile the two ratios.
+  resolution: deferred
+  resolved_at: '2026-10-06T17:32:25Z'
+  note: "Partially addressed during planning: the epic was re-estimated mid-session to 90.18-99.80 man-hours (from 28.81-29.90), explicitly correcting the original 'no first-forge allowance' complaint before execution. Post-rescope actuals are now recorded at every level (story/sprint/epic: 13 actual man-hours total, reflecting the dropped live-infra scope). The residual complaint -- epic-level closure_ratios.man_hours (0.7656) still differing materially from sprint-level (3.3513) -- persists, but tracing pm-status.py's rollup_parent_estimate/active_closure_ratio shows this is calibrated per-level against that level's own historical closure population by design, not a hand-editable data-entry error. Whether independent per-level calibration populations should diverge this much is a pm-status.py methodology question, out of scope for a project-level backlog item; deferred to the planning-tool's own maintainers rather than resolved by editing this epic's state files."

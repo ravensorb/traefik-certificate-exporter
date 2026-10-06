@@ -332,7 +332,11 @@ their original conclusions and outputs. If the deployed Gitea version offers no 
 only a rerun of the whole run -- then failed-jobs-only recovery is unsupported on that host, and
 the run halts and escalates rather than being rerun whole. Certifying this procedure against the
 target Gitea deployment is Epic 9's work; until then, treat a Gitea publication failure as an
-escalation.
+escalation. The certification contract this recovery must satisfy before production ownership
+migrates to Gitea -- the staging-only fault-injection mechanism, the pre/expected-partial-state
+record, and the preservation/cleanup postconditions -- is documented in
+`docs/ci/gitea-certification.md` and mechanically gated by
+`assert_recovery_contract` (ADR-0020).
 
 ### When recovery halts and escalates
 
@@ -475,3 +479,17 @@ nobody anything.
 Pin the previous image tag/PyPI version; there is no migration/state to roll back — the
 tool is stateless aside from the files it writes to the output volume, which are safe to
 leave in place across versions.
+
+## Gitea staging certification and production-owner migration
+
+Production ownership moves from GitHub to the pinned Gitea tuple only after staging
+certification -- proving PR verification, protected delivery, artifact round-trip, private-CA
+boundaries, the multi-arch image flow, the forge package/Release channel, both reusable
+workflows, aliases-last behavior, and failed-jobs-only recovery, with no required negative case
+unsupported (CI-AR35). The requirements registry, the evidence-export and report-projection gate
+(ADR-0017), the action-closure drift check (ADR-0016), and the fault-injection/cleanup contract
+(ADR-0020) live in `tests/ci/test_certification.py`; the narrative runbook, case-by-case status,
+and the production-owner cutover's named approver, stop conditions, rollback commands, and
+retained-evidence-link requirements are in `docs/ci/gitea-certification.md`. As of this writing no
+live Gitea instance exists to certify against, so migration has not occurred and this repository's
+publication credentials remain GitHub's.
