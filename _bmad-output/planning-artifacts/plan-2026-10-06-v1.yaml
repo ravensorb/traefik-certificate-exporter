@@ -1,0 +1,34 @@
+generated: "2026-10-06T18:33:09Z"
+plan_version: 1
+readiness: green
+stories_elaborated: 4
+total_epics_in_scope: 1
+
+phases:
+  - phase: 1
+    parallel: false
+    epics: ["E011"]
+    dependencies: []
+    estimate:
+      estimates_as_of: "2026-10-06T18:33:09Z"
+      wall_clock_hours_low: 8.15
+      wall_clock_hours_high: 10.29
+      man_hours_low: 35.37
+      man_hours_high: 39.14
+      hitl_hours_low: 0.90
+      hitl_hours_high: 1.05
+      tokens_k_min: 796
+      tokens_k_max: 905
+      cost_low: 3.29
+      cost_high: 3.73
+      confidence: medium
+
+readiness_detail:
+  - key: "E011"
+    status: green
+    gaps: []
+
+arch_gate_summary:
+  ran: false
+  reviewers: []
+  findings: []

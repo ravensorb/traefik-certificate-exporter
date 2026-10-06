@@ -267,3 +267,74 @@ resolved:
   resolution: deferred
   resolved_at: '2026-10-06T17:32:25Z'
   note: "Partially addressed during planning: the epic was re-estimated mid-session to 90.18-99.80 man-hours (from 28.81-29.90), explicitly correcting the original 'no first-forge allowance' complaint before execution. Post-rescope actuals are now recorded at every level (story/sprint/epic: 13 actual man-hours total, reflecting the dropped live-infra scope). The residual complaint -- epic-level closure_ratios.man_hours (0.7656) still differing materially from sprint-level (3.3513) -- persists, but tracing pm-status.py's rollup_parent_estimate/active_closure_ratio shows this is calibrated per-level against that level's own historical closure population by design, not a hand-editable data-entry error. Whether independent per-level calibration populations should diverge this much is a pm-status.py methodology question, out of scope for a project-level backlog item; deferred to the planning-tool's own maintainers rather than resolved by editing this epic's state files."
+- key: BL-E001-001
+  epic: '001'
+  sprint: S01
+  title: 'Package import crashed under pytest: cli_args.py parsed real sys.argv at import time (parse_args -> parse_known_args fix applied in E001-S01-001)'
+  source: dev-loop (E001-S01-001)
+  severity: Medium
+  status: resolved
+  description: "Discovered while writing the redaction test: importing traefik_certificate_exporter (via __init__.py -> app.py -> cli_args.py) called argparse.parse_args() against the host process's real argv, so any test runner or embedding context crashed on unrecognized flags. Fixed by switching to parse_known_args(); recording here since this affects all of Epic 1's test-writing work, not just this story."
+  resolution: fixed
+  resolved_at: '2026-10-06T18:13:30Z'
+  ref: E001-S01-001
+  note: 'Reconciliation 2026-10-06: verified parse_known_args() is in place in cli_args.py (line 154); register entry was stale.'
+- key: BL-E001-002
+  epic: '001'
+  sprint: S01
+  title: AcmeCertificateExporter.__exportCertificate never returned its names list (fixed in E001-S01-003)
+  source: dev-loop (E001-S01-003)
+  severity: Medium
+  status: resolved
+  description: 'Discovered writing ACME parsing regression tests: the private per-certificate export method built a names list but had no return statement, so exportCertificatesForFile always got None back for every wrapped/unwrapped ACME shape. Verified against git HEAD (unchanged since tag v0.1.2.0) -- this is a real, long-standing gap, not an artifact of this session''s edits. Scope is narrower than first reported: certificate export to disk (writing .pem/.pfx/.key files) happens as a side effect inside __exportCertificate BEFORE this return statement, so it was never affected -- confirmed working correctly, consistent with the maintainer''s report. The only consumer of the missing return value is DockerManager.restartLabeledContainers via exportCertificates()''s aggregated domain list -- so this bug is only observable when settings.restartContainers/--restart-container is enabled. Maintainer confirmed restart-on-label is used sometimes (not often) -- so this was a real, if infrequent, silent failure of that feature, not a purely theoretical gap. Fixed by adding the missing return; severity kept at Medium to reflect the actual (optional-feature-only, occasionally-exercised) blast radius.'
+  resolution: fixed
+  resolved_at: '2026-10-06T18:13:31Z'
+  ref: E001-S01-003
+  note: 'Reconciliation 2026-10-06: verified __exportCertificate returns names (certificate_exporter.py line 188/246); register entry was stale.'
+- key: BL-E001-003
+  epic: '001'
+  sprint: S01
+  title: Multi-resolver ACME export used list.append instead of list.extend, nesting domain lists (fixed in E001-S01-003)
+  source: dev-loop (E001-S01-003)
+  severity: Medium
+  status: resolved
+  description: "exportCertificatesForFile appended each resolver's whole domain list into the outer names list instead of extending it, producing a nested list. Same scope note as BL-E001-002: certificate export to disk is unaffected; this only corrupts the domain list DockerManager.restartLabeledContainers receives, so it is only observable with the optional restart-on-label feature enabled and more than one Traefik certificate resolver configured. Maintainer confirmed restart-on-label is used sometimes -- so this combined with BL-E001-002 to silently drop restarts on those occasions. Fixed alongside the missing-return bug."
+  resolution: fixed
+  resolved_at: '2026-10-06T18:13:31Z'
+  ref: E001-S01-003
+  note: 'Reconciliation 2026-10-06: verified multi-resolver path uses names.extend (certificate_exporter.py line 237); register entry was stale.'
+- key: BL-E002-002
+  epic: '002'
+  sprint: S01
+  title: "Agent process note: pre-commit run --all-files caused 192-file unintended reformat; recovered by reverting out-of-scope files and reconstructing .pre-commit-config.yaml's ruff/gitleaks/actionlint hooks from pre-commit's local cache + session memory"
+  source: dev-loop (E002-S01-004, process incident)
+  severity: Low
+  status: resolved
+  description: "While verifying Epic 2 changes, running 'pre-commit run --all-files' applied ruff-check --fix and ruff-format repo-wide, touching ~200 unrelated tracked files including installed BMad skill scripts under .agents/. Reverted via git checkout to the 12 files actually in scope for Epics 1-2. This also reverted uncommitted-but-legitimate earlier work in .pre-commit-config.yaml (the ruff/gitleaks/actionlint hook wiring), which had to be reconstructed from pre-commit's local cache directory (~/.cache/pre-commit/repo*, each has a git remote identifying which tool) plus prior session context. Also discovered poetry lock --check no longer exists in Poetry 2.0+; replaced with poetry check --lock. Lesson recorded in agent memory: never run pre-commit --all-files with mutating hooks (ruff-check/ruff-format) on an existing repo; scope with --files to only the touched paths."
+  resolution: deferred
+  resolved_at: '2026-10-06T18:17:52Z'
+  note: Process/agent-memory incident note (pre-commit --all-files reformat), not a code defect. Lesson already folded into the pre-commit guidance; no story needed.
+- key: BL-E007-003
+  epic: '007'
+  sprint: ''
+  title: Workflow-native run correlation evidence is not yet implemented
+  source: post-restore audit (E007)
+  severity: Medium
+  status: resolved
+  description: 'build-manifest.json intentionally stays deterministic and records source/version, distribution hashes, image inputs, and the image-plan fingerprint; it must not gain run identity or publication outcomes. E008-S01-001/002/003 and E009-S01-002 close this operational gap by emitting the workflow run ID/URL, manifest and artifact hashes, published image digest and inspected platforms, Release URL, and alias outcomes through action/workflow outputs and the workflow run summary. Close only after GitHub and the pinned Gitea tuple both retain and expose that correlation evidence; no publication-plan or release-receipt schema is required.'
+  resolution: fixed
+  resolved_at: '2026-10-06T18:41:53Z'
+  ref: df6e5ed
+  note: "Reconciliation 2026-10-06 (E011-S01-001 review): GitHub-side run-correlation evidence is already fully implemented -- docs/operational.md 'What the run summary reports (CI-AR41)' (added df6e5ed, 2026-09-02) documents run link, source SHA, build-manifest SHA-256, published image digest/platforms, Release URL, and alias outcomes. The remaining 'pinned Gitea tuple' half was explicitly rescoped out of Epic 9 (live-Gitea certification dropped); this repo delegates cross-forge behavior to LiquidLogicLabs/git-action-*. Register entry was stale."
+- key: BL-E008-008
+  epic: '008'
+  sprint: '01'
+  title: The pypi environment needs required reviewers and a matching PyPI trusted-publisher claim
+  source: sprint closure — redteam M3
+  severity: Low
+  amended: 'Split at E008 closure on the maintainer''s decision. (1) REQUIRED REVIEWERS: declined -- sole-developer project, so a human approval gate is a gate on yourself. Not revisited unless a second committer joins. (2) BINDING THE PYPI TRUSTED PUBLISHER TO THE `pypi` ENVIRONMENT CLAIM: still open, and it is not a process gate -- it costs nothing operationally, adds no approval and no waiting. It narrows which workflow can mint a PyPI-scoped OIDC token from `any workflow in this repository that can obtain id-token: write` to one. Latent today because PUBLISH_PACKAGE_PYPI is unset, so PyPI publication is disabled: the trigger is the first time PyPI is enabled, and it should be done in the same sitting rather than after. Severity lowered to Low on that basis. The `environment: pypi` declaration is already in release.yaml and is inert until the PyPI side is configured.'
+  status: resolved
+  description: "release.yaml's publish-package-pypi now declares environment: pypi. That declaration is safe to land alone -- PyPI checks only the constraints its trusted publisher declares, so an unconstrained publisher keeps working, and an environment with no protection rules runs exactly as before -- but it protects nothing yet. Two settings outside the tree finish it: (1) required reviewers on the pypi environment, which is the only place a human can be put in front of an upload PyPI never allows to be withdrawn or replaced; (2) the PyPI trusted publisher constrained to that environment claim, without which ANY workflow in this repository that can obtain id-token: write can mint a PyPI-scoped token, not only the reviewed one. (2) costs nothing operationally and closes the larger half on its own; (1) means every stable release waits for a human, which is the trade to decide. test_the_irrevocable_destination_names_an_environment asserts the declaration and states plainly that it cannot see either setting. Recorded in docs/operational.md."
+  resolution: deferred
+  resolved_at: '2026-10-06T18:41:53Z'
+  note: "Reconciliation 2026-10-06 (E011-S01-001 review): already fully decided and documented at E008 closure (commit e064f16, 2026-09-03). Required reviewers: declined (sole-developer project). Trusted-publisher environment claim: accepted but latent, trigger recorded as 'first time PyPI publishing is enabled' -- an external GitHub/PyPI settings change, not a repo code/doc change. docs/operational.md lines 220-246 already document both decisions in full. Nothing left for this repo to build; correctly deferred to that future trigger, not promoted into a story."

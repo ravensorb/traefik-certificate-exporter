@@ -1,4 +1,4 @@
-next: 23
+next: 24
 reserved:
 - number: 1
   slug: action-pin-policy
@@ -40,3 +40,7 @@ reserved:
   slug: arch-gate
   epic: E009
   reserved_at: '2026-10-06T12:52:44Z'
+- number: 23
+  slug: export-pipeline-correlation-and-safe-shutdown
+  epic: E011
+  reserved_at: '2026-10-06T18:29:36Z'

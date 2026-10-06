@@ -286,3 +286,25 @@
 {"cause": "triage", "epic": "009", "event": "issue_resolved", "key": "BL-E009-006", "ref": "E009-S01-002", "resolution": "fixed", "session": null, "ts": "2026-10-06T17:31:57Z"}
 {"cause": "triage", "epic": "009", "event": "issue_resolved", "key": "BL-E009-001", "ref": null, "resolution": "deferred", "session": null, "ts": "2026-10-06T17:32:25Z"}
 {"cause": "triage", "epic": "009", "event": "issue_resolved", "key": "BL-E009-004", "ref": null, "resolution": "deferred", "session": null, "ts": "2026-10-06T17:32:26Z"}
+{"epic": "E011", "event": "import", "from": null, "key": "E011", "node": "epic", "session": "l3io-pm-20261006T181128Z-f1fb37", "sprint": null, "to": "backlog", "ts": "2026-10-06T18:12:06Z"}
+{"epic": "E011", "event": "import", "from": null, "key": "S01", "node": "sprint", "session": "l3io-pm-20261006T181128Z-f1fb37", "sprint": "S01", "to": "backlog", "ts": "2026-10-06T18:12:06Z"}
+{"cause": "triage", "epic": "001", "event": "issue_resolved", "key": "BL-E001-001", "ref": "E001-S01-001", "resolution": "fixed", "session": null, "ts": "2026-10-06T18:13:30Z"}
+{"cause": "triage", "epic": "001", "event": "issue_resolved", "key": "BL-E001-002", "ref": "E001-S01-003", "resolution": "fixed", "session": null, "ts": "2026-10-06T18:13:31Z"}
+{"cause": "triage", "epic": "001", "event": "issue_resolved", "key": "BL-E001-003", "ref": "E001-S01-003", "resolution": "fixed", "session": null, "ts": "2026-10-06T18:13:31Z"}
+{"cause": "triage", "epic": "002", "event": "issue_resolved", "key": "BL-E002-002", "ref": null, "resolution": "deferred", "session": null, "ts": "2026-10-06T18:17:52Z"}
+{"cause": "plan-intake", "epic": "007", "event": "issue_scheduled", "key": "BL-E007-002", "session": "l3io-pm-20261006T181128Z-f1fb37", "story": "E011-S01-001", "ts": "2026-10-06T18:17:59Z"}
+{"cause": "plan-intake", "epic": "007", "event": "issue_scheduled", "key": "BL-E007-003", "session": "l3io-pm-20261006T181128Z-f1fb37", "story": "E011-S01-001", "ts": "2026-10-06T18:17:59Z"}
+{"cause": "plan-intake", "epic": "007", "event": "issue_scheduled", "key": "BL-E007-004", "session": "l3io-pm-20261006T181128Z-f1fb37", "story": "E011-S01-001", "ts": "2026-10-06T18:17:59Z"}
+{"cause": "plan-intake", "epic": "008", "event": "issue_scheduled", "key": "BL-E008-008", "session": "l3io-pm-20261006T181128Z-f1fb37", "story": "E011-S01-001", "ts": "2026-10-06T18:17:59Z"}
+{"cause": "plan-intake", "epic": "000", "event": "issue_scheduled", "key": "BL-E000-001", "session": "l3io-pm-20261006T181128Z-f1fb37", "story": "E011-S01-002", "ts": "2026-10-06T18:18:07Z"}
+{"cause": "plan-intake", "epic": "008", "event": "issue_scheduled", "key": "BL-E008-009", "session": "l3io-pm-20261006T181128Z-f1fb37", "story": "E011-S01-002", "ts": "2026-10-06T18:18:07Z"}
+{"cause": "plan-intake", "epic": "001", "event": "issue_scheduled", "key": "BL-E001-006", "session": "l3io-pm-20261006T181128Z-f1fb37", "story": "E011-S01-003", "ts": "2026-10-06T18:18:08Z"}
+{"cause": "plan-intake", "epic": "010", "event": "issue_scheduled", "key": "BL-E010-003", "session": "l3io-pm-20261006T181128Z-f1fb37", "story": "E011-S01-003", "ts": "2026-10-06T18:18:08Z"}
+{"cause": "plan-intake", "epic": "010", "event": "issue_scheduled", "key": "BL-E010-001", "session": "l3io-pm-20261006T181128Z-f1fb37", "story": "E011-S01-004", "ts": "2026-10-06T18:18:10Z"}
+{"cause": "plan-intake", "epic": "010", "event": "issue_scheduled", "key": "BL-E010-002", "session": "l3io-pm-20261006T181128Z-f1fb37", "story": "E011-S01-004", "ts": "2026-10-06T18:18:10Z"}
+{"agent": "bmad-create-story", "epic": "E011", "event": "dispatch_open", "session": "l3io-pm-20261006T181128Z-f1fb37", "ts": "2026-10-06T18:24:55Z"}
+{"agent": "bmad-create-story", "epic": "E011", "event": "dispatch_close", "session": "l3io-pm-20261006T181128Z-f1fb37", "ts": "2026-10-06T18:31:43Z"}
+{"cause": "triage", "epic": "007", "event": "issue_unscheduled", "key": "BL-E007-003", "session": "l3io-pm-20261006T181128Z-f1fb37", "story": "E011-S01-001", "ts": "2026-10-06T18:41:43Z"}
+{"cause": "triage", "epic": "008", "event": "issue_unscheduled", "key": "BL-E008-008", "session": "l3io-pm-20261006T181128Z-f1fb37", "story": "E011-S01-001", "ts": "2026-10-06T18:41:44Z"}
+{"cause": "triage", "epic": "007", "event": "issue_resolved", "key": "BL-E007-003", "ref": "df6e5ed", "resolution": "fixed", "session": null, "ts": "2026-10-06T18:41:53Z"}
+{"cause": "triage", "epic": "008", "event": "issue_resolved", "key": "BL-E008-008", "ref": null, "resolution": "deferred", "session": null, "ts": "2026-10-06T18:41:53Z"}
