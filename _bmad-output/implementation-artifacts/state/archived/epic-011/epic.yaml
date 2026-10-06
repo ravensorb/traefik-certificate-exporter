@@ -1,0 +1,47 @@
+key: 'E011'
+title: Epic 011 — Residual Technical-Debt Backlog Triage
+goal: ''
+status: done
+updated_at: '2026-10-06T21:51:01Z'
+estimate:
+  man_hours_low: 35.37
+  man_hours_high: 39.14
+  hitl_hours_low: 0.9
+  hitl_hours_high: 1.05
+  elapsed_hours_low: 8.15
+  elapsed_hours_high: 10.29
+  tokens_k_min: 796
+  tokens_k_max: 905
+  closure_ratios:
+    man_hours: 0.7656
+    hitl_hours: 1.1973
+    elapsed_hours: 2.0492
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0.0
+    hitl_hours: 0.0739
+    elapsed_hours: 0.046
+    tokens_k: 0
+  cost_low: 3.29
+  cost_high: 3.73
+  model: claude-opus-5
+  confidence: medium
+actual:
+  elapsed_hours: 3.55
+  man_hours: 42
+  hitl_hours: 0.35
+  tokens_k: N/A
+  cost: N/A
+calibration_sampled_at: '2026-10-06T21:49:17Z'
+orchestration:
+  elapsed_hours: 0.35
+  man_hours: 0
+  hitl_hours: 0.05
+  tokens_k: N/A
+  cost: N/A
+orchestration_sampled_at: '2026-10-06T21:49:21Z'
+closed:
+  date: '2026-10-06'
+retrospective:
+  summary: 4 stories closed into S01 with 2 fix iterations; sprint closure found 56 findings (28 fixed, 30 deferred) across 4 reviewers; epic closure then found 2 Major drift findings (undocumented SIGTERM routing + TOCTOU cancel() fix; undocumented RCE-closing logging.yaml auto-discovery removal) and 1 High + 2 Medium security findings (misleading Docker-socket privilege docs; unenforced /config writability invariant; unsanitized log interpolation), all resolved before close. 2 Low issues promoted to Medium given full-epic context.
+  learnings: 1) Hardening a trust boundary's write side is incomplete without hardening what reaches it unvalidated. 2) Shutdown/signal mechanisms built in a fix pass (not the original diff) are the ones most likely to go undocumented in ADRs. 3) Security findings' looser 'fix in place or ADR-justify' process (vs drift's disposition-tracked one) still benefits from the same independent-verification discipline before acceptance.
