@@ -96,6 +96,23 @@ export, it cannot leave a partial file. `cancel()` also latches a shutdown flag,
 a late watchdog event nor the drain's own re-arm path can start a new pass after shutdown
 has begun.
 
+**4b. Amendment (sprint-01 closure fix pass, epic-level arch-drift AD-1): SIGTERM is routed
+into the same shutdown path, and `cancel()`'s logging decision is made TOCTOU-safe.**
+Amendment 4a's `cancel()` is reachable only from `KeyboardInterrupt` (SIGINT); the shipped
+container stops on **SIGTERM** (`docker stop`, `kubectl delete`, s6), which bypassed the
+entire shutdown path until sprint-01 closure's redteam/arch-drift review caught it.
+`app.py::install_shutdown_signal_handlers` now installs a handler for `signal.SIGTERM` (and
+`signal.SIGINT`, superseding the bare `KeyboardInterrupt` reliance) that re-raises
+`KeyboardInterrupt` from signal-handler context, so both signals drive the one path Decision
+4/4a already describes — no second shutdown mechanism was added. Separately, the sprint's
+first fix pass found `cancel()`'s "was a drain actually running?" check (a plain `armed`
+boolean read outside any lock) was a TOCTOU race against the drain thread's own state
+transitions; it now reads `timer`/`draining`/a monotonically-incrementing `drainsRun`
+counter under the handler's lock, and decides its log message from the **observed
+`drainsRun` delta** taken before and after the bounded wait, rather than from a
+racy point-in-time flag. The 5s bound from Amendment 4a is now a named module constant,
+`SHUTDOWN_JOIN_TIMEOUT_SECONDS`, same value, same semantics.
+
 ## Consequences
 
 - Positive: an operator can grep one `correlation_id` across a watch event, its drain,

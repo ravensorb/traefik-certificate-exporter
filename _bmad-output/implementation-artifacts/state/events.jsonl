@@ -428,3 +428,17 @@
 {"epic": "E011", "event": "actual", "from": null, "key": "S01", "node": "sprint", "session": null, "sprint": "S01", "to": null, "ts": "2026-10-06T21:22:07Z"}
 {"epic": "E011", "event": "actual", "from": null, "key": "S01", "node": "sprint", "session": null, "sprint": "S01", "to": null, "ts": "2026-10-06T21:22:11Z"}
 {"epic": "E011", "event": "status", "from": "backlog", "key": "S01", "node": "sprint", "session": null, "sprint": "S01", "to": "done", "ts": "2026-10-06T21:23:17Z"}
+{"agent": "l3io-pm-closure", "epic": "E011", "event": "dispatch_close", "session": "l3io-pm-20261006T190448Z-10022b", "sprint": "S01", "ts": "2026-10-06T21:24:08Z"}
+{"agent": "bmad-retrospective", "epic": "E011", "event": "dispatch_open", "session": "l3io-pm-20261006T190448Z-10022b", "ts": "2026-10-06T21:24:53Z"}
+{"agent": "bmad-retrospective", "epic": "E011", "event": "dispatch_close", "session": "l3io-pm-20261006T190448Z-10022b", "ts": "2026-10-06T21:25:18Z"}
+{"agent": "l3io-arch-review", "epic": "E011", "event": "dispatch_open", "session": "l3io-pm-20261006T190448Z-10022b", "ts": "2026-10-06T21:25:31Z"}
+{"agent": "l3io-arch-review", "epic": "E011", "event": "dispatch_close", "session": "l3io-pm-20261006T190448Z-10022b", "ts": "2026-10-06T21:31:01Z"}
+{"agent": "l3io-spec-sync", "epic": "E011", "event": "dispatch_open", "session": "l3io-pm-20261006T190448Z-10022b", "ts": "2026-10-06T21:31:15Z"}
+{"cause": "cli", "epic": "011", "event": "issue_opened", "key": "BL-E011-041", "session": null, "severity": "Low", "ts": "2026-10-06T21:32:50Z"}
+{"agent": "l3io-spec-sync", "epic": "E011", "event": "dispatch_close", "session": "l3io-pm-20261006T190448Z-10022b", "ts": "2026-10-06T21:33:01Z"}
+{"agent": "l3io-sec-redteam", "epic": "E011", "event": "dispatch_open", "session": "l3io-pm-20261006T190448Z-10022b", "ts": "2026-10-06T21:33:08Z"}
+{"agent": "l3io-sec-redteam", "epic": "E011", "event": "dispatch_close", "session": "l3io-pm-20261006T190448Z-10022b", "ts": "2026-10-06T21:47:03Z"}
+{"cause": "cli", "epic": "011", "event": "issue_updated", "from": "Low", "key": "BL-E011-019", "note": "Promoted at epic closure: full epic context now includes BL-E011-012 (postexportcommand is RCE-equivalent, root) and BL-E011-016 (docker restarts driven by attacker-influenced strings) \u2014 an RCE-equivalent hook that also inherits ambient credentials compounds those findings rather than standing alone.", "session": null, "to": "Medium", "ts": "2026-10-06T21:47:43Z"}
+{"cause": "cli", "epic": "011", "event": "issue_updated", "from": "Low", "key": "BL-E011-009", "note": "Promoted at epic closure: this epic's own TOCTOU hardening theme (ADR-0023 Amendment 4b, cancel()/SIGTERM fix) makes a symlink-swap gap in the same atomic-write code path a known-class security gap, not an isolated correctness nit.", "session": null, "to": "Medium", "ts": "2026-10-06T21:47:44Z"}
+{"epic": "E011", "event": "actual", "from": null, "key": "E011", "node": "epic", "session": null, "sprint": null, "to": null, "ts": "2026-10-06T21:49:17Z"}
+{"epic": "E011", "event": "actual", "from": null, "key": "E011", "node": "epic", "session": null, "sprint": null, "to": null, "ts": "2026-10-06T21:49:21Z"}

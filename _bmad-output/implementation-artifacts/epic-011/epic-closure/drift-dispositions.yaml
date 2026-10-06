@@ -1,0 +1,18 @@
+review: _bmad-output/implementation-artifacts/epic-011/epic-closure/arch-drift-review.md
+findings:
+  AD-1:
+    severity: MAJOR
+    title: "ADR-0023 Amendment 4a and ADR-0026's Decision describe `cancel()` as a simple `if self.timer is not None: self.timer.cancel()` no-op guard, reachable only from `KeyboardInterrupt`. The shipped mechanism is substantially different and was built during sprint-01 closure's fix passes (confirmed absent from `sprint-01.diff`, present only in `sprint-01-postfix.diff`) to close two closure findings: (1) `install_shutdown_signal_handlers` routes **SIGTERM** into the same path by raising `KeyboardInterrupt` from a signal handler — `docker stop`/`kubectl delete`/s6, not just Ctrl-C, now drive shutdown, a decision with real implications (re-raising from signal-handler context, interrupting `time.sleep`) that is not discussed in any ADR; (2) `cancel()` now reads `timer`/`draining`/`drainsRun` under a lock, decides its log message from an **observed `drainsRun` delta** taken before and after acting (not from the `armed` boolean alone), and bounds its wait with a module constant `SHUTDOWN_JOIN_TIMEOUT_SECONDS = 5` — none of `drainsRun`, the delta-based message logic, or the 5s bound appears in ADR-0023 or ADR-0026. A reader who (per this review's own scoping) treats the 5 ADRs as the governing record of this epic's shutdown/correlation design is given a materially stale and incomplete picture of the one subsystem the epic's own closure flagged as safety-critical."
+    disposition: resolved-in-code
+    spec:
+    adr: docs/adr/0023-export-pipeline-correlation-id-and-atomic-writes.md
+    commit:
+    issue:
+  AD-2:
+    severity: MAJOR
+    title: "`setup_logging` no longer auto-discovers `./logging.yaml` from the process's working directory (the container's operator-writable `/config` volume); only an explicitly-set env var or the packaged copy is honored. The in-code comment names the reason precisely: the old behavior let a single write into the mounted volume reach `logging.config.dictConfig`, which resolves arbitrary dotted names for `class:`/`()` keys — remote code execution. This is a genuine trust-boundary decision (closing an RCE path) made in the same function, and adjacent to the same env-var-selection mechanism, that ADR-0023 Decision 2 already amends — but it is recorded only in a code comment and in `docs/operational.md`'s operator-facing prose, not in any ADR. `docs/adr/0003`, the ADR that already owns \"logging stack,\" has no reference to it at all. Confirmed absent from `sprint-01.diff`; added only in the closure fix pass (`sprint-01-postfix.diff`)."
+    disposition: resolved-in-code
+    spec:
+    adr: docs/adr/0003-logging-stack-and-secret-redaction.md
+    commit:
+    issue:

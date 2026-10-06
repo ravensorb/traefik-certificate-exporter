@@ -175,7 +175,7 @@ services:
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_INCLUDE=                # comma separated list of domain names to only export (mutually exclusive with DOMAINS_EXCLUDE)
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_EXCLUDE=                # comma separated list of domain names to exclude from exporting (mutually exclusive with DOMAINS_INCLUDE)
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro  # Only needed if you are going to be restarting containers
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Only needed if restarting containers. WARNING: `ro` does NOT limit API calls over the socket -- any mount (ro or rw) grants host-root-equivalent control. Prefer a restart-only socket proxy (e.g. Tecnativa/docker-socket-proxy) in production.
       - ./data/config:/config:rw                      # Only needed if you are going to set a config file to load
       - ./data/letsencrypt:/data:ro                   # Location of your acme files
       - ./data/certs:/certs:rw                        # Location you want to export certificates to      
@@ -194,7 +194,7 @@ services:
   traefik-certificate-exporter:
     image: ravensorb/traefik-certificate-exporter:latest
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro  # Only needed if you are going to be restarting containers
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Only needed if restarting containers. WARNING: `ro` does NOT limit API calls over the socket -- any mount (ro or rw) grants host-root-equivalent control. Prefer a restart-only socket proxy (e.g. Tecnativa/docker-socket-proxy) in production.
       - ./data/config:/config:rw                      # Only needed if you are going to set a config file to load
       - ./data/letsencrypt:/data:ro                   # Location of your acme files
       - ./data/certs:/certs:rw                        # Location you want to export certificates to      

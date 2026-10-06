@@ -64,10 +64,17 @@ in `traefik-certificate-exporter.log`. Read the container's stderr (`docker logs
 2. Confirm the target container has label
    `com.github.ravensorb.traefik-certificate-exporter.domain-restart=<domain>` (comma-separated
    for multiple domains).
-3. Confirm `/var/run/docker.sock` is mounted read-write into the exporter container (it is
-   mounted read-only in the sample `docker-compose.yml` — read-only is sufficient for the
-   `docker` SDK's list/restart calls over the socket, but verify against your Docker daemon's
-   socket permission model if restarts silently fail).
+3. Confirm `/var/run/docker.sock` is mounted (the sample `docker-compose.yml` mounts it
+   `ro`). **The `ro` mount flag does not narrow what this container can do over the
+   socket** — it only blocks replacing/unlinking the socket file itself. Any client
+   connected to `docker.sock`, `ro` or `rw`, has the same full Docker Engine API available
+   to it as the host's Docker daemon user, which is host-root-equivalent (CIS Docker
+   Benchmark; Docker's own security docs). There is no code in this project that narrows
+   this to "list/restart" — `restartLabeledContainers` uses the general `docker-py`
+   client with no endpoint allowlist. If you need a narrower grant, put an
+   endpoint-restricted proxy (e.g. Tecnativa/docker-socket-proxy, allowlisting only
+   `GET /containers/json` and `POST /containers/{id}/restart`) between this container and
+   the real socket rather than mounting the socket directly.
 
 ## First-run config seeding (container)
 

@@ -276,6 +276,19 @@ def _is_safe_path_component(value: str | None) -> bool:
     return bool(value) and _PATH_COMPONENT_PATTERN.match(str(value)) is not None
 
 
+_LOG_CONTROL_CHARS_PATTERN = re.compile(r"[\r\n\x1b]")
+
+
+def _sanitize_for_log(value: str | None) -> str:
+    """Strip characters that let an untrusted, rejected domain/resolver name forge log
+    lines or terminal output: CR/LF (log-line injection) and ESC (ANSI/CSI terminal-escape
+    injection). Applied only to values interpolated into a log *message*, separately from
+    -- and in addition to -- `_is_safe_path_component`'s filesystem-path safety check,
+    which this does not replace.
+    """
+    return _LOG_CONTROL_CHARS_PATTERN.sub("", str(value)) if value is not None else ""
+
+
 def _is_contained_within(base: Path, candidate: Path) -> bool:
     """Is `candidate` `base` itself, or a descendant of it, once both are resolved?
 
@@ -319,8 +332,8 @@ class AcmeCertificateExporter:
             # The resolver name is joined into the output path exactly like the domain
             # name is, and comes from the same untrusted acme store.
             self.__logger.error(
-                f"Refusing to export: resolver name '{resolverName}' is not a valid "
-                "path component"
+                f"Refusing to export: resolver name '{_sanitize_for_log(resolverName)}' "
+                "is not a valid path component"
             )
             return names
 
@@ -371,8 +384,8 @@ class AcmeCertificateExporter:
                     # discards `outputPath` entirely and `../` walks out of it, so a
                     # crafted `domain.main` chooses where the private key lands.
                     self.__logger.error(
-                        f"Refusing to export domain '{name}': not a valid certificate "
-                        "name for a filesystem path"
+                        f"Refusing to export domain '{_sanitize_for_log(name)}': not a "
+                        "valid certificate name for a filesystem path"
                     )
                     continue
 

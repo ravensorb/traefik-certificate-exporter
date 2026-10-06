@@ -1,6 +1,6 @@
 next:
   '009': 22
-  '011': 41
+  '011': 42
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -224,7 +224,7 @@ backlog:
   source: code-review (E011-S01-004)
   source_phase: code-review
   source_ref: E011-S01-004
-  severity: Low
+  severity: Medium
   status: backlog
   description: os.replace() onto a symlinked target breaks the link, where the previous Path.open("w") wrote through it. See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-004.md section 5.
 - key: BL-E011-010
@@ -324,7 +324,7 @@ backlog:
   source: redteam (RT-016)
   source_phase: redteam
   source_ref: RT-016
-  severity: Low
+  severity: Medium
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
 - key: BL-E011-020
@@ -537,3 +537,13 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
+- key: BL-E011-041
+  epic: '011'
+  sprint: ''
+  title: "Spec change: AD-3's rule, which \"binds every logging call site,\" still states: \"No cross-process correlation ID — single-process tool, nothing to correlate across.\" This sprint adds a correlation id to every record *and* exports it across a process boundary into the post-export hook as `TRAEFIK_CERTIFICATE_EXPORTER_CORRELATION_ID`. The decision is properly recorded (ADR-0023), so this is not an unjustified deviation — but the binding spine section now asserts the opposite of the shipped behaviour, and the spine is what a future story reads first. (Distinct from deferred AG-6/BL-E011-001, which concerns the ADR-0003 reciprocal amendment, not the spine.)"
+  source: spec-sync (SD-01-5)
+  severity: Low
+  status: backlog
+  kind: spec-change
+  ref: df8411965e8cc8ee4d2eb1138a50f7e379bdbe57
+  description: 'Confirm or reject: /l3io-doctor triage. Spec: _bmad-output/planning-artifacts/architecture/architecture-traefik-certificate-exporter-2026-08-30/ARCHITECTURE-SPINE.md#ad-3--logging-structured-file-output-secrets-never-logged. From: _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md.'

@@ -30,5 +30,5 @@ findings:
     disposition: spec-updated
     spec: _bmad-output/planning-artifacts/architecture/architecture-traefik-certificate-exporter-2026-08-30/ARCHITECTURE-SPINE.md#ad-3--logging-structured-file-output-secrets-never-logged
     adr:
-    commit:
-    issue:
+    commit: df8411965e8cc8ee4d2eb1138a50f7e379bdbe57
+    issue: BL-E011-041

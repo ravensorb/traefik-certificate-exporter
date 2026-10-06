@@ -5,6 +5,7 @@ import functools
 import json
 import os
 import re
+import stat
 import sys
 from pathlib import Path
 
@@ -233,6 +234,31 @@ class Settings:
 #######################################################################
 
 
+def _warn_if_group_or_world_writable(logger, path: Path) -> None:
+    """Log a WARNING, naming the file and the mode found, if ``path`` is group- or
+    world-writable. This is a trusted-input boundary (the documented ``/config`` mount
+    invariant) that this project chose not to enforce in code -- this converts a silent
+    assumption into an observable one, mirroring the pattern `_inheritable_metadata`
+    already uses for export targets, without changing default behaviour.
+    """
+    try:
+        mode = os.stat(path).st_mode
+    except OSError:
+        return
+    if mode & (stat.S_IWGRP | stat.S_IWOTH):
+        logger.warning(
+            f"Trust-boundary check: '{path}' is group- or world-writable "
+            f"(mode {oct(stat.S_IMODE(mode))}). This file is read as a trusted "
+            "configuration source -- a writable mount here is equivalent to granting "
+            "write access to this process's configuration and, if "
+            "'postexportcommand' is set, to arbitrary command execution. Review the "
+            "mount's permissions."
+        )
+
+
+#######################################################################
+
+
 class SettingsManager(ObjectBase):
     _config: confuse.Configuration
     settings: Settings
@@ -264,14 +290,19 @@ class SettingsManager(ObjectBase):
         # CLI > env var > config file > packaged default.
         if os.path.exists(self.modulePath.joinpath(".env")):
             self.__logger.debug("Loading Configuration from Module Environment File")
+            _warn_if_group_or_world_writable(
+                self.__logger, self.modulePath.joinpath(".env")
+            )
             load_dotenv(self.modulePath.joinpath(".env"))
 
         if os.path.exists(Path(os.getcwd(), ".env")):
             self.__logger.debug("Loading Configuration from Local Environment File")
+            _warn_if_group_or_world_writable(self.__logger, Path(os.getcwd(), ".env"))
             load_dotenv(Path(os.getcwd(), ".env"))
 
         if os.path.exists(fileName):
             self.__logger.debug(f"Loading Configuration from File: '{fileName}'")
+            _warn_if_group_or_world_writable(self.__logger, Path(fileName))
             self._config.set_file(fileName)
 
         self._config.set_env(prefix="TRAEFIK_CERTIFICATE_EXPORTER_", sep="_")

@@ -105,10 +105,53 @@ def test_command_line_args_are_redacted_before_they_reach_the_log(caplog, tmp_pa
 
 
 # ---------------------------------------------------------------------------
-# Secret redaction (E010-S01-001). The guard derives its scope from
-# SECRET_CONFIG_KEYS rather than naming fields, so a declared setting is covered
-# without editing anything here -- which is the property the scope plant below attacks.
+# /config trust-boundary invariant has no runtime enforcement (EC-002, epic-011 closure
+# red-team). `loadFromFile` documents the mount as trusted but never checked; these prove
+# the WARNING fires on an actually-writable file and stays silent on a safe one.
 # ---------------------------------------------------------------------------
+
+
+def test_loadfromfile_warns_when_the_config_file_is_world_writable(tmp_path, caplog):
+    import logging
+    import os
+    import stat
+
+    from traefik_certificate_exporter.libs.settings import SettingsManager
+
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("settings:\n  datapath: /data\n")
+    os.chmod(cfg, stat.S_IRUSR | stat.S_IWUSR | stat.S_IWOTH)
+
+    with caplog.at_level(logging.WARNING):
+        SettingsManager().loadFromFile(fileName=str(cfg))
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(
+        "group- or world-writable" in m and str(cfg) in m for m in warnings
+    ), f"expected a writable-mount warning naming {cfg}, got: {warnings}"
+
+
+def test_loadfromfile_does_not_warn_when_the_config_file_is_not_writable_by_others(
+    tmp_path, caplog
+):
+    import logging
+    import os
+    import stat
+
+    from traefik_certificate_exporter.libs.settings import SettingsManager
+
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("settings:\n  datapath: /data\n")
+    os.chmod(cfg, stat.S_IRUSR | stat.S_IWUSR)
+
+    with caplog.at_level(logging.WARNING):
+        SettingsManager().loadFromFile(fileName=str(cfg))
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert not any("group- or world-writable" in m for m in warnings)
+
+
+
 
 
 def _capture_all_records(caplog, tmp_path, config_text, cli_overrides):

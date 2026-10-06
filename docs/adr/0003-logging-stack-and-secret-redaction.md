@@ -40,3 +40,18 @@ metrics/health surface (PRD backlog item #15) turns this into a multi-component 
   nothing to correlate across yet.
 - Follow-ups: if a future change adds a network-facing component (health/metrics endpoint),
   revisit correlation-ID propagation at that time.
+
+## Amended at 2026-10-06 (sprint-01 closure fix pass, epic-level arch-drift AD-2)
+
+**Removed `./logging.yaml` CWD auto-discovery from `setup_logging`.** An earlier
+implementation preferred a `./logging.yaml` found via the process's working directory over
+the packaged copy, so the operator-writable `/config` volume this tool mounts in its
+container image could supply a config file that `logging.config.dictConfig` would load.
+`dictConfig` resolves arbitrary dotted import paths for `class:`/`()` keys — a single write
+into that mounted volume was therefore a remote-code-execution path, not merely a
+misconfiguration risk. Sprint-01 closure's red-team review caught this; the fix (now in
+`src/traefik_certificate_exporter/libs/logging_utils.py::setup_logging`) honors only the
+packaged config or an explicitly-set env var, never an implicit CWD lookup. This is
+ADR-0023's governing logging/correlation decision (Decision 2, JSON console formatter)
+touching the same function, which is why the amendment lives here rather than as a new,
+disconnected decision point.

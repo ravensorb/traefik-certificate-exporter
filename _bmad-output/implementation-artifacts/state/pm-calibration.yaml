@@ -157,6 +157,7 @@ closure:
       - 0.5161
       - 0.0401
       - 7.8
+      - 0.3919
     hitl_hours:
       samples:
       - 0.5128
@@ -165,6 +166,7 @@ closure:
       - 0.3571
       - 0.3226
       - 3.481
+      - 0.3769
     man_hours:
       samples:
       - 0.216
@@ -172,6 +174,7 @@ closure:
       - 0.432
       - 0.1692
       - 1.9628
+      - 0.435
 fix:
   simple:
     clean:
@@ -213,8 +216,10 @@ orchestration:
       - 0.0769
       - 0.0476
       - 0.025
+      - 0.1129
     man_hours:
       samples:
+      - 0.0
       - 0.0
       - 0.0
       - 0.0
@@ -223,5 +228,6 @@ orchestration:
       - 0.1429
       - 0.1111
       - 0.0
+      - 0.1667
 metrics_migrated_at: '2026-08-30T20:34:42Z'
 token_basis_migrated_at: '2026-08-30T20:34:42Z'

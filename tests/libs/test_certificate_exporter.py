@@ -426,6 +426,45 @@ def test_a_crafted_domain_name_cannot_escape_the_output_path(tmp_path, caplog, d
     assert any("Refusing to export" in r.getMessage() for r in caplog.records)
 
 
+def test_a_rejected_domains_control_characters_do_not_reach_the_log_sink(
+    tmp_path, caplog
+):
+    """EC-003: a rejected name is still interpolated into the refusal log message --
+    CR/LF (log-line injection) and ESC/CSI (terminal-escape injection) must not survive
+    into the rendered log record, even though the name itself was correctly refused as a
+    path component and no file was written.
+    """
+    domain = "evil\x1b[31mFAKE ERROR\x1b[0m\ninjected-line"
+    fixture_path = _write_fixture(tmp_path / "data", acme_v1_fixture(domain))
+    outputPath = tmp_path / "certs"
+    outputPath.mkdir()
+    settings = _make_settings(dryRun=False, outputPath=str(outputPath))
+    exporter = AcmeCertificateExporter(settings=settings)
+
+    with caplog.at_level(logging.ERROR):
+        names = exporter.exportCertificatesForFile(fixture_path)
+
+    assert names == []
+    refusal_records = [r for r in caplog.records if "Refusing to export" in r.getMessage()]
+    assert refusal_records, "expected a refusal log record"
+    for record in refusal_records:
+        message = record.getMessage()
+        assert "\x1b" not in message, "ESC/CSI sequence reached the log sink"
+        assert "\n" not in message, "embedded newline reached the log sink (log forging)"
+        assert "\r" not in message
+
+
+def test_sanitize_for_log_strips_control_characters_and_passes_through_the_rest():
+    assert (
+        certificate_exporter._sanitize_for_log("evil\x1b[31mFAKE\x1b[0m\ninjected\r\n")
+        == "evil[31mFAKE[0minjected"
+    )
+    assert certificate_exporter._sanitize_for_log(None) == ""
+    assert certificate_exporter._sanitize_for_log("plain.example.test") == (
+        "plain.example.test"
+    )
+
+
 def test_a_rejected_domain_does_not_stop_the_rest_of_the_sweep(tmp_path, caplog):
     """The per-domain `except` already establishes the shape: skip the one, keep going."""
     data = acme_v1_fixture("good.example.test")
