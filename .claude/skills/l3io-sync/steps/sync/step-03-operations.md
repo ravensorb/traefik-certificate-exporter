@@ -37,7 +37,17 @@ state, checking auth) is performed by **you**, the agent, using GitHub MCP tools
    ```
    Parse its three buckets: `unmapped_local`, `changed_local`, `missing_local`.
 
-2. For each entry in `unmapped_local` (never pushed before):
+2. **Reconcile re-keys before creating anything.** If `missing_local` is non-empty, run the
+   "Re-keyed, not deleted" procedure in step-04 **now**, not when you reach step-04. A story
+   that `/l3io-plan reorg` moved appears in `unmapped_local` *and* `missing_local` at once;
+   creating its issue first produces a duplicate beside an orphan, and no later step can
+   merge the two. Re-pointing first is the only ordering that prevents it.
+
+   Then re-run the drift report. A re-pointed mapping drops the new key out of
+   `unmapped_local` and the old key out of `missing_local` on its own, so the buckets you
+   act on below are the reconciled ones. Carry the re-points into the report (step 5).
+
+3. For each entry in `unmapped_local` (never pushed before):
    - **You** create a GitHub Issue for it — GitHub MCP tools if available, else:
      ```bash
      gh issue create --repo {platform_owner}/{platform_repo} --title "..." --body "..."
@@ -58,7 +68,7 @@ state, checking auth) is performed by **you**, the agent, using GitHub MCP tools
      ```
      `{current_hash}` is the `current_hash` field the drift report gave this entry.
 
-3. For each entry in `changed_local` (already mapped, local content hash moved):
+4. For each entry in `changed_local` (already mapped, local content hash moved):
    - **You** update the existing issue (`remote_id`/`remote_url` are on the drift entry) —
      GitHub MCP tools, else `gh issue edit {remote_id} --repo {platform_owner}/{platform_repo} ...`.
    - Then:
@@ -66,12 +76,12 @@ state, checking auth) is performed by **you**, the agent, using GitHub MCP tools
      uv run {skill-root}/scripts/sync-state.py {project-root} update-hash {bmad_key} {current_hash}
      ```
 
-4. For each entry in `missing_local` (mapped, but the local file is gone): **do not** touch
+5. For each entry in `missing_local` (mapped, but the local file is gone): **do not** touch
    the mapping or the remote issue. Report each one by `bmad_key` and `remote_url` so the
    user can decide — the mapping is not silently dropped just because push mode is what
    noticed it.
 
-5. Report: issues created (`unmapped_local` count), issues updated (`changed_local` count),
+6. Report: issues created (`unmapped_local` count), issues updated (`changed_local` count),
    missing mappings flagged (`missing_local` count, listed).
 
 ## Mode: pull

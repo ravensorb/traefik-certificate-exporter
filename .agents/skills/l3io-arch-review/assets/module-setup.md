@@ -120,7 +120,44 @@ a fresh registration or an update, and any directories created. Then display
 `post-install-notes` from `module.yaml` if present (showing only notes matching the user's
 selected values, when conditional), followed by `module_greeting`.
 
-## 6. Return to the skill
+## 6. Write the agent instruction block
+
+Bind `{pm_status}` = `{project-root}/_bmad/scripts/pm-status.py` and `{runtime}` = exactly one
+of `claude`, `codex`, `copilot` or `other` (`pm-status.py` rejects anything else with exit 2).
+Choose it by the detection procedure in `l3io-execute/steps/shared/step-00-activate.md` — the
+criterion is a capability, not a brand check. If `{pm_status}` is not installed
+yet, skip this step and say so — setup never fails on it.
+
+Bind `{file}` from `{runtime}`, relative to `{project-root}` (the same mapping `pm-status.py`
+uses): `claude` → `CLAUDE.md`, `copilot` → `.github/copilot-instructions.md`,
+`codex` or `other` → `AGENTS.md`. That file belongs to the user. Check it before writing:
+
+```bash
+uv run {pm_status} sync-agent-instructions --runtime {runtime} \
+  --project-root {project-root} --check
+```
+
+- **Exit 0** — the block is already there. Go to the `--apply` below, no prompt.
+- **Exit 1, and `{file}` does not exist** — `--apply` will create it. No confirmation needed.
+- **Exit 1, and `{file}` exists with no markers** — ADR-0004: an existing human-authored
+  document is proposed to, never silently appended to. Show the user the full body from
+  `{skill-root}/assets/agent-instructions.md` and the path `{file}`, ask
+  `Add this block to {file}? (y/N)`, and run the `--apply` below only on a yes. On a no,
+  do not run it: skip the rest of this step and say the block can be added later by
+  re-running setup or an upgrade.
+
+```bash
+uv run {pm_status} sync-agent-instructions --runtime {runtime} \
+  --project-root {project-root} \
+  --body-file {skill-root}/assets/agent-instructions.md --apply
+```
+
+Exit 2 means ambiguous markers or a file that is not valid UTF-8; report it and continue —
+the block is documentation and must not fail an otherwise successful setup. Once written,
+tell the user the file now holds a marker-delimited region that setup, upgrade and clean
+maintain, and that edits inside it will be overwritten.
+
+## 7. Return to the skill
 
 Setup is done. Resume the skill's normal activation — re-resolve config per
 `references/config-resolution.md` so the new values are bound, then continue with whatever

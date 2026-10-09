@@ -6,7 +6,7 @@ The default mode — runs when no recognized keyword is passed, or when `check`/
 
 Load config same as described above under On Activation.
 
-### Step HC2 — Scan (25 checks, read-only)
+### Step HC2 — Scan (26 checks, read-only)
 
 Run all checks. They change no project files, with one exception: a check that runs
 `pm-status.py` (Check 13) takes its locks when an issue file exists, and taking a lock may
@@ -416,6 +416,30 @@ uv run {pm_status} report --state-root {pm_state_root} --format json
   `uv run {pm_status} move-epic --state-root {pm_state_root} --epic {key} --to {status}`
 - No mismatches → ✓
 
+**Check 24 — Agent instruction block**
+Bind `{pm_status}` = `{project-root}/_bmad/scripts/pm-status.py` and `{runtime}` by the
+detection procedure in `l3io-execute/steps/shared/step-00-activate.md` §2, then run:
+
+```bash
+uv run {pm_status} sync-agent-instructions --runtime {runtime} \
+  --project-root {project-root} --check
+```
+
+This is read-only and takes no lock. Act on the exit code, and keep 1 and 2 apart — they are
+different findings with opposite remedies:
+
+- Exit 1 (block absent for this harness) → flag · Priority: **Low** · name the file that
+  would be written, and say that an agent without it does not know state is machine-written.
+  The fix is the block procedure in `assets/module-setup.md` §6, which asks before touching a
+  file that exists without markers — so it is **not** in Step HC6's sequence, and is run on
+  request after the report
+- Exit 2 (ambiguous markers, or the file is not valid UTF-8) → flag for **manual** repair ·
+  Priority: **Medium** · print the script's message. **Never offered as a fix and never
+  auto-run**: the file is the user's and its markers are already in a state the script refused
+  to guess about
+- Exit 0 → ✓
+- Any other exit → not a finding; mention the exit code and continue
+
 ### Step HC3 — Report findings
 
 
@@ -451,6 +475,7 @@ Epic placement (sharded)        ⚠ 1 misplaced epic             move-epic
 ADR links                       ⚠ 1 unlinked departure         — (report only)
 Unconfirmed spec changes        ⚠ 1 built upon                 triage
 Spec index freshness            ✓ Fresh                        —
+Agent instruction block         ⚠ absent in CLAUDE.md          — (on request)
 ================================================================
 ```
 

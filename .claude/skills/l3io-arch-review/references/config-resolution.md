@@ -75,6 +75,7 @@ Bind these at activation, applying the default when the key is absent:
 | `{model_closure}` | `modules.l3io-pm.model_closure` | `{model}` |
 | `{token_rates_json}` | `modules.l3io-pm.token_rates`, **JSON-encoded** | empty — the shipped rate table applies unchanged |
 | `{business_ac_required}` | `modules.l3io-pm.business_ac_required` | `"CODE,MIXED"` |
+| `{reorg_auto_apply}` | `modules.l3io-pm.reorg_auto_apply` | `"never"` |
 
 `{business_ac_required}` names the work types whose stories must carry a `## Business acceptance
 criteria` section for the story-prep gate to pass (`CODE`, `DOCS`, `CONFIG`, `MIXED`, comma-separated,
@@ -83,6 +84,17 @@ array, because the resolver merges scalars by override and arrays by append: an 
 ever be widened by a team overlay and never narrowed, so a project could not turn the requirement
 off for a type once any layer had added it. Its home is `modules.l3io-pm` rather than a per-skill
 `customize.toml` because `l3io-plan` enriches and `l3io-execute` gates, and the two must agree.
+
+`{reorg_auto_apply}` pre-authorises `/l3io-plan reorg` to skip its confirmation prompt.
+`never` (the default) always confirms; `moves` applies reparenting without asking and still
+confirms every retirement; `always` applies both without asking. Any other value is treated as
+`never` and said so once — a misspelled setting must never become a broader authorisation than
+the person wrote. It is a **scalar** for the same reason `{business_ac_required}` is: the
+resolver merges scalars by override and arrays by append, so an array could only ever widen the
+authorisation and a project could not take it back once any layer had granted it. **It skips
+the prompt, never the record** — every reorg is journaled regardless, because that journal is
+what makes the operation undoable. It does not authorise an undo: reversing a reorg is always
+confirmed.
 
 **`{model}` and `{token_rates_json}` are what make cost a real number rather than a
 default.** Every `cost` in this system is derived from `tokens_k × the rate card for a

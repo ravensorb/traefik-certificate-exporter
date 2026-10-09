@@ -1,6 +1,6 @@
 ---
 name: l3io-plan
-description: Validate readiness, elaborate stories, estimate, build dependency graph, and produce an executable plan. Use when the user wants to plan across epics before execution, or to re-estimate existing ones. Use /l3io-plan for a full plan, /l3io-plan estimate [E{nnn}|E{nnn}-S{nn}] to re-estimate only.
+description: Validate readiness, elaborate stories, estimate, build dependency graph, and produce an executable plan. Use when the user wants to plan across epics before execution, to re-estimate existing ones, or to reorganize a plan that is legal but badly shaped. Use /l3io-plan for a full plan, /l3io-plan estimate [E{nnn}|E{nnn}-S{nn}] to re-estimate only, /l3io-plan reorg to propose a better plan shape.
 ---
 
 # l3io-plan
@@ -52,7 +52,21 @@ as a setup trigger.
 {skill-root}/steps/shared/step-01-classify-work.md
 ```
 
-**Full plan mode** (default — no args, or args that do not start with `estimate`):
+**Mode routing.** Match the argument against this table; everything it does not match is the
+full plan mode. Each mode's body lives below or in its own `steps/` file — this file routes
+and carries no procedure.
+
+| Keyword | Load | Menu | Notes |
+|---|---|---|---|
+| `plan` (or no argument) | the full-plan step list below | registered | the default: readiness → elaboration → graph → estimate → snapshot |
+| `estimate` | `steps/shared/step-estimate.md` | registered | re-estimate only; optional `E{nnn}` or `E{nnn}-S{nn}` scope |
+| `reorg` | `steps/reorg/step-reorg.md` | registered | propose, confirm and apply a better plan shape — writes planned work only |
+
+**Undo has no keyword, by design.** A user asks for it in prose — "undo that reorg" — and the
+agent resolves which journal entry they mean. Load `steps/reorg/step-reorg-undo.md` on such a
+request. There is no flag for it and none of this skill's modes parse one.
+
+**Full plan mode** (default — no args, or args that do not start with `estimate` or `reorg`):
 
 Bind `{scope}` = `all` before loading step-estimate.
 
@@ -94,3 +108,24 @@ If a pointer exists, print:
 ```
 
 If no pointer exists, print nothing — there is no snapshot to go stale.
+
+**Reorg mode** (arg starts with `reorg`):
+
+```
+{skill-root}/steps/reorg/step-reorg.md
+```
+
+Proposes one improvement to the shape of the plan, shows it as a plan summary the user can
+accept or reject in about a minute, and applies it only on confirmation. It writes **planned
+work only**; active and archived work is read-only input. Nothing is deleted — a retired epic
+is archived with its reason recorded, and the whole reorg is journaled so it can be undone.
+
+**Undo** (a conversational request, never a flag):
+
+```
+{skill-root}/steps/reorg/step-reorg-undo.md
+```
+
+Like estimate mode, reorg writes state and **must not touch any plan snapshot** — snapshots
+are immutable once written. Tell the user to run `/l3io-plan` for a snapshot that reflects the
+new shape.

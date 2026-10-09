@@ -1,12 +1,13 @@
 {
-  "version": "3.2.6",
+  "version": "3.3.1",
   "generated_from": "skills/_shared/",
   "files": {
-    "references/config-resolution.md": "ef410e4a7b1468057f72f59738284d6afec102c82be55bd4e78fbea355b8f9d7",
-    "scripts/pm-status.py": "970504a94e3f04d0ba2a9e0e7029d2be245ad977a945171cc1ba57e1043dea9e",
+    "references/config-resolution.md": "cada754f77e576cfa0eb51f6719b19d2ab6b3ef08d2db40fcc684783ebd5a384",
+    "scripts/pm-status.py": "fbeda45557f03b44d164821f48af1174e47e876d369abf0509e37ae93395386e",
+    "assets/agent-instructions.md": "6f31741b68015da8c2b13c7f1d68539111686f3b99b8aa78e7c29f79ec7b5d38",
     "scripts/merge-config.py": "22f51eed631c64134d352c236917e0a98ec5b5fe5d0810394f4615905c6ef7dc",
     "scripts/merge-help-csv.py": "44cae89d74a247395cc851970e28b65605e958efa04b632209f9bd5ecbc70d69",
     "scripts/write-module-config.py": "fdc0e81cda51221599907b9023a096b0570e096b7d921fb0c1db2050afa7a80f",
-    "assets/module-setup.md": "8aa97eccb02f5ee194dd8df574a5fbecc61b225e842de84da2c821898cdb8997"
+    "assets/module-setup.md": "8567ae5c4dc40f7393bc3925e196d7f0579fd69d970985b4cfb8fb5e7df4671a"
   }
 }
