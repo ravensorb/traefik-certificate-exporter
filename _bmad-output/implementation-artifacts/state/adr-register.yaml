@@ -1,4 +1,4 @@
-next: 38
+next: 40
 reserved:
 - number: 1
   slug: action-pin-policy
@@ -92,3 +92,11 @@ reserved:
   slug: gitleaks-default-allowlist
   epic: E013
   reserved_at: '2026-10-09T20:40:31Z'
+- number: 38
+  slug: release-from-default-branch
+  epic: E013
+  reserved_at: '2026-10-09T21:37:42Z'
+- number: 39
+  slug: publish-environments
+  epic: E013
+  reserved_at: '2026-10-09T21:46:10Z'

@@ -19,6 +19,7 @@ sources:
 companions:
   - docs/adr/0035-standard-ci-cd-pipeline.md
   - docs/adr/0036-ci-cd-pipeline-arch-gate-amendments.md
+  - docs/adr/0038-release-only-from-protected-tags-on-main.md
   - docs/ci/pipeline-walkthrough.md
 supersedes: 'architecture-ci-cd-pipeline-2026-08-31 (CI-AR1..CI-AR50)'
 ---
@@ -93,6 +94,7 @@ filter writes to a destination only when that destination is enabled by its cred
 - **Prevents:** custom scripts where an action exists; third-party code moving under a credentialed job.
 - **Rule:** Prefer a `LiquidLogicLabs/git-action-*` action, then a widely used documented action, then a `run:` step only when neither works on all three runners (AD-6). `LiquidLogicLabs/*` is referenced at its major tag (`@v2`). Every other action is referenced by full commit SHA with a trailing `# vX.Y.Z` comment. This is enforced by zizmor `rules.unpinned-uses.config.policies` in `.github/zizmor.yml`: `LiquidLogicLabs/*: ref-pin`, `*: hash-pin`. Dependabot (`github-actions`, weekly) proposes pin updates.
   - **Suppressions (ADR-0036).** A zizmor finding the design accepts on purpose is suppressed only per finding, by an inline `# zizmor: ignore[<audit>]` comment on the flagged line that cites the AD/ADR accepting it. Example: `use-trusted-publishing` on each `twine upload` step cites AD-11 / ADR-0035 and `pypa/gh-action-pypi-publish` issue #275. `.github/zizmor.yml` disables no audit; it configures only `unpinned-uses`. Every other finding is fixed, for example `dependabot-cooldown` by a `cooldown` block in `.github/dependabot.yml`.
+  - **Invocation (ADR-0039).** The pre-commit `zizmor` hook runs with `args: [--persona=auditor]` and no severity floor. The auditor persona makes every audit stricter and is the only persona that reports `secrets-outside-env` (a job reading `secrets.*` without `environment:`) and `anonymous-definition` (a job without `name:`). A false positive is suppressed per line as above, never by a severity floor or a persona change.
 
 ### AD-6 — Same YAML on GitHub, Gitea and act; ref-free checkout; no `env.ACT` [ADOPTED]
 
@@ -104,6 +106,7 @@ filter writes to a destination only when that destination is enabled by its cred
   - Nothing references `env.ACT` or `ACT`.
   - `build.yaml` checks out with `fetch-depth: 0` and `fetch-tags: true`.
   - Every job uses `runs-on: ubuntu-latest`.
+  - Forge-enforced keys that another runner ignores (`environment:`) are allowed. They add protection on the forge that honours them and change nothing elsewhere. They are not behaviour branching. (ADR-0039)
 
 ### AD-7 — Version identity, owned by the build [ADOPTED]
 
@@ -137,6 +140,7 @@ filter writes to a destination only when that destination is enabled by its cred
   - Each publish job computes one boolean flag per destination in its job-level `env`, for example `PUBLISH_PYPI: ${{ secrets.PUBLISH_PYPI_TOKEN != '' }}`. Each publishing step tests exactly one flag: `if: env.PUBLISH_PYPI == 'true'`. The token itself is passed only to the step that uses it.
   - No secret or variable name starts with `GITEA_` or `GITHUB_`; Gitea rejects or pre-populates those.
   - The ambient token is never used, by any step.
+  - On GitHub each publish job declares its workflow's environment (`dev` in `dev.yaml`, `release` in `release.yaml`; Conventions), which holds that job's secrets; the presence flags above read them unchanged, since a job referencing an environment sees its secrets under the same names. Gitea and act ignore the key (AD-6), so there the flags read the repository/organisation secrets as before (ADR-0039).
 
   | Destination | dev | release | Secret (enables) | Variables |
   | --- | --- | --- | --- | --- |
@@ -179,9 +183,9 @@ filter writes to a destination only when that destination is enabled by its cred
 ### AD-12 — Release [ADOPTED]
 
 - **Binds:** `release.yaml`
-- **Prevents:** publishing from a malformed or pre-release tag; a hand-kept changelog; a release created before its artifacts exist.
+- **Prevents:** publishing from a malformed or pre-release tag; a release from a commit not on the default branch; a hand-kept changelog; a release created before its artifacts exist.
 - **Rule:** `release.yaml` runs these jobs in order:
-  1. **`validate-tag`** runs `git-action-tag-validate-version@v2` with `version-regex: '^v\d+\.\d+\.\d+$'`, followed by one step `if: steps.tag.outputs.is-valid != 'true'` that exits 1.
+  1. **`validate-tag`** runs `git-action-tag-validate-version@v2` with `version-regex: '^v\d+\.\d+\.\d+$'`, followed by one step `if: steps.tag.outputs.is-valid != 'true'` that exits 1. It then checks out ref-free with `fetch-depth: 0` (AD-6) and runs one step with no `if:`, `Tag is on the default branch`: it reads `github.event.repository.default_branch` through `env`, fails if it is empty, logs the tag, commit and default branch, and exits 1 unless `git merge-base --is-ancestor HEAD refs/remotes/origin/<default>` succeeds. That step guards against mistakes only, since it runs from the tagged commit; the control is forge tag protection on `v*` (ADR-0038).
   2. **`build`** (`needs: validate-tag`).
   3. **`publish-package`** and **`publish-image`**.
   4. **`release`**, which `needs` both publish jobs and gates each of its steps on `PUBLISH_RELEASE` (AD-9); with the token unset it succeeds as a no-op. `git-action-release-changelog-builder@v3` generates the notes, and `git-action-release@v2` creates the release on the running forge with `token: PUBLISH_RELEASE_TOKEN` and `allow-updates: true`, attaching the `dist` wheel and sdist.
@@ -192,7 +196,7 @@ filter writes to a destination only when that destination is enabled by its cred
 
 - **Binds:** every workflow
 - **Prevents:** ambient write access; a credential that means different things on each forge.
-- **Rule:** Every workflow declares `permissions: contents: read` and no job widens it. Every credential is a `PUBLISH_*` secret (AD-9), including the release token.
+- **Rule:** Every workflow declares `permissions: contents: read` and no job widens it. Every credential is a `PUBLISH_*` secret (AD-9), including the release token, held in the GitHub environment of the job that uses it, and none is held at repository level on GitHub (ADR-0039).
 
 ### AD-14 — Ordering and concurrency [ADOPTED]
 
@@ -221,10 +225,11 @@ filter writes to a destination only when that destination is enabled by its cred
   | `just check` | AD-3 |
   | `just build` | clean `dist/`, then `poetry build` |
   | `just image` | build and load the image from `dist/` per AD-17 |
-  | `just act [workflow]` | `act --detect-event -W .github/workflows/<workflow> --artifact-server-path <tmp>`, default `ci.yaml`, no `--secret` arguments |
+  | `just act [workflow]` | `act --detect-event -W .github/workflows/<workflow> --defaultbranch <default> --artifact-server-path <tmp>`, default `ci.yaml`, no `--secret` arguments |
   | `just release <major\|minor\|patch>` | see below |
 
   - Running `dev.yaml` or `release.yaml` locally passes no secrets, so every destination is disabled (AD-9).
+  - The default branch is derived once, as the justfile variable `default_branch` (`origin/HEAD` with `origin/` stripped, else `main`; it never fails). `just release` reads it, and `just act` passes it as `--defaultbranch` so AD-12's ancestry check sees the real default branch rather than act's `master` (ADR-0038).
   - `--detect-event` is mandatory (ADR-0036): without it act sends `push`, and a `pull_request`-only workflow runs no job and exits 0. Evidence of a local run must show the `build` job executed, not only exit status 0.
   - `just release` requires a clean tree on the default branch, AD-15's sync check, and `just check`, and refuses when the base tag already points at HEAD (the commit is already released). It computes the next version from the latest tag matching `^v\d+\.\d+\.\d+$` (AD-7's pattern) with `pysemver bump`, creates annotated tag `vX.Y.Z`, and pushes only that tag. A release creates no commit.
 
@@ -260,6 +265,7 @@ filter writes to a destination only when that destination is enabled by its cred
 | Version hand-off | `needs.build.outputs.version` (PEP 440) and `needs.build.outputs.image-version` (SemVer) only |
 | Secrets and variables | `PUBLISH_<DESTINATION>_<FIELD>`, upper snake case, as in AD-9 |
 | Conditionals | Only two forms are allowed: AD-9's single-flag `if: env.PUBLISH_X == 'true'` on steps (a job-level `if:` cannot read `env`, so the `release` job gates each of its steps), and the AD-12 validity check. Flags and image names are computed in job `env`, never inline in `if:` |
+| Environments | `dev` on `dev.yaml` `publish-package`/`publish-image`; `release` on `release.yaml` `publish-package`/`publish-image`/`release`; none on `validate-tag` or `build` (a reusable-workflow caller cannot set one, and `build` holds no secret). Every job carries `name:` equal to its id, so check names are unchanged (ADR-0039) |
 | Idempotent re-run | uploads use `--skip-existing`; the release step uses `allow-updates: true`; a re-run re-points every tag written by that run, across every enabled registry, to the one digest that run built. It does not reproduce the previous digest (ADR-0036) |
 
 ## Stack
@@ -338,6 +344,7 @@ docker/Dockerfile         # AD-17
 
 - **Build provenance attestations / SBOM.** GitHub-only (needs OIDC), so they would need a forge condition that AD-9 does not allow. Revisit if Gitea gains an attestation equivalent.
 - **Image vulnerability scanning.** No scanner is bound. Revisit when a consumer requires it.
-- **Branch protection.** This is a forge setting outside the repository; the required check is named in the Conventions table.
+- **Tag protection for `v*`** (GitHub ruleset / Gitea protected tag `v*`) is a forge setting; checklist in `docs/ci/pipeline-walkthrough.md` §"Forge settings the maintainer applies". It is documentation unless configured (ADR-0038).
+- **Environments, rulesets and protected branches/tags are forge settings** (checklist in `docs/ci/pipeline-walkthrough.md` §"Forge settings the maintainer applies"); like CODEOWNERS, they are documentation unless configured. A `main` ruleset (GitHub) and a protected `main` (Gitea) are required, not deferred (ADR-0039): pull request with at least one approval (GitHub) or a maintainer-only merge allowlist with required approval (Gitea), and the required check `build / build` (Conventions), which is what makes `secrets-outside-env` block a merge. The admin bypass actor, and anyone who can approve, can still land code on `main`; the route is closed only for a collaborator or stolen write token acting alone (ADR-0039 Consequences). `secrets-outside-env` is the only part checked from the repository.
 - **Live certification on Gitea 1.27.** The artifact action pair (upload v5.0.0, download v6.0.0), reusable `workflow_call`, `concurrency`, and `twine` uploads are verified by running the workflows on a real Gitea runner during implementation (E013-S01-004).
 - **Artifact action majors.** Under `act` 0.2.89, upload-artifact v6+ fails at upload (`Error unauthorized`, signature padding, nektos/act #6114) and v7 also sends an unknown `mime_type` (#6022); verified 2026-10-09 with a two-job upload/download matrix (v4.6.2/v4.3.0 and v5.0.0/v6.0.0 pass, v6.0.0 with v6.0.0/v7.0.0 fail). Dependabot ignores those majors until an `act` release ships PR #6174, then revisit.

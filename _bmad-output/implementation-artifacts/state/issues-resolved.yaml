@@ -847,3 +847,33 @@ resolved:
   resolution: fixed
   resolved_at: '2026-10-09T20:57:00Z'
   ref: E013-S01-005
+- key: BL-E013-019
+  epic: '013'
+  sprint: '01'
+  title: Any v* tag on any commit publishes; re-pushed tag rewrites images/release while PyPI keeps old wheel (also AR-01, AR-07)
+  source: redteam (RT-E013-02)
+  source_phase: redteam
+  source_ref: RT-E013-02
+  severity: High
+  status: resolved
+  description: 'Needs maintainer decision (changes a recorded design decision); not implemented in closure. Proposed: validate-tag ancestor check against origin/main plus forge tag protection for v*; amend AD-12. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md and _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/adversarial-review.md'
+  story: E013-S02-003
+  scheduled_at: '2026-10-09T21:17:47Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T21:45:13Z'
+  ref: E013-S02-003
+- key: BL-E013-018
+  epic: '013'
+  sprint: '01'
+  title: Publish secrets are repo-level with no environment gate; any branch push can exfiltrate them
+  source: redteam (RT-E013-01)
+  source_phase: redteam
+  source_ref: RT-E013-01
+  severity: High
+  status: resolved
+  description: 'Needs maintainer decision (changes a recorded design decision); not implemented in closure. Proposed: GitHub environments (release=v* tags, dev=main) holding PUBLISH_* secrets; Gitea equivalent via ADR; gate zizmor secrets-outside-env. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md'
+  story: E013-S02-002
+  scheduled_at: '2026-10-09T21:17:45Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T22:00:08Z'
+  ref: E013-S02-002

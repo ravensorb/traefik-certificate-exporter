@@ -20,6 +20,7 @@ defaults:
 
 jobs:
   validate-tag:
+    name: validate-tag
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -40,11 +41,39 @@ jobs:
           echo "refusing to release tag $TAG: it must match ^v<major>.<minor>.<patch>$" >&2
           exit 1
 
+      # Full history, ref-free (AD-6): provides refs/remotes/origin/<default branch>.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The tagged commit must be on the default branch (AD-12, ADR-0038). This guards
+      # against mistakes only: it runs from the tagged commit, so whoever can push a v* tag
+      # can also remove it. The control is forge tag protection on v*.
+      - name: Tag is on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -z "$DEFAULT_BRANCH" ]; then
+            echo "refusing to release tag $TAG: the event payload names no default branch" >&2
+            exit 1
+          fi
+          sha="$(git rev-parse HEAD)"
+          echo "tag=$TAG commit=$sha default-branch=$DEFAULT_BRANCH"
+          if ! git merge-base --is-ancestor HEAD "refs/remotes/origin/$DEFAULT_BRANCH"; then
+            echo "refusing to release tag $TAG: commit $sha is not on origin/$DEFAULT_BRANCH" >&2
+            exit 1
+          fi
+
   build:
     needs: validate-tag
     uses: ./.github/workflows/build.yaml # zizmor: ignore[self-repository] AD-6: GitHub-only $/ syntax; Gitea and act resolve ./ only
 
   publish-package:
+    name: publish-package
+    # Publish credentials live only in the release environment (ADR-0039).
+    environment: release
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -113,6 +142,9 @@ jobs:
         run: poetry run twine upload --non-interactive --skip-existing --repository-url "$REPOSITORY_URL" dist/*
 
   publish-image:
+    name: publish-image
+    # Publish credentials live only in the release environment (ADR-0039).
+    environment: release
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -269,6 +301,9 @@ jobs:
           image: ${{ env.TEST_IMAGE }}@${{ steps.push.outputs.digest }}
 
   release:
+    name: release
+    # Publish credentials live only in the release environment (ADR-0039).
+    environment: release
     needs: [build, publish-package, publish-image]
     runs-on: ubuntu-latest
     permissions:

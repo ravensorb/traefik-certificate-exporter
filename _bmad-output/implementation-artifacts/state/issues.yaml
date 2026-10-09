@@ -2,7 +2,7 @@ next:
   '009': 22
   '011': 42
   '012': 14
-  '013': 38
+  '013': 41
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -599,30 +599,6 @@ backlog:
   kind: spec-proposal
   ref: _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/notes-E013-S01-005.md
   description: For the architect (spine edits are out of E013-S01-005's scope). (1) AD-7 should state that every Poetry command that activates poetry-dynamic-versioning (anything other than poetry run) needs a full-history, tagged checkout, and that the AD-17 Dockerfile builder (ADR-0036) is the only sanctioned POETRY_DYNAMIC_VERSIONING_BYPASS site; E013-S01-005 removed the bypass from both Install twine steps. (2) AD-12 says the release job gates each of its steps on PUBLISH_RELEASE, but its CA import is gated on PUBLISH_CA because a step tests exactly one flag (AD-9, AD-18); release.yaml now carries a comment saying so. (3) AD-18 says the CA import is the first step, but in publish-package and publish-image (dev.yaml and release.yaml) the Version guard precedes it.
-- key: BL-E013-018
-  epic: '013'
-  sprint: '01'
-  title: Publish secrets are repo-level with no environment gate; any branch push can exfiltrate them
-  source: redteam (RT-E013-01)
-  source_phase: redteam
-  source_ref: RT-E013-01
-  severity: High
-  status: scheduled
-  description: 'Needs maintainer decision (changes a recorded design decision); not implemented in closure. Proposed: GitHub environments (release=v* tags, dev=main) holding PUBLISH_* secrets; Gitea equivalent via ADR; gate zizmor secrets-outside-env. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md'
-  story: E013-S02-002
-  scheduled_at: '2026-10-09T21:17:45Z'
-- key: BL-E013-019
-  epic: '013'
-  sprint: '01'
-  title: Any v* tag on any commit publishes; re-pushed tag rewrites images/release while PyPI keeps old wheel (also AR-01, AR-07)
-  source: redteam (RT-E013-02)
-  source_phase: redteam
-  source_ref: RT-E013-02
-  severity: High
-  status: scheduled
-  description: 'Needs maintainer decision (changes a recorded design decision); not implemented in closure. Proposed: validate-tag ancestor check against origin/main plus forge tag protection for v*; amend AD-12. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md and _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/adversarial-review.md'
-  story: E013-S02-003
-  scheduled_at: '2026-10-09T21:17:47Z'
 - key: BL-E013-020
   epic: '013'
   sprint: '01'
@@ -809,3 +785,33 @@ backlog:
   kind: spec-proposal
   ref: _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/arch-drift-review.md
   description: Spec-proposal for AD-12; resolve together with RT-E013-02.
+- key: BL-E013-038
+  epic: '013'
+  sprint: '02'
+  title: "F-03: operational.md 'delete the secret to stop publishing' ignores that shared tokens live in both GitHub environments"
+  source: code-review (E013-S02-002)
+  source_phase: code-review
+  source_ref: E013-S02-002
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-02/closure/review-E013-S02-002.md
+- key: BL-E013-039
+  epic: '013'
+  sprint: '02'
+  title: 'F-04: walkthrough bypass note implies a collaborator on a user-owned repository can hold the admin role'
+  source: code-review (E013-S02-002)
+  source_phase: code-review
+  source_ref: E013-S02-002
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-02/closure/review-E013-S02-002.md
+- key: BL-E013-040
+  epic: '013'
+  sprint: '02'
+  title: 'F-05: ADR-0039 missing from docs/architecture.md section 6 ADR index and from the spine companions list'
+  source: code-review (E013-S02-002)
+  source_phase: code-review
+  source_ref: E013-S02-002
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-02/closure/review-E013-S02-002.md

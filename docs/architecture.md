@@ -148,6 +148,7 @@ so a new or re-statused ADR must update its row in the same change.
 | [0035](adr/0035-standard-ci-cd-pipeline.md) | A standard, trigger-selected CI/CD pipeline replaces the governed pipeline (amended by 0036) | [CI/CD spine](../_bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md) |
 | [0036](adr/0036-ci-cd-pipeline-arch-gate-amendments.md) | CI/CD pipeline amendments from the E013 architecture gate | [CI/CD spine](../_bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md) |
 | [0037](adr/0037-gitleaks-default-allowlist-is-inherited.md) | Secret scanning inherits gitleaks' default allowlist; the repository adds no path exemption | [CI/CD spine](../_bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md) |
+| [0038](adr/0038-release-only-from-protected-tags-on-main.md) | Release only from protected `v*` tags on the default branch: tag protection is the control, the ancestry check guards against mistakes | [CI/CD spine](../_bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md) |
 
 The ADR is the durable, full-rationale record (Context/Options/Decision/Consequences); the
 spine's AD-n block is the terse, enforceable restatement `bmad-architecture`-driven work

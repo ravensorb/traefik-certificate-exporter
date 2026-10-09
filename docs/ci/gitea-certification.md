@@ -286,3 +286,18 @@ or review; only walking it against a real pinned tuple does.
 - The `git-action-release@v2` Gitea-path network/trust-boundary probe (ADR-0022).
 - Rehearsing the production-owner cutover itself, including its rollback commands,
   against a certified tuple.
+- The `v*` protected tag (ADR-0038): `GET /api/v1/repos/{owner}/{repo}/tag_protections`
+  returns `name_pattern: v*` with only the maintainer allowed (checklist:
+  `docs/ci/pipeline-walkthrough.md` §"Tag protection").
+- `release.yaml`'s `Tag is on the default branch` step on a real Gitea runner: the next
+  Gitea release logs a non-empty default branch (from the push payload's
+  `repository.default_branch`) and passes the ancestry check against
+  `refs/remotes/origin/<default>`.
+- The protected `main` (ADR-0039): `GET /api/v1/repos/{owner}/{repo}/branch_protections`
+  returns a `main` rule with push and force push disabled or allowed to the maintainer only,
+  `enable_merge_whitelist` true with only the maintainer, `required_approvals` 1 or more,
+  and `enable_status_check` true with the `build` job's pull-request context, whose exact
+  name is read from a real Gitea pull request (checklist: `docs/ci/pipeline-walkthrough.md` §"Branch protection on main").
+- `dev.yaml` after `environment: dev` was added (ADR-0039): the next Gitea `dev.yaml` run
+  behaves as before, since Gitea ignores `environment:`; every destination whose Gitea
+  secret is set still publishes.

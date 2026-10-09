@@ -39,3 +39,14 @@ Reviewers run: l3io-arch-review (Mode B), escalated to bmad-agent-architect on M
 | AG-16 | MINOR confirmed | both | BL-E013-013 check reads amendments from the wrong place | Folded |
 | AG-17 | MINOR | architect | BL-E013-013 ADR set hand-kept (rule 4) | Folded: derive from `docs/adr/*.md` |
 | AG-18 | MINOR | architect | Dockerfile `poetry config` call outside the bypass is unclassified | Folded: classify with evidence; file if it loads the project |
+
+## Gate pass 3 — 2026-10-09 (E013 sprint 02: S02-002, S02-003)
+
+Reviewer run: l3io-arch-review (Mode B). The MAJORs were resolved by maintainer decision and story patches, then re-validated by the reviewer on the patched sections.
+
+| ID | Severity | Finding | Resolution |
+|---|---|---|---|
+| AG-19 | MAJOR | zizmor `--min-severity=low` hides every informational finding (contradicts ADR-0036 per-line suppression); the 7 `anonymous-definition` findings are unnamed jobs | Story patch: `--persona=auditor` only; `name:` on the 7 jobs |
+| AG-20 | MAJOR | `dev` holds the release registry tokens and the ancestry check trusts `main`, while `main` is unprotected | **Maintainer decision (a):** `main` ruleset is required; branch protection moves from Deferred into the ADR |
+| AG-21 | MAJOR | Maintainer checklist order exposes release secrets before tag protection and couples the merge to the first live publish | Story patch: delete legacy secrets → environments without secrets → rulesets → merge → verify no auto-created duplicate → add secrets (`dev` first) |
+| AG-22..26 | MINOR | AD-6/Conventions/AD-12 amendment gaps; Gitea tag pattern contradiction; Gitea bot-account package scope; S02-002/003 sequencing; act test steps and duplicated default-branch derivation | Folded; `E013-S02-002 depends_on E013-S02-003` |

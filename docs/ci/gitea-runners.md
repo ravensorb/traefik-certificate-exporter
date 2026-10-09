@@ -58,3 +58,47 @@ repository's (or organisation's) Actions secrets and variables. The full list, w
 shape of each variable, is in [pipeline-walkthrough.md](pipeline-walkthrough.md#where-things-are-published).
 `PUBLISH_RELEASE_TOKEN` on Gitea is a Gitea token; on GitHub it is a GitHub token. Each
 forge's secret store is separate, so a rotation is done on each forge (AD-9).
+
+### Residual risk: no environments on Gitea (ADR-0039)
+
+Gitea ignores `jobs.<id>.environment` (gitea/docs `docs/usage/actions/comparison.md`,
+"Unsupported workflows syntax") and keeps secrets only at user, organisation and repository
+level. So on Gitea, any workflow on any branch pushed by anyone with write access receives
+every secret stored in Gitea. The protected `main` and `v*` (below, and
+[Tag protection](pipeline-walkthrough.md#tag-protection)), with the merge allowlist and
+required approval on `main`, stop code the maintainer has not merged from being
+**published** through `dev.yaml` or `release.yaml`; they do not stop that secret theft.
+The workflows do not branch on the forge to compensate (AD-6, AD-9). This is recorded,
+not fixed; revisit when Gitea gains environment-scoped secrets or `environment:` support.
+
+What actually contains it:
+
+1. **Store only Gitea-destination secrets in Gitea:** `PUBLISH_GITEA_TOKEN`, a Gitea
+   `PUBLISH_RELEASE_TOKEN`, and `PUBLISH_CA_CERTIFICATE` if the private CA is needed. Never
+   store PyPI, TestPyPI, GHCR or Docker Hub tokens in Gitea.
+2. **Issue the package token from a namespace that owns only this project's packages.**
+   Gitea packages belong to a user or an organisation, not to a repository, and no token
+   setting confines a token to one package (v1.27.3 `services/context/package.go`
+   `determineAccessMode`): a user's token writes every package that user owns, and an
+   organisation team with the Packages unit on write writes every package of that
+   organisation. A token from the maintainer's own account therefore exposes all of the
+   maintainer's packages. Tight containment needs a dedicated bot user, or an organisation
+   that owns only this project's packages, to own them. Moving the packages is the
+   maintainer's choice.
+3. **For releases, use a bot collaborator with write on this repository only**, so its
+   `write:repository` token reaches only this repository.
+4. **Keep write collaborators to a minimum**: each one can read every Gitea secret.
+
+### Protected `main` on Gitea
+
+A protected `main` is a required setting (ADR-0039): push disabled or allowed to the
+maintainer only, force push disabled or allowed to the maintainer only, a merge allowlist
+of the maintainer only, required approvals 1 or more with stale approvals dismissed, and
+status checks enabled for the `build` job's pull-request context; a protected branch
+cannot be deleted by push. Gitea has no separate "require a pull request" switch;
+restricting push makes a merged pull request the only way for anyone else to change
+`main`, and the merge allowlist makes the maintainer the only one who can merge it. The
+required status check is what makes zizmor's `secrets-outside-env` failure block a merge.
+The maintainer, as repository admin, can still merge without an approval; that is
+accepted. Steps and the verification call are in
+[Branch protection on main](pipeline-walkthrough.md#branch-protection-on-main).

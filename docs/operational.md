@@ -377,8 +377,13 @@ majors deliberately until `act` supports them.
    from using it and has no effect on anyone else holding a copy.
 2. **Rotate the `PUBLISH_*` secret on each forge separately.** GitHub and Gitea hold their
    own secret stores (AD-9); a secret rotated on one forge is still the old value on the
-   other. To stop publishing to that destination instead, delete the secret: the
-   destination switches off and runs keep succeeding.
+   other. On GitHub the secret lives in an environment, not at repository level
+   (ADR-0039): update it in every environment that holds it, which for a shared token
+   (`PUBLISH_GITEA_TOKEN`, `PUBLISH_GHCR_TOKEN`, `PUBLISH_DOCKERHUB_TOKEN`,
+   `PUBLISH_CA_CERTIFICATE`) is both `dev` and `release`
+   (`gh secret set <NAME> --env dev`, then `--env release`). On Gitea update it in the
+   repository (or organisation) secret store. To stop publishing to that destination
+   instead, delete the secret: the destination switches off and runs keep succeeding.
 3. **Scope the replacement as narrowly as the destination allows.** Create
    `PUBLISH_PYPI_TOKEN` and `PUBLISH_TESTPYPI_TOKEN` as project-scoped tokens for this
    project, never account-wide ones (an account-scoped token is only needed once, for the

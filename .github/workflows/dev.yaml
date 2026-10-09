@@ -23,6 +23,9 @@ jobs:
     uses: ./.github/workflows/build.yaml # zizmor: ignore[self-repository] AD-6: GitHub-only $/ syntax; Gitea and act resolve ./ only
 
   publish-package:
+    name: publish-package
+    # Publish credentials live only in the dev environment (ADR-0039).
+    environment: dev
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -93,6 +96,9 @@ jobs:
         run: poetry run twine upload --non-interactive --skip-existing --repository-url "$REPOSITORY_URL" dist/*
 
   publish-image:
+    name: publish-image
+    # Publish credentials live only in the dev environment (ADR-0039).
+    environment: dev
     needs: build
     runs-on: ubuntu-latest
     permissions:

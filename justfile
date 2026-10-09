@@ -1,5 +1,9 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
+# The default branch, derived once for `act` and `release`: origin/HEAD with `origin/`
+# stripped, else `main`. Evaluated at load time by every recipe, so it never fails.
+default_branch := `b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"; b="${b#origin/}"; echo "${b:-main}"`
+
 # The first run also installs [tool.poetry.requires-plugins] (poetry-dynamic-versioning)
 # into the project-local .poetry/ plugin environment, which needs network access.
 # Needs a vX.Y.Z tag reachable from HEAD (strict versioning, AD-7); in a shallow or
@@ -46,9 +50,12 @@ image: build
 # No secrets or variables are passed, so every publishing destination stays disabled.
 # The exit status is act's own. Run `just act dev.yaml` from main (or pass an event file
 # with `ref: refs/heads/main`) so the run matches dev.yaml's branch filter.
+# --defaultbranch sets github.event.repository.default_branch, which release.yaml's
+# ancestry check reads (act would otherwise say `master`); that check also needs an
+# `origin` remote tracking the default branch, or it fails closed (ADR-0038).
 # Run a workflow locally under act with its own trigger event (AD-16).
 act workflow="ci.yaml":
-    act --detect-event -W .github/workflows/{{ workflow }} --artifact-server-path "$(mktemp -d)"
+    act --detect-event -W .github/workflows/{{ workflow }} --defaultbranch {{ quote(default_branch) }} --artifact-server-path "$(mktemp -d)"
 
 # Creates no commit and pushes no branch.
 # Cut a release: push one annotated tag vX.Y.Z on the default branch's HEAD (AD-15).
@@ -64,9 +71,7 @@ release bump:
     if [ -n "$dirty" ]; then
         echo >&2 "release: working tree is not clean:"; echo >&2 "$dirty"; exit 1
     fi
-    default="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD || true)"
-    default="${default#origin/}"
-    default="${default:-main}"
+    default={{ quote(default_branch) }}
     branch="$(git rev-parse --abbrev-ref HEAD)"
     if [ "$branch" != "$default" ]; then
         echo >&2 "release: current branch is '$branch', must be the default branch '$default'"; exit 1

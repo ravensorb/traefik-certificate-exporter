@@ -2,7 +2,7 @@ key: 'E013-S02-003'
 epic: 'E013'
 sprint: 'S02'
 title: 'Release only from main: validate tag ancestry and protect v* tags'
-status: backlog
+status: done
 classification: standard
 resolves: [BL-E013-019]
 estimate:
@@ -23,4 +23,30 @@ estimate:
     hitl_hours: 0.1073
     elapsed_hours: 0.2156
     tokens_k: 2.7196
-updated_at: '2026-10-09T21:17:47Z'
+updated_at: '2026-10-09T21:45:13Z'
+completion_evidence:
+  fix_iterations: 1
+  files_changed: 8
+  test_runs:
+  - command: act release.yaml (a) side-branch tag v99.0.0 via just act -- expect validate-tag failure
+    exit_code: 0
+  - command: act release.yaml -j validate-tag (b) tag on main
+    exit_code: 0
+  - command: act release.yaml -j validate-tag (c) no origin -- expect fail closed
+    exit_code: 0
+  - command: just check
+    exit_code: 0
+  tests_passing: true
+actual:
+  elapsed_hours: 0.16
+  man_hours: 6
+  hitl_hours: 0
+  tokens_k:
+    total: 4082.15
+    input: 0.092
+    output: 4.214
+    cache_write: 167.411
+    cache_read: 3910.431
+  cost: 3.11
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-09T21:45:13Z'
