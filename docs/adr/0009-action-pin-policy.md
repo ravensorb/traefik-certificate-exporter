@@ -1,6 +1,6 @@
 # ADR-0009: Action pin policy — floating major by default, reviewed SHA for credential handlers
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0035
 - **Date:** 2026-09-02
 - **Deciders:** Maintainer (ravensorb)
 - **Principle(s) in tension:** Upgrade convenience versus blast radius of a supply-chain compromise
@@ -16,7 +16,7 @@ contract tests.
 |---|---|
 | `ARCHITECTURE-SPINE.md` CI-AR4 | approved owners "use a documented floating major when available"; other third parties "require a reviewed SHA" |
 | `ARCHITECTURE-SPINE.md` CI-AR38 | package upload uses `pypa/gh-action-pypi-publish@<reviewed-full-commit-sha>` |
-| `tests/ci/test_action_policy.py::test_tier_one_actions_use_approved_owners_and_floating_major_aliases` | every external `uses:` from an approved owner must match `(?:release/)?v[0-9]+` |
+| `tests/ci/test_action_policy.py::test_tier_one_actions_use_approved_owners` | every external `uses:` must come from an approved owner |
 
 `pypa` is an approved owner, so CI-AR4 and the guard both said *floating major* while CI-AR38
 said *SHA*. The guard's regex was widened to accept `release/vN` specifically because pypa
@@ -65,9 +65,11 @@ Implementation must resolve, review and record the real full commit SHA when the
 
 ## Enforcement — two guards, because the first cannot see far enough
 
-- `test_tier_one_actions_use_approved_owners_and_floating_major_aliases` branches on membership
-  of `SHA_PINNED_ACTIONS`: registered actions must match a 40-character SHA, everything else must
-  match the floating-major alias.
+- `test_no_governed_definition_calls_an_action_on_a_moving_ref` requires a reviewed commit
+  SHA for every external `uses:`, and accepts a floating major only for an action registered
+  in `ACTIONS_ON_MOVING_REFS`. **Superseded the split this ADR originally described:**
+  ADR-0031 inverted the default, so the pin is now the rule and the floating major is the
+  registered exception. `test_tier_one_actions_use_approved_owners` keeps the owner half.
 - `test_every_credential_handling_action_is_pinned_or_its_risk_is_recorded` supplies the **reach**. The
   first guard only fires on actions already registered, so a *newly added* credential handler
   would silently take the floating-major branch. This one derives candidates from the workflows
@@ -188,6 +190,9 @@ affects `actions/*` or `docker/*`, or the PyPI trusted publisher is bound to the
   credential handlers, so the spine no longer contradicts CI-AR38.
 - **Done.** `release.yaml` landed in E008-S01-002, and the reviewed SHA is recorded with the date
   it was reviewed in the comment above each `uses:` line (`release.yaml:421`, `:509`;
-  `dev.yaml:365`, `:465`). `test_every_sha_pinned_publisher_records_the_date_it_was_reviewed`
-  keeps it that way. This bullet stood in the future tense against the wrong story through two
-  gate reviews.
+  `dev.yaml:365`, `:465`). This bullet stood in the future tense against the wrong story
+  through two gate reviews. **Since ADR-0031** the review date is recorded in
+  `tests/ci/support.py::PINNED_ACTIONS` rather than in a comment beside each `uses:` line,
+  and `test_every_pinned_action_is_called_at_exactly_the_commit_it_was_reviewed_at` keeps the
+  registry and the call sites in agreement -- which also pins *which* commit, where the
+  comment-shaped guard accepted any 40-hex string.

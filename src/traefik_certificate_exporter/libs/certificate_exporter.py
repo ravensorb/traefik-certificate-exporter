@@ -162,6 +162,16 @@ def _atomic_write(target: Path, data: str | bytes, mode: int | None = None) -> N
 
     `mode` is the policy floor for this artifact: omitted for public material (umask
     derived), `_SECRET_FILE_MODE` for anything that carries a private key.
+
+    **A symlink at `target` is replaced, not written through** (BL-E011-009). `os.replace`
+    swaps the link itself for the new regular file, where a plain `open(target, "w")` would
+    have followed it and written wherever it pointed. That difference is the control, not a
+    regression: the container has historically run as root, so a link planted at an export
+    path by anyone who can write the output directory would otherwise be a write primitive
+    aimed anywhere on the filesystem -- and a `lstat`-then-`open` guard could not close it,
+    because the link can be swapped in between the two. Replacing the link needs no such
+    check to be TOCTOU-safe. `_inheritable_metadata` makes the matching refusal on the
+    metadata side and warns once per path. Do not "fix" either into following the link.
     """
     target = Path(target)
     directory = target.parent
@@ -318,7 +328,7 @@ class AcmeCertificateExporter:
     def __exportCertificate(
         self, data: dict, resolverName: str | None = None, keys: str = "lowercase"
     ) -> list | None:
-        names = []
+        names: list[str] = []
         sweptDirectories: set[Path] = set()
 
         # Determine ACME version
@@ -573,10 +583,11 @@ class AcmeCertificateExporter:
             return names
         except Exception as e:  # noqa: BLE001 - one bad file must not stop the sweep
             self.__logger.error(f"Error processing file '{sourceFile}': {e}")
+            return None
 
     # --------------------------------------------------------------------------------------
     def exportCertificates(self) -> list:
-        processedDomains = []
+        processedDomains: list[str] = []
 
         for name in glob.glob(
             os.path.join(str(self.__settings.dataPath), self.__settings.fileSpec)
@@ -719,7 +730,7 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
         # Every path seen since the window opened, not just the one that opened it. See
         # handleEvent for why a set rather than a single event.
         self.pendingPaths: set[str] = set()
-        self.timer = None
+        self.timer: threading.Timer | None = None
         # The id of the drain this window will run under. Generated when the window
         # OPENS, not when it fires, so the "certificates changed" line that opened it
         # already carries the key an operator greps for (ADR-0023 Decision 1).

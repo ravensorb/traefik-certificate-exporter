@@ -1,0 +1,38 @@
+generated: "2026-10-08T12:15:02Z"
+plan_version: 1
+readiness: amber
+stories_elaborated: 4
+total_epics_in_scope: 1
+
+phases:
+  - phase: 1
+    parallel: false
+    epics: ["E012"]
+    dependencies: []
+    estimate:
+      estimates_as_of: "2026-10-08T12:15:02Z"
+      wall_clock_hours_low: 10.83
+      wall_clock_hours_high: 13.29
+      man_hours_low: 105.94
+      man_hours_high: 116.00
+      hitl_hours_low: 1.15
+      hitl_hours_high: 1.34
+      tokens_k_min: 1779
+      tokens_k_max: 2021
+      cost_low: 7.34
+      cost_high: 8.33
+      confidence: medium
+
+readiness_detail:
+  - key: "E012"
+    status: amber
+    gaps:
+      - "E012-S01-003 classification moved standard -> complex (5 CI/CD workflow files per ADR-0028, up from the originally-scoped single local script) — re-estimated accordingly, no further action needed before execution"
+      - "All four stories' estimates were stale (dated 2026-10-07, pre-elaboration) and have now been refreshed post-elaboration (2026-10-08)"
+      - "E012-S01-001's BL-E011-012 privilege-drop decision needs its own ADR, to be authored during implementation (same pattern as ADR-0023) — flagged, not blocking"
+      - "Sprint/epic estimate rollup is known-low on man_hours/tokens_k: orchestration overhead is still unestimated (fewer than 3 calibration samples at sprint/epic level)"
+
+arch_gate_summary:
+  ran: false
+  reviewers: []
+  findings: []

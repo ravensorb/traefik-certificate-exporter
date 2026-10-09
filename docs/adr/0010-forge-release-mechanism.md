@@ -160,3 +160,7 @@ amount of reading the manifest would have shown it — only running a release di
   token but is not a package publisher, so ADR-0009's SHA exception does not extend to it. If it
   ever gains publish capability, register it in `SHA_PINNED_ACTIONS`.
 - Revisit if: the action stops tracking Gitea's API, `v2` goes stale, or E009 certification fails.
+
+## Amendment (2026-10-09) — ADR-0035
+
+The release credential is `PUBLISH_RELEASE_TOKEN`, set per forge, per ADR-0035 (AD-9/AD-13). The forge-release action choice recorded here is otherwise unchanged.

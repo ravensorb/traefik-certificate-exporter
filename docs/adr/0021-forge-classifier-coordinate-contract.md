@@ -1,6 +1,6 @@
 # ADR-0021: One authoritative forge classifier and coordinate projection contract
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0035
 - **Date:** 2026-10-06
 - **Deciders:** Maintainer + architecture gate
 - **Epic:** E009

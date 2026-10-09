@@ -1,13 +1,16 @@
 ---
 title: CI/CD Pipeline Architecture Spine
 project: traefik-certificate-exporter
-date: 2026-09-01
-status: approved-for-implementation
+date: 2026-10-08
+status: superseded
+superseded_by: _bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md (ADR-0035)
 source_report: docs/ci/codex-assesment.md
-revision: lean-action-publication
+revision: ref-free-checkout
 ---
 
 # CI/CD Pipeline Architecture Spine
+
+> **Superseded 2026-10-08** by `architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md` (ADR-0035). No CI-AR rule below binds; kept as history.
 
 ## Purpose
 
@@ -19,6 +22,17 @@ This spine defines the invariants for building, verifying, packaging, and publis
 The active design follows one rule: build once, validate the manifest and checksums at every
 publisher boundary, and use ordinary maintained actions for each destination. Mutable aliases
 move only after the required publishers succeed.
+
+A second rule, added 2026-10-08 (ADR-0028): **no checkout step anywhere in this pipeline ever
+supplies `ref:`, `repository:`, or any other identity-overriding input.** Every checkout -- in
+`ci.yaml`, `dev.yaml`, `release.yaml`, all ten jobs of `verify-build.yaml`, and
+`publish-image.yaml` -- is the plainest possible `actions/checkout@v7` call
+(`fetch-depth`/`fetch-tags`/`persist-credentials` only), relying purely on the ambient event
+context GitHub, Gitea, and local `act` each already provide. This was not a style preference:
+explicit `ref:` pinning, threaded through every checkout call site so every job could re-verify an
+externally-computed identity, was also the thing that made local `act` verification structurally
+impossible to run safely (see CI-AR42 and ADR-0028 for the full account). Removing it closed the
+gap and collapsed the duplication at the same time.
 
 ## System Context
 
@@ -54,17 +68,22 @@ The `CI-AR` identifiers remain stable traceability keys.
 - **CI-AR1 — Single active forge.** A run belongs to GitHub.com or one self-hosted Gitea
   instance, derived from action context. It does not publish across both forges.
 - **CI-AR2 — One workflow implementation.** GitHub Actions, Gitea Actions, and local `act`
-  execute the same workflow graph; no step branches on `ACT`.
+  execute the same workflow graph; no step branches on `ACT`, on channel, or on any other
+  dimension for checkout identity purposes. *(Amended 2026-10-08, ADR-0028: generalized, not
+  weakened. See CI-AR42 -- the ref-free checkout rule achieves a strictly stronger guarantee
+  than the original ACT-specific wording by construction, since no checkout step anywhere needs
+  a different input for any reason.)*
 - **CI-AR3 — Action-first composition.** Maintained actions own standard checkout, artifact,
   registry, package-index, and release integrations. Repository Python owns only project-specific
   version and build-evidence validation.
-- **CI-AR4 — Action version policy.** Approved first-party and LiquidLogicLabs actions use a
-  documented floating major when available; other third-party actions require a reviewed SHA.
-  **The classification is per action, not per owner:** an action handed a publication credential
-  requires a reviewed full commit SHA even when its owner is approved, because a floating major
-  is a moving ref and whoever can move it can exfiltrate the credential. Registered in
-  `SHA_PINNED_ACTIONS` (`tests/ci/test_workflow_contracts.py`); see ADR-0009. This is what
-  reconciles CI-AR4 with CI-AR38, which previously contradicted it for
+- **CI-AR4 — Action version policy.** *(Superseded by CI-AR47 as of E012-S01-002. The
+  original text is kept because ADR-0009 and several guards reason about it.)* Approved
+  first-party and LiquidLogicLabs actions use a documented floating major when available; other
+  third-party actions require a reviewed SHA. **The classification is per action, not per owner:**
+  an action handed a publication credential requires a reviewed full commit SHA even when its
+  owner is approved, because a floating major is a moving ref and whoever can move it can
+  exfiltrate the credential. Registered in `SHA_PINNED_ACTIONS` (`tests/ci/support.py`); see
+  ADR-0009. This is what reconciled CI-AR4 with CI-AR38, which previously contradicted it for
   `pypa/gh-action-pypi-publish`.
 - **CI-AR5 — Stable topology.** The pipeline consists of `ci.yaml`, `dev.yaml` and `release.yaml`
   as event owners, and reusable `verify-build.yaml` and `publish-image.yaml`. Five files, in two
@@ -182,6 +201,10 @@ tested in `tests/ci/`, independent of whether this section's live proof is ever 
   no publisher secrets, and no publication jobs, including forked requests.
 - **CI-AR33 — Safe local `act`.** Local workflow testing uses a disposable clone/worktree and
   synthetic local inputs; it never rewrites the developer worktree or accepts production tokens.
+  *(Clarified 2026-10-08, ADR-0028: retained as cheap defense-in-depth against a future regression
+  reintroducing a `ref:` override, but no longer load-bearing for the failure mode that originally
+  motivated it -- see CI-AR42, which makes every job's checkout a no-op under `act` unconditionally,
+  with no disposable-clone step required to achieve that.)*
 - **CI-AR34 — Pinned isolated Gitea runners.** *(Deferred under the 2026-10-06 rescope; not a
   current E009 deliverable.)* Operating this project against a live Gitea instance requires
   recording and certifying a supported Gitea server, act-runner, runner image digest, transitive
@@ -225,6 +248,82 @@ tested in `tests/ci/`, independent of whether this section's live proof is ever 
   image digest/platform inspection, Release URL, and alias outcomes are emitted as job outputs and
   workflow run summaries. They are not added to a repository-owned schema.
 
+### Ref-free checkout (2026-10-08, ADR-0028)
+
+Investigation of a local-`act` checkout failure found that `actions/checkout` reconstructs its
+expected remote URL from the `repository`/`server-url` inputs and wipes/reinitializes the
+workspace on any mismatch with the actual recorded origin -- the same mechanism behind the
+2026-09-01 destructive-checkout incident. The only genuine no-op path is `act`'s own built-in skip
+of the whole step, triggered only when a checkout step's `with:` block has no `ref:` key at all.
+This pipeline's checkout call sites all carried `ref:` (threaded through so every job could
+re-verify an externally-computed source identity), which is why this repository hit the failure
+where comparable local `act`-based pipelines that never pass `ref:` to checkout do not. The scope
+is **five** reusable/event-owner files, not four: `publish-image.yaml` has its own
+`ref: ${{ inputs.source-sha }}` checkout, missed in an earlier pass of this redesign and caught by
+the reviewer gate. Rejected alternatives: git URL `insteadOf` rewrites (reproduces the
+destructive-checkout mechanism itself), `env.ACT`-based step branching (Gitea's own runners are
+act-based too, so `ACT` does not distinguish local from production; also in tension with CI-AR2),
+and a custom `LOCAL_VERIFY` environment flag (still host-conditional branching). A
+single-checkout-plus-artifact-fanout design was also considered and rejected in favor of total
+uniformity; see CI-AR43 for the resulting accepted trade-off. `act`'s no-`ref:` checkout skip
+(the mechanism CI-AR42 depends on) was re-confirmed by live, side-by-side reproduction in a
+disposable sandbox on 2026-10-08: a `ref:`-bearing checkout is executed for real, deletes the
+workspace, and fails fetching an unpushed SHA against the real remote; a `ref:`-free checkout on
+the same job is skipped entirely in under 40ms via a plain file copy, for both `actions/checkout@v4`
+and `@v7`.
+
+- **CI-AR42 — Ref-free checkout, everywhere.** No checkout step in `ci.yaml`, `dev.yaml`,
+  `release.yaml`, `verify-build.yaml`, or `publish-image.yaml` ever supplies `ref:`, `repository:`,
+  or any other identity-overriding input, **and no step after a ref-free checkout re-pins identity
+  by another route** (no `git fetch`/`git checkout <sha>` shell step, no env-var-indirected
+  `ref:` expression, no nested composite action that re-checks-out). Every checkout is the
+  plainest possible `actions/checkout@v7` call (`fetch-depth`/`fetch-tags`/`persist-credentials`
+  only), relying on the ambient event context GitHub, Gitea, and local `act` each already provide.
+  **Prevents:** host-conditional or channel-conditional checkout branching, destructive-checkout
+  failures under local `act` for unpushed commits, and N-times-duplicated `ref:` plumbing across
+  call sites. **Enforceable** by a workflow-contract test asserting (a) no `actions/checkout` step
+  anywhere under `.github/workflows/` declares a `ref:` or `repository:` key, and (b) no step in
+  any job that runs after a checkout step invokes `git fetch`, `git checkout`, or `git reset
+  --hard` against an argument other than a path already present in the working tree.
+- **CI-AR43 — PR verification tests the merge commit.** `ci.yaml`'s verification of a pull
+  request exercises GitHub's synthesized merge-with-base commit (the default `pull_request`
+  checkout target), not an explicitly pinned PR head SHA; no job computes or asserts
+  `github.event.pull_request.head.sha`. **Accepted trade-off:** a long-running PR run's
+  independently-checked-out jobs could in principle observe a recomputed merge ref if the base
+  branch moves mid-run. This narrow drift risk is accepted in favor of CI-AR42's uniformity rather
+  than engineered around with a single-checkout-plus-artifact-fanout design.
+- **CI-AR44 — Self-discovered build identity; assertion values still flow as data.** `verify-build.yaml`
+  does not accept `source-sha` as a `workflow_call`/`workflow_dispatch` input. Its
+  `source-integrity` job discovers it via `git rev-parse HEAD` as the immediate next step after
+  checkout -- before any other step, so no later step in that job can change what is recorded --
+  and emits it only as a job output; every other job's own identity output (used only for its
+  own `build-manifest.json` evidence row) is likewise captured as the first post-checkout step of
+  that job. `package-version` is an optional `workflow_call` input (`required: false`): a caller
+  that has one **omits the key from `with:` entirely** (never an empty string); `dev.yaml`/
+  `release.yaml` omit it for the `ci` channel's own call and supply it only for their own
+  dev/stable calls, to cross-validate against the built wheel. When the key is absent, the
+  `distribution` job reads the committed `pyproject.toml` version directly and performs no
+  cross-validation. This does not weaken CI-AR11 or CI-AR36, and it does not stop `source-sha`
+  from flowing where boundary revalidation needs it: `verify-build.yaml`'s self-discovered
+  `source-sha` output is still threaded as a plain **data value** (never a checkout `ref:`) into
+  `publish-image.yaml`'s required `source-sha` input and into every destination job's
+  `expected-source-sha` revalidation argument against the `verified-bundle` composite action,
+  exactly as the pre-existing CI-AR36 boundary-revalidation mechanism requires. Only the checkout
+  pinning is removed; the assertion chain is unchanged.
+- **CI-AR45 — `ci.yaml` is a single job.** `ci.yaml` has no separate `plan` job; it calls
+  `verify-build.yaml` directly with only `channel: ci`, since CI-AR42/CI-AR44 remove the need for
+  a pre-checkout pre-validation stage.
+- **CI-AR46 — No internal ref re-threading.** `dev.yaml` and `release.yaml` retain their `plan`
+  jobs (genuine dev-distance version derivation and stable-tag validation are real, channel-specific
+  work that belongs there, including self-discovering their own `source-sha` output via
+  `git rev-parse HEAD` for downstream data-flow use under CI-AR44), but no job downstream of `plan`
+  -- including `stable-tag-guard`, `attest`, the `verify-build.yaml` call, and the
+  `publish-image.yaml` call -- re-threads `ref:` into its own checkout. `github.sha` is immutable
+  for the whole run on push/tag triggers, so every job's independent ref-free checkout resolves to
+  the identical commit with zero drift risk; only the `source-sha`/`package-version` **values**
+  (never a checkout override) continue to flow downstream for CI-AR36 boundary-revalidation
+  assertions.
+
 ## Workflow Responsibilities
 
 | Workflow | Trigger | Secrets | Mutation |
@@ -235,8 +334,9 @@ tested in `tests/ci/`, independent of whether this section's live proof is ever 
 | `verify-build.yaml` | reusable call or dispatch | none | workflow artifacts only |
 | `publish-image.yaml` | reusable call from dev/release | explicit forge token and optional Docker Hub credentials only | one multi-platform build, immutable image publication, attestation, and image aliases |
 
-`verify-build.yaml` accepts only channel, package version, and source SHA. Publisher adapters
-consume its single evidence bundle.
+`verify-build.yaml` accepts only channel and an optional expected package version (CI-AR44); it
+discovers source identity itself via `git rev-parse HEAD` after a ref-free checkout (CI-AR42).
+Publisher adapters consume its single evidence bundle.
 
 ## Configuration Contract
 
@@ -340,3 +440,44 @@ Floating Git tags are moved by the stable finalizer only after publication succe
    migration.
 
 Epic ordering remains `E007 -> E008 -> E009`.
+
+## Supply-chain and gate-coverage rules (E012-S01-002)
+
+- **CI-AR47 — Every external action is pinned to a reviewed commit.** Supersedes CI-AR4's
+  default. Every `uses:` in a governed definition names a 40-character commit SHA with a
+  trailing `# vX.Y.Z` comment, and the commit is the one recorded in
+  `tests/ci/support.py::PINNED_ACTIONS`. The floating major is no longer the default for
+  approved owners: the weakest reference in a job sets the trust level of the whole job, and
+  five tagged actions beside one pinned one bought nothing. The one exception is registered,
+  not implied — `ACTIONS_ON_MOVING_REFS` holds `actions/upload-artifact` and
+  `actions/download-artifact` at `@v4`, because Gitea's `act_runner` implements only the v4
+  artifact protocol (Epic 9 forge portability) and resolving a GitHub commit SHA there is not
+  something this repository can assume. Guards:
+  `test_no_governed_definition_calls_an_action_on_a_moving_ref` and
+  `test_every_pinned_action_is_called_at_exactly_the_commit_it_was_reviewed_at`. See ADR-0031.
+
+- **CI-AR48 — The vendored tool trees have a repository-side integrity record.**
+  `vendored-trees.lock` names the vendored set (`.agents/`, `.claude/`, `_bmad/`) and holds a
+  SHA-256 for every tracked file in it. The pre-commit `exclude:` is validated *against* that
+  set rather than parsed to recover it, so no integrity check depends on a regex keeping one
+  shape. `scripts/vendored_trees.py --write` regenerates the lock and the generated coverage
+  block in `.github/CODEOWNERS` in one command, which is what keeps the asserted counts from
+  being a person's arithmetic. The lock is a repository-side reference and does not claim to
+  match what upstream published; the 142 files a `payload-manifest.json` names are the only
+  ones that do. See ADR-0032.
+
+- **CI-AR49 — The content gates exempt no path, and block in proportion to what they mean.**
+  `.gitleaks.toml` allowlists values, never directories: the vendored trees are scanned, and
+  the two false-positive classes that surfaced are allowlisted by their whole value or whole
+  line, with no `paths` key (which exempts a file outright, even under `condition = "AND"`).
+  `verify-build.yaml`'s self-proving probe plants a credential inside `_bmad/`, and a
+  near-miss for each allowlist, and requires the scan to **fail** on every one. The untracked-file
+  gate blocks under `src/`, `tests/` and `.github/`, where "untracked" means a linter reported
+  green over code it never read, and warns everywhere else, where no file-scoped hook would
+  have read the file whether it was tracked or not. See ADR-0033.
+
+- **CI-AR50 — Governance gates live in `verify-build.yaml`.** The `supply-chain` and
+  `untracked-coverage` jobs join `gitleaks`, `actionlint`, `file-hygiene` and
+  `source-integrity` there, and block `distribution` like every other gate. `ci.yaml`,
+  `dev.yaml` and `release.yaml` hold no gates of their own (ADR-0029); a gate added to one of
+  them would run on one channel.

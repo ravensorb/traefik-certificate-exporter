@@ -2,177 +2,136 @@
 
 ## Prerequisites
 
-- Python compatible with the `^3.10` constraint in `pyproject.toml`.
+- Python compatible with the `>=3.10,<3.15` constraint in `pyproject.toml`.
 - No repository interpreter pin exists; Poetry uses the active compatible Python interpreter.
-- Poetry 2.4.2 (the tested baseline) or a compatible release to create the project environment.
-- `just` 1.58.0 (the tested baseline). **Required for the release transaction**, not
-  optional: ADR-0006 makes `just check` the authoritative gate, so
-  `scripts/release_version.py` invokes it directly and aborts without it.
-- Docker with Buildx for the `image` recipe.
-- `act` plus Docker with Buildx for the optional local verifier run.
+- Poetry 2.4.2 (the tested baseline). The first `poetry install` also installs the
+  `poetry-dynamic-versioning` plugin from `[tool.poetry.requires-plugins]`, which needs
+  network access.
+- `just` — every local operation below is a `just` recipe (AD-16).
+- A clone with its tags: versions come only from `vX.Y.Z` tags (AD-7, strict), so in a
+  shallow or tagless clone run `git fetch --tags --unshallow` first.
+- Docker with Buildx for `just image`.
+- [`act`](https://github.com/nektos/act) for `just act` (optional).
 
-Install the Poetry-managed project and development tools with either `just install` or its
-authoritative command:
+Install the Poetry-managed project and development tools:
 
 ```bash
-poetry install
+just install
 ```
 
 No generated requirements file or separately maintained dependency list is used.
 
-
 ## Verification topology
 
-A pull request runs one thin adapter over one reusable verifier. Eight gate jobs fan out
-from a single source-identity check, and every one must pass before the distribution job
-builds the promotable artifact set. The adapter holds no credentials and the verifier is
-mechanically forbidden from publishing (ADR-0007).
+The pipeline is four workflows chosen by trigger (ADR-0035, AD-1). Every one of them calls
+the same reusable, credential-free `build.yaml`, which is the only place the project is
+checked, tested, built and versioned (AD-2):
 
-```mermaid
-flowchart TD
-    PR["pull_request -> main"] --> PLAN["ci.yaml : plan<br/>resolve version + source SHA"]
-    PLAN --> VERIFY["verify-build.yaml<br/>workflow_call"]
-    VERIFY --> SRC["source-integrity<br/>SHA matches checkout"]
-
-    SRC --> LOCK["poetry-lock"]
-    SRC --> RUFFC["ruff-check"]
-    SRC --> RUFFF["ruff-format"]
-    SRC --> MYPY["mypy"]
-    SRC --> LEAKS["gitleaks"]
-    SRC --> ACTION["actionlint +<br/>workflow policy"]
-    SRC --> HYG["file-hygiene"]
-    SRC --> PYTEST["pytest<br/>3.10 - 3.14 matrix"]
-
-    LOCK --> DIST
-    RUFFC --> DIST
-    RUFFF --> DIST
-    MYPY --> DIST
-    LEAKS --> DIST
-    ACTION --> DIST
-    HYG --> DIST
-    PYTEST --> DIST
-
-    DIST["distribution<br/>wheel + sdist, SHA256SUMS,<br/>build-manifest.json, image build,<br/>smoke tests"] --> ART["verified-dist-v1<br/>uploaded artifact"]
-
-    ART -.->|"promoted, never rebuilt"| PUB(["publication<br/>(Epic 8, not yet built)"])
-
-    style PUB stroke-dasharray: 5 5
+```text
+ pull_request   ci.yaml        build
+ push to main   dev.yaml       build ─► publish-package, publish-image   (dev)
+ tag vX.Y.Z     release.yaml   validate-tag ─► build ─► publish-package, publish-image ─► release
 ```
 
-The dashed edge is the promotion boundary. The verifier produces exactly one artifact set
-and publishers must consume it; rebuilding the distribution downstream is forbidden by the
-architecture spine. Nothing consumes it yet — that is Epic 8.
-
-Every gate job above blocks `distribution`, asserted by
-`test_every_gate_job_blocks_the_distribution_job`.
+The `build` job runs exactly what `just check` runs locally — every pre-commit hook, then
+`pytest` (AD-3) — and then builds the wheel, sdist and a single-architecture smoke-tested
+image. The required pull-request check is `build / build`. The full picture, with the
+destination table and the `PUBLISH_*` secrets, is in
+[ci/pipeline-walkthrough.md](ci/pipeline-walkthrough.md).
 
 ## Local command facade
 
-Run `just --list` from the repository root to see the supported recipes.
+| Recipe | Does |
+| --- | --- |
+| `just install` | `poetry install` |
+| `just check` | every pre-commit hook over the whole repository, then `pytest` — the CI gate |
+| `just build` | clean `dist/`, then `poetry build` (one wheel, one sdist) |
+| `just image` | `just build`, then build and load `traefik-certificate-exporter:local` from that wheel |
+| `just act [workflow]` | run a workflow under `act` with its own trigger event; default `ci.yaml` |
+| `just release <major\|minor\|patch>` | cut a release by pushing one `vX.Y.Z` tag |
 
-| Recipe | Purpose and delegate | Prerequisites | Produced files or state |
-|---|---|---|---|
-| `just install` | Runs `poetry install`. | Python and Poetry | The project Poetry environment. |
-| `just lint` | Runs `poetry check --lock`, then every configured pre-commit hook. | Installed development environment | Hook caches only; source files may be formatted by configured hooks. |
-| `just test` | Runs `poetry run pytest`. | Installed development environment | Pytest's configured local cache. |
-| `just check` | Requires both `lint` and `test`; it duplicates neither command body. | Installed development environment | Only the underlying tool outputs. |
-| `just test-local` | Delegates to `docker/act-build.sh`, which invokes the governed verifier's direct `workflow_dispatch` entry point. | Poetry, `act`, Docker, and Buildx | Verifier outputs plus `act-build-traefik-certificate-exporter.log`; no publication. |
-| `just release-dry-run <bump>` | Delegates a read-only `major`, `minor`, or `patch` release check to `scripts/release_version.py`. | Clean, synchronized release branch; Git, Poetry, and `just` | Console report only. |
-| `just release <bump>` | Delegates guarded preparation and atomic publication to `scripts/release_version.py --push`. | Dry-run preconditions plus remote push access | One local release commit/tag and, on success, the corresponding two remote refs. |
-| `just release-resume` | Revalidates and atomically publishes an existing local release identity. | A single valid unpushed release commit and exact annotated tag | The existing branch/tag refs on the remote; no new local identity. |
-| `just build` | Requires `check`, runs a clean Poetry build, requires one wheel and one sdist, and validates both with Twine. | Installed development environment | `dist/*.whl` and `dist/*.tar.gz`. |
-| `just image` | Requires `build`, derives the exact wheel inputs, and runs the shared Bake `image` target. | Docker Buildx plus build prerequisites | Locally loaded `traefik-certificate-exporter:local`. |
-
-The non-release recipes are local validation/build conveniences and perform no publication.
-Release recipes contain no version arithmetic or credentials; they only delegate to the guarded
-Python transaction. CI invokes the authoritative build tools and `docker-bake.hcl` directly; CI
-does not install or invoke `just`.
+The recipes are thin: no release or verification logic lives in a script (AD-16).
 
 ## Validate CI locally
 
-Run the same reusable verifier used by pull requests from a clean checkout:
-
 ```bash
-just test-local
+just act              # ci.yaml, as a pull_request
+just act dev.yaml     # the dev pipeline, as a push
 ```
 
-The wrapper passes channel `ci`, the committed Poetry version, and the full current Git SHA to
-`act workflow_dispatch -W .github/workflows/verify-build.yaml`. It supplies no registry, package,
-forge, or OIDC publication credential. The workflow runs strict failure handling, so a failed
-`act` process remains a failed command even though its output is also written to a log.
+- `just act` passes `--detect-event`, so each workflow runs under the event it declares.
+  Without it `act` sends `push`, and a `pull_request`-only workflow runs no job and exits 0.
+  Check that the `build` job actually ran, not only the exit status (AD-16, ADR-0036).
+- No secrets or variables are passed, so every publishing destination is disabled and
+  nothing is published (AD-9). `publish-package` and `publish-image` run their guards and
+  skip every publishing step.
+- The exit status is `act`'s own.
+- Run `just act dev.yaml` from `main` (or pass an event file with `ref: refs/heads/main`)
+  so the run matches `dev.yaml`'s branch filter.
+- No checkout carries a `ref:` (ADR-0028) and no step reads `env.ACT` (AD-6), so `act`
+  runs the same YAML as GitHub and Gitea, against your working tree.
+- The artifact actions are pinned to the newest `act`-compatible pair (upload-artifact
+  v5.0.0, download-artifact v6.0.0); newer majors fail under `act` 0.2.89. See the spine's
+  Deferred section (`_bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md`).
 
-This local run validates the verifier job graph; it does **not** validate the top-level
-pull-request orchestration DAG in `.github/workflows/ci.yaml`. Run the configured actionlint and
-workflow-policy pre-commit hooks for syntax and contract validation. GitHub and Gitea forge runs
-remain the conformance checks for event delivery, concurrency cancellation, permissions, and the
-job-level reusable-workflow call.
+### Vendored tool trees
 
-The governed verifier allows external actions owned only by `actions`, `docker`, `pypa`, and
-`LiquidLogicLabs`; another owner requires an approved ADR or architecture update. Maintained
-floating major aliases are used where available. Upstream documentation was rechecked on
-2026-09-01 for `actions/checkout@v7`, `actions/setup-python@v7`,
-`docker/setup-buildx-action@v4`, and `LiquidLogicLabs/git-action-docker-test@v2`. The deliberate
-artifact-transfer compatibility baseline remains the paired `actions/upload-artifact@v4` and
-`actions/download-artifact@v4` majors until a different pair passes both GitHub and Gitea
-conformance. Dependabot proposes action, Poetry/Python, and `/docker` dependency updates, but
-major action changes remain normal review-required pull requests; automation does not merge them.
+`.agents/`, `.claude/` and `_bmad/` are installed BMad tooling, not project source. They
+are excluded from the lint and format hooks, but secret scanning still reads them: the
+repository adds no path exemption to the `gitleaks` and `gitleaks-history` hooks (ADR-0033,
+as restated by ADR-0037). They have no repository-side integrity record; that record was
+retired by ADR-0035, and changes to them are held by CODEOWNERS review.
+
+`.gitleaks.toml` sets `useDefault = true`, so gitleaks' own default global allowlist is
+inherited (ADR-0037): it skips lock files, dependency site-packages and the VCS directory
+by path. With gitleaks v8.30.1 (the pre-commit hook `rev`), the `skipping file|directory:
+global allowlist` lines of
+`gitleaks dir --redact --no-banner --config .gitleaks.toml --log-level trace .` on a fully
+installed tree (Python 3.11 venv; plugins poetry-dynamic-versioning 1.10.0, dunamai 1.26.2,
+jinja2 3.1.6, markupsafe 3.0.4) name exactly these paths; `gitleaks git` skips only
+`poetry.lock` by path:
+
+- `.git`
+- `.gitleaks.toml`
+- `.poetry/plugins/dunamai-1.26.2.dist-info`
+- `.poetry/plugins/jinja2-3.1.6.dist-info`
+- `.poetry/plugins/markupsafe-3.0.4.dist-info`
+- `.poetry/plugins/poetry.lock`
+- `.poetry/plugins/poetry_dynamic_versioning-1.10.0.dist-info`
+- `.venv/lib/python3.11`
+- `poetry.lock`
+
+Ignored install and cache trees outside that set — the rest of `.poetry/plugins/`,
+`.mypy_cache/`, `.ruff_cache/`, `dist/`, the rest of `.venv/` — are scanned, and that
+over-scan fails closed. A credential placed in `poetry.lock` or `.gitleaks.toml` is not
+reported; ADR-0037 accepts that risk. The list is the same one in the `.gitleaks.toml`
+header. It is not checked by any standing CI job: it was verified by diffing a fresh trace
+against it. The concrete paths follow the gitleaks version, the locked plugin versions and
+the venv's interpreter, so a gitleaks upgrade, a plugin-lock bump or a different interpreter
+can change them; a change that alters the set must update both records in the same change.
 
 ## Prepare and publish a release
 
-The committed `[tool.poetry].version` in `pyproject.toml` is the package-version authority. Before
-preparing a release, the helper requires:
-
-- a clean working tree and configured Git author/committer identity;
-- the checked-out branch to be the default branch advertised by `origin`;
-- local `HEAD` to equal the current remote default-branch tip;
-- local exact stable tags (`vMAJOR.MINOR.PATCH`) to match the remote history completely; and
-- the greatest stable tag to equal the committed Poetry version.
-
-Create a repository-local identity if one is not configured, then inspect the starting state:
-
 ```bash
-git config user.name "Your Name"
-git config user.email "you@example.com"
-git status --short
-git branch --show-current
-git ls-remote --symref origin HEAD
-git tag --list 'v*' --sort=-v:refname
-poetry version --short
+git switch main && git pull
+just release minor     # or major / patch
 ```
 
-Start with one of the only accepted bump kinds:
+`just release`:
 
-```bash
-just release-dry-run patch
-```
+1. refuses unless the tree is clean, the current branch is the default branch, and
+   `HEAD` equals `origin/<default>` after a fetch (AD-15);
+2. runs `just check`;
+3. finds the latest `vX.Y.Z` tag reachable from `HEAD`, refuses if it already points at
+   `HEAD`, and computes the next version with `pysemver bump`;
+4. creates the annotated tag `vX.Y.Z` and pushes only that tag.
 
-The dry-run performs the read-only preconditions and asks Poetry to calculate the next version in
-dry-run mode. It prints the proposed version, predictable commit message, annotated exact tag, and
-the exact atomic two-ref push command. It does not change a file, index entry, commit, tag, or
-remote ref.
-
-For preparation without remote publication, invoke the helper directly:
-
-```bash
-poetry run python scripts/release_version.py patch
-```
-
-Poetry updates the committed version, `just check` validates that changed tree, and the helper
-creates one `chore(release): vMAJOR.MINOR.PATCH` commit plus an annotated
-`vMAJOR.MINOR.PATCH` tag. It prints, but does not execute:
-
-```text
-git push --atomic origin HEAD:<default-branch> refs/tags/vMAJOR.MINOR.PATCH
-```
-
-Inspect that local identity safely with `git status --short`, `git show --stat --decorate HEAD`,
-`git cat-file -t vMAJOR.MINOR.PATCH`, and `git rev-parse 'vMAJOR.MINOR.PATCH^{}'`.
-
-To prepare and publish in one guarded transaction, run `just release patch`. Immediately before
-mutation the helper refetches and revalidates the remote branch tip, remote tag absence, local
-commit, committed Poetry version, and annotated tag. It then issues exactly one atomic branch/tag
-push. It never broad-pushes tags, forces a ref, splits the two pushes, or falls back when the remote
-does not support atomic publication.
+A release creates no commit and needs no changelog file. The tag push triggers
+`release.yaml`, which validates the tag, builds, publishes to every configured destination,
+and creates the forge release with generated notes and the wheel and sdist attached. If the
+push fails, the recipe prints the retry (`git push origin refs/tags/vX.Y.Z`) and abandon
+(`git tag -d vX.Y.Z`) commands. Recovery is in
+[operational.md](operational.md#ci-recovery-runbook).
 
 ## Build package distributions
 
@@ -180,9 +139,9 @@ does not support atomic publication.
 just build
 ```
 
-Poetry builds one wheel and one source distribution into `dist/`; Twine validates the metadata
-and rendering of both artifacts. `poetry-dynamic-versioning` is present but currently disabled,
-so local artifacts use the committed Poetry version.
+Poetry builds one wheel and one sdist into `dist/`. The version is computed from git tags by
+`poetry-dynamic-versioning` (AD-7): exactly `X.Y.Z` on a release tag, `X.Y.(Z+1).devN` between
+releases. `pyproject.toml` always says `0.0.0`.
 
 ## Build the native image
 
@@ -190,14 +149,15 @@ so local artifacts use the committed Poetry version.
 just image
 ```
 
-The recipe supplies the local wheel path and SHA-256, committed package version, and full Git
-revision to `docker buildx bake image`. Bake owns the Docker context, Dockerfile, runtime target,
-pinned base, pinned builder Poetry version, labels, and local-load output. See
-[docker/README.md](../docker/README.md) for the direct Bake interface and smoke-test commands.
+The recipe builds `dist/` first, then runs `docker build` with `docker/Dockerfile`, target
+`runtime`, and the AD-17 build arguments: the wheel path and its SHA-256, the wheel's own
+version, the Poetry version, and the full Git revision. The result is loaded as
+`traefik-certificate-exporter:local`. See [docker/README.md](../docker/README.md) for
+smoke-test commands.
 
 The image builder deliberately cannot fall back to PyPI or a private package index for the
 application. It installs only the supplied, hash-verified wheel, ensuring the image contains the
-same package artifact that local and CI checks validated.
+same package artifact that local and CI checks validated (ADR-0008).
 
 ## Run locally
 

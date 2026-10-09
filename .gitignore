@@ -11,3 +11,5 @@ dist
 # unreviewed store inside a public repository is the wrong place for it. It persists on
 # disk; it just is not published.
 _bmad/memory/
+# Poetry's project-local plugin environment, populated from [tool.poetry.requires-plugins].
+.poetry/

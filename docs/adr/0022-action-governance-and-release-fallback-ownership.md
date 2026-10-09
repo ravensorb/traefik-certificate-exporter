@@ -1,6 +1,6 @@
 # ADR-0022: Action governance for the pinned tuple, and release-fallback ownership
 
-- **Status:** Accepted, scope-limited 2026-10-06
+- **Status:** Superseded by ADR-0035
 - **Scope note (2026-10-06):** Epic E009 was rescoped to drop live-Gitea-runner certification.
   Action-governance checks (maintenance/license/GA status, SHA-pin enforcement) are
   this repo's own closure-vetting responsibility, checked statically against GitHub-published

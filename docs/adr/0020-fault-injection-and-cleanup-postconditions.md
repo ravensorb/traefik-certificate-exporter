@@ -1,6 +1,6 @@
 # ADR-0020: Deterministic fault injection and cleanup postconditions for failed-jobs-only recovery
 
-- **Status:** Accepted, scope-limited 2026-10-06
+- **Status:** Superseded by ADR-0035
 - **Scope note (2026-10-06):** Epic E009 was rescoped to drop live-Gitea-runner certification.
   The fault-injection/cleanup-postcondition *contract* (schema, pre/post-state capture shape,
   rerun-identity rule) remains the recorded decision and is validated statically against

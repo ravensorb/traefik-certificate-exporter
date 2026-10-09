@@ -1,6 +1,6 @@
 # ADR-0006: Committed Poetry version and atomic release identity
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0035
 - **Date:** 2026-08-31
 - **Deciders:** Maintainer (ravensorb)
 - **Principle(s) in tension:** Simple local release preparation, complete remote identity, and recoverability under concurrent publication

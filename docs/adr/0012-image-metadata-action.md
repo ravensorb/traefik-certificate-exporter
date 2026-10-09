@@ -78,3 +78,7 @@ check the output, not the input.
 - Revisit if: `v6` goes stale against upstream, `flavor` or `tags` change shape, the fork diverges
   from `docker/metadata-action`'s tag grammar, or the action gains a capability that makes its
   implicit token load-bearing.
+
+## Amendment (2026-10-09) — ADR-0035
+
+Image tags are now defined by ADR-0035 AD-8: each tag has exactly one writing workflow — `dev.yaml` writes `X.Y.Z-dev.N`, `sha-<7>` and `dev`; `release.yaml` writes `X.Y.Z`, `X.Y`, `X` and `latest`.

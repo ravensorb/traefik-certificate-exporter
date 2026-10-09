@@ -1,0 +1,52 @@
+key: 'E013-S01-003'
+epic: 'E013'
+sprint: 'S01'
+title: Retire the remaining legacy pipeline surface and update docs and ADR statuses
+status: done
+classification: standard
+resolves: [BL-E012-009, BL-E012-011, BL-E011-004, BL-E012-010, BL-E011-031, BL-E012-012, BL-E011-002, BL-E012-001, BL-E012-002]
+estimate:
+  man_hours: 11.73
+  hitl_hours: 0.18
+  elapsed_hours: 1.83
+  cost: 1.4
+  model: claude-opus-5
+  fix_factor: 2.4167
+  scope_ratios:
+    man_hours: 0.8092
+    hitl_hours: 0.2154
+    elapsed_hours: 0.3781
+    tokens_k: 1.0
+  tokens_k:
+    total: 338
+    input: 51
+    output: 17
+    cache_write: 101
+    cache_read: 169
+updated_at: '2026-10-09T11:33:09Z'
+depends_on:
+- E013-S01-002
+completion_evidence:
+  fix_iterations: 1
+  files_changed: 48
+  test_runs:
+  - command: just check
+    exit_code: 0
+  - command: uvx --from poetry==2.4.2 poetry check --lock
+    exit_code: 0
+  - command: 'reference sweep: git grep -nE <story pattern> with exclusions (exit 1 = no match, expected)'
+    exit_code: 0
+  tests_passing: true
+actual:
+  elapsed_hours: 0.3
+  man_hours: 14
+  hitl_hours: 0
+  tokens_k:
+    total: 14012.68
+    input: 0.238
+    output: 17.108
+    cache_write: 962.672
+    cache_read: 13032.662
+  cost: 12.96
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-09T11:33:08Z'

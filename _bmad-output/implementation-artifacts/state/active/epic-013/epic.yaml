@@ -1,0 +1,32 @@
+_lock:
+  session_id: l3io-pm-20261009T203426Z-8306
+  claimed_at: '2026-10-09T20:59:34Z'
+  ttl_minutes: 30
+key: 'E013'
+title: Epic 013 — Standard CI/CD pipeline (ADR-0035)
+goal: ''
+status: in-progress
+updated_at: '2026-10-09T21:17:47Z'
+estimate:
+  man_hours_low: 191.78
+  man_hours_high: 209.99
+  hitl_hours_low: 1.93
+  hitl_hours_high: 2.24
+  elapsed_hours_low: 20.91
+  elapsed_hours_high: 25.66
+  tokens_k_min: 53653
+  tokens_k_max: 60969
+  closure_ratios:
+    man_hours: 0.676
+    hitl_hours: 0.9897
+    elapsed_hours: 1.6664
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0.0
+    hitl_hours: 0.1053
+    elapsed_hours: 0.0687
+    tokens_k: 0
+  cost_low: 43.73
+  cost_high: 49.67
+  model: claude-opus-5
+  confidence: medium

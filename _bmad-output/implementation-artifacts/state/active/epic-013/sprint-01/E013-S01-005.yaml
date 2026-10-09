@@ -1,0 +1,58 @@
+key: 'E013-S01-005'
+epic: 'E013'
+sprint: 'S01'
+title: Pipeline follow-ups from E013 review
+status: done
+classification: standard
+resolves: [BL-E013-003, BL-E013-004, BL-E013-005, BL-E013-006, BL-E013-008, BL-E013-009, BL-E013-011, BL-E013-012, BL-E013-013, BL-E013-014, BL-E013-015, BL-E013-016]
+estimate:
+  man_hours: 13.58
+  hitl_hours: 0.13
+  elapsed_hours: 1.48
+  cost: 2.99
+  model: claude-opus-5
+  fix_factor: 2.8333
+  scope_ratios:
+    man_hours: 0.799
+    hitl_hours: 0.135
+    elapsed_hours: 0.2619
+    tokens_k: 1.0
+  tokens_k:
+    total: 3519
+    input: 0
+    output: 5
+    cache_write: 193
+    cache_read: 3321
+updated_at: '2026-10-09T20:56:57Z'
+depends_on:
+- 'E013-S01-003'
+completion_evidence:
+  test_runs:
+  - command: just check
+    exit_code: 0
+  - command: registry guard matrix (bash -euo pipefail, 5 cases)
+    exit_code: 0
+  - command: act --detect-event -W .github/workflows/dev.yaml (no secrets)
+    exit_code: 0
+  - command: pre-commit run --files (fix-iteration files)
+    exit_code: 0
+  - command: gitleaks exempt-set diff (trace vs .gitleaks.toml vs developer.md)
+    exit_code: 0
+  - command: docs/architecture.md section 6 marker loop over docs/adr/*.md
+    exit_code: 0
+  tests_passing: true
+  fix_iterations: 1
+  files_changed: 16
+actual:
+  elapsed_hours: 0.21
+  man_hours: 10
+  hitl_hours: 0
+  tokens_k:
+    total: 8043.89
+    input: 0.158
+    output: 14.957
+    cache_write: 222.427
+    cache_read: 7806.346
+  cost: 5.67
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-09T20:56:56Z'

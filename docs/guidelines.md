@@ -78,51 +78,41 @@ vendor preference). Several are directly applicable to open findings in this rep
 
 - **[`git-action-ca-certificate-import`](https://github.com/LiquidLogicLabs/git-action-ca-certificate-import)**
   — installs custom CA certificates into the runner unconditionally (GitHub, Gitea, or `act`
-  alike). It was the runner-agnostic replacement for the `if: ${{ env.ACT }}`-gated CA install in
-  the legacy `build-container.yaml`; that workflow was deleted in E007 and the violation went with
-  it, so this remains a **candidate** for E009, where a private CA on self-hosted Gitea makes it
-  relevant again.
+  alike). **Adopted** (`@v3`) in every publish job, directly after the version guard (ADR-0036 §1), gated on
+  `PUBLISH_CA_CERTIFICATE` and feeding BuildKit its CA config (AD-18). It replaced the
+  `if: ${{ env.ACT }}`-gated CA install of the legacy `build-container.yaml`.
 - **[`git-action-docker-act-compatibility`](https://github.com/LiquidLogicLabs/git-action-docker-act-compatibility)**
   — resolves Docker build-context/Dockerfile-path differences between `act` and real GitHub
-  Actions; relevant given [docker/act-build.sh](../docker/act-build.sh) already exists for local
-  `act` testing.
+  Actions. Still a candidate: `just act` runs the workflows unmodified today (AD-6), so nothing
+  needs it.
 - **[`git-action-docker-metadata`](https://github.com/LiquidLogicLabs/git-action-docker-metadata)**
   — a drop-in fork of `docker/metadata-action` (identical inputs/tags/flavor semantics, same
-  version numbering — **verified at `@v6` in [ADR-0012](adr/0012-image-metadata-action.md)**:
-  `flavor` is a real input, `using: node24`, `v6` = `78e2563`, and upstream is at `v6.2.0`, so the
-  major lines do track) with no GitHub API dependency, so it works identically across GitHub,
-  Gitea, and local `act`. **Adopted**, in `dev.yaml`'s and `release.yaml`'s `plan` jobs, which
-  render every published image reference through it. It is passed `flavor: latest=false`, because
-  aliases belong to the finalizer alone — and `publish-image.yaml` refuses an alias-shaped tag
-  outright rather than trusting that input to be honoured (ADR-0012).
+  version numbering — **verified at `@v6` in [ADR-0012](adr/0012-image-metadata-action.md)**)
+  with no GitHub API dependency, so it works identically across GitHub, Gitea, and local `act`.
+  **Adopted** in the `publish-image` jobs of `dev.yaml` and `release.yaml`, which derive every
+  image tag and label through it; which workflow writes which tag is AD-8.
 
-`git-action-release@v2` is **selected**, not a candidate: it creates Releases on GitHub and on
-self-hosted Gitea from one step, resolving the instance from `GITHUB_SERVER_URL` (ADR-0010). It
-landed with `release.yaml` in E008-S01-002, in the `finalize` job, and `release-please` was
-retired by ADR-0006 rather than merely disabled.
+Also **adopted** by ADR-0035 (versions in the spine's Stack table):
+`git-action-release@v2` creates the forge release on GitHub or Gitea from one step
+([ADR-0010](adr/0010-forge-release-mechanism.md), amended by ADR-0035 for its credential);
+`git-action-release-changelog-builder@v3` generates its notes, so there is no changelog file;
+`git-action-tag-validate-version@v2` is `release.yaml`'s `validate-tag` (AD-12); and
+`git-action-docker-test@v2` smoke-tests the image in `build.yaml` and after each push.
+Every action is read at the tag being pinned before adoption, because Actions passes an
+unknown input through in silence.
 
-Two more were **adopted** in Epic 8 and are load-bearing:
-`git-action-tag-floating-version@v2` moves the stable Git aliases from `release.yaml`'s `finalize`
-(ADR-0006 — read its `action.yml` at both majors, because `@v1` and `@v2` spell the inputs
-differently and Actions passes an unknown key through in silence), and `git-action-docker-test@v2`
-smoke-tests the published image in `publish-image.yaml`. All three adopted actions are `node24`,
-so E009's pinned `act_runner` needs one JavaScript runtime rather than a mixture.
-
-Still candidates, adopted nowhere: `git-action-release-changelog-builder`,
-`git-action-tag-validate-version`, `git-action-docker-cleanup`,
-`git-action-ca-certificate-import` and `git-action-docker-act-compatibility`. Adopting one is a
-separate decision and, per ADR-0006 and ADR-0010, requires reading its `action.yml` at the tag
-being pinned.
+Still a candidate, adopted nowhere: `git-action-docker-cleanup` and
+`git-action-docker-act-compatibility`. Adopting one is a separate decision.
 
 ## 7. One pipeline, three runners — no `ACT` env var dependency
 
 The build must run, unmodified, under:
-- **`nektos/act`** locally (already used via [docker/act-build.sh](../docker/act-build.sh)),
+- **`nektos/act`** locally, via `just act [workflow]` (AD-16),
 - **Gitea Actions** (act-compatible runner),
 - **real GitHub Actions**.
 
 A single GitHub Actions YAML is the source of truth for all three — do not maintain
-separate pipeline definitions per runner.
+separate pipeline definitions per runner (AD-6).
 
 **Do not branch behavior on the `ACT` env var, under any circumstances.**
 
@@ -131,16 +121,15 @@ gated `if: ${{ env.ACT }}` that installed a custom CA certificate (`ca-ravenwolf
 through `act`'s `--container-options`. That workflow was deleted in E007 and the violation went
 with it.
 
-It is now enforced rather than tracked in prose:
-`test_no_governed_definition_branches_on_the_act_environment_variable` fails any governed workflow
-or composite action containing `ACT` as a whole word. The rule had been checked for
-`verify-build.yaml` alone, by substring, while this section recorded a live violation elsewhere —
-which is the reason the guard's scope is every governed definition rather than one file.
+**Enforced by a pre-commit hook.** The test that refused `ACT` in any workflow was retired with
+the governed pipeline (ADR-0035, AD-4: no custom policy code), and neither actionlint nor
+zizmor checks for it. The `workflows-no-act-env` pygrep hook in `.pre-commit-config.yaml` now
+fails on any `ACT` token in `.github/workflows/*.y(a)ml` (configuration of a standard tool,
+which AD-4 permits). It does not see `ACT` read inside a called action; `just act` running the
+same YAML as both forges is the practical check for that.
 
-The replacement, if a runner ever needs a custom CA, is runner-agnostic: a runner image with the
-CA baked in, or an unconditional install from a repo-committed source available to GitHub, Gitea
-and `act` alike — never a conditional on which tool is executing. E009 is where this becomes real,
-and `git-action-ca-certificate-import` is the candidate for it.
+The private-CA case this rule used to block is now handled runner-agnostically by
+`git-action-ca-certificate-import` (AD-18), never by a conditional on which tool is executing.
 
 ## 8. Always validate decisions against latest docs
 
@@ -208,6 +197,6 @@ The limits, so this does not become licence:
   what the code guarantees. A comment that is *only* history is a review finding here too.
 - **One defect, one place.** Where an ADR already records it, the comment names the ADR and stops.
 - **It expires.** When a comment describes a shape the code no longer has, delete it. Several went
-  at E008 closure for exactly that -- `publish-image.yaml`'s "becomes the fifth workflow file once
-  release.yaml lands", and a push-verification guard still calling itself vacuous two stories after
+  at E008 closure for exactly that -- a reusable image workflow's "becomes the fifth workflow file
+  once release.yaml lands", and a push-verification guard still calling itself vacuous two stories after
   it had stopped being.

@@ -1,0 +1,11 @@
+# zizmor pin policy (AD-5 as amended by ADR-0036). Configures unpinned-uses only and
+# disables no audit; accepted findings are suppressed per line, never per audit.
+# `ref-pin` accepts any ref, branch or tag: `LiquidLogicLabs/x@main` passes as readily as
+# `@v2` (checked against zizmor 1.30.1). NOT MECHANICALLY ENFORCED: the major-tag form AD-5
+# asks for is held by CODEOWNERS review of .github/workflows/.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "LiquidLogicLabs/*": ref-pin
+        "*": hash-pin

@@ -1,6 +1,6 @@
 # ADR-0015: Prove Gitea runner trust-class routing before enabling credentials
 
-- **Status:** Accepted, scope-limited 2026-10-06
+- **Status:** Superseded by ADR-0035
 - **Scope note (2026-10-06):** Epic E009 was rescoped to drop live-Gitea-runner certification
   (see epic.yaml goal). The trust-class/routing *design* below (two separately-scoped runner
   registrations, no publication credential reachable from an untrusted context) remains the

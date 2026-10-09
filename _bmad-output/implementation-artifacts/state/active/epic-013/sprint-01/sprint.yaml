@@ -1,0 +1,47 @@
+key: 'S01'
+epic: 'E013'
+title: Sprint 01
+status: done
+updated_at: '2026-10-09T21:12:47Z'
+estimate:
+  man_hours_low: 94.31
+  man_hours_high: 133.31
+  hitl_hours_low: 0.98
+  hitl_hours_high: 1.27
+  elapsed_hours_low: 10.12
+  elapsed_hours_high: 12.88
+  tokens_k_min: 8870
+  tokens_k_max: 10080
+  closure_ratios:
+    man_hours: 3.8059
+    hitl_hours: 2.3155
+    elapsed_hours: 2.0007
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0.0
+    hitl_hours: 0.1121
+    elapsed_hours: 0.1473
+    tokens_k: 0
+  cost_low: 7.55
+  cost_high: 8.58
+  model: claude-opus-5
+  confidence: medium
+next: 6
+actual:
+  elapsed_hours: 1.67
+  man_hours: 40
+  hitl_hours: 0
+  tokens_k:
+    total: 47471.29
+    input: 0.946
+    output: 72.497
+    cache_write: 2499.117
+    cache_read: 44898.727
+  cost: 39.89
+  model: claude-opus-5
+closed:
+  date: '2026-10-09'
+retrospective:
+  summary: '4 of 5 stories done: the bespoke governed CI pipeline (tests/ci, publication_contract, composite actions, ~19k lines) was replaced by four standard workflows gated by pre-commit (actionlint, zizmor, gitleaks), with docs and ADR statuses updated. E013-S01-004 live forge verification was carried to E013-S02-001 by the maintainer. Closure restored three rule guards as pygrep hooks and corrected stale docs; two HIGH red-team findings (publish secrets without environments, unrestricted v* tag release) await maintainer decision as BL-E013-018/019.'
+  velocity: '4'
+  carry_over: '1'

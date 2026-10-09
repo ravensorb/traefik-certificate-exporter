@@ -1,8 +1,127 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
 
-if [ ! -f /config/config.yaml ]; then
-    # write_info "Creating default config.yaml"
+# Seed the operator's config on first boot, then decide -- once, here -- whether the service
+# may keep root. Root is only required for the Docker-socket restart path, so the decision is
+# keyed on `settings.restartcontainers` alone (ADR-0030). The answer is written to a state
+# file the service script reads, so the service script keeps a single `s6-setuidgid` call at
+# the top of its exec chain instead of re-deriving configuration mid-script.
+#
+# The resolution is done by the INSTALLED package, not by a second parser living here: the
+# container must reach the same answer the application will, across every source confuse
+# merges (packaged default, .env files, config file, environment) and with confuse's own
+# truthiness. A container that drops privileges while the application believes
+# `restartcontainers` is on is the worst outcome available -- restarts then fail with a bare
+# permission error from the Docker socket.
+
+CONFIG_FILE=/config/config.yaml
+STATE_DIR=/run/traefik-certificate-exporter
+PRIV_STATE="${STATE_DIR}/run-as-root"
+RESOLVED="${STATE_DIR}/resolved-settings"
+SERVICE_HOME="${STATE_DIR}/home"
+SERVICE_USER=abc
+
+if [ ! -f "${CONFIG_FILE}" ]; then
     echo "Setting up sample config.yaml"
-    cp -u /defaults/config/config.yaml.sample /config/config.yaml
+    cp -u /defaults/config/config.yaml.sample "${CONFIG_FILE}"
+fi
+
+mkdir -p "${STATE_DIR}"
+
+# Fail safe before anything can go wrong: an unreadable or malformed config drops privileges,
+# it never retains them.
+printf 'false\n' > "${PRIV_STATE}"
+rm -f "${RESOLVED}"
+
+# Written to a file rather than captured from stdout: loading the settings also initialises
+# the application logger, and its output must not be mistaken for the answer.
+TCE_CONFIG_FILE="${CONFIG_FILE}" TCE_RESOLVED_OUT="${RESOLVED}" \
+    /app/.venv/bin/python - > /dev/null 2>&1 <<'PY'
+import os
+
+from traefik_certificate_exporter.libs.settings import SettingsManager
+
+manager = SettingsManager()
+manager.loadFromFile(os.environ["TCE_CONFIG_FILE"])
+settings = manager.settings
+
+with open(os.environ["TCE_RESOLVED_OUT"], "w", encoding="utf-8") as handle:
+    handle.write("true\n" if settings.restartContainers else "false\n")
+    handle.write(f"{settings.outputPath}\n")
+    handle.write(f"{settings.dataPath}\n")
+    handle.write(f"{settings.fileSpec}\n")
+PY
+
+decision=""
+outputPath=""
+dataPath=""
+fileSpec=""
+if [ -s "${RESOLVED}" ]; then
+    decision="$(sed -n '1p' "${RESOLVED}")"
+    outputPath="$(sed -n '2p' "${RESOLVED}")"
+    dataPath="$(sed -n '3p' "${RESOLVED}")"
+    fileSpec="$(sed -n '4p' "${RESOLVED}")"
+fi
+
+case "${decision}" in
+    true)
+        printf 'true\n' > "${PRIV_STATE}"
+        ;;
+    false) ;;
+    *)
+        echo "WARNING: could not resolve settings.restartcontainers from ${CONFIG_FILE} and" \
+             "the environment; falling back to the safe default and dropping privileges to" \
+             "${SERVICE_USER}"
+        ;;
+esac
+
+if [ "$(cat "${PRIV_STATE}")" = "true" ]; then
+    exit 0
+fi
+
+# ---- From here on the service will run as ${SERVICE_USER}; make that account viable. ----
+
+# confuse creates its application directory under $HOME on every start, and $HOME is /root in
+# the base image -- mode 0700, so the unprivileged account cannot create it and the service
+# would die before reading a single certificate. Give it a home it owns, on tmpfs.
+mkdir -p "${SERVICE_HOME}"
+chown "${SERVICE_USER}:${SERVICE_USER}" "${SERVICE_HOME}"
+
+# The output path is resolved, not assumed: /certs is only the image's DEFAULT outputpath, and
+# an operator who mounts somewhere else would otherwise get a root-owned directory the service
+# cannot write to, reported only as a per-domain export error.
+[ -n "${outputPath}" ] || outputPath=/certs
+
+if [ -d "${outputPath}" ]; then
+    # NOT `chown -R` and NOT `lsiown -R`: both dereference symlinks, so a link planted in the
+    # operator-writable output volume would have this root-owned init chown its target --
+    # turning the privilege drop into an arbitrary-chown primitive aimed at /etc/shadow.
+    # `! -type l` skips links outright and `-xdev` stops at a nested mount.
+    find "${outputPath}" -xdev ! -type l -exec chown -h "${SERVICE_USER}:${SERVICE_USER}" {} + || \
+        echo "WARNING: could not take ownership of ${outputPath} for ${SERVICE_USER};" \
+             "exports may fail"
+fi
+
+# Traefik writes acme.json mode 0600 owned by the account Traefik runs as (root, usually) and
+# refuses to start if it is more permissive -- so the dropped account may simply not be able
+# to read it. That failure surfaces only as a generic per-file error, so say it plainly here.
+if [ -n "${dataPath}" ] && [ -d "${dataPath}" ]; then
+    [ -n "${fileSpec}" ] || fileSpec='*.json'
+    unreadable=""
+    shopt -s nullglob
+    # shellcheck disable=SC2086  # fileSpec is a glob pattern and must stay unquoted
+    for candidate in "${dataPath}"/${fileSpec}; do
+        # shellcheck disable=SC2016  # $1 is the inner shell's argument, not this shell's
+        if ! s6-setuidgid "${SERVICE_USER}" sh -c '[ -r "$1" ]' _ "${candidate}"; then
+            unreadable="${unreadable} ${candidate}"
+        fi
+    done
+    shopt -u nullglob
+
+    if [ -n "${unreadable}" ]; then
+        echo "WARNING: running as ${SERVICE_USER} (settings.restartcontainers is disabled)" \
+             "but these ACME store files are not readable by that account:${unreadable}." \
+             "Set PUID/PGID to an account that can read them, or relax their group" \
+             "permissions -- otherwise no certificate will be exported."
+    fi
 fi

@@ -442,3 +442,408 @@ resolved:
   resolution: fixed
   resolved_at: '2026-10-06T20:32:36Z'
   ref: E011-S01-004
+- key: BL-E011-012
+  epic: '011'
+  sprint: '01'
+  title: Service runs as root (s6-setuidgid root) and postexportcommand is RCE-equivalent config
+  source: redteam (RT-004)
+  source_phase: redteam
+  source_ref: RT-004
+  severity: High
+  status: resolved
+  description: 'Deferred half of RT-004: the CWD logging.yaml auto-discovery RCE path was closed this sprint, but the s6 service still runs as root and /config remains an operator-writable volume feeding postexportcommand. Dropping to the LinuxServer PUID/PGID account also reduces RT-001/RT-003/RT-009. Operator-breaking image change; needs its own ADR and story. See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md.'
+  story: E012-S01-001
+  scheduled_at: '2026-10-07T12:05:14Z'
+  resolution: fixed
+  resolved_at: '2026-10-08T13:14:39Z'
+  ref: E012-S01-001
+- key: BL-E011-016
+  epic: '011'
+  sprint: '01'
+  title: Container restarts driven by attacker-influenced domain strings over the Docker socket
+  source: redteam (RT-009)
+  source_phase: redteam
+  source_ref: RT-009
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+  story: E012-S01-001
+  scheduled_at: '2026-10-07T12:05:14Z'
+  resolution: fixed
+  resolved_at: '2026-10-08T13:14:39Z'
+  ref: E012-S01-001
+- key: BL-E011-019
+  epic: '011'
+  sprint: '01'
+  title: Document that the post-export hook inherits the full environment including credentials
+  source: redteam (RT-016)
+  source_phase: redteam
+  source_ref: RT-016
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+  story: E012-S01-001
+  scheduled_at: '2026-10-07T12:05:14Z'
+  resolution: fixed
+  resolved_at: '2026-10-08T13:14:39Z'
+  ref: E012-S01-001
+- key: BL-E011-009
+  epic: '011'
+  sprint: '01'
+  title: Atomic write replaces a symlinked certificate path with a regular file instead of writing through it
+  source: code-review (E011-S01-004)
+  source_phase: code-review
+  source_ref: E011-S01-004
+  severity: Medium
+  status: resolved
+  description: os.replace() onto a symlinked target breaks the link, where the previous Path.open("w") wrote through it. See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-004.md section 5.
+  story: E012-S01-001
+  scheduled_at: '2026-10-07T12:05:14Z'
+  resolution: fixed
+  resolved_at: '2026-10-08T13:14:40Z'
+  ref: E012-S01-001
+- key: BL-E011-011
+  epic: '011'
+  sprint: '01'
+  title: docker/act-build.sh clone/mount strategy blocks a green local act run (BL-E007-002 residue)
+  source: arch-drift (SD-01-2)
+  source_phase: arch-drift
+  source_ref: SD-01-2
+  severity: Medium
+  status: resolved
+  description: The retained act evidence fails at actions/checkout rejecting the local-clone origin. Closing BL-E007-002 fully needs a wrapper clone/mount change, not a rerun. See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md (SD-01-2) and docs/operational.md.
+  story: E012-S01-003
+  scheduled_at: '2026-10-07T12:05:27Z'
+  resolution: fixed
+  resolved_at: '2026-10-08T13:40:49Z'
+  ref: E012-S01-003
+- key: BL-E013-010
+  epic: '013'
+  sprint: '01'
+  title: 'just act cannot pass: act 0.2.89 (latest) artifact server rejects the Stack-pinned upload-artifact v7.0.2 (unknown field mime_type; nektos/act #6022, #6114, #6173 open) — AD-16 act AC unmet; architect to choose act-compatible artifact pins or accept act runs ending at upload'
+  source: dev (E013-S01-002)
+  source_phase: dev
+  source_ref: E013-S01-002
+  severity: High
+  status: resolved
+  kind: spec-proposal
+  ref: E013-S01-002
+  description: 'ci.yaml under act: every build step through git-action-docker-test succeeds, then actions/upload-artifact fails CreateArtifact x5. dev.yaml publish jobs are unreachable under act for the same reason (download-artifact v8 is in the same upstream issue). Not fixable within AD-5 Stack pins; no env.ACT branching allowed.'
+  resolution: fixed
+  resolved_at: '2026-10-09T01:48:14Z'
+  note: Artifact actions pinned to upload-artifact v5.0.0 (330a01c4) / download-artifact v6.0.0 (018cc2cf), dependabot holds majors; just act (ci.yaml) and just act dev.yaml exit 0 under act 0.2.89 with no secrets. Live node20 check on GitHub/Gitea is E013-S01-004. See epic-013/sprint-01/closure/notes-E013-S01-002.md
+- key: BL-E012-009
+  epic: '012'
+  sprint: '01'
+  title: dev.yaml finalize-dev-alias lost its just-in-time protected-head freshness proof
+  source: code-review (E012-S01-003)
+  source_phase: code-review
+  source_ref: E012-S01-003
+  severity: Medium
+  status: resolved
+  description: "CI-AR42 removed 'ref: github.event.repository.default_branch' from finalize-dev-alias's checkout, so recheck-head now compares two values both derived from the run's own immutable github.sha and can no longer observe a superseding push. The step name, summary line and behavioural test docstring were downgraded to an honest consistency check (this story), but the guarantee itself is gone. Needs either a ref-free equivalent (e.g. an authenticated API read of the default-branch head compared against source-sha) or an explicit acceptance that cancel-in-progress concurrency is the sole protection. Documented in docs/ci/ref-free-checkout-walkthrough.md, section 'The second thing that changed'."
+  story: E013-S01-003
+  scheduled_at: '2026-10-08T23:55:24Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T11:33:09Z'
+  ref: E013-S01-003
+- key: BL-E012-011
+  epic: '012'
+  sprint: '01'
+  title: tests/ci/test_documentation.py recovery-runbook prohibition test fails at HEAD
+  source: code-review (E012-S01-003)
+  source_phase: code-review
+  source_ref: E012-S01-003
+  severity: Medium
+  status: resolved
+  description: test_the_recovery_runbook_prescribes_failed_jobs_only_recovery fails on a clean stashed tree, so it is pre-existing and not caused by E012-S01-003. The finding count is aggravated in the current working tree by sibling story E012-S01-001's uncommitted docs/operational.md additions, which phrase several rerun/overwrite instructions in a form the prohibition reader treats as instructions rather than prohibitions. Needs ownership by whichever story touches docs/operational.md.
+  story: E013-S01-003
+  scheduled_at: '2026-10-08T23:55:24Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T11:33:09Z'
+  ref: E013-S01-003
+- key: BL-E011-004
+  epic: '011'
+  sprint: '01'
+  title: Wrapper exits 0 on a failed act run; the new runbook section does not say so
+  source: code-review (E011-S01-001)
+  source_phase: code-review
+  source_ref: E011-S01-001
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-001.md
+  story: E013-S01-003
+  scheduled_at: '2026-10-08T23:55:24Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T11:33:10Z'
+  ref: E013-S01-003
+- key: BL-E012-010
+  epic: '012'
+  sprint: '01'
+  title: No post-change act run recorded for docker/act-build.sh ref-free verification
+  source: code-review (E012-S01-003)
+  source_phase: code-review
+  source_ref: E012-S01-003
+  severity: Low
+  status: resolved
+  description: "The story's testability AC names a green docker/act-build.sh run per channel with no destructive-checkout error as the acceptance check for BL-E011-011's original failure. The only act log in the tree (act-build-traefik-certificate-exporter.log, gitignored) predates the change and shows the pre-change failure. The mechanism is correct by nektos/act issue #122 (a checkout is skipped only when neither ref nor repository is set) and is now mechanically guarded by tests, but no post-change run was executed in this environment (no act binary available). Run act-build.sh for ci/dev/stable and attach the log before closing BL-E011-011."
+  story: E013-S01-003
+  scheduled_at: '2026-10-08T23:55:24Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T11:33:10Z'
+  ref: E013-S01-003
+- key: BL-E011-031
+  epic: '011'
+  sprint: '01'
+  title: Vendored-file counts conflict between .github/CODEOWNERS and tests/ci/test_gates.py
+  source: arch-drift (SD-01-7)
+  source_phase: arch-drift
+  source_ref: SD-01-7
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md
+  story: E013-S01-003
+  scheduled_at: '2026-10-08T23:55:24Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T11:33:10Z'
+  ref: E013-S01-003
+- key: BL-E012-012
+  epic: '012'
+  sprint: '01'
+  title: tests/ci/test_gates.py untracked-file gate fails on orchestrator and planning artifacts
+  source: code-review (E012-S01-003)
+  source_phase: code-review
+  source_ref: E012-S01-003
+  severity: Low
+  status: resolved
+  description: test_no_file_escapes_every_gate_by_never_having_been_added fails because _bmad-output planning/implementation artifacts and uv.lock are untracked in the working tree. This story's two documentation deliverables (docs/ci/ref-free-checkout-walkthrough.md, docs/adr/0028, docs/adr/0029) were git added as part of the fix loop; the remaining entries belong to the epic's orchestration, not to any single story. Decide tracked-vs-ignored for _bmad-output and uv.lock at epic closure.
+  story: E013-S01-003
+  scheduled_at: '2026-10-08T23:55:24Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T11:33:10Z'
+  ref: E013-S01-003
+- key: BL-E011-002
+  epic: '011'
+  sprint: ''
+  title: tests/ci/test_gates.py ambiguously cited by both E011-S01-001 and E011-S01-002
+  source: arch-gate (bmad-agent-architect)
+  source_phase: arch-gate
+  source_ref: bmad-agent-architect
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/arch/arch-gate-review.md (AG-7).
+  story: E013-S01-003
+  scheduled_at: '2026-10-08T23:55:24Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T11:33:11Z'
+  ref: E013-S01-003
+- key: BL-E012-001
+  epic: '012'
+  sprint: ''
+  title: Action-SHA-pin gate uses a hand-rolled regex CI script instead of an existing marketplace action (e.g. zgosalvez/github-actions-ensure-sha-pinned-actions); record as a short ADR per core §7/§8 decision-making hook
+  source: arch-gate (l3io-arch-review)
+  source_phase: arch-gate
+  source_ref: l3io-arch-review
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-012/arch/arch-gate-review.md (consolidated MINOR findings)
+  story: E013-S01-003
+  scheduled_at: '2026-10-08T23:55:24Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T11:33:11Z'
+  ref: E013-S01-003
+- key: BL-E012-002
+  epic: '012'
+  sprint: ''
+  title: Action-SHA-pin gate has no renewal mechanism (e.g. Dependabot/Renovate for github-actions) to keep pins current once pinned
+  source: arch-gate (l3io-arch-review)
+  source_phase: arch-gate
+  source_ref: l3io-arch-review
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-012/arch/arch-gate-review.md (consolidated MINOR findings)
+  story: E013-S01-003
+  scheduled_at: '2026-10-08T23:55:24Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T11:33:11Z'
+  ref: E013-S01-003
+- key: BL-E013-003
+  epic: '013'
+  sprint: '01'
+  title: strict dynamic versioning breaks every plugin-activated Poetry command (install, check --lock, lock) without reachable tags; S01-002 must give every CI job that runs Poetry outside 'poetry run' fetch-depth 0 + fetch-tags, or POETRY_DYNAMIC_VERSIONING_BYPASS
+  source: code-review (E013-S01-001)
+  source_phase: code-review
+  source_ref: E013-S01-001
+  severity: Medium
+  status: resolved
+  description: F-01 hand-off. Local part fixed in the justfile install comment. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/review-E013-S01-001.md
+  story: E013-S01-005
+  scheduled_at: '2026-10-09T20:13:32Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T20:56:57Z'
+  ref: E013-S01-005
+- key: BL-E013-004
+  epic: '013'
+  sprint: '01'
+  title: gitleaks tree hook (gitleaks dir .) scans untracked install trees such as .poetry/; .gitignore does not exclude them
+  source: code-review (E013-S01-001)
+  source_phase: code-review
+  source_ref: E013-S01-001
+  severity: Low
+  status: resolved
+  description: F-02. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/review-E013-S01-001.md
+  story: E013-S01-005
+  scheduled_at: '2026-10-09T20:13:32Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T20:56:57Z'
+  ref: E013-S01-005
+- key: BL-E013-005
+  epic: '013'
+  sprint: '01'
+  title: just release refuses when the base tag already points at HEAD; record this precondition in AD-16 and the story's step list
+  source: code-review (E013-S01-001)
+  source_phase: code-review
+  source_ref: E013-S01-001
+  severity: Low
+  status: resolved
+  description: F-03. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/review-E013-S01-001.md
+  story: E013-S01-005
+  scheduled_at: '2026-10-09T20:13:32Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T20:56:58Z'
+  ref: E013-S01-005
+- key: BL-E013-006
+  epic: '013'
+  sprint: '01'
+  title: 'Stale coverage prose: .pre-commit-config.yaml ruff comment cites a tests/ci test, and pyproject mypy override cites helper scripts no longer type-checked'
+  source: code-review (E013-S01-001)
+  source_phase: code-review
+  source_ref: E013-S01-001
+  severity: Low
+  status: resolved
+  description: F-04, for S01-002/S01-003. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/review-E013-S01-001.md
+  story: E013-S01-005
+  scheduled_at: '2026-10-09T20:13:32Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T20:56:58Z'
+  ref: E013-S01-005
+- key: BL-E013-008
+  epic: '013'
+  sprint: '01'
+  title: 'publish-image: registry token set but PUBLISH_*_IMAGE var empty logs in, pushes nothing there, and succeeds silently; add a fail-fast guard naming the half-configured registry'
+  source: code-review (E013-S01-002)
+  source_phase: code-review
+  source_ref: E013-S01-002
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/review-E013-S01-002.md F-2
+  story: E013-S01-005
+  scheduled_at: '2026-10-09T20:13:32Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T20:56:58Z'
+  ref: E013-S01-005
+- key: BL-E013-009
+  epic: '013'
+  sprint: '01'
+  title: release job CA import gated on PUBLISH_CA only, not PUBLISH_RELEASE (story self-contradiction; harmless)
+  source: code-review (E013-S01-002)
+  source_phase: code-review
+  source_ref: E013-S01-002
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/review-E013-S01-002.md F-3
+  story: E013-S01-005
+  scheduled_at: '2026-10-09T20:13:32Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T20:56:59Z'
+  ref: E013-S01-005
+- key: BL-E013-011
+  epic: '013'
+  sprint: '01'
+  title: CONTRIBUTING says "a green `just check` is a green PR"
+  source: code-review (E013-S01-003)
+  source_phase: code-review
+  source_ref: E013-S01-003
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/review-E013-S01-003.md (L-1)
+  story: E013-S01-005
+  scheduled_at: '2026-10-09T20:13:32Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T20:56:59Z'
+  ref: E013-S01-005
+- key: BL-E013-012
+  epic: '013'
+  sprint: '01'
+  title: '`tests/support.py` is now dead, and the story says it is used'
+  source: code-review (E013-S01-003)
+  source_phase: code-review
+  source_ref: E013-S01-003
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/review-E013-S01-003.md (L-2)
+  story: E013-S01-005
+  scheduled_at: '2026-10-09T20:13:32Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T20:56:59Z'
+  ref: E013-S01-005
+- key: BL-E013-013
+  epic: '013'
+  sprint: '01'
+  title: '`docs/architecture.md` §6 still lists superseded ADRs as current decisions'
+  source: code-review (E013-S01-003)
+  source_phase: code-review
+  source_ref: E013-S01-003
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/review-E013-S01-003.md (L-3)
+  story: E013-S01-005
+  scheduled_at: '2026-10-09T20:13:32Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T20:56:59Z'
+  ref: E013-S01-005
+- key: BL-E013-014
+  epic: '013'
+  sprint: '01'
+  title: AGENTS.md still prescribes `poetry lock --check`
+  source: code-review (E013-S01-003)
+  source_phase: code-review
+  source_ref: E013-S01-003
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/review-E013-S01-003.md (L-4)
+  story: E013-S01-005
+  scheduled_at: '2026-10-09T20:13:32Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T20:57:00Z'
+  ref: E013-S01-005
+- key: BL-E013-015
+  epic: '013'
+  sprint: '01'
+  title: '"enabled only by its own `PUBLISH_*_TOKEN` secret" is inaccurate for Gitea'
+  source: code-review (E013-S01-003)
+  source_phase: code-review
+  source_ref: E013-S01-003
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/review-E013-S01-003.md (L-5)
+  story: E013-S01-005
+  scheduled_at: '2026-10-09T20:13:32Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T20:57:00Z'
+  ref: E013-S01-005
+- key: BL-E013-016
+  epic: '013'
+  sprint: '01'
+  title: Credential blast-radius guidance was dropped
+  source: code-review (E013-S01-003)
+  source_phase: code-review
+  source_ref: E013-S01-003
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/review-E013-S01-003.md (L-6)
+  story: E013-S01-005
+  scheduled_at: '2026-10-09T20:13:32Z'
+  resolution: fixed
+  resolved_at: '2026-10-09T20:57:00Z'
+  ref: E013-S01-005

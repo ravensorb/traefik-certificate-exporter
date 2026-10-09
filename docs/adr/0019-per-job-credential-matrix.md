@@ -1,6 +1,6 @@
 # ADR-0019: Per-job credential matrix with distinct principals and denial proofs
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0035
 - **Date:** 2026-10-06
 - **Deciders:** Maintainer + architecture gate
 - **Epic:** E009

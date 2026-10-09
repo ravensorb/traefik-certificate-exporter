@@ -1,0 +1,30 @@
+key: 'E013-S01-004'
+epic: 'E013'
+sprint: 'S01'
+title: Live verification on GitHub, Gitea 1.27 and local act
+classification: standard
+status: blocked
+updated_at: '2026-10-09T20:59:01Z'
+depends_on:
+- 'E013-S01-002'
+estimate:
+  man_hours: 13.58
+  hitl_hours: 0.13
+  elapsed_hours: 1.48
+  cost: 2.99
+  model: claude-opus-5
+  fix_factor: 2.8333
+  scope_ratios:
+    man_hours: 0.799
+    hitl_hours: 0.135
+    elapsed_hours: 0.2619
+    tokens_k: 1.0
+  tokens_k:
+    total: 3519
+    input: 0
+    output: 5
+    cache_write: 193
+    cache_read: 3321
+blocked_reason: "Moved to E013-S02-001 at the maintainer's request (2026-10-09): live verification needs the maintainer's GitHub/Gitea runners and PUBLISH_* secrets. Close as done with a resolution pointing at E013-S02-001 when that story completes."
+completion_evidence:
+  blocks_seen: 1

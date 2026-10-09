@@ -445,12 +445,16 @@ def test_a_rejected_domains_control_characters_do_not_reach_the_log_sink(
         names = exporter.exportCertificatesForFile(fixture_path)
 
     assert names == []
-    refusal_records = [r for r in caplog.records if "Refusing to export" in r.getMessage()]
+    refusal_records = [
+        r for r in caplog.records if "Refusing to export" in r.getMessage()
+    ]
     assert refusal_records, "expected a refusal log record"
     for record in refusal_records:
         message = record.getMessage()
         assert "\x1b" not in message, "ESC/CSI sequence reached the log sink"
-        assert "\n" not in message, "embedded newline reached the log sink (log forging)"
+        assert "\n" not in message, (
+            "embedded newline reached the log sink (log forging)"
+        )
         assert "\r" not in message
 
 

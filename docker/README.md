@@ -8,60 +8,25 @@ This tool can be used to extract acme certificates (ex: lets encrypt) from traef
 
 ### Build the exact-wheel image locally
 
-The supported local build starts at the repository root and uses the same declarative Bake target
-that CI consumes:
+The supported local build starts at the repository root:
 
 ```bash
 just image
 ```
 
-This runs local checks, creates exactly one wheel and one source distribution in `dist/`, validates
-both distributions, and locally loads `traefik-certificate-exporter:local`. It performs no registry
-login, push, or publication.
+This runs `just build` (exactly one wheel and one source distribution in `dist/`), then
+`docker build` with `docker/Dockerfile`, target `runtime`, and loads the result as
+`traefik-certificate-exporter:local`. It performs no registry login, push, or publication.
+CI builds the image the same way, through `docker/build-push-action`, with the same build
+arguments (AD-17):
 
-Container contributors can invoke Bake directly after `just build`. The following dynamic inputs
-are required and must describe the exact wheel being installed:
-
-| Input | Contract |
+| Build argument | Contract |
 |---|---|
-| `WHEEL_PATH` | Repository-relative path or glob selecting exactly one `.whl` file. |
+| `POETRY_VERSION` | The pinned builder Poetry version. |
+| `WHEEL_PATH` | Repository-relative path to the one `.whl` in `dist/`. |
 | `WHEEL_SHA256` | SHA-256 of that wheel as 64 lowercase hexadecimal characters. |
-| `VERSION` | Package version in the wheel metadata. |
+| `VERSION` | The wheel's version; PEP 440 (`1.4.1.dev3`) and SemVer (`1.4.1-dev.3`) spellings both match. |
 | `REVISION` | Full lowercase source Git SHA. |
-
-For example:
-
-```bash
-mapfile -d '' -t wheels < <(find dist -maxdepth 1 -type f -name '*.whl' -print0)
-if (( ${#wheels[@]} != 1 )); then
-  echo >&2 "wheel contract: dist must contain exactly one wheel"
-  exit 1
-fi
-wheel="${wheels[0]}"
-WHEEL_PATH="$wheel" \
-WHEEL_SHA256="$(poetry run python -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$wheel")" \
-VERSION="$(poetry run python -c 'import sys, zipfile; archive = zipfile.ZipFile(sys.argv[1]); metadata = archive.read(next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))).decode(); print(next(line.removeprefix("Version: ") for line in metadata.splitlines() if line.startswith("Version: ")))' "$wheel")" \
-REVISION="$(git rev-parse HEAD)" \
-docker buildx bake image
-```
-
-`docker-bake.hcl` also accepts `TAGS`, `PLATFORMS`, `OUTPUTS`, and
-`ATTESTATIONS` (lists) as explicit environment overrides. Labels are the exception: they
-are a map, so there is no CSV form and `LABELS_JSON` is the only spelling. Use CSV for simple list values or append
-`_JSON` to the variable name for JSON values, such as `PLATFORMS_JSON='["linux/amd64",
-"linux/arm64"]'`. Its local defaults select the native platform, load the image into Docker, apply
-the local tag, and emit no attestations. CI can override those values without copying the Docker
-context, Dockerfile, target, pinned base, pinned Poetry version, or build-argument mapping into a
-second build command.
-
-The default `OUTPUTS=["type=docker"]` is a single-platform local-load exporter. A multi-platform
-`PLATFORMS` override must also select a compatible output, for example:
-
-```bash
-PLATFORMS_JSON='["linux/amd64","linux/arm64"]' \
-OUTPUTS_JSON='["type=oci,dest=dist/traefik-certificate-exporter.oci.tar"]' \
-docker buildx bake image
-```
 
 The Dockerfile installs runtime dependencies only from `pyproject.toml` and `poetry.lock`, verifies
 the selected wheel hash, and installs it with `pip install --no-deps --no-index`. There is no

@@ -260,3 +260,7 @@ graph and attaches them to the result, so this decision is about exporter capabi
   list directly, while an OCI-layout `index.json` sits one level above it — and a single-platform
   layout has no nested index at all. A test iterating `index.json`'s `manifests[]` reads the wrong
   level.
+
+## Amendment (2026-10-09) — ADR-0035
+
+The image is now built with `docker/build-push-action`, not bake (ADR-0035, AD-17). The exact-wheel principle is carried forward: the image installs the one wheel `build.yaml` produced, verified by its SHA-256.

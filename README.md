@@ -135,6 +135,22 @@ line was emitted outside any export pass.
 
 See [docs/operational.md](docs/operational.md#tracing-one-export-pass-correlation_id).
 
+## Releases and images
+
+- **Versions come from git tags.** A release is a `vX.Y.Z` tag on `main`; the package
+  and the image carry that version. Every push to `main` between releases publishes a
+  dev build (`X.Y.Z.devN` for the package, `X.Y.Z-dev.N` and `dev` for the image).
+- **Python package:** PyPI (releases), TestPyPI (dev builds) and the Gitea package index.
+- **Image:** GitHub Container Registry, Docker Hub and the Gitea container registry,
+  built for `amd64` and `arm64`. `latest` and `X.Y.Z` / `X.Y` / `X` follow releases;
+  `dev` follows `main`.
+- Each destination is enabled by its own `PUBLISH_*` secret, so a fork or a mirror
+  publishes only where it has been configured to. The one shared secret is
+  `PUBLISH_GITEA_TOKEN`: the Gitea package index and the Gitea container registry both
+  use it, so neither can be enabled without the other.
+
+How the pipeline works, and how to set it up: [docs/ci/pipeline-walkthrough.md](docs/ci/pipeline-walkthrough.md).
+
 ## Credits
 
 This tool is HEAVLY influenced by the excellent work of [DanielHuisman](https://github.com/DanielHuisman) and [Marc Brückner](https://github.com/SnowMB)

@@ -1,5 +1,11 @@
 # CI/CD Pipeline Assessment and Lean Publication Recommendation
 
+> **Historical — describes the pipeline retired by ADR-0035.** This document is kept as a
+> record of the governed pipeline it was written against. The workflows, jobs, scripts and
+> tests it names no longer exist; the current pipeline is described in
+> [pipeline-walkthrough.md](pipeline-walkthrough.md) and
+> [ADR-0035](../adr/0035-standard-ci-cd-pipeline.md).
+
 Date: 2026-09-01
 
 Status: implementation-ready planning baseline

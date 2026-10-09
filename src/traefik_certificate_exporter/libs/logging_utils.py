@@ -161,7 +161,10 @@ def _apply_console_json(config: dict) -> dict:
             continue
         if "StreamHandler" not in str(handler.get("class", "")):
             continue
-        replacement = _CONSOLE_JSON_FORMATTERS.get(handler.get("formatter"))
+        formatter = handler.get("formatter")
+        if not isinstance(formatter, str):
+            continue
+        replacement = _CONSOLE_JSON_FORMATTERS.get(formatter)
         if replacement and replacement in formatters:
             handler["formatter"] = replacement
     return config

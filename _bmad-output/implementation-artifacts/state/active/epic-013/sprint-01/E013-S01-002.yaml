@@ -1,0 +1,63 @@
+key: 'E013-S01-002'
+epic: 'E013'
+sprint: 'S01'
+title: 'New workflows: build, ci, dev, release; remove the old workflows and tests/ci'
+classification: complex
+status: done
+updated_at: '2026-10-09T01:12:28Z'
+depends_on:
+- 'E013-S01-001'
+estimate:
+  man_hours: 17.69
+  hitl_hours: 0.12
+  elapsed_hours: 1.06
+  tokens_k:
+    total: 350
+    input: 52
+    output: 18
+    cache_write: 105
+    cache_read: 175
+  cost: 1.45
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.179
+    hitl_hours: 0.1423
+    elapsed_hours: 0.2117
+    tokens_k: 1.0
+completion_evidence:
+  fix_iterations: 0
+  files_changed: 41
+  test_runs:
+  - command: just check
+    exit_code: 0
+  - command: just image
+    exit_code: 0
+  - command: just act (ci.yaml)
+    exit_code: 1
+  - command: just act (ci.yaml)
+    exit_code: 1
+  - command: just act dev.yaml
+    exit_code: 1
+  - command: just check
+    exit_code: 0
+  - command: just act (ci.yaml)
+    exit_code: 0
+  - command: just act dev.yaml
+    exit_code: 0
+  - command: just check
+    exit_code: 0
+  tests_passing: true
+actual:
+  elapsed_hours: 0.53
+  man_hours: 12
+  hitl_hours: 0
+  tokens_k:
+    total: 7381.48
+    input: 0.134
+    output: 9.924
+    cache_write: 490.09
+    cache_read: 6881.331
+  cost: 6.75
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-09T01:12:28Z'

@@ -104,76 +104,79 @@ locked set. "CI cannot build or publish either artifact" closed in E008: see §7
 
 ## 6. Recorded decisions
 
+One row per file in [`docs/adr/`](adr/); there is no ADR-0034. Each row's marker is read from
+the ADR itself: "superseded by" from its `Status:` line, "amended by" from its
+`## Amendment … ADR-NNNN` headings, its `Amended by:` line, or an "amended by" clause in its
+`Status:` line. Not mechanically enforced: no check compares this table with `docs/adr/`,
+so a new or re-statused ADR must update its row in the same change.
+
 | ADR | Decision | Spine invariant |
 |---|---|---|
 | [0001](adr/0001-python-dependency-management-poetry.md) | Poetry for dependency/environment management | [AD-1](../_bmad-output/planning-artifacts/architecture/architecture-traefik-certificate-exporter-2026-08-30/ARCHITECTURE-SPINE.md#ad-1--poetry-is-the-single-dependency-source) |
 | [0002](adr/0002-container-base-image-and-privilege-model.md) | linuxserver.io base image + PUID/PGID privilege model | [AD-2](../_bmad-output/planning-artifacts/architecture/architecture-traefik-certificate-exporter-2026-08-30/ARCHITECTURE-SPINE.md#ad-2--container-base-image-and-privilege-model) |
 | [0003](adr/0003-logging-stack-and-secret-redaction.md) | Logging stack and secret-redaction policy | [AD-3](../_bmad-output/planning-artifacts/architecture/architecture-traefik-certificate-exporter-2026-08-30/ARCHITECTURE-SPINE.md#ad-3--logging-structured-file-output-secrets-never-logged) |
-| [0004](adr/0004-dependency-build-artifact-parity.md) | Docker image built from the locked dependency set | [AD-4](../_bmad-output/planning-artifacts/architecture/architecture-traefik-certificate-exporter-2026-08-30/ARCHITECTURE-SPINE.md#ad-4--docker-image-built-from-the-locked-dependency-set) |
+| [0004](adr/0004-dependency-build-artifact-parity.md) | Docker image built from the locked dependency set (amended by 0008) | [AD-4](../_bmad-output/planning-artifacts/architecture/architecture-traefik-certificate-exporter-2026-08-30/ARCHITECTURE-SPINE.md#ad-4--docker-image-built-from-the-locked-dependency-set) |
 | [0005](adr/0005-ci-reusable-workflow-wiring.md) | CI reusable-workflow wiring (superseded by 0007) | [AD-5](../_bmad-output/planning-artifacts/architecture/architecture-traefik-certificate-exporter-2026-08-30/ARCHITECTURE-SPINE.md#ad-5--one-ci-pipeline-three-runners-no-act-branching) |
-| [0006](adr/0006-release-version-transaction.md) | The guarded release-version transaction; identity vs. its artifacts | — |
-| [0007](adr/0007-pr-verification-topology.md) | PR-verification topology: thin event adapters, one secret-free verifier | — |
-| [0008](adr/0008-exact-wheel-image-provenance.md) | Exact-wheel provenance from the verified bundle into the image | — |
-| [0009](adr/0009-action-pin-policy.md) | Action pin policy: floating major by default, reviewed SHA for credential handlers | — |
-| [0010](adr/0010-forge-release-mechanism.md) | Forge Release creation through one multi-platform action | — |
-| [0011](adr/0011-publication-matrix-and-finalizer-aggregation.md) | Channel decides the destination set; how the finalizer reads a skipped job | — |
-| [0012](adr/0012-image-metadata-action.md) | The image metadata action, verified at the tag this repository pins | — |
+| [0006](adr/0006-release-version-transaction.md) | The guarded release-version transaction; identity vs. its artifacts (superseded by 0035) | — |
+| [0007](adr/0007-pr-verification-topology.md) | PR-verification topology: thin event adapters, one secret-free verifier (superseded by 0035) | — |
+| [0008](adr/0008-exact-wheel-image-provenance.md) | Exact-wheel provenance from the verified bundle into the image (amended by 0035) | — |
+| [0009](adr/0009-action-pin-policy.md) | Action pin policy: floating major by default, reviewed SHA for credential handlers (superseded by 0035) | — |
+| [0010](adr/0010-forge-release-mechanism.md) | Forge Release creation through one multi-platform action (amended by 0035) | — |
+| [0011](adr/0011-publication-matrix-and-finalizer-aggregation.md) | Channel decides the destination set; how the finalizer reads a skipped job (superseded by 0035) | — |
+| [0012](adr/0012-image-metadata-action.md) | The image metadata action, verified at the tag this repository pins (amended by 0035) | — |
+| [0013](adr/0013-export-event-bus-and-notification-delivery.md) | One export event bus, two consumer contracts, and Apprise for delivery (superseded by 0014) | — |
+| [0014](adr/0014-post-export-notifications-via-apprise.md) | Notifications on `post-export`, delivered by Apprise | — |
+| [0015](adr/0015-gitea-runner-trust-class-routing.md) | Prove Gitea runner trust-class routing before enabling credentials (superseded by 0035) | — |
+| [0016](adr/0016-gitea-tuple-evidence-ownership.md) | Split Gitea tuple preflight evidence from final certification evidence (superseded by scope) | — |
+| [0017](adr/0017-gitea-certification-evidence-authenticity.md) | Authenticate Gitea certification evidence with retained API exports (superseded by scope) | — |
+| [0018](adr/0018-tls-trust-vs-network-egress-separation.md) | Separate TLS issuer trust from network-egress authorization | — |
+| [0019](adr/0019-per-job-credential-matrix.md) | Per-job credential matrix with distinct principals and denial proofs (superseded by 0035) | — |
+| [0020](adr/0020-fault-injection-and-cleanup-postconditions.md) | Deterministic fault injection and cleanup postconditions for failed-jobs-only recovery (superseded by 0035) | — |
+| [0021](adr/0021-forge-classifier-coordinate-contract.md) | One authoritative forge classifier and coordinate projection contract (superseded by 0035) | — |
+| [0022](adr/0022-action-governance-and-release-fallback-ownership.md) | Action governance for the pinned tuple, and release-fallback ownership (superseded by 0035) | — |
+| [0023](adr/0023-export-pipeline-correlation-id-and-atomic-writes.md) | Per-drain correlation ID and atomic certificate writes | — |
+| [0024](adr/0024-atomic-write-helper-covers-pkcs12-exports.md) | Atomic-write helper covers PKCS12 (`.pfx`) exports, not just PEM text files | — |
+| [0025](adr/0025-strict-cli-parse-without-import-time-regression.md) | Keep a lenient import-time `globalArgs`; add a separate strict parse called only from `main()` | — |
+| [0026](adr/0026-none-safe-timer-cancellation-on-shutdown.md) | `AcmeCertificateFileHandler` owns a None-safe `shutdown()`/`cancel()` method | — |
+| [0027](adr/0027-vendored-tree-framing-lives-in-codeowners.md) | Vendored-tree "not maintained by us" framing lives only in CODEOWNERS, not `docs/guidelines.md` | — |
+| [0028](adr/0028-ref-free-checkout-across-ci-cd.md) | Ref-free checkout across all CI/CD workflows | — |
+| [0029](adr/0029-ci-gate-placement-sequencing.md) | Governance gates land in verify-build.yaml; Story 3 lands before Story 2 (superseded by 0035) | — |
+| [0030](adr/0030-conditional-privilege-drop.md) | Conditional root — privilege drop unless the Docker-socket restart path is enabled | — |
+| [0031](adr/0031-every-external-action-pinned-to-a-reviewed-commit.md) | Every external action is pinned to a reviewed commit (superseded by 0035) | — |
+| [0032](adr/0032-vendored-trees-have-a-repository-side-integrity-record.md) | The vendored tool trees have a repository-side integrity record (superseded by 0035) | — |
+| [0033](adr/0033-secret-scanning-exempts-no-path.md) | Secret scanning exempts no path, and the untracked-file gate has two severities (amended by 0035; amended by 0037) | — |
+| [0035](adr/0035-standard-ci-cd-pipeline.md) | A standard, trigger-selected CI/CD pipeline replaces the governed pipeline (amended by 0036) | [CI/CD spine](../_bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md) |
+| [0036](adr/0036-ci-cd-pipeline-arch-gate-amendments.md) | CI/CD pipeline amendments from the E013 architecture gate | [CI/CD spine](../_bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md) |
+| [0037](adr/0037-gitleaks-default-allowlist-is-inherited.md) | Secret scanning inherits gitleaks' default allowlist; the repository adds no path exemption | [CI/CD spine](../_bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md) |
 
 The ADR is the durable, full-rationale record (Context/Options/Decision/Consequences); the
 spine's AD-n block is the terse, enforceable restatement `bmad-architecture`-driven work
 checks against. Neither supersedes the other — update both if a decision changes.
 
-## 7. Delivery topology (E008)
+## 7. Delivery topology (ADR-0035)
 
-Five workflow files, two of them reusable. `ci.yaml` and `dev.yaml` and `release.yaml` own
-events; `verify-build.yaml` and `publish-image.yaml` are called and own none. That partition is
-asserted by `test_the_workflow_topology_is_a_partition_of_reusable_files_and_event_owners`, so
-this diagram cannot quietly stop being true.
+Four workflow files, chosen by trigger ([ADR-0035](adr/0035-standard-ci-cd-pipeline.md),
+AD-1). `ci.yaml`, `dev.yaml` and `release.yaml` own events; `build.yaml` is reusable, owns
+none, and holds no credential (AD-2). It is the only place the project is checked, tested,
+built and versioned; every publish job sits downstream of it and receives its `dist`
+artifact and its `version` / `image-version` outputs.
 
-One verifier runs for every event. It is secret-free by construction
-([ADR-0007](adr/0007-pr-verification-topology.md) invariant 2) and no caller may hand it a
-credential; everything holding a credential sits downstream of it.
+```text
+ trigger              workflow       pipeline
+ -------              --------       --------
+ pull_request    -->  ci.yaml        build
+ push to main    -->  dev.yaml       build --> publish-package (dev)
+                                           --> publish-image   (dev)
+ tag vX.Y.Z      -->  release.yaml   validate-tag --> build --> publish-package (release)
+                                                            --> publish-image   (release)
+                                                            --> release (notes + assets)
 
-```mermaid
-flowchart LR
-  PR[pull_request] --> CI[ci.yaml]
-  PUSH[push to main] --> DEV[dev.yaml]
-  TAG["push tag v*"] --> REL[release.yaml]
-  CI --> V[verify-build.yaml<br/>secret-free]
-  DEV --> V
-  REL --> V
+ dependency direction:  ci/dev/release.yaml --calls--> build.yaml
+                        publish jobs --needs--> build (artifact `dist`, outputs version + image-version)
+                        build.yaml holds no credential and calls nothing that does
 ```
 
-The two publishing channels share a shape: decide identity, verify, fan out to the enabled
-destinations, refuse unless every enabled one delivered, then attach names. Only the last stage
-holds the grants [ADR-0006](adr/0006-release-version-transaction.md) governs, and in the stable
-channel it is split in two so that ref authority and registry authority are never held together.
-
-```mermaid
-flowchart TD
-  P[plan<br/>identity + enabled set] --> V[verify]
-  V --> PF[publish-package-forge]
-  V --> PP["publish-package-pypi / testpypi"]
-  V --> PI[publish-image.yaml<br/>one multi-platform build]
-  PF --> F{{"finalize<br/>gate, Release, Git aliases<br/>contents: write"}}
-  PP --> F
-  PI --> F
-  F --> FA{{"finalize-image-aliases<br/>registry aliases<br/>packages: write"}}
-  FA --> E[release-evidence]
-```
-
-`dev.yaml` is the same graph with one finalization job (`finalize-dev-alias`), no Release, and
-Docker Hub never enabled — the channel decides the destination set
-([ADR-0011](adr/0011-publication-matrix-and-finalizer-aggregation.md)).
-
-Three properties are worth stating because they are the ones the guards spend most of their
-effort on:
-
-- **The verifier is upstream of every credential.** Every publisher revalidates the verified
-  bundle before it logs in or uploads (CI-AR36).
-- **Only a registered finalizer moves a mutable name.** `RELEASE_FINALIZER_JOBS` holds
-  `(workflow, job)` pairs; anything else that writes a ref, creates a Release or moves a registry
-  alias fails the suite — composite actions included, since their steps run with the calling
-  job's authority.
-- **Ordering comes from the Git tag set, read where the write happens.** Never from a registry,
-  and never carried across a job boundary.
+Each destination is enabled only by its own `PUBLISH_*` secret (AD-9), each image tag has
+exactly one writing workflow (AD-8), and `dev.yaml`'s `cancel-in-progress` concurrency keeps
+an older dev run from moving `dev` after a newer one (AD-14). The full walkthrough, with the
+destination table, is [ci/pipeline-walkthrough.md](ci/pipeline-walkthrough.md).

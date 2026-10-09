@@ -2,9 +2,7 @@
 
 # Digest-pinned default. Dependabot resolves `FROM $VAR` only through an ARG default,
 # so without one the `docker` ecosystem entry watching /docker can update nothing while
-# still reporting coverage. docker-bake.hcl carries the same value for the build
-# manifest; the two are held equal by
-# tests/ci/test_workflow_contracts.py::test_dependency_maintenance_covers_actions_python_and_docker.
+# still reporting coverage.
 ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24@sha256:e17494fc7ec17c64f1b502d52705aa99d7a1cd8ccf59bb7b36003db89d97d2c6
 
 # Build stage: install the locked dependency set and the caller-supplied wheel.
@@ -36,8 +34,12 @@ RUN \
 WORKDIR /app
 
 # Dependency layers depend only on Poetry's authoritative manifest and lock file.
+# The builder has no .git, so strict dynamic versioning (AD-7) would fail; the bypass is
+# safe because this installs dependencies only -- the application version comes from the
+# hashed wheel below (ADR-0036).
 COPY pyproject.toml poetry.lock ./
 RUN poetry config virtualenvs.in-project true && \
+    POETRY_DYNAMIC_VERSIONING_BYPASS=0.0.0 \
     poetry install --only main --no-root --no-directory
 
 # The BuildKit bind mount makes a missing wheel observable by this validation step instead
@@ -79,6 +81,11 @@ RUN --mount=type=bind,source=.,target=/build-context,ro \
 
 # Ensure pip is available only long enough to install the exact verified wheel, without
 # dependencies or index access, then remove pip from the venv before the stage is copied.
+# VERSION may be the wheel's PEP 440 version (`just image`) or its SemVer image-version
+# (CI), so it is compared under PEP 440 normalisation (AD-17 as amended by ADR-0036):
+# 1.4.1-dev.3 and 1.4.1.dev3 both equal 1.4.1.dev3. The parser is pip's vendored
+# `packaging`, already in the venv for this install and removed with pip, so the image
+# gains no dependency; a pip release that moves it fails this build loudly.
 ARG VERSION
 ARG REVISION
 RUN set -eu; \
@@ -96,7 +103,10 @@ RUN set -eu; \
     /app/.venv/bin/python -m pip install --no-deps --no-index "${verified_wheel}"; \
     installed_version="$(/app/.venv/bin/python -c \
         'from importlib.metadata import version; print(version("traefik-certificate-exporter"))')"; \
-    if [ -z "${VERSION}" ] || [ "${installed_version}" != "${VERSION}" ]; then \
+    if [ -z "${VERSION}" ] || { [ "${installed_version}" != "${VERSION}" ] && \
+        ! /app/.venv/bin/python -c \
+            'import sys; from pip._vendor.packaging.version import Version; sys.exit(Version(sys.argv[1]) != Version(sys.argv[2]))' \
+            "${installed_version}" "${VERSION}"; }; then \
         echo >&2 "image contract: VERSION must equal the supplied wheel metadata"; \
         exit 1; \
     fi; \

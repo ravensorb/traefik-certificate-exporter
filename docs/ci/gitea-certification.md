@@ -1,5 +1,11 @@
 # Gitea staging certification and the migration gate (Story 9.2)
 
+> **Historical — describes the pipeline retired by ADR-0035.** This document is kept as a
+> record of the governed pipeline it was written against. The workflows, jobs, scripts and
+> tests it names no longer exist; the current pipeline is described in
+> [pipeline-walkthrough.md](pipeline-walkthrough.md) and
+> [ADR-0035](../adr/0035-standard-ci-cd-pipeline.md).
+
 **Rescope note (2026-10-06):** Epic E009 was rescoped to drop live-Gitea-runner certification.
 No production-owner migration is currently planned or blocked on this project; this document and
 the validator it describes are kept as a tested reference implementation, in case a future epic
@@ -59,7 +65,7 @@ typed conclusion with no matching export-backed identity cannot pass it.
 | `endpoint-scope-omission` | negative | statically covered by `tests/ci/test_credential_matrix.py::test_disabled_destination_jobs_receive_no_secret_for_that_destination`; the live forge-side scope denial requires live Gitea |
 | `artifact-output-loss-across-rerun` | negative (ADR-0020) | the preservation contract (empty `needs` outputs, lost artifact scope) is implemented and unit-tested against synthetic fixtures in `tests/ci/test_certification.py`; the live rerun requires live Gitea |
 | `package-image-failure` | negative | requires live Gitea (an actual destination failure observed and reported) |
-| `stale-dev-candidate` | negative | covered today, no live Gitea needed -- `tests/ci/test_finalization.py::test_a_stale_development_candidate_halts_without_moving_dev` |
+| `stale-dev-candidate` | negative | covered today, no live Gitea needed -- `tests/ci/test_finalization.py::test_a_mismatched_development_candidate_halts_without_moving_dev` |
 | `failed-jobs-only-unsupported` | negative | requires live Gitea (probing the pinned Gitea's rerun API directly) |
 
 `tests/ci/test_certification.py::CASE_REQUIRES_LIVE_GITEA` is the machine-checked

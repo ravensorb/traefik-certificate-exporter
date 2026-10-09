@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "traefik-certificate-exporter"
-version = "0.2.0"
+version = "0.0.0"
 description = "Watches for changes to traefik acme json files and extracts certificates to a specific folder"
 authors = ["Shawn Anderson <sanderson@eye-catcher.com>"]
 readme = "README.md"
@@ -9,7 +9,6 @@ homepage = "https://github.com/ravensorb/traefik-certificate-exporter"
 keywords = ['traefik', 'letsencrypt']
 packages = [
     {include = "traefik_certificate_exporter", from = "src"},
-    {include = "publication_contract", from = "src"},
 ]
 
 [tool.poetry.dependencies]
@@ -27,43 +26,20 @@ logging-tree = "^1.9"
 expandvars = "^0.12.0"
 cryptography = "^50.0.1"
 python-json-logger = "^4.2.0"
-# Runtime dependencies of the publication-contract validator only. Optional so that
-# `poetry install --only main` -- what docker/Dockerfile uses to build the runtime image --
-# does not pull jsonschema and its compiled rpds-py chain into the production image.
-jsonschema = { version = "^4.25.1", optional = true }
-packaging = { version = "^26.3", optional = true }
 apprise = "^1.9.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.2.1"
-scriv = {extras = ["toml"], version = "^1.2.1"}
 pytest = "^9.1.1"
 poetry = "^2.4.2"
 twine = "^7.0.0"
+# Provides the `pysemver` CLI that `just release` uses to compute the next version (AD-15).
+semver = "==3.1.0"
 pyyaml = "^6.0.1"
 mypy = "^2.3.1"
-types-jsonschema = "^4.25.1"
-dockerfile-parse = "^2.0.1"
-# The CommonMark parser the workflow-contract guards use to read docs/operational.md as
-# blocks (global rule 1 -- the alternative was a hand-written Markdown block splitter).
-# Already present transitively through `poetry`'s own `rich`; declared here so the tests
-# do not depend on somebody else's transitive dependency staying where it is.
-markdown-it-py = "^3.0.0"
-# Mirrors of the two optional publication-contract extras above, so a plain
-# `poetry install` yields a working test environment without --extras. Held identical
-# by tests/ci/test_publication_contract.py.
-jsonschema = "^4.25.1"
-packaging = "^26.3"
-
-[tool.poetry.group.artifact-build.dependencies]
-poetry-core = "2.4.0"
-
-[tool.poetry.extras]
-publication-contract = ["jsonschema", "packaging"]
 
 [tool.poetry.scripts]
 traefik-certificate-exporter = "traefik_certificate_exporter.app:main"
-publication-contract = "publication_contract.cli:main"
 
 [tool.mypy]
 python_version = "3.11"
@@ -76,17 +52,10 @@ ignore_missing_imports = true
 warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
-# Strict only for the contract code Epic 7 added, where annotations ARE the
-# design-by-contract mechanism and nothing else checks them.
-module = ["publication_contract.*"]
-strict = true
-
-[[tool.mypy.overrides]]
-# The pre-Epic-7 application package and the older helper scripts predate any type
-# gate and are largely unannotated. They are checked in default mode -- a NEW type
-# error there still fails this gate -- but are not held to strict. Annotating them is
-# real work with real regression risk and belongs in its own change, not smuggled into
-# a restore. Removing these two blocks is how that work would start.
+# The application package predates any type gate and is largely unannotated. It is
+# checked in default mode -- a NEW type error there still fails this gate -- without
+# requiring annotations. Annotating it is real work with real regression risk and belongs
+# in its own change. Removing this block is how that work would start.
 module = ["traefik_certificate_exporter.*"]
 disallow_untyped_defs = false
 disallow_untyped_calls = false
@@ -99,10 +68,20 @@ follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = [
-    "requires_live_gitea: exercises a control that can only be proven against a running Gitea/act-runner instance (E009-S01-001); not executed in this environment.",
-]
+
+[tool.poetry.requires-plugins]
+poetry-dynamic-versioning = { version = "==1.10.0", extras = ["plugin"] }
+
+# Git tags are the only version source (AD-7); `version` above is a placeholder.
+[tool.poetry-dynamic-versioning]
+enable = true
+vcs = "git"
+style = "pep440"
+bump = true
+metadata = false
+strict = true
+pattern = '^v(?P<base>\d+\.\d+\.\d+)$'
 
 [build-system]
-requires = ["poetry-core==2.4.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core==2.4.0", "poetry-dynamic-versioning==1.10.0"]
+build-backend = "poetry_dynamic_versioning.backend"

@@ -1,0 +1,26 @@
+key: 'E013-S02-002'
+epic: 'E013'
+sprint: 'S02'
+title: Gate publish credentials behind forge environments
+status: backlog
+classification: standard
+resolves: [BL-E013-018]
+estimate:
+  man_hours: 13.17
+  hitl_hours: 0.11
+  elapsed_hours: 1.25
+  tokens_k:
+    total: 11149
+    input: 0
+    output: 18
+    cache_write: 535
+    cache_read: 10596
+  cost: 9.09
+  model: claude-opus-5
+  fix_factor: 2.9048
+  scope_ratios:
+    man_hours: 0.7557
+    hitl_hours: 0.1073
+    elapsed_hours: 0.2156
+    tokens_k: 2.7196
+updated_at: '2026-10-09T21:17:45Z'

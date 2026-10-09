@@ -1,6 +1,6 @@
 # ADR-0007: Pull-request verification topology and the secret-free verifier
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0035
 - **Date:** 2026-09-01
 - **Deciders:** Maintainer (ravensorb), via Epic E007 Sprint S01
 - **Principle(s) in tension:** GitHub Actions overlay (reusable workflows over copy-paste, least

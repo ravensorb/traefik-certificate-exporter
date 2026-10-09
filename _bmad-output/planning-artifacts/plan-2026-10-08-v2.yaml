@@ -1,0 +1,44 @@
+generated: "2026-10-09T00:05:17Z"
+plan_version: 2
+readiness: amber
+stories_elaborated: 4
+total_epics_in_scope: 2
+
+phases:
+  - phase: 1
+    parallel: true
+    epics: ["E012", "E013"]
+    dependencies: []
+    estimate:
+      estimates_as_of: "2026-10-09T00:05:17Z"
+      wall_clock_hours_low: 11.98
+      wall_clock_hours_high: 14.70
+      man_hours_low: 200.00
+      man_hours_high: 218.99
+      hitl_hours_low: 2.33
+      hitl_hours_high: 2.71
+      tokens_k_min: 3542
+      tokens_k_max: 4024
+      cost_low: 14.61
+      cost_high: 16.59
+      confidence: medium
+
+readiness_detail:
+  - key: "E012"
+    status: amber
+    gaps:
+      - "E012-S01-002 is in-progress but largely superseded by ADR-0035 (its workflow, pin-registry, vendored-lock and probe work is retired by E013); only the .gitleaks.toml allowlist fix survives. Close it as superseded rather than finishing it, before or alongside E013."
+      - "E012-S01-004 (CLI hygiene) is independent of E013 and remains ready-for-dev."
+      - "E012 carries an expired lock from session l3io-pm-20261008T123118Z-079584 (check-lock reports FREE/stale)."
+  - key: "E013"
+    status: amber
+    gaps:
+      - "No epic-level depends_on E012 by choice: the user asked to execute E013 now. E013-S01-002/003 delete files E012-S01-002 edited; running both epics' CI work concurrently would conflict, so E012-S01-002 should not be resumed."
+      - "E013-S01-004's hitl estimate (~0.2-0.3h) is a calibration-model output and is known-low: live verification needs the maintainer's GitHub/Gitea runners and PUBLISH_* secrets."
+      - "Elaboration flagged: just act likely needs --detect-event; Dockerfile VERSION check moves to PEP 440 normalised comparison; S01-001's 'just check passes' depends on S01-002 removing tests/ci (interim check excludes tests/ci); ADRs 0005/0016/0017/0027 cite removed machinery but are outside ADR-0035's lists (open item for the architect)."
+      - "BL-E012-013 (spec item) is not promoted; it belongs to /l3io-doctor triage."
+
+arch_gate_summary:
+  ran: false
+  reviewers: []
+  findings: []

@@ -1,0 +1,28 @@
+key: 'E012-S01-002'
+epic: 'E012'
+sprint: 'S01'
+title: CI & supply-chain integrity
+status: in-progress
+classification: standard
+resolves: [BL-E011-013, BL-E011-014, BL-E011-015, BL-E011-020, BL-E011-021]
+estimate:
+  man_hours: 11.73
+  hitl_hours: 0.18
+  elapsed_hours: 1.83
+  cost: 1.4
+  model: claude-opus-5
+  fix_factor: 2.4167
+  scope_ratios:
+    man_hours: 0.8092
+    hitl_hours: 0.2154
+    elapsed_hours: 0.3781
+    tokens_k: 1.0
+  tokens_k:
+    total: 338
+    input: 51
+    output: 17
+    cache_write: 101
+    cache_read: 169
+updated_at: '2026-10-08T14:08:01Z'
+depends_on:
+- 'E012-S01-003'

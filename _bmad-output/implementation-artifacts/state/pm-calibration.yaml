@@ -51,6 +51,11 @@ scope:
       - 0.1498
       - 0.1597
       - 0.5591
+      - 0.0723
+      - 0.062
+      - 0.0372
+      models_seen:
+      - claude-opus-5
     man_hours:
       samples:
       - 1.0
@@ -66,6 +71,11 @@ scope:
       - 0.6663
       - 0.9328
       - 0.7995
+      - 0.5519
+      - 0.9658
+      - 0.5884
+      models_seen:
+      - claude-opus-5
     hitl_hours:
       samples:
       - 0.8523
@@ -81,6 +91,18 @@ scope:
       - 0.1401
       - 0.112
       - 0.2241
+      - 0.0
+      - 0.0
+      - 0.0
+      models_seen:
+      - claude-opus-5
+    tokens_k:
+      samples:
+      - 1.2453
+      - 5.7989
+      - 1.1997
+      models_seen:
+      - claude-opus-5
   complex:
     elapsed_hours:
       samples:
@@ -93,6 +115,11 @@ scope:
       - 0.4783
       - 0.1541
       - 0.077
+      - 0.0701
+      - 0.2844
+      - 0.1323
+      models_seen:
+      - claude-opus-5
     man_hours:
       samples:
       - 0.9333
@@ -104,6 +131,11 @@ scope:
       - 2.2669
       - 0.5333
       - 0.3333
+      - 1.067
+      - 1.2004
+      - 0.9997
+      models_seen:
+      - claude-opus-5
     hitl_hours:
       samples:
       - 0.0
@@ -112,6 +144,16 @@ scope:
       - 0.0
       - 0.5
       - 0.25
+      - 0.0
+      - 0.1762
+      - 0.0
+      models_seen:
+      - claude-opus-5
+    tokens_k:
+      samples:
+      - 3.5725
+      models_seen:
+      - claude-opus-5
 closure:
   sprint:
     elapsed_hours:
@@ -185,12 +227,15 @@ fix:
       mean_man_hours: 3.0
       samples: 5
     reworked:
-      mean_man_hours: 7.25
-      samples: 4
+      mean_man_hours: 8.7143
+      samples: 7
   complex:
     reworked:
-      mean_man_hours: 22.2
-      samples: 5
+      mean_man_hours: 20.7143
+      samples: 7
+    clean:
+      mean_man_hours: 12.0
+      samples: 1
 orchestration:
   sprint:
     elapsed_hours:
@@ -231,3 +276,25 @@ orchestration:
       - 0.1667
 metrics_migrated_at: '2026-08-30T20:34:42Z'
 token_basis_migrated_at: '2026-08-30T20:34:42Z'
+token_mix:
+  samples:
+  - input: 0.0
+    output: 0.0019
+    cache_write: 0.0293
+    cache_read: 0.9688
+    model: claude-opus-5
+  - input: 0.0
+    output: 0.0013
+    cache_write: 0.0664
+    cache_read: 0.9322
+    model: claude-opus-5
+  - input: 0.0
+    output: 0.0012
+    cache_write: 0.0687
+    cache_read: 0.9301
+    model: claude-opus-5
+  - input: 0.0
+    output: 0.0019
+    cache_write: 0.0277
+    cache_read: 0.9705
+    model: claude-opus-5

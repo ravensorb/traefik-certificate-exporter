@@ -23,9 +23,8 @@ guidelines, developer/operational guides); the architectural review is
 ## Running and verifying
 
 - `poetry install`, then `poetry run traefik-certificate-exporter ...` — see `README.md` for the full CLI flag reference.
-- No automated test suite exists yet (`tests/` is an empty package) — this is a tracked BLOCKER fix (PRD backlog #5 / Epic 1 Story 1.3), not a broken setup on your end.
-- `pre-commit run --all-files` runs `ruff`, `gitleaks`, `actionlint`, and file-hygiene hooks — run this before assuming a change is clean; it currently reports pre-existing findings (ruff violations, actionlint issues) not yet fixed.
-- `poetry lock --check` is wired as a pre-commit hook via a `repo: local` block, not `pre-commit/pre-commit-hooks` (that repo does not ship a `poetry-lock` hook id).
+- `just check` is the gate: it runs `pre-commit run --all-files` (`ruff`, `mypy` over `src/`, `gitleaks` for the tree and `gitleaks-history` for every commit, `actionlint`, `zizmor`, `poetry check --lock`, and file-hygiene hooks) and then `pytest`. CI's `build.yaml` runs the same gates, and also builds the distributions and the image on Python 3.14 (`just image` covers that locally), so run `just check` before assuming a change is clean. Other recipes: `just build`, `just image`, `just act [workflow]`, `just release <major|minor|patch>`; the pipeline is described in `docs/ci/pipeline-walkthrough.md` (ADR-0035).
+- `poetry check --lock` is wired as a pre-commit hook via a `repo: local` block, not `pre-commit/pre-commit-hooks` (that repo does not ship a `poetry-lock` hook id).
 
 ## Conventions that differ from defaults
 

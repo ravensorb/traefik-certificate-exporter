@@ -126,9 +126,9 @@ def test_loadfromfile_warns_when_the_config_file_is_world_writable(tmp_path, cap
         SettingsManager().loadFromFile(fileName=str(cfg))
 
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-    assert any(
-        "group- or world-writable" in m and str(cfg) in m for m in warnings
-    ), f"expected a writable-mount warning naming {cfg}, got: {warnings}"
+    assert any("group- or world-writable" in m and str(cfg) in m for m in warnings), (
+        f"expected a writable-mount warning naming {cfg}, got: {warnings}"
+    )
 
 
 def test_loadfromfile_does_not_warn_when_the_config_file_is_not_writable_by_others(
@@ -149,9 +149,6 @@ def test_loadfromfile_does_not_warn_when_the_config_file_is_not_writable_by_othe
 
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert not any("group- or world-writable" in m for m in warnings)
-
-
-
 
 
 def _capture_all_records(caplog, tmp_path, config_text, cli_overrides):

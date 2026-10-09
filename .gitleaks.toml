@@ -9,21 +9,114 @@
 # TWO DOMAINS, and this file governs both. `gitleaks dir` walks the checked-out tree and
 # is what the hook runs, locally and in CI. It does NOT walk commit objects, so a
 # credential committed and removed in a later commit stays live in the history -- and
-# for a period after the fix above, nothing read it. verify-build.yaml's gitleaks job
-# runs `gitleaks git` over the full history it already fetches (~1.5s, 143 commits), and
-# `test_the_secret_scanner_covers_both_the_tree_and_the_history` keeps the pair together.
+# for a period after the fix above, nothing read it. ENFORCED BY: the pre-commit
+# `gitleaks` hook (`gitleaks dir`, the tree) and the `gitleaks-history` hook
+# (`gitleaks git`, every commit), both in .pre-commit-config.yaml and both run by
+# `just check` and by build.yaml in CI (AD-3 as amended by ADR-0036).
 #
-# `gitleaks dir` takes no notice of pre-commit's `exclude:`, so the vendored tool trees
-# are allowlisted here instead. They are the same three paths, and
-# `test_the_secret_scanner_and_pre_commit_exclude_the_same_vendored_trees` asserts the two
-# lists stay identical rather than trusting this comment.
+# THE REPOSITORY ADDS NO PATH EXEMPTION (RT-008 / BL-E011-015, as restated by ADR-0037).
+# This file used to allowlist
+# `^\.agents/`, `^\.claude/` and `^_bmad/` outright -- about half the files in the
+# repository, read verbatim as instructions by agents holding write access, and editable
+# by any pull request. The justification was that they are vendored, but "we do not
+# author it" is an argument about blame, not about whether a credential pasted into a
+# skill file is live. A single hostile or careless commit under those paths carried a
+# credential past the only content gate this repository has, and the gate still reported
+# green.
+#
+# Dropping the exemption cost two false-positive classes and nothing else: 57 findings
+# across the three trees, every one of them `generic-api-key` matching either a SHA-256
+# digest in an installer manifest or the truncated JWT *header*
+# `'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'` in a vendored testing guide. (gitleaks
+# redacts that value to `******` in its own output, which an earlier draft of this file
+# mistook for the file's content.) Both are allowlisted below by what was examined, not by
+# the directory it sat in. A real credential in any of those files is now a failing gate.
+#
+# NO ALLOWLIST HERE USES `paths`, and that is a hard rule rather than a preference. This
+# file was first written with `paths` narrowed by `condition = "AND"`, which reads as
+# "this file AND this value". That is not what this gitleaks build does: a `paths` entry
+# exempts the file outright, whatever the regexes say, in `dir` mode and in `git` mode.
+# Verified by planting a live-format PAT in a file matching the path pattern beside a
+# regex that can never match -- `no leaks found`. So the narrowed form would have
+# reinstated RT-008's exemption while reading as though it had closed it, which is worse
+# than the original. ENFORCED BY: the `gitleaks-no-paths-allowlist` pygrep hook in
+# .pre-commit-config.yaml, which fails on any `paths =` line in this file (it replaced the
+# test retired with ADR-0035). It checks only the key's presence; CODEOWNERS review of
+# this file still holds everything else about each allowlist.
+#
+# Without `paths`, an allowlist applies to every file, so each one must be narrow enough
+# that a real credential cannot satisfy it wherever it appears. The second draft failed
+# that: an unanchored `expiredToken = '` exempted any value assigned to that name in any
+# file, and a two-column `"name","<64 hex>"` regex exempted a hex API key in any CSV. Both
+# are now whole-line or whole-value matches. The CI near-miss probe that planted a
+# credential beside each allowlist and required the hook to fail was retired with
+# ADR-0033's probe part (ADR-0035). NOT MECHANICALLY ENFORCED: allowlist narrowness is
+# held by review. Whenever an allowlist changes, re-check it by hand in BOTH domains with
+# `gitleaks dir` and `gitleaks git`, because the history holds manifest rows the tip no
+# longer does (older revisions named `.py` files), including a near-miss plant that must
+# still be reported.
+#
+# THE INHERITED EXEMPT SET (ADR-0037). `useDefault = true` also loads gitleaks' own
+# default global allowlist, which skips lock files, dependency site-packages and the VCS
+# directory by path. That is accepted, not added here, and it is written down so a change
+# to it is visible. Produced by gitleaks v8.30.1 (the pre-commit hook `rev`; the
+# hook-built binary reports no version) from the `skipping file|directory: global
+# allowlist` lines of `gitleaks dir --redact --no-banner --config .gitleaks.toml
+# --log-level trace .` on a fully installed tree (2026-10-09). `gitleaks git` with the same
+# flags skips, by path, only `poetry.lock` among committed files. The dir-mode set also
+# depends on the local install: the `.venv/lib/python3.11` entry follows the venv's
+# interpreter (Python 3.11 here) and the `.poetry/plugins/*.dist-info` entries follow the
+# locked plugin versions (poetry-dynamic-versioning 1.10.0, dunamai 1.26.2, jinja2 3.1.6,
+# markupsafe 3.0.4). Inherited set, one path per line:
+#   - .git
+#   - .gitleaks.toml
+#   - .poetry/plugins/dunamai-1.26.2.dist-info
+#   - .poetry/plugins/jinja2-3.1.6.dist-info
+#   - .poetry/plugins/markupsafe-3.0.4.dist-info
+#   - .poetry/plugins/poetry.lock
+#   - .poetry/plugins/poetry_dynamic_versioning-1.10.0.dist-info
+#   - .venv/lib/python3.11
+#   - poetry.lock
+# Ignored install and cache trees outside that set -- the rest of `.poetry/plugins/`,
+# `.mypy_cache/`, `.ruff_cache/`, `dist/`, the rest of `.venv/` -- ARE scanned; that
+# over-scan fails closed. Accepted residual risk (ADR-0037): a credential placed in
+# `poetry.lock` or this file is not reported. NOT MECHANICALLY ENFORCED: the list is
+# checked by diffing a fresh trace against it when this story was verified and, on every
+# gitleaks upgrade, by review. No standing CI check diffs it. A gitleaks upgrade, a
+# plugin-lock bump or a different venv interpreter changes the concrete paths; a change
+# that alters the set must update this list and docs/developer.md in the same change, and
+# a trace from another interpreter differs in the `.venv/lib/python3.*` entry only.
+#
+# The rule for adding to this file: allowlist the value or line that was examined, never
+# the directory. A path allowlist exempts everything a future commit puts there; a value
+# allowlist exempts the thing that was actually examined.
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "Vendored tool trees this project neither authors nor maintains"
-paths = [
-  '''^\.agents/''',
-  '''^\.claude/''',
-  '''^_bmad/''',
+description = """
+SHA-256 digests in the BMad installer's file manifest, `_bmad/_config/files-manifest.csv`.
+`generic-api-key` matches the 64-hex `hash` column; that column is a content hash of a
+vendored file, and a hash is the opposite of a secret. Matched on the WHOLE LINE in the
+manifest's five-column shape -- `"type","name","module","path","hash"`, with the path
+carrying a file extension -- so a hex key in any other shape, in this file or another, is
+still reported. `(?m)` is required: the text this gitleaks build hands a `line` target
+carries the line terminator, so a bare `^...$` never matches and would allowlist nothing.
+A credential on the line next to a manifest row is still reported (planted and checked).
+"""
+regexTarget = "line"
+regexes = [
+  '''(?m)^"[a-z0-9-]+","[^"]+","[^"]+","[^"]+\.[A-Za-z0-9]+","[a-f0-9]{64}"\r?$''',
 ]
+
+[[allowlists]]
+description = """
+The truncated JWT example in the vendored API-testing guide:
+`const expiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';`. The value is the
+base64 of the public, fixed header `{"alg":"HS256","typ":"JWT"}` followed by a literal
+ellipsis -- it carries no payload and no signature, so there is nothing secret in it.
+Matched on that exact value and nothing else, so a real token assigned to the same
+variable, here or anywhere, is still reported.
+"""
+regexTarget = "secret"
+regexes = ['''^eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.\.\.$''']

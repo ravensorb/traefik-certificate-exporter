@@ -1,0 +1,43 @@
+generated: "2026-10-09T20:22:26Z"
+plan_version: 1
+readiness: amber
+stories_elaborated: 1
+total_epics_in_scope: 2
+
+phases:
+  - phase: 1
+    parallel: true
+    epics: ["E012", "E013"]
+    dependencies: []
+    estimate:
+      estimates_as_of: "2026-10-09T20:22:26Z"
+      wall_clock_hours_low: 14.05
+      wall_clock_hours_high: 17.24
+      man_hours_low: 227.44
+      man_hours_high: 249.04
+      hitl_hours_low: 2.48
+      hitl_hours_high: 2.89
+      tokens_k_min: 12201
+      tokens_k_max: 13865
+      cost_low: 16.20
+      cost_high: 18.40
+      confidence: medium
+
+readiness_detail:
+  - key: "E012"
+    status: amber
+    gaps:
+      - "E012-S01-002 is in-progress but superseded by ADR-0035 except its .gitleaks.toml allowlist fix (already carried forward); close it as superseded when E012 next executes, do not resume it."
+      - "E012-S01-004 (CLI hygiene) is independent and ready-for-dev."
+  - key: "E013"
+    status: amber
+    gaps:
+      - "E013-S01-001..003 done. E013-S01-004 (live verification) needs the maintainer's GitHub repo, Gitea 1.27+ runner, PUBLISH_* destination choices and a throwaway repo/tag line for the release check; local act verification of all four workflows is already recorded in closure/notes-E013-S01-002.md."
+      - "E013-S01-005 (new, elaborated this run) resolves BL-E013-003..016 except 007 (spec item, triage) and depends on S01-003; it can run before S01-004."
+      - "E013-S01-005's elaboration specifies one new spec-proposal backlog item (AD-7/AD-12 wording) to be filed during implementation."
+      - "Orchestration overhead is unestimated (<3 calibration samples at sprint/epic level); man_hours/tokens_k are known-low."
+
+arch_gate_summary:
+  ran: false
+  reviewers: []
+  findings: []

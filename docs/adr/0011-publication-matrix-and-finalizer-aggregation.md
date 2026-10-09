@@ -1,6 +1,6 @@
 # ADR-0011: Channel decides the destination set, and how the finalizer reads a skipped job
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0035
 - **Date:** 2026-09-02
 - **Deciders:** Maintainer (ravensorb)
 - **Principle(s) in tension:** Expressing "only wait for what applies" against `needs:` being static

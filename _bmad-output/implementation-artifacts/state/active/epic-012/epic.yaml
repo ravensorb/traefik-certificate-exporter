@@ -1,0 +1,32 @@
+_lock:
+  session_id: l3io-pm-20261008T123118Z-079584
+  claimed_at: '2026-10-08T12:41:41Z'
+  ttl_minutes: 30
+key: 'E012'
+title: Epic 012 — Residual Security/CI Hardening Backlog
+goal: ''
+status: in-progress
+updated_at: '2026-10-08T12:41:41Z'
+estimate:
+  man_hours_low: 105.94
+  man_hours_high: 116.0
+  hitl_hours_low: 1.15
+  hitl_hours_high: 1.34
+  elapsed_hours_low: 10.83
+  elapsed_hours_high: 13.29
+  tokens_k_min: 1779
+  tokens_k_max: 2021
+  closure_ratios:
+    man_hours: 0.676
+    hitl_hours: 0.9897
+    elapsed_hours: 1.6664
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0.0
+    hitl_hours: 0.1053
+    elapsed_hours: 0.0687
+    tokens_k: 0
+  cost_low: 7.34
+  cost_high: 8.33
+  model: claude-opus-5
+  confidence: medium

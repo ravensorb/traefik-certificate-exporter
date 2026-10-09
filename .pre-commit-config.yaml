@@ -24,29 +24,28 @@ repos:
         entry: poetry check --lock
         always_run: true
         pass_filenames: false
-      - id: justfile-fmt
-        name: Check justfile formatting
-        language: system
-        # Non-mutating: --check reports drift and exits non-zero, it never rewrites.
-        # Local-only by necessity, and that is a real coverage limit: CI installs no
-        # `just`, so no workflow runs this. It catches the drift that actually happened --
-        # one story formatting the shared justfile and a later one unformatting it -- at
-        # commit time.
-        entry: just --fmt --check --unstable
-        files: ^justfile$
-        pass_filenames: false
-      - id: workflow-policy
-        name: Check governed workflow contracts and action policy
-        language: system
-        # Also the entry point for the two gates this file cannot express: the
-        # tracked-vs-untracked coverage check (an --all-files run enumerates
-        # `git ls-files`, so an un-added file is skipped while the run reports green --
-        # BL-E000-001, three recurrences) and the vendored-tree integrity check over
-        # `.agents/`/`.claude/`. Both are pytest guards in tests/ci/test_gates.py, which
-        # is what this entry already runs, so neither needs a hook of its own.
-        entry: poetry run pytest -q tests/ci
-        always_run: true
-        pass_filenames: false
+      # justfile-fmt was removed: it needs `just`, which build.yaml does not install, so it
+      # would be a local-only check (AD-3).
+      # Rule guards (SD-01-2). Each is a one-line regex over standard pre-commit config, not
+      # repository policy code (AD-4). They replace the tests retired with tests/ci/.
+      # ADR-0033 / RT-008: a `paths` allowlist exempts whole files from secret scanning.
+      - id: gitleaks-no-paths-allowlist
+        name: .gitleaks.toml sets no paths allowlist (ADR-0033)
+        language: pygrep
+        entry: '^\s*paths\s*='
+        files: ^\.gitleaks\.toml$
+      # AD-6 / ADR-0028: checkouts are ref-free on every forge and under act.
+      - id: workflows-ref-free-checkout
+        name: No workflow sets ref or repository (ADR-0028)
+        language: pygrep
+        entry: '^\s+(ref|repository):'
+        files: ^\.github/workflows/.*\.ya?ml$
+      # AD-6 / guidelines §7: no workflow depends on the ACT env var.
+      - id: workflows-no-act-env
+        name: No workflow references ACT (guidelines §7)
+        language: pygrep
+        entry: '\bACT\b'
+        files: ^\.github/workflows/.*\.ya?ml$
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -64,27 +63,11 @@ repos:
       # inside .md too -- which silently reindented and rewrapped the code this epic's
       # closure reports quote as evidence of what a file said when a reviewer read it.
       # Tidying an ADR is a nicety; editing a record is not, and the diff explains
-      # neither. `test_the_python_formatter_never_rewrites_a_markdown_record` pins it.
+      # neither. Held by review of this file (CODEOWNERS); no test pins it.
       - id: ruff-check
         args: [--fix]
         types_or: [python, pyi]
       - id: ruff-format
-        types_or: [python, pyi]
-      # Non-mutating twins for `just lint`. A recipe named `check` must not rewrite the
-      # tree: the release transaction runs `just check` as its gate and aborts if the tree
-      # moves, so an autofix during a release turns a lint nit into a failed release.
-      # stages: [manual] keeps them out of the git hook, where autofixing is wanted.
-      - id: ruff-check
-        alias: ruff-check-nofix
-        name: ruff check (no fix)
-        args: [--no-fix]
-        stages: [manual]
-        types_or: [python, pyi]
-      - id: ruff-format
-        alias: ruff-format-check
-        name: ruff format (check only)
-        args: [--check]
-        stages: [manual]
         types_or: [python, pyi]
 
   - repo: https://github.com/gitleaks/gitleaks
@@ -98,20 +81,32 @@ repos:
         entry: gitleaks dir --redact --no-banner --config .gitleaks.toml .
         always_run: true
         pass_filenames: false
+      # Scans every commit in history, which `gitleaks dir` above does not read (AD-3 as
+      # amended by ADR-0036). Selected on its own with `pre-commit run gitleaks-history`.
+      - id: gitleaks
+        alias: gitleaks-history
+        name: gitleaks (history)
+        entry: gitleaks git --redact --no-banner --config .gitleaks.toml
+        always_run: true
+        pass_filenames: false
 
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
     hooks:
       - id: actionlint
 
-  # Epic 7 used annotations as the design-by-contract mechanism for ~1,100 lines of new
-  # code while no gate ran a type checker. This hook is that gate, and it is the authority:
-  # verify-build.yaml's mypy job runs this hook, and [tool.mypy] in pyproject.toml holds
-  # the settings both invocations share.
+  # Workflow security audit (AD-5). Reads .github/zizmor.yml, which zizmor discovers by
+  # default; that file holds the unpinned-uses pin policy.
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.30.1
+    hooks:
+      - id: zizmor
+
+  # Type gate for all of src/. [tool.mypy] in pyproject.toml holds its settings.
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.14.1
     hooks:
       - id: mypy
-        files: ^(src/publication_contract/|scripts/(committed_versions|release_version)\.py)
+        files: ^src/
         args: [--config-file=pyproject.toml]
-        additional_dependencies: [types-jsonschema==4.25.1.20250822]
+        additional_dependencies: [types-PyYAML==6.0.12.20260906]
