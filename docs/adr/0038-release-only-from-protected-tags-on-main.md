@@ -69,7 +69,7 @@ read; none does), so AD-5's third tier applies: a `run:` step using git's own
    released" guard.** With creation, update and deletion of `v*` restricted, a tag cannot
    be moved without an explicit bypass, so every re-run (ADR-0036 §5) rebuilds the same
    commit. PyPI and Gitea's package index refuse an existing filename, and
-   `--skip-existing` keeps re-runs green. A "release exists" guard was rejected: it would
+   the upload steps skip what is already published (`--skip-existing` for PyPI/TestPyPI, a files check for Gitea; AD-11), which keeps re-runs green. A "release exists" guard was rejected: it would
    break ADR-0036 §5 re-runs; `git-action-tag-info` in release mode needs a token and a
    forge-derived `platform` / `base-url`, which AD-9 forbids; and it would need a
    conditional form the Conventions table does not allow.

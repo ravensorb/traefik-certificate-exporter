@@ -84,7 +84,35 @@ jobs:
           REPOSITORY_URL: ${{ vars.PUBLISH_GITEA_PYPI_URL }}
           TWINE_USERNAME: ${{ vars.PUBLISH_GITEA_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.PUBLISH_GITEA_TOKEN }}
-        run: poetry run twine upload --non-interactive --skip-existing --repository-url "$REPOSITORY_URL" dist/*
+          VERSION: ${{ needs.build.outputs.version }}
+        # twine refuses --skip-existing for any index but PyPI/TestPyPI
+        # (UnsupportedConfiguration), so a re-run is kept safe here by asking Gitea which of
+        # this version's files it already holds and uploading only the missing ones (AD-11).
+        run: |
+          base="${REPOSITORY_URL%/api/packages/*}"
+          rest="${REPOSITORY_URL#*/api/packages/}"
+          owner="${rest%%/*}"
+          wheel="$(basename dist/*.whl)"
+          name="${wheel%%-*}"
+          name="${name//_/-}"
+          files_url="$base/api/v1/packages/$owner/pypi/$name/$VERSION/files"
+          code="$(curl -sS -o existing.json -w '%{http_code}' -H "Authorization: token $TWINE_PASSWORD" "$files_url")"
+          case "$code" in
+            200) ;;
+            404) echo '[]' > existing.json ;;
+            *) echo "Upload to Gitea: unexpected HTTP $code from $files_url" >&2; exit 1 ;;
+          esac
+          pending=()
+          for file in dist/*; do
+            if ! jq -e --arg n "$(basename "$file")" 'any(.[]; .name == $n)' existing.json > /dev/null; then
+              pending+=("$file")
+            fi
+          done
+          if [ "${#pending[@]}" -eq 0 ]; then
+            echo "Gitea already holds every file of $name $VERSION; nothing to upload"
+            exit 0
+          fi
+          poetry run twine upload --non-interactive --repository-url "$REPOSITORY_URL" "${pending[@]}"
 
       - name: Upload to TestPyPI
         if: env.PUBLISH_TESTPYPI == 'true'

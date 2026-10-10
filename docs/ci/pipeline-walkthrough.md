@@ -204,7 +204,7 @@ an `if:`.
 - If `publish-image`'s registry configuration guard fails, `release` (which `needs` it) does
   not run, so no forge release is created: a half-configured release halts loudly rather
   than shipping without that registry. `publish-package` may already have uploaded;
-  `--skip-existing` makes the re-run safe (AD-11).
+  the re-run uploads only what is missing (`--skip-existing` for PyPI/TestPyPI, a files check for Gitea; AD-11).
 - The `release` job gates its steps on `PUBLISH_RELEASE`, except its CA import, which is
   gated on `PUBLISH_CA`: a step tests exactly one flag (AD-9, AD-18), and the import
   publishes nothing.

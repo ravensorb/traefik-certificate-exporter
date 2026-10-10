@@ -318,7 +318,7 @@ The jobs are `build` (all three workflows), `publish-package` and `publish-image
 (`dev.yaml`, `release.yaml`), and `validate-tag` and `release` (`release.yaml` only).
 
 **A job failed part way (network, registry, runner).** Re-run the failed jobs — but only
-on the **latest** run of that workflow. Package uploads use `twine upload --skip-existing`
+on the **latest** run of that workflow. Package uploads skip files already published (`twine upload --skip-existing` for PyPI/TestPyPI; for Gitea, which twine refuses that flag for, the step uploads only the files Gitea does not already hold)
 and the forge release is created with `allow-updates: true`, so those steps tolerate a
 re-run. Image tags do not: a re-run re-points every tag that run writes (`dev` and `sha-*`
 for `dev.yaml`; `latest`, `X` and `X.Y` for `release.yaml`) to the one digest it built. A

@@ -713,3 +713,4 @@
 {"epic": "E013", "event": "status", "from": "in-progress", "key": "E013-S02-002", "node": "story", "session": "l3io-pm-20261009T211836Z-20651", "sprint": "S02", "to": "done", "ts": "2026-10-09T22:00:07Z"}
 {"cause": "set-status", "epic": "013", "event": "issue_resolved", "key": "BL-E013-018", "ref": "E013-S02-002", "resolution": "fixed", "session": "l3io-pm-20261009T211836Z-20651", "ts": "2026-10-09T22:00:08Z"}
 {"agent": "l3io-pm-story", "epic": "E013", "event": "dispatch_close", "session": "l3io-pm-20261009T211836Z-20651", "sprint": "S02", "story": "E013-S02-002", "ts": "2026-10-09T22:00:30Z"}
+{"epic": "E013", "event": "status", "from": "backlog", "key": "E013-S02-001", "node": "story", "session": "l3io-pm-20261010T121359Z-14217", "sprint": "S02", "to": "in-progress", "ts": "2026-10-10T12:14:00Z"}

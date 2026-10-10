@@ -177,7 +177,7 @@ filter writes to a destination only when that destination is enabled by its cred
 
 - **Binds:** `publish-package` in `dev.yaml` and `release.yaml`
 - **Prevents:** an upload path that works on only one runner; uploading anything other than the build artifact; a re-run failing on files already published.
-- **Rule:** Each enabled index gets one step, gated on its own flag (AD-9). The step runs `twine upload --non-interactive --skip-existing --repository-url <index> dist/*`, with `TWINE_USERNAME`/`TWINE_PASSWORD` from that index's credentials (`__token__` for TestPyPI and PyPI). `twine` is the project's pinned dev dependency.
+- **Rule:** Each enabled index gets one step, gated on its own flag (AD-9). The step runs `twine upload --non-interactive --repository-url <index>` with `TWINE_USERNAME`/`TWINE_PASSWORD` from that index's credentials (`__token__` for TestPyPI and PyPI). `twine` is the project's pinned dev dependency. For TestPyPI and PyPI it passes `--skip-existing` and uploads `dist/*`. twine 7 refuses `--skip-existing` for any other index (`UnsupportedConfiguration`), so the Gitea step asks Gitea's package API (`/api/v1/packages/<owner>/pypi/<name>/<version>/files`) which files it already holds and uploads only the missing ones. Any HTTP status other than 200 or 404 fails the step (amended 2026-10-09, found by E013-S02-001's live Gitea run).
   - **Why not the action:** `pypa/gh-action-pypi-publish` exits on Gitea and `act` because it requires `GITHUB_WORKFLOW_REF`, which those runners don't set, and upstream declined the fix.
 
 ### AD-12 — Release [ADOPTED]
@@ -266,7 +266,7 @@ filter writes to a destination only when that destination is enabled by its cred
 | Secrets and variables | `PUBLISH_<DESTINATION>_<FIELD>`, upper snake case, as in AD-9 |
 | Conditionals | Only two forms are allowed: AD-9's single-flag `if: env.PUBLISH_X == 'true'` on steps (a job-level `if:` cannot read `env`, so the `release` job gates each of its steps), and the AD-12 validity check. Flags and image names are computed in job `env`, never inline in `if:` |
 | Environments | `dev` on `dev.yaml` `publish-package`/`publish-image`; `release` on `release.yaml` `publish-package`/`publish-image`/`release`; none on `validate-tag` or `build` (a reusable-workflow caller cannot set one, and `build` holds no secret). Every job carries `name:` equal to its id, so check names are unchanged (ADR-0039) |
-| Idempotent re-run | uploads use `--skip-existing`; the release step uses `allow-updates: true`; a re-run re-points every tag written by that run, across every enabled registry, to the one digest that run built. It does not reproduce the previous digest (ADR-0036) |
+| Idempotent re-run | PyPI/TestPyPI uploads use `--skip-existing`, and the Gitea upload sends only the files Gitea does not already hold (AD-11); the release step uses `allow-updates: true`; a re-run re-points every tag written by that run, across every enabled registry, to the one digest that run built. It does not reproduce the previous digest (ADR-0036) |
 
 ## Stack
 

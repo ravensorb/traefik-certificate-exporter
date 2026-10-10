@@ -3,8 +3,8 @@ epic: 'E013'
 sprint: 'S02'
 title: Live verification on GitHub, Gitea 1.27 and local act
 classification: standard
-status: backlog
-updated_at: '2026-10-09T21:17:54Z'
+status: in-progress
+updated_at: '2026-10-10T12:14:00Z'
 depends_on:
 - 'E013-S01-002'
 - 'E013-S02-002'
@@ -27,3 +27,12 @@ estimate:
     output: 18
     cache_write: 535
     cache_read: 10596
+completion_evidence:
+  test_runs:
+  - command: 'act (local, 5 scenarios: ci, dev, release on main, release side-branch refusal, dev-at-tag refusal) — notes-E013-S02-001.md'
+    exit_code: 0
+  - command: gh run view 38001738260 (GitHub dev.yaml on 9f9398c)
+    exit_code: 0
+  - command: 'act dev.yaml -> Gitea git.ravenwolf.org (fixed AD-11 upload): publish + re-run skip + pip download check'
+    exit_code: 0
+  tests_passing: true
