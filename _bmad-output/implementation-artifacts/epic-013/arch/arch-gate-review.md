@@ -50,3 +50,13 @@ Reviewer run: l3io-arch-review (Mode B). The MAJORs were resolved by maintainer 
 | AG-20 | MAJOR | `dev` holds the release registry tokens and the ancestry check trusts `main`, while `main` is unprotected | **Maintainer decision (a):** `main` ruleset is required; branch protection moves from Deferred into the ADR |
 | AG-21 | MAJOR | Maintainer checklist order exposes release secrets before tag protection and couples the merge to the first live publish | Story patch: delete legacy secrets → environments without secrets → rulesets → merge → verify no auto-created duplicate → add secrets (`dev` first) |
 | AG-22..26 | MINOR | AD-6/Conventions/AD-12 amendment gaps; Gitea tag pattern contradiction; Gitea bot-account package scope; S02-002/003 sequencing; act test steps and duplicated default-branch derivation | Folded; `E013-S02-002 depends_on E013-S02-003` |
+
+## Gate pass 4 — 2026-10-10 (E013-S02-004: run as root unless the ACME store is proven readable)
+
+Reviewer run: l3io-arch-review (Mode B). Maintainer decision (option A) settled before the gate.
+
+| ID | Severity | Finding | Resolution |
+|---|---|---|---|
+| AG-27 | MAJOR | Security section claims no new lever; a compromised `abc` owning a writable `/data` can force root on the next start | Story patch: `:ro` `/data` is a stated requirement for unprivileged mode (ADR amendment, operational docs, README); the WARNING names a writable/owned data path |
+| AG-28 | MAJOR | 0.3.0 upgrade note is false: the drop (fb75fc6) never shipped; v0.2.0 always ran as root | Story patch: upgrade note relative to v0.2.0; remove docs passages describing a never-released state |
+| AG-29..34 | MINOR | ADR-0030 superseded passages not enumerated; test stub does not check the probe itself; state-file write not atomic/validated; resolved-settings parsing and relative paths; output-path writability outside the decision; service script tested only by grep | Folded into the story |

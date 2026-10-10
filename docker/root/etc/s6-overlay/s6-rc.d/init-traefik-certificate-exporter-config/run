@@ -2,17 +2,18 @@
 # shellcheck shell=bash
 
 # Seed the operator's config on first boot, then decide -- once, here -- whether the service
-# may keep root. Root is only required for the Docker-socket restart path, so the decision is
-# keyed on `settings.restartcontainers` alone (ADR-0030). The answer is written to a state
-# file the service script reads, so the service script keeps a single `s6-setuidgid` call at
-# the top of its exec chain instead of re-deriving configuration mid-script.
+# may drop root. It drops to the PUID/PGID account only when that account is PROVEN able to do
+# the job: settings.restartcontainers is off (the Docker socket needs root), every ACME store
+# file the application will read is readable by it, and the output path is writable by it
+# (ADR-0030, amended 2026-10-10). Anything unproven keeps root and logs one WARNING saying
+# why. The answer is written to a state file the service script reads, so the service script
+# keeps a single `s6-setuidgid` call at the top of its exec chain.
 #
 # The resolution is done by the INSTALLED package, not by a second parser living here: the
 # container must reach the same answer the application will, across every source confuse
 # merges (packaged default, .env files, config file, environment) and with confuse's own
-# truthiness. A container that drops privileges while the application believes
-# `restartcontainers` is on is the worst outcome available -- restarts then fail with a bare
-# permission error from the Docker socket.
+# truthiness -- and the ACME store files are the application's own `glob.glob` matches, not a
+# shell re-derivation of `settings.filespec`.
 
 CONFIG_FILE=/config/config.yaml
 STATE_DIR=/run/traefik-certificate-exporter
@@ -20,6 +21,13 @@ PRIV_STATE="${STATE_DIR}/run-as-root"
 RESOLVED="${STATE_DIR}/resolved-settings"
 SERVICE_HOME="${STATE_DIR}/home"
 SERVICE_USER=abc
+PRIV_HELPER=/usr/local/lib/traefik-certificate-exporter/privilege-decision.sh
+PYTHON=/app/.venv/bin/python
+
+# Replace the state file atomically, so the service never reads a half-written answer.
+write_priv_state() {
+    printf '%s\n' "$1" > "${PRIV_STATE}.tmp" && mv -f "${PRIV_STATE}.tmp" "${PRIV_STATE}"
+}
 
 if [ ! -f "${CONFIG_FILE}" ]; then
     echo "Setting up sample config.yaml"
@@ -28,16 +36,21 @@ fi
 
 mkdir -p "${STATE_DIR}"
 
-# Fail safe before anything can go wrong: an unreadable or malformed config drops privileges,
-# it never retains them.
-printf 'false\n' > "${PRIV_STATE}"
+# Fail safe before anything can go wrong: nothing has been proven yet, so the answer on disk
+# is "keep root" until the decision below proves the unprivileged account viable. A stale
+# resolution from a previous boot must never be read as this boot's answer.
+printf 'true\n' > "${PRIV_STATE}"
 rm -f "${RESOLVED}"
 
 # Written to a file rather than captured from stdout: loading the settings also initialises
-# the application logger, and its output must not be mistaken for the answer.
+# the application logger, and its output must not be mistaken for the answer. Written
+# atomically (temp + os.replace) so a crash leaves no file rather than a partial one; a path
+# containing a newline cannot be represented one-per-line, so it writes nothing at all.
 TCE_CONFIG_FILE="${CONFIG_FILE}" TCE_RESOLVED_OUT="${RESOLVED}" \
-    /app/.venv/bin/python - > /dev/null 2>&1 <<'PY'
+    "${PYTHON}" - > /dev/null 2>&1 <<'PY'
+import glob
 import os
+import tempfile
 
 from traefik_certificate_exporter.libs.settings import SettingsManager
 
@@ -45,37 +58,51 @@ manager = SettingsManager()
 manager.loadFromFile(os.environ["TCE_CONFIG_FILE"])
 settings = manager.settings
 
-with open(os.environ["TCE_RESOLVED_OUT"], "w", encoding="utf-8") as handle:
-    handle.write("true\n" if settings.restartContainers else "false\n")
-    handle.write(f"{settings.outputPath}\n")
-    handle.write(f"{settings.dataPath}\n")
-    handle.write(f"{settings.fileSpec}\n")
+# The same expression the exporter uses to enumerate the store (exportCertificates).
+matches = sorted(
+    os.path.abspath(path)
+    for path in glob.glob(os.path.join(settings.dataPath, settings.fileSpec))
+)
+lines = [
+    "true" if settings.restartContainers else "false",
+    str(settings.outputPath),
+    str(settings.dataPath),
+    str(settings.fileSpec),
+    *matches,
+]
+if any("\n" in line or "\r" in line for line in lines):
+    raise SystemExit("a resolved path contains a newline")
+
+out = os.environ["TCE_RESOLVED_OUT"]
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(out), prefix=".resolved-")
+with os.fdopen(fd, "w", encoding="utf-8") as handle:
+    handle.write("".join(f"{line}\n" for line in lines))
+os.replace(tmp, out)
 PY
 
+# ---- privilege decision: begin ----
+# Only the exact answers `true`/`false` are accepted; a missing helper, a failed source, or
+# any other output keeps root.
 decision=""
-outputPath=""
-dataPath=""
-fileSpec=""
-if [ -s "${RESOLVED}" ]; then
-    decision="$(sed -n '1p' "${RESOLVED}")"
-    outputPath="$(sed -n '2p' "${RESOLVED}")"
-    dataPath="$(sed -n '3p' "${RESOLVED}")"
-    fileSpec="$(sed -n '4p' "${RESOLVED}")"
+# shellcheck source=../../../../usr/local/lib/traefik-certificate-exporter/privilege-decision.sh
+if [ -r "${PRIV_HELPER}" ] && . "${PRIV_HELPER}" \
+    && declare -F tce_privilege_decision > /dev/null; then
+    decision="$(tce_privilege_decision "${RESOLVED}" "${SERVICE_USER}")"
 fi
 
 case "${decision}" in
-    true)
-        printf 'true\n' > "${PRIV_STATE}"
+    true | false)
+        write_priv_state "${decision}"
         ;;
-    false) ;;
     *)
-        echo "WARNING: could not resolve settings.restartcontainers from ${CONFIG_FILE} and" \
-             "the environment; falling back to the safe default and dropping privileges to" \
-             "${SERVICE_USER}"
+        decision=true
+        write_priv_state true
+        echo "WARNING: running as root (privilege decision failed)"
         ;;
 esac
+# ---- privilege decision: end ----
 
-if [ "$(cat "${PRIV_STATE}")" = "true" ]; then
+if [ "${decision}" = "true" ]; then
     exit 0
 fi
 
@@ -90,6 +117,8 @@ chown "${SERVICE_USER}:${SERVICE_USER}" "${SERVICE_HOME}"
 # The output path is resolved, not assumed: /certs is only the image's DEFAULT outputpath, and
 # an operator who mounts somewhere else would otherwise get a root-owned directory the service
 # cannot write to, reported only as a per-domain export error.
+outputPath=""
+{ IFS= read -r _ && IFS= read -r outputPath; } 2> /dev/null < "${RESOLVED}"
 [ -n "${outputPath}" ] || outputPath=/certs
 
 if [ -d "${outputPath}" ]; then
@@ -98,30 +127,13 @@ if [ -d "${outputPath}" ]; then
     # turning the privilege drop into an arbitrary-chown primitive aimed at /etc/shadow.
     # `! -type l` skips links outright and `-xdev` stops at a nested mount.
     find "${outputPath}" -xdev ! -type l -exec chown -h "${SERVICE_USER}:${SERVICE_USER}" {} + || \
-        echo "WARNING: could not take ownership of ${outputPath} for ${SERVICE_USER};" \
-             "exports may fail"
+        echo "INFO: could not take ownership of every file under ${outputPath} for ${SERVICE_USER}"
 fi
 
-# Traefik writes acme.json mode 0600 owned by the account Traefik runs as (root, usually) and
-# refuses to start if it is more permissive -- so the dropped account may simply not be able
-# to read it. That failure surfaces only as a generic per-file error, so say it plainly here.
-if [ -n "${dataPath}" ] && [ -d "${dataPath}" ]; then
-    [ -n "${fileSpec}" ] || fileSpec='*.json'
-    unreadable=""
-    shopt -s nullglob
-    # shellcheck disable=SC2086  # fileSpec is a glob pattern and must stay unquoted
-    for candidate in "${dataPath}"/${fileSpec}; do
-        # shellcheck disable=SC2016  # $1 is the inner shell's argument, not this shell's
-        if ! s6-setuidgid "${SERVICE_USER}" sh -c '[ -r "$1" ]' _ "${candidate}"; then
-            unreadable="${unreadable} ${candidate}"
-        fi
-    done
-    shopt -u nullglob
-
-    if [ -n "${unreadable}" ]; then
-        echo "WARNING: running as ${SERVICE_USER} (settings.restartcontainers is disabled)" \
-             "but these ACME store files are not readable by that account:${unreadable}." \
-             "Set PUID/PGID to an account that can read them, or relax their group" \
-             "permissions -- otherwise no certificate will be exported."
-    fi
+# Decision row 6: the drop is only viable if the account can now write the output path.
+if ! declare -F tce_output_writable > /dev/null; then
+    write_priv_state true
+    echo "WARNING: running as root (privilege decision failed)"
+elif ! tce_output_writable "${outputPath}" "${SERVICE_USER}"; then
+    write_priv_state true
 fi

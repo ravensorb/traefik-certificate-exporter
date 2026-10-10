@@ -55,13 +55,24 @@ temporary smoke container.
 docker pull ravensorb/traefik-certificate-exporter:latest
 ```
 
+### Which user does the exporter run as?
+
+The exporter runs as the unprivileged `PUID`/`PGID` account (`abc`) only when the container can
+prove at start-up that this account can read every ACME store file and write the output path,
+and `settings.restartcontainers` is off. Otherwise it runs as root and logs one WARNING saying
+why. Traefik writes `acme.json` mode `0600` owned by the user it runs as, so with a stock
+(root) Traefik the exporter runs as root; to run it unprivileged, run Traefik as a non-root
+user and set `PUID`/`PGID` to that user's uid/gid. Unprivileged mode requires `/data` mounted
+read-only (`:ro`). See "Container privileges" in
+[docs/operational.md](../docs/operational.md) for the full decision table.
+
 ### docker run (using env vars)
 
 Then to run it via docker.  This will only watch json file that start with "acme" and container the resolver name "resolver-http"
 
 ```bash
 docker run -it ravensorb/traefik-certificate-exporter:latest \
-                -v /mnt/traefik-data/letsencrypt:/data \
+                -v /mnt/traefik-data/letsencrypt:/data:ro \
                 -v /mnt/certs:/certs \
                 -e "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_TRAEFIKRESOLVERID=resolver-http" \
                 -e "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FILESPEC=acme-*.json" 
@@ -110,7 +121,7 @@ This will run the container and maps the local ./data/config into the container.
 ```bash
 docker run -it ravensorb/traefik-certificate-exporter:latest \
                 -v ${PWD}/data/config:/config \
-                -v /mnt/traefik-data/letsencrypt:/data 
+                -v /mnt/traefik-data/letsencrypt:/data:ro
 ```
 
 ### docker-compose (using env vars)
@@ -142,7 +153,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Only needed if restarting containers. WARNING: `ro` does NOT limit API calls over the socket -- any mount (ro or rw) grants host-root-equivalent control. Prefer a restart-only socket proxy (e.g. Tecnativa/docker-socket-proxy) in production.
       - ./data/config:/config:rw                      # Only needed if you are going to set a config file to load
-      - ./data/letsencrypt:/data:ro                   # Location of your acme files
+      - ./data/letsencrypt:/data:ro                   # Location of your acme files. Keep `:ro` -- required for the unprivileged
+                                                      # (PUID/PGID) mode, which also needs the files readable by PUID/PGID; Traefik keeps them 0600
       - ./data/certs:/certs:rw                        # Location you want to export certificates to      
 ```
 
@@ -161,7 +173,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Only needed if restarting containers. WARNING: `ro` does NOT limit API calls over the socket -- any mount (ro or rw) grants host-root-equivalent control. Prefer a restart-only socket proxy (e.g. Tecnativa/docker-socket-proxy) in production.
       - ./data/config:/config:rw                      # Only needed if you are going to set a config file to load
-      - ./data/letsencrypt:/data:ro                   # Location of your acme files
+      - ./data/letsencrypt:/data:ro                   # Location of your acme files. Keep `:ro` -- required for the unprivileged
+                                                      # (PUID/PGID) mode, which also needs the files readable by PUID/PGID; Traefik keeps them 0600
       - ./data/certs:/certs:rw                        # Location you want to export certificates to      
 ```
 

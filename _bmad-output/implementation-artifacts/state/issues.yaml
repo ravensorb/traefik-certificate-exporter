@@ -2,7 +2,7 @@ next:
   '009': 22
   '011': 42
   '012': 14
-  '013': 41
+  '013': 44
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -815,3 +815,11 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-013/sprint-02/closure/review-E013-S02-002.md
+- key: BL-E013-042
+  epic: '013'
+  sprint: '02'
+  title: Sample compose/README env var names don't match the TRAEFIK_CERTIFICATE_EXPORTER_ settings convention (RESTART_CONTAINERS, RESTARTCONTAINER) so they set nothing
+  source: story-prep
+  severity: Medium
+  status: backlog
+  description: 'Found while elaborating E013-S02-004: docker/docker-compose.yml uses TRAEFIK_CERTIFICATE_EXPORTER_RESTART_CONTAINERS and docker/README.md uses ..._SETTINGS_RESTARTCONTAINER; the confuse convention (AGENTS.md) is TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESTARTCONTAINERS. Users copying the samples get restartcontainers silently off.'

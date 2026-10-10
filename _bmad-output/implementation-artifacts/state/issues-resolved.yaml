@@ -877,3 +877,30 @@ resolved:
   resolution: fixed
   resolved_at: '2026-10-09T22:00:08Z'
   ref: E013-S02-002
+- key: BL-E013-041
+  epic: '013'
+  sprint: '02'
+  title: Dropped privileges make Traefik's acme.json unreadable by default; exporter silently exports nothing
+  source: maintainer-review
+  severity: High
+  status: resolved
+  description: "Traefik writes acme.json 0600 and refuses to start if group/other bits are set (pkg/provider/acme/local_store_unix.go CheckFile: mode&0o077 != 0 -> 'too open, please use 600'); Traefik runs as root by default, so acme.json is root:root 0600. ADR-0030 drops the service to abc whenever settings.restartcontainers is off, so the core function (reading the ACME store) fails with only an init WARNING, whose remedy 'relax their group permissions' is impossible under Traefik's check. Maintainer decision 2026-10-10: option A — drop privileges only when every matching ACME store file exists and is readable by the service account; otherwise run as root with a WARNING naming why and how to avoid it (run Traefik as a non-root user and set PUID/PGID to its uid/gid). Amend ADR-0030. Blocks the 0.3.0 release."
+  story: E013-S02-004
+  scheduled_at: '2026-10-10T20:09:40Z'
+  resolution: fixed
+  resolved_at: '2026-10-10T20:38:16Z'
+  ref: E013-S02-004
+- key: BL-E013-043
+  epic: '013'
+  sprint: '02'
+  title: docker-compose.yml / docker/README.md sample env var names do not match the TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_* convention (e.g. ..._RESTART_CONTAINERS, ..._SETTINGS_RESTARTCONTAINER), so the samples do not set what they claim
+  source: dev (E013-S02-004)
+  source_phase: dev
+  source_ref: E013-S02-004
+  severity: Medium
+  status: resolved
+  description: 'Observed during E013-S02-004 story prep; out of scope there. Samples: docker/docker-compose.yml TRAEFIK_CERTIFICATE_EXPORTER_RESTART_CONTAINERS/_FILESPEC/_RESOLVERID; docker/README.md TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESTARTCONTAINER (missing S).'
+  resolution: duplicate
+  resolved_at: '2026-10-10T20:38:48Z'
+  ref: BL-E013-042
+  note: Same sample env-var naming defect, filed twice (orchestrator during prep, dev agent during implementation).

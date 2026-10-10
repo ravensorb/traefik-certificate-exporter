@@ -222,54 +222,79 @@ the command line, not the environment.
 
 ### Container privileges: when the image keeps root, and when it drops
 
-The container decides at start-up whether to keep root, and it decides from
-`settings.restartcontainers` alone (ADR-0030):
+The container decides **once, at start-up**, whether the exporter runs as root or as `abc`
+(the `PUID`/`PGID` account). It drops to `abc` only when it can **prove** that account can do
+the job; anything it cannot prove keeps root (ADR-0030, amended 2026-10-10). Read the table
+top to bottom — the first row that matches your deployment is the answer:
 
-| `settings.restartcontainers` | Service runs as | Why |
-|---|---|---|
-| `false` / unset (default) | `abc` (the `PUID`/`PGID` account) | Nothing in the export path needs root |
-| `true` | `root` | `/var/run/docker.sock` access cannot be guaranteed for an unprivileged account |
+| # | Condition at container start | Service runs as | Start-up log |
+|---|---|---|---|
+| 1 | The settings cannot be resolved (malformed `/config/config.yaml`, invalid environment), or `settings.datapath`/`settings.outputpath` is a relative path | `root` | WARNING `could not resolve settings` — a malformed configuration is then reported by the exporter itself |
+| 2 | `settings.restartcontainers` is enabled | `root` | WARNING naming `settings.restartcontainers` — `/var/run/docker.sock` access cannot be guaranteed for an unprivileged account |
+| 3 | `settings.datapath` does not exist, or `abc` cannot list it | `root` | WARNING `cannot list settings.datapath` |
+| 4 | No file matches `settings.filespec` under `settings.datapath` yet | `root` | WARNING `no file matches` — restart the container once Traefik has written its store |
+| 5 | Any matching ACME store file is not readable by `abc` — **the stock Traefik case**: Traefik runs as root and writes `acme.json` `root:root 0600` | `root` | WARNING naming the files (`not readable by abc`) and the remedy below |
+| 6 | `abc` cannot write `settings.outputpath` even after the container took ownership of it (read-only mount, root-squashed share) | `root` | WARNING `cannot write settings.outputpath` |
+| 7 | Otherwise | `abc` | No WARNING |
 
-There is no separate switch and nothing to opt into. When root is retained the service logs
-a WARNING at start-up naming the condition and the remedy, so `docker logs` answers "why is
-this running as root?" directly.
+Exactly one privilege WARNING is logged per container start when root is retained, so
+`docker logs` answers "why is this running as root?" directly. There is no separate switch
+and nothing to opt into.
 
-The fallback is one-directional: if `/config/config.yaml` is missing or malformed, or the
-decision cannot be made for any other reason, the container **drops** privileges and logs a
-WARNING. A failure never leaves it as root.
+**How to get the unprivileged mode.** Traefik refuses to start if `acme.json` has any group
+or other permission bit set, and writes it `0600` owned by the user Traefik runs as — so
+the only way for another account to read it is to *be* that user. Run Traefik as a non-root
+user, and set this container's `PUID`/`PGID` to that user's uid/gid. `settings.restartcontainers`
+still forces root whatever the store permissions are.
+
+**Unprivileged mode requires `/data` mounted read-only (`:ro`).** With `PUID`/`PGID` set to
+Traefik's uid, `abc` owns the store; if `/data` is writable, a compromised exporter could
+chmod, delete or plant an unreadable `*.json` there and make the **next** start keep root
+(rows 3–5). Mount `/data:ro`. When the store is writable by `abc`, the start-up log says so
+in one line (an `INFO:` line when dropping, appended to the WARNING otherwise) — the
+container still starts, but treat that line as a deployment defect.
+
+**The decision is not re-checked while the container runs.** If Traefik first writes its
+store after the exporter started (row 4), or the store's owner or mode changes later, the
+start-up decision stands until the container is restarted. A store that becomes unreadable
+after a drop surfaces as the exporter's per-file `Error processing file` errors; restart the
+container to re-decide.
 
 The decision is made by the **installed exporter**, not by a second parser in the init
-script: the container asks `SettingsManager` for the resolved `settings.restartcontainers`,
+script: the container asks `SettingsManager` for the resolved settings and uses the
+exporter's own `glob` of `settings.datapath`/`settings.filespec` as the set of store files,
 so every source the application honours (packaged default, `.env` files, config file,
-environment) and its exact truthiness apply. A container that dropped privileges while the
-application believed the Docker-socket path was on would fail every restart with a bare
-permission error, so the two must not be able to disagree.
+environment) and its exact truthiness apply. The probes run *as* `abc` (`s6-setuidgid`), not
+as root, which would read every file and prove nothing.
 
-**Upgrading into the dropped configuration.** Three things change on first boot without
-`restartcontainers`, and all three are worth checking before you upgrade:
+**What the unprivileged mode changes.** When the container drops to `abc`:
 
-- **The output path is chowned to the `PUID`/`PGID` account.** The *resolved*
+- **The output path is chowned to the `PUID`/`PGID` account** on start-up. The *resolved*
   `settings.outputpath` is used, not the `/certs` default, so a custom mount is covered too.
   Symlinks inside it are skipped and never followed, and the walk does not cross into a
   nested mount — a link planted in the output volume must not be able to redirect a
   root-owned `chown`. If your host tooling depends on a particular owner for that directory,
   set `PUID`/`PGID` to match it.
-- **Traefik's ACME store must be readable by that account.** Traefik writes `acme.json` mode
-  `0600` owned by the account Traefik runs as — commonly root — and refuses to start if it
-  is more permissive, so the dropped account may simply not be able to read it. The exporter
-  would otherwise report only a generic `Error processing file` per pass, so the init step
-  probes every file matching `settings.filespec` under `settings.datapath` and logs a
-  WARNING naming the unreadable files and the two remedies: set `PUID`/`PGID` to an account
-  that can read them, or relax their group permissions. **Check your start-up log for this
-  warning after upgrading** — it is the difference between "exporting nothing" and "working".
 - **The service gets its own `HOME`** (`/run/traefik-certificate-exporter/home`, on tmpfs).
   `s6-setuidgid` changes the uid and nothing else, and the configuration library creates an
   application directory under `$HOME` on every start; the image's `HOME` is a root-owned
   `0700` `/root`, which the dropped account cannot write.
 
-`/data` is not chowned — the exporter only reads it — and `/config` deliberately stays
-root-owned, because `settings.postexportcommand` makes it execution-equivalent configuration
-and the account that runs the hook must not be able to rewrite it.
+**Upgrading to 0.3.0 (from v0.2.0).** v0.2.0 always ran the exporter as root.
+
+- Stock Traefik (root, `acme.json` `0600`) with `restartcontainers` off: no functional
+  change — still root, still exporting. New: one start-up WARNING saying why it runs as root,
+  which files forced it, and how to get the unprivileged mode.
+- A store already readable by `PUID`/`PGID` (Traefik run as that uid/gid) with
+  `restartcontainers` off: the exporter now runs as `abc`, with no privilege WARNING. New on
+  first start: the output path is chowned to `PUID`/`PGID`, and file logging degrades to
+  console-only (see the known limitation below). Mount `/data:ro` for this mode.
+- `restartcontainers` on: unchanged — root, now with a start-up WARNING.
+
+`/data` is never chowned or chmodded — the exporter only reads it, and Traefik requires
+`0600` — and `/config` deliberately stays root-owned, because `settings.postexportcommand`
+makes it execution-equivalent configuration and the account that runs the hook must not be
+able to rewrite it.
 
 **Known limitation:** file logging (`logging.consoleonly: false`) writes a relative path
 resolved against the root-owned `/config`, so the dropped account cannot open it; the

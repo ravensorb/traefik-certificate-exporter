@@ -4,6 +4,7 @@
 - **Date:** 2026-10-08
 - **Deciders:** Maintainer (ravensorb), via Epic E012 Sprint S01 (Story E012-S01-001)
 - **Epic:** E012
+- **Amended:** 2026-10-10 (BL-E013-041, E013-S02-004)
 - **Amends:** ADR-0002 (linuxserver.io base image and PUID/PGID privilege model). ADR-0002
   accepted "root-owned entrypoint before privilege drop" as the linuxserver.io convention,
   but the shipped service script never dropped: it ran `s6-setuidgid root`, so the
@@ -109,3 +110,75 @@ is the sole input.
   this ADR does not require or implement.
 - Follow-ups: if a socket-proxy deployment becomes the documented default, the root branch
   can be removed entirely and this ADR superseded.
+
+## Amendment (2026-10-10): drop only when the ACME store is proven readable
+
+### Context
+
+BL-E013-041 (maintainer review). Traefik writes `acme.json` mode `0600` owned by the user it
+runs as, and refuses to start when the store is any more open
+(`pkg/provider/acme/local_store_unix.go` `CheckFile`: `mode & 0o077 != 0` → "too open,
+please use 600"). Traefik's official image runs as root, so the default store is
+`root:root 0600`. Under the original decision every such deployment with
+`settings.restartcontainers` off dropped to `abc` and could not read its own store: the
+exporter's core function failed with only an init WARNING, and that WARNING's remedy —
+relaxing the group permission — is one Traefik refuses. The original drop never shipped
+(v0.2.0 always ran as root; the conditional drop arrived after it), so this amendment is
+written against v0.2.0 behaviour.
+
+### Decision
+
+Maintainer decision 2026-10-10, option A: the service drops to the `PUID`/`PGID` account
+**only** when every one of these is proven at container start — the settings resolved;
+`settings.restartcontainers` is false; `settings.datapath` exists and is listable by `abc`;
+at least one file matches `settings.filespec` there (the application's own `glob.glob`
+matches, emitted by the init script's embedded resolver); every match is readable by `abc`;
+and, after init takes ownership of it, `settings.outputpath` is writable by `abc`. Every probe
+runs as `abc` through `s6-setuidgid`. Anything else keeps root, with exactly one start-up
+WARNING naming the reason, the files, and the remedy: run Traefik as a non-root user and set
+`PUID`/`PGID` to that user's uid/gid (`settings.restartcontainers` still forces root). The
+decision lives in a sourced helper,
+`/usr/local/lib/traefik-certificate-exporter/privilege-decision.sh`, so it is executed by the
+test suite rather than only grepped. It is taken once per container start and not re-checked
+at runtime. No new setting is introduced; option D stays rejected.
+
+**Superseded passages of the original text** (left intact above as the historical record):
+
+1. Property 1, "**The safe answer is written first.** The state file is set to `false` …
+   never 'keep root'" — the pre-written answer is now `true`: nothing proven means root. An
+   unresolved configuration keeps root; the exporter then fails its own configuration load
+   and exits.
+2. Property 2, "**A missing state file reads as drop.**" — a missing or empty state file now
+   reads as root: nothing was proven, and the dropped path is not viable without init anyway
+   (no tmpfs `HOME`).
+3. Property 3 and the Decision text that the **service** script logs the root WARNING — the
+   WARNING moves to init, exactly one per container start; a longrun restart does not repeat
+   it.
+4. The Decision bullet that init "probes every `settings.filespec` match … for readability as
+   `abc` and warns" — the probe now **decides**; it no longer merely warns.
+5. The Consequences bullet remedy "until the operator sets `PUID`/`PGID` to a reader or
+   relaxes the group permission" — the group-permission remedy is withdrawn: Traefik's `0600`
+   check makes it impossible. The only remedy is running Traefik as the `PUID`/`PGID` user.
+6. The Context/Decision claim that `settings.restartcontainers` is "the sole input" — the
+   ACME store's readability by `abc` and the output path's writability by `abc` are now
+   inputs too.
+
+### Consequences
+
+- The default stock-Traefik deployment (root Traefik, `root:root 0600` store) runs the
+  exporter as **root**, with one WARNING. Relative to the unreleased original decision this
+  widens where root survives and keeps the RT-001/RT-003/RT-004/RT-009 surface for that
+  deployment; relative to the released v0.2.0 (always root) it narrows nothing for stock
+  Traefik and narrows it for stores readable by `PUID`/`PGID`. This is the maintainer's
+  accepted trade-off: an exporter that exports nothing is worse than one that runs as root
+  and says so.
+- Unprivileged mode is only as sound as a **read-only `/data` mount**. With `PUID`/`PGID` set
+  to Traefik's uid, `abc` owns the store; if `/data` is writable, a compromised `abc` can
+  chmod, delete or plant an unreadable file and the next start keeps root. `/data:ro` is
+  documented as a requirement for unprivileged mode, and the start-up log carries one line
+  when the store is writable by `abc`; the container does not refuse to start.
+- A store that first appears after a root decision keeps root until restart; a store that
+  becomes unreadable after a drop produces the exporter's per-file errors until restart.
+  Both are documented in `docs/operational.md`, not handled at runtime.
+- Revisit if Traefik relaxes its `0600` check, or if a socket-proxy / non-root-Traefik
+  deployment becomes the documented default.

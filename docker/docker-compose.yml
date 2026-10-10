@@ -16,5 +16,6 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Only needed if you are going to be restarting containers
       - ./data/config:/config:rw                      # Only needed if you are going to set a config file to load
-      - ./data/letsencrypt:/data:ro                   # Location of your acme files
+      - ./data/letsencrypt:/data:ro                   # Location of your acme files. Keep `:ro` -- required for the unprivileged
+                                                      # (PUID/PGID) mode, which also needs the files readable by PUID/PGID; Traefik keeps them 0600
       - ./data/certs:/certs:rw                        # Location you want to export certificates to      
