@@ -4,9 +4,10 @@ sprint: 'S02'
 title: 'Destination gating: publish only when token and all variables are set'
 classification: standard
 status: backlog
-updated_at: '2026-10-11T12:38:28Z'
+updated_at: '2026-10-11T16:04:18Z'
 depends_on:
 - 'E014-S02-001'
+- 'E014-S02-006'
 estimate:
   man_hours: 10.58
   hitl_hours: 0.05

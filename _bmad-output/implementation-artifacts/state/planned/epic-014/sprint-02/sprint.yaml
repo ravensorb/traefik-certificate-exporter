@@ -2,16 +2,16 @@ key: 'S02'
 epic: 'E014'
 title: Sprint 02 — Pipeline, record, release
 status: backlog
-updated_at: '2026-10-11T12:38:30Z'
+updated_at: '2026-10-11T16:04:21Z'
 estimate:
-  man_hours_low: 64.42
-  man_hours_high: 91.06
-  hitl_hours_low: 7.64
-  hitl_hours_high: 9.9
-  elapsed_hours_low: 7.96
-  elapsed_hours_high: 10.13
-  tokens_k_min: 32868
-  tokens_k_max: 37350
+  man_hours_low: 88.11
+  man_hours_high: 124.54
+  hitl_hours_low: 6.45
+  hitl_hours_high: 8.36
+  elapsed_hours_low: 9.28
+  elapsed_hours_high: 11.81
+  tokens_k_min: 44141
+  tokens_k_max: 50160
   closure_ratios:
     man_hours: 3.8059
     hitl_hours: 2.3155
@@ -22,7 +22,7 @@ estimate:
     hitl_hours: 0.1121
     elapsed_hours: 0.1473
     tokens_k: 0
-  cost_low: 26.8
-  cost_high: 30.48
+  cost_low: 36.01
+  cost_high: 40.92
   model: claude-opus-5
   confidence: medium

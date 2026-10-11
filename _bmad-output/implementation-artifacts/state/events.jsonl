@@ -767,3 +767,9 @@
 {"agent": "bmad-create-story", "epic": "E014", "event": "dispatch_close", "session": "l3io-pm-20261010T222710Z-28034", "ts": "2026-10-11T12:30:37Z"}
 {"agent": "bmad-create-story", "epic": "E014", "event": "dispatch_open", "session": "l3io-pm-20261010T222710Z-28034", "ts": "2026-10-11T12:32:15Z"}
 {"agent": "bmad-create-story", "epic": "E014", "event": "dispatch_close", "session": "l3io-pm-20261010T222710Z-28034", "ts": "2026-10-11T12:38:20Z"}
+{"epic": "E014", "event": "import", "from": null, "key": "E014-S01-009", "node": "story", "session": "l3io-pm-20261011T154805Z-15178", "sprint": "S01", "to": "backlog", "ts": "2026-10-11T15:48:06Z"}
+{"epic": "E014", "event": "import", "from": null, "key": "E014-S01-010", "node": "story", "session": "l3io-pm-20261011T154805Z-15178", "sprint": "S01", "to": "backlog", "ts": "2026-10-11T15:48:06Z"}
+{"epic": "E014", "event": "import", "from": null, "key": "E014-S02-006", "node": "story", "session": "l3io-pm-20261011T154805Z-15178", "sprint": "S02", "to": "backlog", "ts": "2026-10-11T15:48:07Z"}
+{"epic": "E014", "event": "import", "from": null, "key": "E014-S02-007", "node": "story", "session": "l3io-pm-20261011T154805Z-15178", "sprint": "S02", "to": "backlog", "ts": "2026-10-11T15:48:07Z"}
+{"agent": "bmad-create-story", "epic": "E014", "event": "dispatch_open", "session": "l3io-pm-20261011T154805Z-15178", "ts": "2026-10-11T15:48:20Z"}
+{"agent": "bmad-create-story", "epic": "E014", "event": "dispatch_close", "session": "l3io-pm-20261011T154805Z-15178", "ts": "2026-10-11T16:04:14Z"}

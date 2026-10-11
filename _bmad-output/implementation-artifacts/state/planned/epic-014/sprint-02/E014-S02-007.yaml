@@ -1,0 +1,15 @@
+key: 'E014-S02-007'
+epic: 'E014'
+sprint: 'S02'
+title: Release 0.3.0 — maintainer-run tag and destination verification (HITL; split from S02-005)
+classification: standard
+status: backlog
+updated_at: '2026-10-11T15:48:11Z'
+depends_on:
+- 'E014-S02-005'
+estimate:
+  man_hours: 8.0
+  hitl_hours: 4.5
+  elapsed_hours: 2.5
+  tokens_k: 3000
+  confidence: low

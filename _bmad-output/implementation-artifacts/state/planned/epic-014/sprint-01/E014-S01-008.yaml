@@ -4,10 +4,12 @@ sprint: 'S01'
 title: 'CLI/output hygiene: redaction, usage text, flag errors (moved from E012-S01-004)'
 classification: standard
 status: backlog
-updated_at: '2026-10-11T12:38:28Z'
+updated_at: '2026-10-11T16:04:17Z'
 depends_on:
 - 'E014-S01-004'
 - 'E014-S01-006'
+- 'E014-S01-009'
+- 'E014-S01-010'
 estimate:
   man_hours: 10.58
   hitl_hours: 0.05

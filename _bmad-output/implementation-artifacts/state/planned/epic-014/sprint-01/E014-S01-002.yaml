@@ -4,7 +4,7 @@ sprint: 'S01'
 title: 'PKCS12 export: passphrase, intermediates, chain parsing, build before replace'
 classification: standard
 status: backlog
-updated_at: '2026-10-11T12:38:26Z'
+updated_at: '2026-10-11T16:04:15Z'
 estimate:
   man_hours: 10.58
   hitl_hours: 0.05

@@ -1,10 +1,10 @@
 key: 'E014-S02-001'
 epic: 'E014'
 sprint: 'S02'
-title: 'CI hardening: pinned hooks, token handling, tags, concurrency, base-image pulls'
+title: 'Supply chain: SHA-pinned hooks, hashed Poetry bootstrap, wheel/sdist hash hand-off'
 classification: standard
 status: backlog
-updated_at: '2026-10-11T12:38:28Z'
+updated_at: '2026-10-11T16:04:18Z'
 resolves: [BL-E013-001, BL-E013-020, BL-E013-021, BL-E013-024]
 depends_on:
 - 'E014-S01-007'

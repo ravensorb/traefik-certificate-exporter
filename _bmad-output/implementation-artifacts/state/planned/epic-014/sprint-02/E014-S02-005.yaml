@@ -4,7 +4,7 @@ sprint: 'S02'
 title: Release 0.3.0
 classification: standard
 status: backlog
-updated_at: '2026-10-11T12:15:38Z'
+updated_at: '2026-10-11T16:04:19Z'
 depends_on:
 - 'E014-S02-003'
 - 'E014-S02-004'
@@ -12,10 +12,13 @@ depends_on:
 - 'E014-S01-004'
 - 'E014-S02-001'
 - 'E014-S02-002'
+- 'E014-S01-009'
+- 'E014-S01-010'
+- 'E014-S02-006'
 estimate:
-  man_hours: 12.0
-  hitl_hours: 5.5
-  elapsed_hours: 3.0
+  man_hours: 10.58
+  hitl_hours: 0.05
+  elapsed_hours: 0.75
   cost: 5.91
   model: claude-opus-5
   fix_factor: 2.8333
@@ -24,5 +27,10 @@ estimate:
     hitl_hours: 0.0541
     elapsed_hours: 0.1315
     tokens_k: 1.8087
-  tokens_k: 7248
   confidence: low
+  tokens_k:
+    total: 7248
+    input: 0
+    output: 12
+    cache_write: 347
+    cache_read: 6889
