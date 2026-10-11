@@ -263,8 +263,10 @@ backlog:
   source_phase: redteam
   source_ref: RT-014
   severity: Low
-  status: backlog
+  status: scheduled
   description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+  story: E014-S01-003
+  scheduled_at: '2026-10-10T22:27:13Z'
 - key: BL-E011-020
   epic: '011'
   sprint: '01'
@@ -387,8 +389,10 @@ backlog:
   source_phase: arch-drift
   source_ref: SD-01-8
   severity: Low
-  status: backlog
+  status: scheduled
   description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md
+  story: E014-S01-004
+  scheduled_at: '2026-10-10T22:27:15Z'
 - key: BL-E011-033
   epic: '011'
   sprint: '01'
@@ -505,8 +509,10 @@ backlog:
   source_phase: arch-gate
   source_ref: l3io-arch-review
   severity: Low
-  status: backlog
+  status: scheduled
   description: See _bmad-output/implementation-artifacts/epic-012/arch/arch-gate-review.md (consolidated MINOR findings)
+  story: E014-S01-006
+  scheduled_at: '2026-10-10T22:27:18Z'
 - key: BL-E012-005
   epic: '012'
   sprint: ''
@@ -545,8 +551,10 @@ backlog:
   source_phase: code-review
   source_ref: E012-S01-001
   severity: Medium
-  status: backlog
+  status: scheduled
   description: Review finding 2 follow-up. Name-based change detection was reverted because a renewal keeps the domain name, so it suppressed every restart after the first for a process lifetime. Only the 300s per-container cooldown remains. Precise filtering requires the export path to report a per-domain fingerprint/serial that restartLabeledContainers can compare. See _bmad-output/implementation-artifacts/epic-012/sprint-01/closure/review-E012-S01-001.md section 2.
+  story: E014-S01-006
+  scheduled_at: '2026-10-11T12:15:41Z'
 - key: BL-E012-013
   epic: '012'
   sprint: '01'
@@ -559,14 +567,6 @@ backlog:
   kind: spec-proposal
   ref: _bmad-output/implementation-artifacts/epic-012/sprint-01/closure/review-E012-S01-003.md
   description: "CI-AR44 says the self-discovered source-sha is threaded into publish-image.yaml's source-sha input and every expected-source-sha argument. The story's technical AC narrows this to evidence/build-manifest.json only, which is what was implemented: source-integrity declares outputs.source-sha but nothing consumes it, and dev.yaml/release.yaml still pass needs.plan.outputs.source-sha to publish-image. Behaviourally safe (all three values are github.sha; divergence fails closed in verified-bundle). Either thread the output through workflow_call.outputs or amend CI-AR44 and drop the unused job output. See review LOW-1."
-- key: BL-E013-001
-  epic: '013'
-  sprint: ''
-  title: Pre-commit hook revs (zizmor, gitleaks, actionlint, ruff, mypy) are pinned to mutable tags while build.yaml produces the published dist
-  source: arch-gate
-  severity: Low
-  status: backlog
-  description: 'See _bmad-output/implementation-artifacts/epic-013/arch/arch-gate-review.md (MINOR deferred: hook rev pinning). Decision for the maintainer: pre-commit autoupdate --freeze + Dependabot pre-commit ecosystem, or record as accepted risk in ADR-0035.'
 - key: BL-E013-002
   epic: '013'
   sprint: ''
@@ -607,8 +607,10 @@ backlog:
   source_phase: redteam
   source_ref: RT-E013-03
   severity: Medium
-  status: backlog
+  status: scheduled
   description: Needs maintainer decision (changes a recorded design decision); not implemented in closure. Related to BL-E013-001. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md
+  story: E014-S02-001
+  scheduled_at: '2026-10-10T22:27:36Z'
 - key: BL-E013-021
   epic: '013'
   sprint: '01'
@@ -617,8 +619,10 @@ backlog:
   source_phase: redteam
   source_ref: RT-E013-04
   severity: Medium
-  status: backlog
+  status: scheduled
   description: 'Upload-before-third-party-action half fixed by AR-02. Remaining: export wheel-sha256 as build.yaml output and sha256sum -c in publish jobs; needs act/live verification (E013-S02-001). See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md'
+  story: E014-S02-001
+  scheduled_at: '2026-10-10T22:27:36Z'
 - key: BL-E013-022
   epic: '013'
   sprint: '01'
@@ -647,8 +651,10 @@ backlog:
   source_phase: adversarial
   source_ref: AR-06
   severity: Medium
-  status: backlog
+  status: scheduled
   description: Needs maintainer decision (changes a recorded design decision); not implemented in closure. Changes AD-11 mechanism. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/adversarial-review.md
+  story: E014-S02-001
+  scheduled_at: '2026-10-10T22:27:36Z'
 - key: BL-E013-025
   epic: '013'
   sprint: '01'
@@ -793,8 +799,10 @@ backlog:
   source_phase: code-review
   source_ref: E013-S02-002
   severity: Low
-  status: backlog
+  status: scheduled
   description: See _bmad-output/implementation-artifacts/epic-013/sprint-02/closure/review-E013-S02-002.md
+  story: E014-S02-003
+  scheduled_at: '2026-10-10T22:27:38Z'
 - key: BL-E013-039
   epic: '013'
   sprint: '02'
@@ -821,5 +829,7 @@ backlog:
   title: Sample compose/README env var names don't match the TRAEFIK_CERTIFICATE_EXPORTER_ settings convention (RESTART_CONTAINERS, RESTARTCONTAINER) so they set nothing
   source: story-prep
   severity: Medium
-  status: backlog
+  status: scheduled
   description: 'Found while elaborating E013-S02-004: docker/docker-compose.yml uses TRAEFIK_CERTIFICATE_EXPORTER_RESTART_CONTAINERS and docker/README.md uses ..._SETTINGS_RESTARTCONTAINER; the confuse convention (AGENTS.md) is TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESTARTCONTAINERS. Users copying the samples get restartcontainers silently off.'
+  story: E014-S01-004
+  scheduled_at: '2026-10-10T22:27:15Z'

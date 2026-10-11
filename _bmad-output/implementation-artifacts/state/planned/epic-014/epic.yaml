@@ -1,0 +1,28 @@
+key: 'E014'
+title: Epic 014 — 0.3.0 release readiness
+goal: ''
+status: backlog
+updated_at: '2026-10-11T12:38:31Z'
+estimate:
+  man_hours_low: 233.54
+  man_hours_high: 255.72
+  hitl_hours_low: 11.1
+  hitl_hours_high: 12.89
+  elapsed_hours_low: 22.03
+  elapsed_hours_high: 27.03
+  tokens_k_min: 113564
+  tokens_k_max: 129050
+  closure_ratios:
+    man_hours: 0.676
+    hitl_hours: 0.9897
+    elapsed_hours: 1.6664
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0.0
+    hitl_hours: 0.1053
+    elapsed_hours: 0.0687
+    tokens_k: 0
+  cost_low: 92.65
+  cost_high: 105.29
+  model: claude-opus-5
+  confidence: medium

@@ -1,0 +1,28 @@
+key: 'E014-S02-005'
+epic: 'E014'
+sprint: 'S02'
+title: Release 0.3.0
+classification: standard
+status: backlog
+updated_at: '2026-10-11T12:15:38Z'
+depends_on:
+- 'E014-S02-003'
+- 'E014-S02-004'
+- 'E013-S02-001'
+- 'E014-S01-004'
+- 'E014-S02-001'
+- 'E014-S02-002'
+estimate:
+  man_hours: 12.0
+  hitl_hours: 5.5
+  elapsed_hours: 3.0
+  cost: 5.91
+  model: claude-opus-5
+  fix_factor: 2.8333
+  scope_ratios:
+    man_hours: 0.6225
+    hitl_hours: 0.0541
+    elapsed_hours: 0.1315
+    tokens_k: 1.8087
+  tokens_k: 7248
+  confidence: low

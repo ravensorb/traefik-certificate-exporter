@@ -1,0 +1,27 @@
+key: 'E014-S02-004'
+epic: 'E014'
+sprint: 'S02'
+title: Close E012 and triage the residual backlog
+classification: simple
+status: backlog
+updated_at: '2026-10-11T12:38:29Z'
+depends_on:
+- 'E014-S01-008'
+estimate:
+  man_hours: 2.92
+  hitl_hours: 0.13
+  elapsed_hours: 0.79
+  cost: 0.72
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 0.7775
+    hitl_hours: 0.5071
+    elapsed_hours: 0.6322
+    tokens_k: 1.0
+  tokens_k:
+    total: 888
+    input: 0
+    output: 1
+    cache_write: 43
+    cache_read: 844

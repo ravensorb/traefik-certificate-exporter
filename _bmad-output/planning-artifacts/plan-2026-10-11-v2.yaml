@@ -1,0 +1,59 @@
+generated: '2026-10-11T12:38:46Z'
+plan_version: 2
+readiness: amber
+stories_elaborated: 13
+total_epics_in_scope: 3
+phases:
+- phase: 1
+  parallel: true
+  epics:
+  - E012
+  - E013
+  - E014
+  dependencies: []
+  estimate:
+    estimates_as_of: '2026-10-11T12:38:46Z'
+    wall_clock_hours_low: 22.43
+    wall_clock_hours_high: 27.52
+    man_hours_low: 549.88
+    man_hours_high: 602.1
+    hitl_hours_low: 14.3
+    hitl_hours_high: 16.61
+    tokens_k_min: 178943
+    tokens_k_max: 203343
+    cost_low: 152.55
+    cost_high: 173.34
+    confidence: medium
+readiness_detail:
+- key: E012
+  status: amber
+  gaps:
+  - Closed out by E014-S02-004 (S01-002 superseded by ADR-0035; S01-004 moved to E014-S01-008); do not execute E012 directly.
+- key: E013
+  status: amber
+  gaps:
+  - Only E013-S02-001 (live verification, HITL) remains; E013-S01-004 blocked by design pending it. E014-S02-005 depends on
+    it.
+- key: E014
+  status: amber
+  gaps:
+  - All 13 stories elaborated from the 2026-10-10 whole-solution review and the verified research brief (research-2026-10-10-release-0.3.0.md).
+  - "Story-level order: S01-002\u2192S01-003; S01-001\u2192S01-006,S01-007; S01-005\u2192S01-007; S01-004\u2192S01-008; S01-007\u2192\
+    S02-001\u2192S02-002; all code stories\u2192S02-003; S01-008\u2192S02-004; S02-003,S02-004,E013-S02-001\u2192S02-005."
+  - 'New ADRs to reserve at dev time: PKCS12/store contract (S01-002/003), s6 lifecycle (S01-005), restart deferral (S01-006),
+    E014 pipeline amendments, publish duplication, module layering (S02-003).'
+  - Spec items BL-E013-035/-036 and BL-E013-007/-017 need /l3io-doctor triage; their substance is covered by S02-001/S02-003.
+  - hitl_hours is a calibration output and is known-low for S02-005 (release) and S02-004 (PR closure confirmation).
+  - 'Maintainer decisions 2026-10-11 applied: actionable non-noisy destination warnings (S02-002); release runnable from GitHub
+    or Gitea with single-forge secrets per destination (S02-005); 0.x until stable then v1, :0 frozen; legacy-setting detection
+    + upgrade notes (S01-004, S02-005); ACME size cap dropped (S01-003).'
+  - 'Plan review 2026-10-11 (architecture, PRD traceability, cross-story consistency): 2 BLOCKER / 18 MAJOR / 36 MINOR found;
+    all applied and re-validated (A-01..A-25 25/25, F-01..F-12 12/12, C-01..C-19 17/19 + state fixes for C-07/C-08). New MAJOR
+    from the restart decision (stale cert after crash) closed by the mtime-vs-StartedAt restart rule in S01-006. Reports:
+    _bmad-output/implementation-artifacts/epic-014/plan-review/.'
+  - 'Maintainer decision 2026-10-11: restart ONLY when a domain certificate changed; hook/notifications only for changed domains;
+    runatstart stays on. E012-S01-004 blocked (moved to E014-S01-008).'
+arch_gate_summary:
+  ran: false
+  reviewers: []
+  findings: []

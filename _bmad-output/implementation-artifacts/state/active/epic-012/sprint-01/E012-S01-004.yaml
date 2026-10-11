@@ -2,7 +2,7 @@ key: 'E012-S01-004'
 epic: 'E012'
 sprint: 'S01'
 title: 'CLI/output hygiene: redaction, usage text, flag errors'
-status: ready-for-dev
+status: blocked
 classification: standard
 resolves: [BL-E011-033, BL-E011-034, BL-E011-035, BL-E011-036]
 estimate:
@@ -23,4 +23,7 @@ estimate:
     output: 17
     cache_write: 101
     cache_read: 169
-updated_at: '2026-10-08T12:47:07Z'
+updated_at: '2026-10-11T12:15:38Z'
+blocked_reason: Moved to E014-S01-008 at the maintainer's request (2026-10-10); do not develop here. Close as done with a resolution pointing at E014-S01-008 when that story completes (E014-S02-004).
+completion_evidence:
+  blocks_seen: 1

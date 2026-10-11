@@ -1,6 +1,6 @@
-current_plan: "plan-2026-10-09-v1.yaml"
-generated: "2026-10-09T20:22:26Z"
+current_plan: "plan-2026-10-11-v2.yaml"
+generated: "2026-10-11T12:38:46Z"
 readiness: amber
-stories_elaborated: 1
-total_epics_in_scope: 2
+stories_elaborated: 13
+total_epics_in_scope: 3
 phase_count: 1

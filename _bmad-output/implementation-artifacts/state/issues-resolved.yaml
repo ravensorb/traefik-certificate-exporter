@@ -904,3 +904,17 @@ resolved:
   resolved_at: '2026-10-10T20:38:48Z'
   ref: BL-E013-042
   note: Same sample env-var naming defect, filed twice (orchestrator during prep, dev agent during implementation).
+- key: BL-E013-001
+  epic: '013'
+  sprint: ''
+  title: Pre-commit hook revs (zizmor, gitleaks, actionlint, ruff, mypy) are pinned to mutable tags while build.yaml produces the published dist
+  source: arch-gate
+  severity: Low
+  status: resolved
+  description: 'See _bmad-output/implementation-artifacts/epic-013/arch/arch-gate-review.md (MINOR deferred: hook rev pinning). Decision for the maintainer: pre-commit autoupdate --freeze + Dependabot pre-commit ecosystem, or record as accepted risk in ADR-0035.'
+  story: E014-S02-001
+  scheduled_at: '2026-10-10T22:27:36Z'
+  resolution: duplicate
+  resolved_at: '2026-10-11T12:15:40Z'
+  ref: BL-E013-020
+  note: Same pre-commit hook pinning finding; carried by BL-E013-020 in E014-S02-001.
