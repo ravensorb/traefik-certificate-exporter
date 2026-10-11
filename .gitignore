@@ -13,3 +13,5 @@ dist
 _bmad/memory/
 # Poetry's project-local plugin environment, populated from [tool.poetry.requires-plugins].
 .poetry/
+# Poetry is the single dependency and lock source (ADR-0001); a uv lock is never committed.
+uv.lock

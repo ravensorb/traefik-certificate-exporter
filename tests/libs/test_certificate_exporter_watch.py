@@ -178,6 +178,70 @@ def test_container_restart_follows_its_setting_on_the_watch_path(restart):
     )
 
 
+def test_drain_evaluates_restarts_every_pass():
+    """E014-S01-006: a drain that changed nothing still evaluates restarts, with the
+    exporter's artifact lookup, never the changed-domain list (ADR-0045)."""
+    exporter = MagicMock()
+    exporter.exportCertificatesForFile.return_value = []
+    handler = _handler(exporter, restart=True)
+    handler.handleEvent(_event("/data/acme.json"))
+    handler.timer.cancel()
+    handler.doTheWork()
+
+    manager = handler._AcmeCertificateFileHandler__dockerManager
+    manager.restartLabeledContainers.assert_called_once_with(exporter.artifactMtime)
+
+
+def _drain_with_changed(changed):
+    """One drain over one store file whose export reports `changed`; hook and Apprise
+    set. Returns (hook recorder, notification recorder, restart manager, exporter)."""
+    exporter = MagicMock()
+    exporter.exportCertificatesForFile.return_value = list(changed)
+    handler = _handler(
+        exporter,
+        restart=True,
+        postExportCommand="/usr/local/bin/reload-proxy --now",
+        appriseUrls=["json://hook.example.test/"],
+    )
+    hook, notify = MagicMock(), MagicMock()
+    with (
+        patch.object(certificate_exporter, "run_post_export_command", hook),
+        patch.object(certificate_exporter, "send_export_notifications", notify),
+    ):
+        handler.handleEvent(_event("/data/acme.json"))
+        handler.timer.cancel()
+        handler.doTheWork()
+    return hook, notify, handler._AcmeCertificateFileHandler__dockerManager, exporter
+
+
+def test_drain_with_no_changed_domain_runs_no_hook_or_notification(caplog):
+    """E014-S01-010 (ADR-0045, amending ADR-0014 §7): nothing changed, nothing runs --
+    except the restart evaluation, which runs on every pass (E014-S01-006). The quiet
+    pass is still visible: one INFO line for the one store file drained."""
+    with caplog.at_level(logging.INFO):
+        hook, notify, manager, exporter = _drain_with_changed([])
+
+    hook.assert_not_called()
+    notify.assert_not_called()
+    manager.restartLabeledContainers.assert_called_once_with(exporter.artifactMtime)
+    quiet = [
+        r
+        for r in caplog.records
+        if r.getMessage() == certificate_exporter.NO_CHANGE_MESSAGE
+    ]
+    assert len(quiet) == 1 and quiet[0].levelno == logging.INFO, caplog.messages
+
+
+def test_drain_with_one_changed_domain_runs_hook_and_notification_with_that_domain():
+    hook, notify, manager, exporter = _drain_with_changed(["a.example.test"])
+
+    hook.assert_called_once()
+    assert hook.call_args.args[1] == ["a.example.test"]
+    notify.assert_called_once()
+    assert notify.call_args.args[1] == ["a.example.test"]
+    manager.restartLabeledContainers.assert_called_once_with(exporter.artifactMtime)
+
+
 class _InjectingLock:
     """A real lock that delivers a queued event each time it is RELEASED.
 

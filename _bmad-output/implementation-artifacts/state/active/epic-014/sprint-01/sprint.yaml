@@ -1,8 +1,8 @@
 key: 'S01'
 epic: 'E014'
 title: Sprint 01 — Product correctness
-status: backlog
-updated_at: '2026-10-11T16:04:21Z'
+status: done
+updated_at: '2026-10-11T22:02:13Z'
 next: 7
 estimate:
   man_hours_low: 146.07
@@ -27,3 +27,35 @@ estimate:
   cost_high: 73.91
   model: claude-opus-5
   confidence: medium
+actual:
+  elapsed_hours: 3.62
+  man_hours: 78
+  hitl_hours: 0.1
+  tokens_k:
+    total: 93750.89
+    input: 1.786
+    output: 117.467
+    cache_write: 3511.044
+    cache_read: 90120.595
+  cost: 69.95
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-11T22:02:05Z'
+orchestration:
+  elapsed_hours: 2.25
+  man_hours: 0
+  hitl_hours: 0
+  tokens_k:
+    total: 12755.2
+    input: 0.19
+    output: 64.669
+    cache_write: 351.667
+    cache_read: 12338.673
+  cost: 9.98
+  model: claude-opus-5
+orchestration_sampled_at: '2026-10-11T22:02:05Z'
+closed:
+  date: '2026-10-11'
+retrospective:
+  summary: 'All 10 stories in E014 sprint 01 are done, at 0.42x the estimated elapsed time and 0.90x the estimated man-hours, with at most one fix iteration per story. Closure fixed 2 MAJOR and 5 MEDIUM review findings plus one LOW, and deferred 34 items (BL-E014-027..060). The main lesson is evidence quality in test_runs: E014-S01-008 has a permanently red fail-first entry, and E014-S01-004 and E014-S01-009 recorded synthetic exit codes, because pm-status cannot record an expected failure.'
+  velocity: '10'
+  carry_over: '0'

@@ -36,8 +36,9 @@ crash.
 
 ## Runbook: certificate not exported
 
-1. Check the container/process is actually seeing file events: run with `-ll DEBUG` and
-   confirm `Watchdog received modified event` appears when Traefik renews.
+1. Check the container/process is actually seeing file events: raise the log level to DEBUG
+   (`-e TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL=DEBUG` for the container, `-ll DEBUG` on
+   the CLI) and confirm `Watchdog received modified event` appears when Traefik renews.
 2. Confirm `settings.dataPath` resolves to a real, mounted path — a misconfigured or
    unmounted data path now fails loudly with a non-zero exit (PRD backlog item #2 / review
    finding #2, fixed).
@@ -58,6 +59,21 @@ is written to the log file — under s6 the container simply crash-loops with no
 in `traefik-certificate-exporter.log`. Read the container's stderr (`docker logs`) for the
 `unrecognized arguments:` line.
 
+### Run-once container (`watchforchanges: false`)
+
+**A run-once container exits after one pass, and its exit code reflects start-up failures
+only: 0, or 1 when the data path is missing. Export failures are logged at ERROR and do not
+change the exit code** — check `docker logs` for `ERROR` lines after each scheduled run
+(ADR-0044). Run it with `restart: "no"` or from cron, a systemd timer or a Kubernetes Job;
+`restart: always`/`unless-stopped` turns it into a container-level loop. A start that logs
+`WARNING: run mode unresolved; defaulting to watch mode` means the start-up settings
+resolution failed (usually a malformed `/config/config.yaml`): the service falls back to the
+image's watch mode and the exporter's own error follows in the same log, once per restart
+(s6 respawns the failing exporter until the config is fixed). In the image, select run-once
+with `-e TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=false`: the image's environment
+default for it outranks `watchforchanges` in `/config/config.yaml`. See
+[docker/README.md](../docker/README.md#run-once).
+
 ## Runbook: container not restarting after cert change
 
 1. Confirm `restartContainers` / `--restart-container` is set.
@@ -73,27 +89,91 @@ in `traefik-certificate-exporter.log`. Read the container's stderr (`docker logs
    this to "list/restart" — `restartLabeledContainers` uses the general `docker-py`
    client with no endpoint allowlist. If you need a narrower grant, put an
    endpoint-restricted proxy (e.g. Tecnativa/docker-socket-proxy, allowlisting only
-   `GET /containers/json` and `POST /containers/{id}/restart`) between this container and
-   the real socket rather than mounting the socket directly.
-4. Confirm the restart is not being suppressed by the cooldown. A given labeled container is
-   restarted **at most once per 5-minute window**; a pass that lands inside that window logs
-   `Skipping restart of container <id>: restart cooldown active, Ns remaining` at INFO and
-   moves on. The window is per container, not global.
+   `GET /_ping`, `GET /version`, `GET /containers/json`, `GET /containers/{id}/json` and
+   `POST /containers/{id}/restart`)
+   between this container and the real socket rather than mounting the socket directly.
+4. Check the start-up log. With restarts enabled the exporter checks the Docker Engine once
+   at start-up: INFO `Docker Engine reachable (API <version>)` on success, or one ERROR
+   naming the endpoint (`DOCKER_HOST`, else `unix:///var/run/docker.sock`) and the error on
+   failure. Exporting continues either way; restarts do not happen until the Engine is
+   reachable, and each pass that tries one logs the same single ERROR line, without a
+   traceback.
+   - The client targets `DOCKER_HOST` if it is set, otherwise the default socket. The
+     Docker CLI context (`docker context use …`, `~/.docker/config.json`) is deliberately
+     **ignored**, so a `~/.docker` in the service's `HOME` cannot redirect restarts to
+     another daemon. On a workstation with a non-default context, set `DOCKER_HOST`.
+   - Docker Engine API **1.24 or newer** is required (the docker-py 7.x floor). An older
+     Engine shows up as the same start-up ERROR.
+5. Check whether a restart was called for. Restarts happen **only on change**
+   ([ADR-0045](adr/0045-restart-policy-only-on-change-defer-not-drop.md)):
+   - **Trigger.** On every pass — the start-up pass and every drain, whether or not a
+     domain changed — a running labeled container is restarted when the newest mtime among
+     the exported files (PEMs and `.pfx`) of its labeled domains is more than **2 s** later
+     than the container's own start (`State.StartedAt`, UTC). Change detection happens at
+     export time: an unchanged certificate is not rewritten, so its files keep their mtime
+     and restart nothing — restarting the exporter over an unchanged store restarts no
+     container. A restart follows the first export into an empty output directory, a
+     renewal or reissue, an output file deleted or edited by hand, and the first pass after
+     upgrading from 0.2.x (every `.pfx` is rewritten with its intermediates).
+   - The log line is INFO `Restarting container <id>: exported files for <domain> (<mtime>)
+     are newer than its start (<StartedAt>)`. At DEBUG each evaluated container logs why it
+     was not restarted; a container whose `StartedAt` is missing or the zero value is never
+     restarted. A container none of whose labeled domains has an exported file is not
+     considered at all. Stopped containers are not restarted; they load the current files
+     when they next start.
+   - **Clock slack.** The 2 s slack (`RESTART_MTIME_SLACK_SECONDS` in
+     `src/traefik_certificate_exporter/libs/docker.py`, not configurable) absorbs small
+     drift between the clock that stamps the output files and the Docker daemon's clock.
+     Run the exporter against the local daemon with the output directory on a local
+     filesystem: clock skew beyond 2 s (a remote daemon, a network filesystem whose server
+     stamps mtimes) is unsupported, and a container that started less than 2 s before the
+     write is not restarted. Containers on any daemon other than the one the exporter is
+     connected to are never listed or restarted.
+   - **Who can write the output directory.** The rule trusts the output files' mtimes. Keep
+     the output directory writable by the exporter only — anyone who can write there can
+     already replace the certificates the containers serve.
+
+6. Check the cooldown. A given labeled container is restarted **at most once per 300 s
+   (5-minute) window**: `RESTART_COOLDOWN_SECONDS = 300` in
+   `src/traefik_certificate_exporter/libs/docker.py`, fixed and **not configurable**. The
+   window is per container, not global. A restart that the rule calls for inside the window
+   is **deferred, not dropped**: INFO `Deferring restart of container <id>: cooldown active,
+   <n>s remaining; one restart scheduled`, and one trailing restart runs when the window
+   ends (INFO `Restarting container: <id> (deferred)`). Further requests inside the window
+   coalesce into that one. Before it restarts, the trailing restart re-checks that the
+   container still exists and is still running, that its label still names a domain that asked for it, that its
+   files are still newer than its start, and that no other restart has claimed the window
+   since; otherwise it logs the reason at INFO and skips.
 
    This floor exists because the domain strings come from Traefik's ACME store, and anyone
    who can get a certificate issued into that store can influence them — without it, a noisy
-   or hostile store turns every drain pass into a restart of every labeled container over a
-   host-root-equivalent socket.
+   or hostile store could drive restarts of every labeled container over a
+   host-root-equivalent socket. The trailing restart starts a new window, so the floor holds
+   however noisy the store is.
 
-   The cooldown is the *only* suppression. Restarts are deliberately **not** filtered on "the
-   domain names did not change": a renewal keeps the domain name and replaces only the key
-   material, so name-based filtering would restart each container once per exporter process
-   lifetime and then never again — the opposite of the feature. A per-domain certificate
-   fingerprint would allow precise filtering and is tracked as a follow-up.
+7. A failed restart (logged at ERROR) is retried one 300 s window later through the
+   trailing-restart path, with the same re-checks: INFO `Retrying restart of container <id>
+   in <n>s (retry <k> of 3)`. After three failed retries it logs WARNING `Giving up
+   retrying restart of container <id> ...` and waits for the next pass.
 
-   The state is in-process only: restarting the exporter clears it, so the first pass after a
-   start is always eligible. A failed restart and a `dryrun` restart both leave the container
-   eligible — neither starts a cooldown.
+   A restart that did not happen is recovered on the **next pass**. Nothing is persisted:
+   the exported files' mtimes and the container's `StartedAt` are the only restart state,
+   and both survive a crash. So a restart lost to an exporter crash between writing and
+   restarting, a failed restart whose retries are spent, or a deferred
+   restart cancelled at shutdown (INFO `Cancelled <n> pending deferred restart(s); the next
+   pass restarts them`) happens on the next pass, because the files are still newer than
+   the container. The next pass is the next exporter start's start-up pass
+   (`runatstart`, on in the image) or the next ACME write. With `runatstart: false`, a store
+   file not written since the process started is not covered until its next write
+   ([ADR-0040](adr/0040-exported-artifact-paths-from-one-shared-helper.md) §6). Until that
+   next pass, the container keeps serving the previous certificate. In a dry run nothing is
+   written, so mtimes do not move; containers that already satisfy the rule are logged as
+   `[DRYRUN] would restart <id>` (or `would schedule deferred restart`) and nothing is
+   restarted or scheduled.
+
+8. To opt out of restarts: set `restartcontainers: false` (it is off unless enabled), or
+   remove the `com.github.ravensorb.traefik-certificate-exporter.domain-restart` label from
+   the container.
 
 ## First-run config seeding (container)
 
@@ -137,6 +217,35 @@ One value joins all of them (ADR-0023).
 If a drain is interrupted part-way, the work left over is re-armed under a **new** id, and
 an INFO line names both ("Re-arming export drain as X for work left by Y") so the two
 halves can still be joined by hand.
+
+### When the post-export hook and notifications run: only on change
+
+The post-export hook (`settings.postexportcommand`) and the Apprise notifications
+(`settings.appriseurls`) run **only on change**: after a pass in which at least one domain's
+exported files changed on disk, and only for those domains
+([ADR-0045](adr/0045-restart-policy-only-on-change-defer-not-drop.md), amending ADR-0014 §7).
+`TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS` and the notification body list only the
+changed domains.
+
+- A pass that changed nothing runs neither and logs one INFO line:
+  `No certificate changed; no hook or notification`. That covers an exporter or container
+  restart over an unchanged store (the start-up pass with `runatstart: true`), a run-once
+  container over an unchanged store, and a pass that only recovers a lost container restart
+  (see the restart runbook above): the container is restarted, but no hook runs and nothing
+  is notified.
+- A permission-only difference is not a change. An exported file whose mode is wider than
+  its policy (`0600` for `privkey.pem` and the PKCS12 file) is tightened back in place
+  (its mtime is kept) with a WARNING `Tightened mode of <path> from <old> to <new>`, and
+  causes no rewrite, hook, notification or restart. A hook that loosens a key (for example
+  `chmod 0640 privkey.pem`) is therefore reverted on every pass; have the hook give a
+  non-root consumer its own copy instead.
+- The start-up pass runs the hook and notifies once, for the union of every store file; the
+  watcher runs them once per changed store file in a drain, so the quiet-pass line is also
+  per store file there.
+- Dry run: the domains that *would* change are reported, and the hook and notifications log
+  their existing `Dry run: skipping …` lines for them and run nothing.
+- In 0.2.x both ran after every pass, including every exporter start. If a notification
+  channel was muted for that reason, it can be unmuted.
 
 ### Shutdown
 
@@ -204,7 +313,7 @@ environment**, plus `TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS` and
 (BL-E011-019).
 
 Everything you pass to the container is therefore readable by the hook and by every process
-it starts: `TRAEFIK_CERTIFICATE_EXPORTER_NOTIFY_*` Apprise URLs (which commonly embed an
+it starts: `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_APPRISEURLS_<n>` Apprise URLs (which commonly embed an
 API token or a bot credential), registry or cloud credentials injected for unrelated
 reasons, and anything else in the container's env. A hook that pipes output to a remote
 endpoint, or that runs a third-party script, exports those values with it.
@@ -219,6 +328,19 @@ Two practical consequences:
 The argument vector is **not** run through a shell (`shlex.split` plus `shell=False`), so a
 domain name cannot inject a second command into a hook that references it. That protects
 the command line, not the environment.
+
+#### The hook command is a secret in the logs
+
+A hook command often carries a credential (`curl -H "Authorization: Bearer …"`, a webhook
+token). `settings.postexportcommand` is a declared secret: the DEBUG settings and config
+dumps show it as `***REDACTED***` when it is set (and `null` when it is not), and every hook
+log line names only the program, `argv[0]` — `Post-export command curl exited 7: …`,
+`… timed out …`, `… failed to start: …` — never its arguments. A command that cannot be
+parsed is reported without the command or the parser's message, which can echo a fragment of
+it. On failure only the last non-empty line of the hook's stderr is logged, as its diagnostic
+output: every argument of 4 or more characters is masked as `***`, CR/LF/ESC are stripped,
+and the line is cut to 200 characters. It is not redacted beyond that: a hook that prints
+its credential in another form than the argument it was given leaks it there.
 
 ### Container privileges: when the image keeps root, and when it drops
 

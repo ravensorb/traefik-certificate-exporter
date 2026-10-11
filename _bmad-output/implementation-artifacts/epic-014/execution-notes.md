@@ -82,3 +82,16 @@ spines). If something here turns out wrong, record it in your story's notes file
   comment citing the reason, and record each closure in the notes file. `git worktree list`
   showed only the main checkout at execution start.
 - Network access is available for `pip-audit`, PyPI/OSV lookups and image pulls.
+
+## Maintainer decisions during execution (2026-10-11)
+
+- **Settings precedence (BL-E014-017, resolved wontfix):** environment variables override the
+  config file for **all** settings: CLI > env > config file > defaults. The image keeps its
+  `WATCHFORCHANGES`/`RUNATSTART` env defaults; in the container the env var is the run-mode
+  switch. E014-S02-003 must state this rule in the product spine (settings precedence / AD-3
+  conventions), ADR-0044 and the operator docs (README, `docker/README.md`,
+  `docs/operational.md`), and remove any wording implying a config-file value can override an
+  env value.
+- **Import layering (closure SD-01-1):** keep the strict import-linter layer order as
+  implemented. E014-S02-003 updates the product spine AD-13 to describe the enforced order and
+  cite the `import-linter` pre-commit hook as its enforcement.

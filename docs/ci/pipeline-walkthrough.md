@@ -495,6 +495,8 @@ Only standard tools, all run by `pre-commit` (locally and in `build.yaml`):
 | gitleaks | committed secrets; the repository adds no path exemption, and gitleaks' default allowlist is inherited (ADR-0037) |
 | pygrep hooks | a `paths` allowlist in `.gitleaks.toml`; `ref:`/`repository:` or `ACT` in any workflow |
 | ruff, mypy | Python lint, format and types |
+| pip-audit | a known advisory in any `poetry.lock` group (the venv is built by `poetry sync --all-groups`) or, as `pip-audit-bootstrap`, in any hashed `.github/requirements/*.txt` (ADR-0042). Only packages installed for the running Python and platform are audited: a lock entry gated by an environment marker for another platform or Python minor is not (BL-E014-023). Needs network access to PyPI/OSV: offline it fails rather than skips (within 15 minutes of an online run, pip's HTTP cache answers instead; CI starts with a cold cache). An advisory with no fix is accepted only by `--ignore-vuln <ID>` in the hook, with the reason and a `BL-` key |
+| deptry | a dependency `src/` imports but `pyproject.toml` does not declare in the main group, or a main dependency `src/` never imports (review m8, NFR-3) |
 
 Dependabot proposes updates for actions, Python dependencies and the Docker base image.
 

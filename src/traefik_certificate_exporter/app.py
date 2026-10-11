@@ -10,6 +10,7 @@ import watchdog.observers
 
 from ._version import __version__
 from .libs.certificate_exporter import (
+    NO_CHANGE_MESSAGE,
     AcmeCertificateExporter,
     AcmeCertificateFileHandler,
 )
@@ -19,9 +20,13 @@ from .libs.cli_args import (
 )
 from .libs.docker import DockerManager
 from .libs.logging_utils import (
+    DEFAULT_LOG_LEVEL,
+    LOG_LEVEL_CHOICES,
+    LOG_LEVEL_ENV,
     globalLogger,
     new_correlation_id,
     reset_correlation_id,
+    sanitize_for_log,
     set_correlation_id,
     setup_logging,
 )
@@ -71,6 +76,37 @@ def install_shutdown_signal_handlers(logger) -> None:
             logger.debug(f"Could not install a shutdown handler for {sig!r}: {e}")
 
 
+def _log_level_with_source(cli_value: str | None) -> tuple[str, str, str | None]:
+    """Resolve the effective log level: `-ll` > `LOGGING_LEVEL` env > INFO.
+
+    Returns `(level, source, rejected)`: `source` is `cli`, `env` or `default`, and
+    `rejected` is the raw env value when it was set but is not a level (None otherwise).
+
+    Read with `os.getenv` rather than through confuse because logging is configured before
+    settings load -- the same reason the other `LOGGING_*` variables are read this way. One
+    pair of surrounding quotes is stripped: Compose passes `- FOO="DEBUG"` through with the
+    quotes, and the documented samples historically quoted values. An empty value counts as
+    unset. An invalid value does not exit: verbosity is not a correctness setting, and
+    exiting would put a watch-mode container into an s6 respawn loop.
+    """
+    if cli_value:
+        return cli_value.upper(), "cli", None
+    raw = os.getenv(LOG_LEVEL_ENV)
+    value = (raw or "").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1].strip()
+    if not value:
+        return DEFAULT_LOG_LEVEL, "default", None
+    if value.upper() in LOG_LEVEL_CHOICES:
+        return value.upper(), "env", None
+    return DEFAULT_LOG_LEVEL, "default", raw
+
+
+def _resolve_log_level(cli_value: str | None) -> str:
+    """The effective level name (upper case) -- see `_log_level_with_source`."""
+    return _log_level_with_source(cli_value)[0]
+
+
 def main():
     # The imported `globalArgs` was parsed leniently so that importing this module can
     # never die on somebody else's argv -- it stays as `app.globalArgs`' safe default for
@@ -82,14 +118,26 @@ def main():
     global globalArgs
     globalArgs = parse_args_strict()
 
+    logLevel, logLevelSource, rejectedLogLevel = _log_level_with_source(
+        globalArgs.logginglevel
+    )
+
     setup_logging(
         cfg_file_name="logging.yaml",
-        default_level=globalArgs.logginglevel,
+        default_level=logLevel,
         env_key="TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CFGFILE",
     )
 
     logger = globalLogger
-    logger.setLevel(globalArgs.logginglevel)
+    logger.setLevel(logLevel)
+
+    # Both only once logging exists, so neither is lost to an unconfigured logger.
+    if rejectedLogLevel is not None:
+        logger.warning(
+            f"Ignoring {LOG_LEVEL_ENV}='{sanitize_for_log(rejectedLogLevel)}': not one "
+            f"of {', '.join(LOG_LEVEL_CHOICES)}. Using {DEFAULT_LOG_LEVEL}."
+        )
+    logger.info(f"Log level: {logLevel} (source: {logLevelSource})")
 
     install_shutdown_signal_handlers(logger)
 
@@ -128,8 +176,30 @@ def _run(logger) -> None:
     logger.info(f"File Spec: {settings.fileSpec}")
     logger.info(f"Output Path: {settings.outputPath}")
 
-    exporter = AcmeCertificateExporter(settings=settings)
     dockerManager = DockerManager(settings=settings)
+    # Every exit path below -- a normal return, an exception, an interrupt -- cancels the
+    # pending deferred restarts. Nothing is lost by it: the next pass restarts those
+    # containers by the same rule, because their files are still newer than their start
+    # (ADR-0045).
+    try:
+        _run_passes(logger, settings, dockerManager)
+    finally:
+        dockerManager.cancel()
+
+
+def _run_passes(logger, settings, dockerManager: DockerManager) -> None:
+    """The start-up pass and the watch loop, after the `DockerManager` exists."""
+    if not settings.runAtStart and not settings.watchForChanges:
+        # Neither a start-up pass nor a watcher: say so instead of exiting silently. In the
+        # container this ends a run-once start with exit 0 (ADR-0044).
+        logger.warning("neither runatstart nor watchforchanges is set; nothing to do")
+        return
+
+    exporter = AcmeCertificateExporter(settings=settings)
+    if settings.restartContainers:
+        # One reachability check up front: an unreachable Engine is reported once, by
+        # endpoint, and exporting carries on -- it has value even when restarts cannot happen.
+        dockerManager.check()
 
     if settings.runAtStart:
         # The start-up sweep is a pass like any other, so it gets its own id: every line
@@ -138,27 +208,31 @@ def _run(logger) -> None:
         token = set_correlation_id(startupCorrelationId)
         try:
             logger.info("Exporting certificates....")
-            domainsProcessed = exporter.exportCertificates()
-            run_post_export_command(
-                settings.postExportCommand,
-                domainsProcessed or [],
-                settings.dryRun,
-                correlationId=startupCorrelationId,
-            )
-            # Scope: the union of every acme file, once per process start. The watch path
-            # notifies per file instead; see the note at that call site.
-            send_export_notifications(
-                settings.appriseUrls,
-                domainsProcessed or [],
-                settings.dryRun,
-                correlationId=startupCorrelationId,
-            )
-            if (
-                domainsProcessed
-                and len(domainsProcessed) > 0
-                and settings.restartContainers
-            ):
-                dockerManager.restartLabeledContainers(domainsProcessed)
+            domainsChanged = exporter.exportCertificates() or []
+            # Only for the domains whose artifacts changed; a start over an unchanged
+            # store runs neither (ADR-0045, amending ADR-0014 §7).
+            if domainsChanged:
+                run_post_export_command(
+                    settings.postExportCommand,
+                    domainsChanged,
+                    settings.dryRun,
+                    correlationId=startupCorrelationId,
+                )
+                # Scope: the union of every acme file, once per process start. The watch
+                # path notifies per file instead; see the note at that call site.
+                send_export_notifications(
+                    settings.appriseUrls,
+                    domainsChanged,
+                    settings.dryRun,
+                    correlationId=startupCorrelationId,
+                )
+            else:
+                logger.info(NO_CHANGE_MESSAGE)
+            if settings.restartContainers:
+                # Every pass, whether or not a domain changed: the rule compares the
+                # exported files with each container's start, so an unchanged store
+                # restarts nothing and a restart lost to a crash is recovered (ADR-0045).
+                dockerManager.restartLabeledContainers(exporter.artifactMtime)
         finally:
             reset_correlation_id(token)
 

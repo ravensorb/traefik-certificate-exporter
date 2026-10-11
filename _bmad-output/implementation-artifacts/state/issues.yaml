@@ -896,16 +896,6 @@ backlog:
   severity: Low
   status: backlog
   description: The run-once container exits with the pass's exit code, which reflects start-up failures only (0, or 1 for a missing data path). Export failures are logged at ERROR and do not change it, so a scheduler cannot detect a failed export. Needs a failure contract across E014-S01-002/003 (which failures count; whether a partial export is a failure). Recorded in ADR-0044.
-- key: BL-E014-017
-  epic: '014'
-  sprint: '01'
-  title: Image ENV defaults (WATCHFORCHANGES/RUNATSTART=true) outrank /config/config.yaml, so the config file cannot select run-once in the container
-  source: code-review (E014-S01-005)
-  source_phase: code-review
-  source_ref: E014-S01-005
-  severity: Medium
-  status: backlog
-  description: "docker/Dockerfile:128-129 set TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=true and _RUNATSTART=true; env outranks the config file, so 'watchforchanges: false' in /config/config.yaml is ignored in the image. Removing the ENV defaults changes behaviour for mounted configs that omit the keys (packaged default is false) — needs a maintainer decision. E014-S01-005 documents the env var as the container's run-once switch. See review-E014-S01-005.md F1."
 - key: BL-E014-018
   epic: '014'
   sprint: '01'

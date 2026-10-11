@@ -1,8 +1,10 @@
+# The single key registry: every setting the loader reads is declared here, unset ones as
+# `null`. The CLI dest and documented env-name tests derive their valid set from this file.
 settings:
   datapath: "./data"
   filespec: "*.json"
   outputpath: "./certs"
-  # traefikresolverid:
+  traefikresolverid: null
   resolverinpathname: true
   flat: false
   dryrun: false
@@ -13,8 +15,8 @@ settings:
   watchforchanges: false
   runatstart: false
   watchinterval: 60
-  # pkcs12passphrase:
-  # postexportcommand:
+  pkcs12passphrase: null
+  postexportcommand: null
   # Apprise destinations notified after an export pass completes. A list, never a
   # comma-separated string -- a comma is legal inside an Apprise URL. From the
   # environment use confuse's indexed keys instead:

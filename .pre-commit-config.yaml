@@ -24,6 +24,48 @@ repos:
         entry: poetry check --lock
         always_run: true
         pass_filenames: false
+      # Dependency advisories (research §8; ADR-0042). Audits the venv, whose scope is every
+      # poetry.lock group because `just install` and build.yaml run `poetry sync --all-groups`.
+      # Not covered: lock entries whose environment marker excludes the running interpreter or
+      # platform (e.g. win32-only pywin32, Python-3.10-only exceptiongroup) are never
+      # installed, so never audited (BL-E014-023).
+      # Needs network access to PyPI/OSV: offline it FAILS, never skips (a skip is a false
+      # green) -- except within PyPI's 15-minute cache lifetime (max-age=900) of an online run,
+      # when pip's HTTP cache answers and the result is that run's data. CI starts cold.
+      # The only remedy besides upgrading is `--ignore-vuln <ID>` in `entry`, with a comment
+      # naming the ID, the reason and a BL- key; no tool polices that comment, review does. `--aliases on` prints the GHSA/CVE IDs beside pip-audit's primary PYSEC ID.
+      # Versions of this and the two hooks below come from poetry.lock, not a frozen rev (C-10).
+      - id: pip-audit
+        name: pip-audit (every poetry.lock group, ADR-0042)
+        language: system
+        entry: poetry run pip-audit --skip-editable --progress-spinner off --aliases on
+        pass_filenames: false
+        files: ^(pyproject\.toml|poetry\.lock)$
+      # ADR-0042: every hashed CI bootstrap requirements file, selected by this glob and never
+      # by name; skipped while the directory is empty. Same offline and --ignore-vuln policy.
+      - id: pip-audit-bootstrap
+        name: pip-audit (CI bootstrap requirements, ADR-0042)
+        language: system
+        entry: bash -c 'rc=0; for f; do poetry run pip-audit --require-hashes --disable-pip --progress-spinner off --aliases on -r "$f" || rc=1; done; exit "$rc"' --
+        pass_filenames: true
+        files: ^\.github/requirements/[^/]+\.txt$
+      # Declared-vs-imported dependencies over src/ (review m8, NFR-3); [tool.deptry] holds its config.
+      - id: deptry
+        name: deptry (declared vs imported dependencies)
+        language: system
+        entry: poetry run deptry src
+        pass_filenames: false
+        files: ^(pyproject\.toml|poetry\.lock|src/.*\.py)$
+      # Spine AD-13 module layering and no import cycles (SD-01-1); contracts and their
+      # coverage are in [tool.importlinter] in pyproject.toml. Pinned here, not in poetry.lock.
+      # PYTHONPATH=src: import-linter finds the package on sys.path, and it lives under src/.
+      - id: import-linter
+        name: import-linter (AD-13 layering, no cycles)
+        language: python
+        additional_dependencies: [import-linter==2.15]
+        entry: env PYTHONPATH=src lint-imports --no-cache
+        pass_filenames: false
+        files: ^(pyproject\.toml|src/.*\.py)$
       # justfile-fmt was removed: it needs `just`, which build.yaml does not install, so it
       # would be a local-only check (AD-3).
       # Rule guards (SD-01-2). Each is a one-line regex over standard pre-commit config, not
@@ -46,6 +88,15 @@ repos:
         language: pygrep
         entry: '\bACT\b'
         files: ^\.github/workflows/.*\.ya?ml$
+      # ADR-0044 / ADR-0030: shipped container scripts ask the installed package for a
+      # setting (the init resolver), never read a settings env var themselves -- a second
+      # parser disagreed with confuse about `watchforchanges`. Scope is everything the image
+      # ships under docker/root/, so the sourced privilege helper is covered too.
+      - id: s6-no-raw-settings-env
+        name: Shipped container scripts read no settings env var (ADR-0044)
+        language: pygrep
+        entry: 'TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_'
+        files: ^docker/root/
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -90,6 +141,20 @@ repos:
         always_run: true
         pass_filenames: false
 
+  # Shell lint for every script the image ships (ADR-0044). The s6 scripts' shebang is
+  # `#!/usr/bin/with-contenv bash`, which `identify` does not classify as `shell`, so they
+  # are matched as `executable`; the sourced privilege helper is matched as `shell`.
+  # `rev` is SHA-frozen with `pre-commit autoupdate --freeze --repo <url>` (AD-3).
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: a6564f5d57444e123433a5c9af733e3975c77229  # frozen: v0.11.0.1-1
+    hooks:
+      - id: shellcheck
+        files: ^docker/root/
+        # Upstream declares `types: [shell]`, which `types_or` cannot widen (pre-commit
+        # requires every `types` tag AND one `types_or` tag); reset it to `file`.
+        types: [file]
+        types_or: [shell, executable]
+
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
     hooks:
@@ -114,4 +179,4 @@ repos:
       - id: mypy
         files: ^src/
         args: [--config-file=pyproject.toml]
-        additional_dependencies: [types-PyYAML==6.0.12.20260906]
+        additional_dependencies: [types-PyYAML==6.0.12.20260906, types-python-dateutil==2.9.0.20260807]

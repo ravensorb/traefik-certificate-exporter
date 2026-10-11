@@ -14,13 +14,14 @@ def send_export_notifications(
     dryRun: bool,
     correlationId: str | None = None,
 ) -> None:
-    """Notify every configured Apprise destination that an export pass completed.
+    """Notify every configured Apprise destination that certificates changed.
 
-    Deliberately "an export pass completed" and not "a certificate changed": nothing in
-    this project detects change -- every certificate is rewritten on every pass -- and the
-    image ships `RUNATSTART=true`, so a container restart is a pass. ADR-0014 §7 records
-    that, and the documentation states it, because an operator who believes otherwise will
-    mute the channel the first time a redeploy notifies.
+    "A certificate changed", not "an export pass completed": both call sites call this
+    only when at least one domain's exported artifacts changed on disk in the pass, and
+    `domains` is exactly those domains. A pass that changed nothing -- an exporter restart
+    over an unchanged store, a pass that only recovers a lost container restart -- sends
+    nothing, so an operator can leave the channel unmuted. ADR-0045 records this; it
+    amends ADR-0014 §7, which predates change detection.
 
     Fire-and-forget by contract (ADR-0014 §2): a delivery failure is logged and never
     propagates. An operator who needs something to *succeed* uses `postexportcommand`,

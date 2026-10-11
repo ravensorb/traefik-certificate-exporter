@@ -1,0 +1,58 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+set -uo pipefail
+
+# Runs as root under s6-supervise each time the exporter exits (ADR-0044). In watch mode it
+# does nothing and s6 respawns the service, as it always has after a crash. In run-once mode
+# the pass is the whole job, so a respawn would repeat the export, its hooks and its
+# notifications every second; instead this ends the container with the pass's exit code,
+# using s6-overlay's own mechanism (README@v3.2.1.0): write the code to the container
+# results file, then halt.
+#
+# `-e` is deliberately absent from the strict-mode line above: an early abort would skip the
+# exit-code write or the halt and fall back to the respawn loop this script exists to
+# prevent, so each step is checked explicitly. The mode is init's answer; anything but the exact `false` means watch.
+#
+# Arguments from s6-supervise: $1 is the exit code, or 256 when a signal killed the process;
+# $2 is then the signal number.
+
+STATE_DIR=/run/traefik-certificate-exporter
+RUN_MODE="${STATE_DIR}/watch-for-changes"
+EXITCODE_FILE=/run/s6-linux-init-container-results/exitcode
+HALT=/run/s6/basedir/bin/halt
+
+if [[ "$(cat "${RUN_MODE}" 2> /dev/null)" != "false" ]]; then
+    exit 0
+fi
+
+# 128 + signal for a killed process, the shell's own convention (`docker stop` gives 143).
+# Anything else that is not an exit status (0-255) is not something s6-supervise sends;
+# report a failure rather than let it wrap to a success.
+exit_code_for() {
+    if [[ "$1" == "256" && "$2" =~ ^[0-9]+$ ]]; then
+        echo "$((128 + 10#$2))"
+    elif [[ "$1" =~ ^[0-9]+$ ]] && ((10#$1 <= 255)); then
+        echo "$((10#$1))"
+    else
+        echo 1
+    fi
+}
+
+# Missing arguments become a failure code instead of tripping `-u`.
+set -- "${1:-x}" "${2:-}"
+code="$(exit_code_for "$1" "$2")"
+
+echo "run-once pass finished with exit code ${code}; stopping container"
+
+if ! { printf '%s\n' "${code}" > "${EXITCODE_FILE}"; } 2> /dev/null; then
+    echo "WARNING: could not write ${EXITCODE_FILE}; the container exit code may not be ${code}"
+fi
+
+if [[ ! -x "${HALT}" ]]; then
+    # 125 tells s6-supervise not to restart the service: the container stays up idle,
+    # which is better than re-running the pass every second.
+    echo "WARNING: ${HALT} not found; the service will not restart and the container stays up"
+    exit 125
+fi
+
+exec "${HALT}"

@@ -40,19 +40,50 @@ docker image inspect traefik-certificate-exporter:local \
   --format '{{ index .Config.Labels "org.opencontainers.image.version" }} {{ index .Config.Labels "org.opencontainers.image.revision" }}'
 docker run --rm --entrypoint traefik-certificate-exporter \
   traefik-certificate-exporter:local --help
-docker run --rm --name traefik-certificate-exporter-smoke -d \
+docker run --rm --name traefik-certificate-exporter-smoke \
   -e TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=false \
   traefik-certificate-exporter:local
-docker logs traefik-certificate-exporter-smoke
-docker stop traefik-certificate-exporter-smoke
+echo "exit code: $?"
 ```
 
-The direct entrypoint checks the installed CLI. The final commands start through LinuxServer/s6,
-confirm packaged configuration initialization while the watcher is disabled, and stop the
-temporary smoke container.
+The direct entrypoint checks the installed CLI. The final command starts through LinuxServer/s6
+in run-once mode: it initializes the packaged configuration, runs one export pass over the
+image's empty `/data`, and the container exits on its own with code 0 (see
+[Run once](#run-once)). The automated form of this check is
+`TCE_DOCKER_INTEGRATION=1 poetry run pytest -m integration tests/test_container_run_once.py`.
 
 ```bash
 docker pull ravensorb/traefik-certificate-exporter:latest
+```
+
+### Run once
+
+With `-e TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=false` (or any YAML false
+spelling, such as `no` or `False`) the container runs one export pass and then **exits**. The
+mode is resolved once at start-up by the installed package, with the same precedence the
+exporter uses, so the service and the exporter cannot disagree about it.
+
+Use the environment variable, not the config file, to select run-once in the image: the image
+sets `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=true` as an environment default, and
+environment variables outrank `/config/config.yaml`, so `watchforchanges: false` in the file
+alone leaves the container in watch mode.
+
+- **Exit code: start-up failures only.** The container exits 0 after the pass, or 1 when the
+  data path is missing. Export failures are logged at ERROR and do **not** change the exit
+  code, so a scheduler cannot detect a failed export from it — read the logs.
+- **Use `restart: "no"`** (the `docker run` default), or start the container from cron, a
+  systemd timer or a Kubernetes Job. With `restart: always` or `unless-stopped`, Docker
+  restarts the exited container, which turns run-once into a container-level loop that
+  repeats every export, hook and notification.
+- If `runatstart` is also false there is nothing to do: the exporter logs one WARNING saying so
+  and the container exits 0.
+
+```bash
+docker run --rm \
+  -e TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=false \
+  -v /path/to/traefik/acme:/data:ro \
+  -v /path/to/certs:/certs \
+  ravensorb/traefik-certificate-exporter:latest
 ```
 
 ### Which user does the exporter run as?
@@ -103,16 +134,20 @@ legal inside an Apprise URL and splitting on it would corrupt the destination:
 
 Two things worth knowing before you rely on it:
 
-- **A notification means "an export pass completed", not "a certificate changed."** This
-  tool rewrites every certificate on every pass and does not compare them, and the image
-  ships `RUNATSTART=true` — so a container restart, a redeploy, and any Traefik write to
-  `acme.json` each send one, renewal or not.
+- **A notification means "a certificate changed": it is sent only on change.** A pass
+  notifies, and runs `postexportcommand`, only when at least one domain's exported files
+  changed, and lists only those domains. A container restart or redeploy over an unchanged
+  store (the image ships `RUNATSTART=true`) sends nothing, and logs
+  `No certificate changed; no hook or notification` instead
+  ([ADR-0045](../docs/adr/0045-restart-policy-only-on-change-defer-not-drop.md)). In 0.2.x
+  every pass sent one.
 - **Delivery is fire-and-forget.** A failed notification is logged and stops nothing. If
   you need something that *must* succeed, use `postexportcommand`, which blocks and
   reports a non-zero exit.
 
 These URLs are credentials. They are redacted from every settings dump, including at
-`--log-level DEBUG`.
+DEBUG (`TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL=DEBUG` in the container, `-ll DEBUG` on
+the CLI).
 
 ### docker run (using config file)
 
@@ -135,19 +170,18 @@ services:
   traefik-certificate-exporter:
     image: ravensorb/traefik-certificate-exporter:latest
     environment:      
-      # - TRAEFIK_CERTIFICATE_EXPORTER_CONFIGFILE="/config/config.yaml"         # Config file to load for settings 
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH="/data"                # The base path to look for traefik certificate json files
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FILESPEC="*.json"               # Default filespec to search for (can be set to a specific file)
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_OUTPUTPATH="/certs"             # The base path to export the certificates to
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_TRAEFIKRESOLVERID=              # Specify a specific resolver id to match against (optional)
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FLAT=false                      # Indicates if certificates are exported in sub folders or a single folder
-      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESTARTCONTAINER=false          # Indicates of the containers should be restarted after the export
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESTARTCONTAINERS=false         # Indicates of the containers should be restarted after the export
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DRYRUN=false                    # Set this to show what wil le exported (files will not actually be created)
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RUNATSTART=true                 # Set this to run the export immediately on startup
       - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESOLVERINPATHNAME=true           # Include the resolver name in the path when exporting
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_PKCS12PASSPHRASE=              # Passphrase used to encrypt the exported PKCS12 (.pfx) file (default: unencrypted)
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_POSTEXPORTCOMMAND=             # Command run after a successful export pass (see below); receives exported domains via TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS
-      - TRAEFIK_CERTIFICATE_EXPORTER_LOGGINGLEVEL=INFO                          # Logging level 
+      - TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL=INFO                         # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL; the container cannot take -ll)
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_INCLUDE=                # comma separated list of domain names to only export (mutually exclusive with DOMAINS_EXCLUDE)
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_EXCLUDE=                # comma separated list of domain names to exclude from exporting (mutually exclusive with DOMAINS_INCLUDE)
     volumes:

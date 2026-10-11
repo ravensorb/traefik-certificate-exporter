@@ -1048,3 +1048,17 @@ resolved:
   resolved_at: '2026-10-11T19:27:37Z'
   ref: E014-S01-008
   note: parse_args_strict errors on ANY leftover token (dash or not); pinned by tests/libs/test_cli_args.py::test_stray_positional_argument_still_exits_two
+- key: BL-E014-017
+  epic: '014'
+  sprint: '01'
+  title: Image ENV defaults (WATCHFORCHANGES/RUNATSTART=true) outrank /config/config.yaml, so the config file cannot select run-once in the container
+  source: code-review (E014-S01-005)
+  source_phase: code-review
+  source_ref: E014-S01-005
+  severity: Medium
+  status: resolved
+  description: "docker/Dockerfile:128-129 set TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=true and _RUNATSTART=true; env outranks the config file, so 'watchforchanges: false' in /config/config.yaml is ignored in the image. Removing the ENV defaults changes behaviour for mounted configs that omit the keys (packaged default is false) — needs a maintainer decision. E014-S01-005 documents the env var as the container's run-once switch. See review-E014-S01-005.md F1."
+  resolution: wontfix
+  resolved_at: '2026-10-11T22:00:36Z'
+  ref: E014-S02-003
+  note: "Maintainer decision 2026-10-11: environment variables override the config file for ALL settings (precedence CLI > env > config file > defaults). The image's WATCHFORCHANGES/RUNATSTART env defaults stay; the env var is the run-mode switch in the container. E014-S02-003 records this in the product spine/ADR-0044 and operator docs."

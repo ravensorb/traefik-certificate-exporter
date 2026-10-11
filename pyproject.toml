@@ -13,20 +13,19 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.15"
-watchdog = "^2.1.9"
-docker = "^6.0.0"
-requests = "^2.28.1"
-docker-pycreds = "^0.4.0"
+watchdog = "^6.0"
+docker = "^7.2"
 confuse = "^2.0.1"
-python-dotenv = "^1.0.1"
+python-dotenv = "^1.2.2"
 importlib-resources = "^6.4.0"
 jsonpickle = "^3.0.3"
 coloredlogs = "^15.0.1"
 logging-tree = "^1.9"
-expandvars = "^0.12.0"
-cryptography = "^50.0.1"
+cryptography = "^50.0.2"
 python-json-logger = "^4.2.0"
 apprise = "^1.9.0"
+python-dateutil = "^2.9.0"
+pyyaml = "^6.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.2.1"
@@ -35,8 +34,11 @@ poetry = "^2.4.2"
 twine = "^7.0.0"
 # Provides the `pysemver` CLI that `just release` uses to compute the next version (AD-15).
 semver = "==3.1.0"
-pyyaml = "^6.0.1"
 mypy = "^2.3.1"
+# Dependency gates run as `repo: local` pre-commit hooks; their versions are pinned here by
+# poetry.lock, not by a frozen hook `rev` (C-10).
+pip-audit = "^2.10.1"
+deptry = "^0.25.1"
 
 [tool.poetry.scripts]
 traefik-certificate-exporter = "traefik_certificate_exporter.app:main"
@@ -66,8 +68,52 @@ disallow_incomplete_defs = false
 module = ["docker.*"]
 follow_imports = "skip"
 
+# Declared-vs-imported check over src/ (review m8, NFR-3), run by the `deptry` pre-commit
+# hook. No rule is ignored globally: an exception goes in [tool.deptry.per_rule_ignores],
+# naming the one package, with a comment giving the reason and a BL- key.
+[tool.deptry]
+known_first_party = ["traefik_certificate_exporter"]
+
+# Spine AD-13 (module layering), checked by the `import-linter` pre-commit hook (SD-01-1).
+# The contracts derive their scope from the package tree, not a hand-kept list:
+# `acyclic_siblings` covers every package under the root, and the `libs` layers contract is
+# `exhaustive`, so a new module under libs/ fails until it is placed in a layer.
+# Covered: in-package import cycles, upward imports between the listed layers, any libs/
+# module importing `app`. Not covered: imports done through `importlib` or strings.
+[tool.importlinter]
+root_package = "traefik_certificate_exporter"
+
+[[tool.importlinter.contracts]]
+id = "no-cycles"
+name = "No import cycles between sibling modules (AD-13)"
+type = "acyclic_siblings"
+ancestors = ["traefik_certificate_exporter"]
+
+[[tool.importlinter.contracts]]
+id = "entrypoint-on-top"
+name = "app is the entrypoint; nothing under libs imports it (AD-13)"
+type = "layers"
+layers = ["traefik_certificate_exporter.app", "traefik_certificate_exporter.libs"]
+
+[[tool.importlinter.contracts]]
+id = "libs-layers"
+name = "libs layering as built: leaves import nothing in-package (AD-13)"
+type = "layers"
+containers = ["traefik_certificate_exporter.libs"]
+exhaustive = true
+layers = [
+    "certificate_exporter",
+    "cli_args",
+    "docker",
+    "settings",
+    "legacy_settings",
+    "notify | post_export",
+    "logging_utils | object | suggest",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["integration: needs a real external service; opt-in via environment"]
 
 [tool.poetry.requires-plugins]
 poetry-dynamic-versioning = { version = "==1.10.0", extras = ["plugin"] }

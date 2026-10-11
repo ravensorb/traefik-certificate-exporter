@@ -264,7 +264,9 @@ def test_a_secret_nested_in_a_list_of_objects_is_redacted():
     )
 
     assert redacted["destinations"][0]["pkcs12Passphrase"] == _REDACTED_VALUE
-    assert redacted["destinations"][1]["appriseUrls"] == _REDACTED_VALUE
+    # Per element, keeping only the scheme (BL-E011-033, E014-S01-008).
+    assert redacted["destinations"][1]["appriseUrls"] == [f"tgram://{_REDACTED_VALUE}"]
+    assert "PLANTED" not in repr(redacted)
     assert redacted["destinations"][0]["name"] == "primary", (
         "redaction must not flatten non-secret siblings"
     )
@@ -382,3 +384,281 @@ def test_an_empty_secret_value_is_recognised_but_zero_is_not():
     assert not _is_empty_secret(["tgram://token/"])
     assert not _is_empty_secret(0), "0 is not credential-shaped emptiness"
     assert not _is_empty_secret(False)
+
+
+# ---------------------------------------------------------------------------
+# E014-S01-004: config_default.yaml declares every key, secrets included, as `null`.
+# Declaring a secret must not make it look configured, and a DEBUG level raised from the
+# environment (the container's only switch) must not unmask an env-set passphrase.
+# ---------------------------------------------------------------------------
+
+
+def _clear_tce_env(monkeypatch):
+    import os
+
+    for name in list(os.environ):
+        if name.startswith("TRAEFIK_CERTIFICATE_EXPORTER_"):
+            monkeypatch.delenv(name)
+
+
+def test_declared_null_secret_is_not_redacted_as_present(caplog, tmp_path, monkeypatch):
+    from argparse import Namespace
+
+    _clear_tce_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    with caplog.at_level(logging.DEBUG):
+        manager = SettingsManager()
+        manager.loadFromFile(
+            fileName=str(tmp_path / "absent.yaml"),
+            cmdLineArgs=Namespace(**{"settings.datapath": str(tmp_path)}),
+        )
+        caplog.clear()
+        manager._dump_config()
+    dump = "\n".join(r.getMessage() for r in caplog.records)
+
+    passphrase_lines = [
+        line
+        for line in dump.splitlines()
+        if line.strip().startswith("pkcs12passphrase:")
+    ]
+    assert passphrase_lines, f"the declared key is missing from the dump:\n{dump}"
+    assert "REDACTED" not in passphrase_lines[0], passphrase_lines[0]
+    assert passphrase_lines[0].split(":", 1)[1].strip() in ("", "null"), (
+        passphrase_lines
+    )
+    assert manager.settings.pkcs12Passphrase is None
+    assert manager.settings.traefikResolverId is None
+    assert manager.settings.postExportCommand is None
+
+
+def test_passphrase_from_env_is_masked_when_log_level_comes_from_env(
+    caplog, tmp_path, monkeypatch
+):
+    from argparse import Namespace
+
+    from traefik_certificate_exporter import app
+
+    _clear_tce_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL", "debug")
+    monkeypatch.setenv(
+        "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_PKCS12PASSPHRASE", "PLANTED-ENV-SECRET"
+    )
+
+    level = app._resolve_log_level(None)
+    assert level == "DEBUG"
+
+    with caplog.at_level(level):
+        manager = SettingsManager()
+        manager.loadFromFile(
+            fileName=str(tmp_path / "absent.yaml"),
+            cmdLineArgs=Namespace(**{"settings.datapath": str(tmp_path)}),
+        )
+    captured = "\n".join(r.getMessage() for r in caplog.records)
+
+    assert manager.settings.pkcs12Passphrase == "PLANTED-ENV-SECRET"
+    assert "PLANTED-ENV-SECRET" not in captured
+    assert "REDACTED" in captured
+
+
+# ---------------------------------------------------------------------------
+# E014-S01-010 (review-product m4): `postexportcommand` is a declared secret. A hook
+# command often carries a credential (`curl -H "Authorization: …"`).
+# ---------------------------------------------------------------------------
+
+_CREDENTIAL_COMMAND = 'curl -H "Authorization: Bearer s3cr3t" https://x.example.test'
+
+
+def test_postexportcommand_is_redacted_in_debug_dumps(caplog, tmp_path, monkeypatch):
+    _clear_tce_env(monkeypatch)
+    captured = _capture_all_records(
+        caplog,
+        tmp_path,
+        f"settings:\n  postexportcommand: '{_CREDENTIAL_COMMAND}'\n"
+        f"  datapath: {tmp_path}\n",
+        {
+            "settings.postexportcommand": _CREDENTIAL_COMMAND,
+            "settings.datapath": str(tmp_path),
+        },
+    )
+
+    assert "s3cr3t" not in captured, captured
+    assert "Authorization" not in captured, captured
+    assert "REDACTED" in captured, "a configured hook command was not masked at all"
+
+
+def test_unset_postexportcommand_dumps_as_null_not_redacted(
+    caplog, tmp_path, monkeypatch
+):
+    """`config_default.yaml` declares the key `null` (E014-S01-004): declaring it a secret
+    must not make an unset command look configured, in either dump."""
+    from argparse import Namespace
+
+    _clear_tce_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    with caplog.at_level(logging.DEBUG):
+        manager = SettingsManager()
+        manager.loadFromFile(
+            fileName=str(tmp_path / "absent.yaml"),
+            cmdLineArgs=Namespace(**{"settings.datapath": str(tmp_path)}),
+        )
+        caplog.clear()
+        manager._dump_config()
+        configDump = "\n".join(r.getMessage() for r in caplog.records)
+        caplog.clear()
+        manager._dump_settings()
+        settingsDump = "\n".join(r.getMessage() for r in caplog.records)
+
+    commandLines = [
+        line
+        for line in configDump.splitlines()
+        if line.strip().startswith("postexportcommand:")
+    ]
+    assert commandLines, f"the declared key is missing from the dump:\n{configDump}"
+    assert commandLines[0].split(":", 1)[1].strip() in ("", "null"), commandLines
+    assert '"postExportCommand": null' in settingsDump, settingsDump
+    assert manager.settings.postExportCommand is None
+
+
+def test_every_config_default_key_is_read_by_the_loader(tmp_path, monkeypatch):
+    """The other direction of the key registry (review F1, E014-S01-004).
+
+    The CLI dest and documented env-name checks prove a name is declared in
+    config_default.yaml. This proves the declared set equals what `loadFromFile` actually
+    reads, by recording every confuse view the loader opens -- so a key the loader stops
+    reading, or reads under another spelling, fails here instead of turning a flag or env
+    var silently into a no-op (the M1 failure mode).
+    """
+    from argparse import Namespace
+    from pathlib import Path
+
+    import confuse
+    import yaml
+
+    registry_file = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "traefik_certificate_exporter"
+        / "config_default.yaml"
+    )
+    declared: set[str] = set()
+    leaves: set[str] = set()
+
+    def walk(node, name):
+        if name:
+            declared.add(name)
+        if isinstance(node, dict):
+            for key, value in node.items():
+                walk(value, f"{name}.{key}" if name else str(key))
+        elif name:
+            leaves.add(name)
+
+    walk(yaml.safe_load(registry_file.read_text("utf-8")), "")
+    assert leaves, (
+        "config_default.yaml declares no settings; this guard examined nothing"
+    )
+
+    opened: set[str] = set()
+    original_init = confuse.Subview.__init__
+
+    def recording_init(self, parent, key):
+        original_init(self, parent, key)
+        opened.add(self.name)
+
+    _clear_tce_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(confuse.Subview, "__init__", recording_init)
+    # Secret-marking and the config dump open paths on their own (the dump walks every
+    # key), which would make this pass vacuously; only the Settings build counts.
+    monkeypatch.setattr(SettingsManager, "_mark_present_secrets", lambda self: None)
+    monkeypatch.setattr(SettingsManager, "_dump_config", lambda self: None)
+
+    SettingsManager().loadFromFile(
+        fileName=str(tmp_path / "absent.yaml"),
+        cmdLineArgs=Namespace(**{"settings.datapath": str(tmp_path)}),
+    )
+
+    assert not leaves - opened, (
+        f"declared in config_default.yaml but never read by the loader: "
+        f"{sorted(leaves - opened)}"
+    )
+    assert not opened - declared, (
+        f"read by the loader but not declared in config_default.yaml: "
+        f"{sorted(opened - declared)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-element redaction of a declared-secret list, and a legible settings dump
+# (BL-E011-033, BL-E011-036, E014-S01-008).
+# ---------------------------------------------------------------------------
+
+
+def test_secret_list_is_redacted_per_element_keeping_scheme():
+    """An operator must still see how many targets are configured and of what kind."""
+    redacted = _redact_secrets(
+        {"appriseUrls": ["tgram://123:abc/456", "mailto://u:pw@host", "weird"]}
+    )
+
+    assert redacted["appriseUrls"] == [
+        "tgram://***REDACTED***",
+        "mailto://***REDACTED***",
+        "***REDACTED***",
+    ]
+    rendered = repr(redacted)
+    for secret in ("123:abc", "pw", "weird", "456", "host"):
+        assert secret not in rendered
+
+
+def test_secret_list_non_string_and_empty_elements_are_safe():
+    redacted = _redact_secrets(
+        {"appriseUrls": [{"url": "tgram://1:a/2"}, 42, "", "1nvalid://x"]}
+    )
+
+    # A digit cannot start an RFC 3986 scheme, so the last element has none to keep.
+    assert redacted["appriseUrls"] == [
+        "***REDACTED***",
+        "***REDACTED***",
+        "",
+        "***REDACTED***",
+    ]
+    assert _redact_secrets({"appriseUrls": []}) == {"appriseUrls": []}
+
+
+def _dump_settings_records(caplog, settings: Settings) -> list[str]:
+    manager = SettingsManager()
+    manager.settings = settings
+    with caplog.at_level(logging.DEBUG):
+        manager._dump_settings()
+    return [record.getMessage() for record in caplog.records]
+
+
+def test_settings_dump_is_multiline_json_that_round_trips(caplog):
+    import json
+
+    import jsonpickle
+
+    settings = _make_settings()
+    settings.appriseUrls = ["tgram://123:abc/456", "mailto://u:pw@host"]
+
+    messages = _dump_settings_records(caplog, settings)
+    dump = next(m for m in messages if m.lstrip().startswith("{"))
+
+    assert len(dump.splitlines()) > 1
+    expected = _redact_secrets(
+        json.loads(jsonpickle.dumps(settings, unpicklable=False))
+    )
+    assert json.loads(dump) == expected
+    assert json.loads(dump)["appriseUrls"] == [
+        "tgram://***REDACTED***",
+        "mailto://***REDACTED***",
+    ]
+
+
+def test_settings_dump_omits_raw_passphrase(caplog):
+    passphrase = "pfx-Passphrase-4711"
+
+    messages = _dump_settings_records(caplog, _make_settings(passphrase=passphrase))
+
+    assert messages
+    assert all(passphrase not in message for message in messages)

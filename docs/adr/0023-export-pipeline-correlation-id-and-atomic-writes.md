@@ -3,6 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-06
 - **Deciders:** Maintainer (ravensorb), via Epic E011 Sprint S01 (Story E011-S01-004)
+- **Amended by:** ADR-0043 (Decision 3: atomicity stays per file; a domain's file set is built before the first replace, and unchanged files are not rewritten)
 - **Epic:** E011
 - **Amends:** ADR-0003 (Logging: structured file output, secrets never logged). ADR-0003
   decided "no correlation ID needed — no cross-boundary hops to propagate one across,"

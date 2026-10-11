@@ -174,4 +174,4 @@ Backlog filed during the sprint (all `status: backlog`):
 - Deferred: 34 backlog items BL-E014-027..060 (8 Medium, 26 Low). RT-9 duplicates BL-E014-016.
 - Evidence-quality note on the closure itself: the fix agent wrote its resolution note into the arch-drift Severity cell, which broke `check-dispositions` parsing; closure restored `MAJOR` and recorded the resolution via `spec-align disposition`.
 - E014-S01-008 `tests_passing` stays false by derivation; no green run was recorded under the `(fail-first, pre-change code)` label because that label denotes the pre-change code, which does fail.
-- BL-E014-017 remains open for a maintainer decision.
+- BL-E014-017 was decided by the maintainer during closure (2026-10-11): resolved wontfix, env overrides the config file for all settings (CLI > env > config file > defaults); E014-S02-003 records it in the spine, ADR-0044 and operator docs. See `epic-014/execution-notes.md`.

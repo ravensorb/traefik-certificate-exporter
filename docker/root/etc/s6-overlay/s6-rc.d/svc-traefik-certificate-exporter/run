@@ -7,29 +7,45 @@
 # PUID/PGID account; anything else -- `true`, an empty or missing state file (init never
 # ran, so nothing was proven) -- keeps root (ADR-0030, amended 2026-10-10). Init already
 # logged the one WARNING explaining why, so a longrun restart here does not repeat it.
+#
+# The run mode is init's answer too, never a parse of the environment here (ADR-0044): the
+# exporter decides watch-or-run-once from every source confuse merges, and a shell test of
+# one env var disagreed with it. This script always execs the exporter; in run-once mode the
+# sibling `finish` script ends the container with the pass's exit code. Only the exact
+# answers `true`/`false` are a mode -- anything else means init failed, and watch mode (the
+# image default) keeps today's respawn-on-exit behaviour.
 STATE_DIR=/run/traefik-certificate-exporter
 PRIV_STATE="${STATE_DIR}/run-as-root"
+RUN_MODE="${STATE_DIR}/watch-for-changes"
 SERVICE_HOME="${STATE_DIR}/home"
 
-if [[ "$TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES" == "true" || "$TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES" == "1" ]]; then
-    echo "Starting application..."
+case "$(cat "${RUN_MODE}" 2> /dev/null)" in
+    false)
+        echo "Starting application (run-once mode)"
+        ;;
+    true)
+        echo "Starting application (watch mode)"
+        ;;
+    *)
+        # stderr, not stdout: stdout carries no WARNING unless init raised it about privilege
+        # (tests/test_s6_privilege_drop.py). `docker logs` shows both streams.
+        echo "WARNING: run mode unresolved; defaulting to watch mode" >&2
+        echo "Starting application (watch mode)"
+        ;;
+esac
 
-    if [[ "$(cat "$PRIV_STATE" 2> /dev/null)" == "false" ]]; then
-        # `s6-setuidgid` changes the uid/gid and nothing else, so without this the service
-        # would run as abc with HOME=/root (mode 0700) and die in confuse's unconditional
-        # `makedirs($HOME/.config/...)` before reading anything. init owns this directory to
-        # abc.
-        export HOME="${SERVICE_HOME}"
-
-        exec \
-            s6-setuidgid abc \
-            traefik-certificate-exporter -c /config/config.yaml
-    fi
+if [[ "$(cat "$PRIV_STATE" 2> /dev/null)" == "false" ]]; then
+    # `s6-setuidgid` changes the uid/gid and nothing else, so without this the service
+    # would run as abc with HOME=/root (mode 0700) and die in confuse's unconditional
+    # `makedirs($HOME/.config/...)` before reading anything. init owns this directory to
+    # abc.
+    export HOME="${SERVICE_HOME}"
 
     exec \
-        s6-setuidgid root \
+        s6-setuidgid abc \
         traefik-certificate-exporter -c /config/config.yaml
-else
-    echo "Skipping start of application..."
-    # env | sort
 fi
+
+exec \
+    s6-setuidgid root \
+    traefik-certificate-exporter -c /config/config.yaml

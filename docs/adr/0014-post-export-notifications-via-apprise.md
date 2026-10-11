@@ -3,6 +3,8 @@
 - **Status:** Accepted (Decision 4 implementation verified E011-S01-003, 2026-10-06)
 - **Date:** 2026-09-06
 - **Deciders:** Maintainer (ravensorb)
+- **Amended by:** ADR-0043 ("exported domain list" means the domains at least one of whose artifacts changed on disk in the pass)
+- **Amended by:** ADR-0045 (§7: the post-export hook and notifications run only for the domains whose artifacts changed in the pass; when nothing changed, neither runs — a notification now means "a certificate changed")
 - **Supersedes:** ADR-0013, withdrawn before implementation after an architecture gate
   returned 5 BLOCKER and 13 MAJOR findings
 - **Principle(s) in tension:** serving a stated need against designing for needs nobody stated
@@ -145,6 +147,10 @@ asserts, because with N destinations there is no single "the timeout" to quote.
 configurability that was cut from scope arriving for free because the library already has it.
 
 **7. What a notification means is stated, because the honest answer is not the flattering one.**
+
+> Amended by ADR-0045 (E014-S01-010): change is now detected (ADR-0043), so the hook and the
+> notifications run only for domains whose exported artifacts changed in the pass, and not at
+> all when nothing changed. The paragraph below records the 0.2.x behaviour.
 
 Nothing in this codebase detects *change*: every certificate is rewritten on every pass and
 `names.append(name)` is unconditional. The image also ships `RUNATSTART=true` alongside

@@ -9,6 +9,11 @@
 # why. The answer is written to a state file the service script reads, so the service script
 # keeps a single `s6-setuidgid` call at the top of its exec chain.
 #
+# The same resolver also answers the service's run mode -- watch, or run once and stop the
+# container -- into its own state file, `watch-for-changes`, which the service's `run` and
+# `finish` read (ADR-0044). It is a separate file because `resolved-settings` has a
+# positional layout the privilege helper reads.
+#
 # The resolution is done by the INSTALLED package, not by a second parser living here: the
 # container must reach the same answer the application will, across every source confuse
 # merges (packaged default, .env files, config file, environment) and with confuse's own
@@ -19,6 +24,7 @@ CONFIG_FILE=/config/config.yaml
 STATE_DIR=/run/traefik-certificate-exporter
 PRIV_STATE="${STATE_DIR}/run-as-root"
 RESOLVED="${STATE_DIR}/resolved-settings"
+RUN_MODE="${STATE_DIR}/watch-for-changes"
 SERVICE_HOME="${STATE_DIR}/home"
 SERVICE_USER=abc
 PRIV_HELPER=/usr/local/lib/traefik-certificate-exporter/privilege-decision.sh
@@ -40,13 +46,13 @@ mkdir -p "${STATE_DIR}"
 # is "keep root" until the decision below proves the unprivileged account viable. A stale
 # resolution from a previous boot must never be read as this boot's answer.
 printf 'true\n' > "${PRIV_STATE}"
-rm -f "${RESOLVED}"
+rm -f "${RESOLVED}" "${RUN_MODE}"
 
 # Written to a file rather than captured from stdout: loading the settings also initialises
 # the application logger, and its output must not be mistaken for the answer. Written
 # atomically (temp + os.replace) so a crash leaves no file rather than a partial one; a path
 # containing a newline cannot be represented one-per-line, so it writes nothing at all.
-TCE_CONFIG_FILE="${CONFIG_FILE}" TCE_RESOLVED_OUT="${RESOLVED}" \
+TCE_CONFIG_FILE="${CONFIG_FILE}" TCE_RESOLVED_OUT="${RESOLVED}" TCE_RUN_MODE_OUT="${RUN_MODE}" \
     "${PYTHON}" - > /dev/null 2>&1 <<'PY'
 import glob
 import os
@@ -57,6 +63,23 @@ from traefik_certificate_exporter.libs.settings import SettingsManager
 manager = SettingsManager()
 manager.loadFromFile(os.environ["TCE_CONFIG_FILE"])
 settings = manager.settings
+
+
+def write_atomically(out, text, prefix):
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(out), prefix=prefix)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    os.replace(tmp, out)
+
+
+# The run mode first: it depends on no path, so a store path the privilege answer cannot
+# represent must not also cost the service its mode. Optional, so a caller that wants only
+# the privilege answer sets only TCE_RESOLVED_OUT.
+runModeOut = os.environ.get("TCE_RUN_MODE_OUT")
+if runModeOut:
+    write_atomically(
+        runModeOut, "true\n" if settings.watchForChanges else "false\n", ".run-mode-"
+    )
 
 # The same expression the exporter uses to enumerate the store (exportCertificates).
 matches = sorted(
@@ -73,11 +96,9 @@ lines = [
 if any("\n" in line or "\r" in line for line in lines):
     raise SystemExit("a resolved path contains a newline")
 
-out = os.environ["TCE_RESOLVED_OUT"]
-fd, tmp = tempfile.mkstemp(dir=os.path.dirname(out), prefix=".resolved-")
-with os.fdopen(fd, "w", encoding="utf-8") as handle:
-    handle.write("".join(f"{line}\n" for line in lines))
-os.replace(tmp, out)
+write_atomically(
+    os.environ["TCE_RESOLVED_OUT"], "".join(f"{line}\n" for line in lines), ".resolved-"
+)
 PY
 
 # ---- privilege decision: begin ----
@@ -85,6 +106,7 @@ PY
 # any other output keeps root.
 decision=""
 # shellcheck source=../../../../usr/local/lib/traefik-certificate-exporter/privilege-decision.sh
+# shellcheck disable=SC1091 # Not followed: the shellcheck hook lints the helper as its own input.
 if [ -r "${PRIV_HELPER}" ] && . "${PRIV_HELPER}" \
     && declare -F tce_privilege_decision > /dev/null; then
     decision="$(tce_privilege_decision "${RESOLVED}" "${SERVICE_USER}")"

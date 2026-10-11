@@ -219,6 +219,7 @@ closure:
       - 0.2699
       - 8.6811
       - 0.7556
+      - 0.381
     hitl_hours:
       samples:
       - 0.625
@@ -230,6 +231,7 @@ closure:
       - 0.1641
       - 10.409
       - 0.5681
+      - 1.1353
     man_hours:
       samples:
       - 0.4234
@@ -240,6 +242,9 @@ closure:
       - 5.8989
       - 7.7975
       - 5.2429
+    tokens_k:
+      samples:
+      - 1.8769
   epic:
     elapsed_hours:
       samples:
@@ -296,8 +301,10 @@ orchestration:
       - 0.1132
       - 0.2125
       - 0.1176
+      - 0.7212
     man_hours:
       samples:
+      - 0.0
       - 0.0
       - 0.0
       - 0.0
@@ -307,6 +314,9 @@ orchestration:
       - 0.2
       - 0.1818
       - 0.0
+    tokens_k:
+      samples:
+      - 0.1824
   epic:
     elapsed_hours:
       samples:

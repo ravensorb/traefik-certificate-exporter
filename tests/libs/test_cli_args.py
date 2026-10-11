@@ -11,10 +11,13 @@ subprocess or any argv monkeypatching.
 """
 
 import argparse
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+import yaml
 
 from traefik_certificate_exporter.libs.cli_args import (
     globalArgParser,
@@ -139,3 +142,146 @@ def test_main_hard_fails_on_a_typo_end_to_end():
 
     assert result.returncode == 2
     assert "--dtaa-path" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# Every `settings.*` dest must name a key the settings loader reads (M1, E014-S01-004).
+# `--restart-container` wrote `settings.restartcontainer` while the loader reads
+# `settings.restartcontainers`, so the flag parsed fine and changed nothing.
+# ---------------------------------------------------------------------------
+
+_CONFIG_DEFAULT = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "traefik_certificate_exporter"
+    / "config_default.yaml"
+)
+
+
+def test_restart_container_flag_enables_restart_containers(tmp_path, monkeypatch):
+    from traefik_certificate_exporter.libs.settings import SettingsManager
+
+    for name in list(os.environ):
+        if name.startswith("TRAEFIK_CERTIFICATE_EXPORTER_"):
+            monkeypatch.delenv(name)
+    monkeypatch.chdir(tmp_path)
+
+    args = globalArgParser.parse_args(
+        ["--restart-container", "--data-path", str(tmp_path)]
+    )
+    manager = SettingsManager()
+    manager.loadFromFile(fileName=str(tmp_path / "absent.yaml"), cmdLineArgs=args)
+
+    assert manager.settings.restartContainers is True
+
+
+def test_every_settings_dest_is_a_key_in_config_default():
+    """Scope is the parser's own action list, so a new flag is covered with no edit here."""
+    registry = yaml.safe_load(_CONFIG_DEFAULT.read_text(encoding="utf-8"))
+    dests = [
+        action.dest
+        for action in globalArgParser._actions
+        if action.dest.startswith("settings.")
+    ]
+    assert dests, "no settings.* dest found; this guard examined nothing"
+
+    missing = []
+    for dest in dests:
+        node = registry
+        for segment in dest.split("."):
+            if not isinstance(node, dict) or segment not in node:
+                missing.append(dest)
+                break
+            node = node[segment]
+        else:
+            if isinstance(node, dict):
+                # A section such as `settings.domains` is not a setting (only leaves and
+                # lists are), matching the env-name check in tests/test_settings_surface.py.
+                missing.append(dest)
+
+    assert not missing, (
+        f"CLI dest(s) name keys absent from config_default.yaml, so nothing reads "
+        f"them: {missing}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Strict-parse error text and readable metavars (BL-E011-034, BL-E011-035,
+# BL-E014-002, E014-S01-008).
+# ---------------------------------------------------------------------------
+
+
+def _strict_parse_error(monkeypatch, capsys, *argv: str) -> str:
+    monkeypatch.setattr(sys, "argv", ["traefik-certificate-exporter", *argv])
+    with pytest.raises(SystemExit) as excinfo:
+        parse_args_strict()
+    assert excinfo.value.code == 2
+    return capsys.readouterr().err
+
+
+def test_flag_typo_suggests_nearest_and_points_to_help(monkeypatch, capsys):
+    err = _strict_parse_error(monkeypatch, capsys, "--dtaa-path", "/x")
+
+    assert "unrecognized arguments: --dtaa-path /x" in err
+    assert "Did you mean '--data-path'?" in err
+    assert "Try '--help' for full usage." in err
+
+
+def test_dissimilar_flag_typo_gets_help_pointer_only(monkeypatch, capsys):
+    err = _strict_parse_error(monkeypatch, capsys, "--zzzzzz")
+
+    assert "unrecognized arguments: --zzzzzz" in err
+    assert "Did you mean" not in err
+    assert "Try '--help' for full usage." in err
+
+
+def test_stray_positional_argument_still_exits_two(monkeypatch, capsys):
+    """BL-E014-002: a non-dash leftover is still an error under the strict parse, not
+    silently dropped because no `-`-token triggered the suggestion path."""
+    err = _strict_parse_error(monkeypatch, capsys, "-d", "/acme", "stray")
+
+    assert "unrecognized arguments: stray" in err
+    assert "Did you mean" not in err
+
+
+def test_flag_and_env_suggestions_share_nearest_name(monkeypatch, capsys):
+    """C-04: one helper computes both suggestions, so patching it once changes both."""
+    from traefik_certificate_exporter.libs import legacy_settings, suggest
+
+    sentinel = "SENTINEL_FROM_NEAREST_NAME"
+    monkeypatch.setattr(suggest, "nearest_name", lambda candidate, options: sentinel)
+
+    err = _strict_parse_error(monkeypatch, capsys, "--dtaa-path", "/x")
+    assert f"Did you mean '{sentinel}'?" in err
+
+    findings = legacy_settings.find_legacy_settings(
+        {"TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DTAAPATH": "/x"}, None
+    )
+    assert [f.suggestion for f in findings if f.kind == "unknown"] == [
+        legacy_settings.ENV_PREFIX + sentinel
+    ]
+
+
+def _value_taking_options() -> list[argparse.Action]:
+    return [
+        action
+        for action in globalArgParser._actions
+        if action.option_strings
+        and action.nargs != 0
+        and not isinstance(action, argparse._HelpAction)
+    ]
+
+
+def test_every_value_taking_action_has_dotless_metavar():
+    actions = _value_taking_options()
+
+    # Non-vacuity: the parser has value-taking flags, and they were all examined.
+    assert any("--data-path" in action.option_strings for action in actions)
+    for action in actions:
+        assert action.metavar, action.option_strings
+        assert "." not in action.metavar, action.option_strings
+
+
+def test_help_contains_no_settings_paths():
+    assert "SETTINGS." not in globalArgParser.format_help()
+    assert "SETTINGS." not in globalArgParser.format_usage()

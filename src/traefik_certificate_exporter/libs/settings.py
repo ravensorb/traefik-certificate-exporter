@@ -14,6 +14,7 @@ import importlib_resources
 import jsonpickle
 from dotenv import load_dotenv
 
+from .legacy_settings import check_setting_names
 from .logging_utils import globalLogger
 from .object import ObjectBase
 
@@ -38,6 +39,10 @@ SECRET_CONFIG_KEYS: tuple[tuple[str, ...], ...] = (
     # a VALUE inside a list, which is precisely what no key-name pattern can reach;
     # declaring the path is the only mechanism that covers it.
     ("settings", "appriseurls"),
+    # The post-export hook's command line often carries a credential -- an
+    # `Authorization` header, a webhook token -- in its arguments. Declared so both dumps
+    # mask it; the hook's own log lines name only the program (ADR-0045).
+    ("settings", "postexportcommand"),
 )
 
 # Backstop only -- see above. Retained because it catches an undeclared field, and because
@@ -55,6 +60,12 @@ _REDACTED_VALUE = "***REDACTED***"
 # discloses nothing and is the one question the dump exists to answer.
 _EMPTY_SECRET_VALUES: tuple = (None, "", [], {}, ())
 
+# RFC 3986 section 3.1 scheme grammar, anchored, followed by `://`. Captures only the scheme;
+# nothing after it -- userinfo, host, token, path, query -- is ever emitted.
+# `urllib.parse.urlsplit` is not used: Apprise URLs carry tokens with `:` in the netloc
+# (`tgram://123:abc/...`), which it reads as a port and can raise `ValueError` on.
+_URL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*(?=://)")
+
 
 def _is_empty_secret(value) -> bool:
     """Is this credential absent? `None`, or any empty container/string.
@@ -67,6 +78,32 @@ def _is_empty_secret(value) -> bool:
     if isinstance(value, (str, bytes, list, tuple, dict, set)):
         return len(value) == 0
     return False
+
+
+def _redact_url_like(item) -> object:
+    """Mask one element of a declared-secret list, keeping only its scheme.
+
+    `tgram://123:abc/456` -> `tgram://***REDACTED***`, so a DEBUG reader still sees how
+    many targets are configured and of what kind (BL-E011-033). An element with no scheme,
+    or one that is not a string, is masked whole; an empty one is passed through, as
+    `_is_empty_secret` passes through an empty secret.
+    """
+    if _is_empty_secret(item):
+        return item
+    if isinstance(item, str):
+        match = _URL_SCHEME.match(item)
+        if match:
+            return f"{match.group(0)}://{_REDACTED_VALUE}"
+    return _REDACTED_VALUE
+
+
+def _redact_secret_value(value) -> object:
+    """A present secret is masked; a list one per element (see `_redact_url_like`)."""
+    if _is_empty_secret(value):
+        return value
+    if isinstance(value, list):
+        return [_redact_url_like(item) for item in value]
+    return _REDACTED_VALUE
 
 
 @functools.cache
@@ -98,12 +135,13 @@ def _redact_secrets(value):
     """Recursively mask dict values whose key looks like a credential, or is declared.
 
     Value-aware: only a value that is actually PRESENT is masked. An unset one is passed
-    through as its real empty shape -- see `_is_empty_secret`.
+    through as its real empty shape -- see `_is_empty_secret`. A secret list keeps its
+    length and each element's scheme -- see `_redact_url_like`.
     """
     if isinstance(value, dict):
         return {
             key: (
-                (_REDACTED_VALUE if not _is_empty_secret(val) else val)
+                _redact_secret_value(val)
                 if (_SECRET_FIELD_PATTERN.search(str(key)) or _is_declared_secret(key))
                 else _redact_secrets(val)
             )
@@ -324,6 +362,14 @@ class SettingsManager(ObjectBase):
             f"User Configuration Path: {self._config.user_config_path()}"
         )
 
+        # Every source is now located (the .env files are in os.environ, the config file
+        # is known), so legacy and misspelled names can be reported before the first pass.
+        check_setting_names(
+            os.environ,
+            fileName if os.path.exists(fileName) else None,
+            self.__logger,
+        )
+
         self._mark_present_secrets()
 
         self._dump_config()
@@ -406,7 +452,10 @@ class SettingsManager(ObjectBase):
         safe = _redact_secrets(
             json.loads(jsonpickle.dumps(self.settings, unpicklable=False))
         )
-        self.__logger.debug(jsonpickle.dumps(safe, unpicklable=False))
+        # Indented, like the adjacent block-YAML config dump (BL-E011-036). jsonpickle only
+        # flattens the Settings object above; `default=str` keeps a stray non-JSON value
+        # from raising inside a DEBUG log call.
+        self.__logger.debug(json.dumps(safe, indent=2, default=str))
 
     def _dump_config(self):
         self.__logger.debug("Current Config (from file)...")

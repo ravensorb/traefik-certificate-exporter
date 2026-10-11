@@ -1,3 +1,4 @@
+import datetime
 import glob
 import json
 import logging
@@ -8,7 +9,9 @@ import tempfile
 import threading
 import time
 from base64 import b64decode
+from collections.abc import Iterator
 from pathlib import Path
+from typing import NamedTuple
 
 import watchdog.events
 import watchdog.observers
@@ -23,6 +26,7 @@ from .logging_utils import (
     globalLogger,
     new_correlation_id,
     reset_correlation_id,
+    sanitize_for_log,
     set_correlation_id,
 )
 from .notify import send_export_notifications
@@ -264,6 +268,170 @@ def _atomic_write_bytes(target: Path, data: bytes, mode: int | None = None) -> N
 
 
 ###########################################################################################################
+# Build, then compare, then write (ADR-0043). A domain's whole artifact set is built in
+# memory first, so a domain that cannot be exported keeps every file it had. Each built
+# artifact is then compared with the file already on disk and only the ones that differ are
+# replaced: an unchanged artifact keeps its inode and mtime, which the restart rule
+# (newest artifact mtime vs the container's StartedAt) depends on. The files on disk are
+# the only state -- no fingerprint store -- so the answer survives an exporter restart.
+
+
+def _parse_fullchain(fullchain_pem: bytes) -> list[x509.Certificate]:
+    """Every certificate in the store's full chain, leaf first, in store order.
+
+    The library parser, not string slicing: `find(BEGIN, 1)` returned -1 for a
+    one-certificate chain and cut the leaf's final newline off.
+    """
+    certs = x509.load_pem_x509_certificates(fullchain_pem)
+    if not certs:
+        raise ValueError("the full chain holds no certificate")
+    return certs
+
+
+def _normalize_passphrase(passphrase: str | bytes | None) -> bytes | None:
+    """`None`, `""` and `b""` all mean "no passphrase" -- an unencrypted PFX.
+
+    `BestAvailableEncryption(b"")` raises, and an empty passphrase must never produce a
+    file that merely looks encrypted.
+    """
+    if isinstance(passphrase, str):
+        passphrase = passphrase.encode("utf-8")
+    return passphrase or None
+
+
+def _breaks_write_policy(path: Path, policyMode: int, dryRun: bool = False) -> bool:
+    """Would the write path refuse to keep this file as it is?
+
+    Skipping an unchanged file must not freeze a state the rewrite used to correct: a
+    symlink (or any non-regular file) at the export path counts as changed, and
+    `_atomic_write` then replaces it under its usual refusals. A regular file whose mode is
+    more permissive than the artifact's floor (a 0644 key stays world-readable for as long
+    as it is not rewritten) is a policy repair, not a content change (ADV-2): the mode is
+    tightened in place with `os.chmod`, which leaves the mtime alone, a WARNING is logged,
+    and the file does not count as changed -- so a hook that loosens a key does not cause a
+    rewrite, hook run, notification and restart on every pass. A dry run only logs. A
+    failed `chmod` falls back to the rewrite. Raises `OSError` when the path cannot be
+    examined.
+    """
+    info = os.lstat(path)
+    if not stat.S_ISREG(info.st_mode):
+        return True
+    current = info.st_mode & 0o7777
+    if not current & ~policyMode:
+        return False
+    tightened = current & policyMode
+    logPath = sanitize_for_log(str(path))
+    if dryRun:
+        globalLogger.warning(
+            f"[DRYRUN] would tighten mode of {logPath} from {current:04o} to "
+            f"{tightened:04o}"
+        )
+        return False
+    try:
+        os.chmod(path, tightened)
+    except OSError:
+        return True
+    globalLogger.warning(
+        f"Tightened mode of {logPath} from {current:04o} to {tightened:04o}: wider than "
+        "the export policy allows; not counted as a certificate change"
+    )
+    return False
+
+
+def _file_differs(
+    path: Path, data: bytes, mode: int | None = None, dryRun: bool = False
+) -> bool:
+    """Does writing `data` to `path` change anything? Absent or unreadable counts as yes."""
+    try:
+        if _breaks_write_policy(
+            path, _default_file_mode() if mode is None else mode, dryRun
+        ):
+            return True
+        return path.read_bytes() != data
+    except OSError:
+        return True
+
+
+def _der(cert: x509.Certificate) -> bytes:
+    return cert.public_bytes(serialization.Encoding.DER)
+
+
+def _pkcs8_der(key: PrivateKeyTypes) -> bytes:
+    return key.private_bytes(
+        serialization.Encoding.DER,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+
+
+def _loads_without_passphrase(pkcs12_bytes: bytes) -> bool:
+    """Is this PFX unencrypted? Only an unencrypted bundle loads with `password=None`."""
+    try:
+        pkcs12.load_key_and_certificates(pkcs12_bytes, None)
+    except Exception:  # noqa: BLE001 - any failure: it is encrypted (or unreadable)
+        return False
+    return True
+
+
+def _pfx_differs(
+    path: Path,
+    key: PrivateKeyTypes,
+    certs: list[x509.Certificate],
+    passphrase: str | bytes | None,
+    dryRun: bool = False,
+) -> bool:
+    """Does the PFX on disk differ in CONTENT from what would be built now?
+
+    Not a byte comparison: PKCS12 encryption draws a fresh salt and IV on every build, so
+    two builds of the same input never match. Compared instead: the encryption state
+    (loads with the configured passphrase, and loads without one exactly when none is
+    configured), the private key, the leaf, and the ordered intermediates. The encryption
+    algorithm and iteration count are deliberately not compared. Never raises: any
+    failure to examine or load the existing file counts as different.
+    """
+    try:
+        if _breaks_write_policy(path, _SECRET_FILE_MODE, dryRun):
+            return True
+        existing = path.read_bytes()
+        password = _normalize_passphrase(passphrase)
+        existingKey, existingLeaf, existingCas = pkcs12.load_key_and_certificates(
+            existing, password
+        )
+        if password is not None and _loads_without_passphrase(existing):
+            return True
+        if existingKey is None or existingLeaf is None:
+            return True
+        return _pkcs8_der(existingKey) != _pkcs8_der(key) or [
+            _der(c) for c in (existingLeaf, *existingCas)
+        ] != [_der(c) for c in certs]
+    except Exception:  # noqa: BLE001 - any load failure means "rewrite it"
+        return True
+
+
+def _log_pkcs12_details(
+    filename, pkcs12_bytes: bytes, passphrase: str | bytes | None
+) -> None:
+    """DEBUG introspection of a written PFX: subject, issuer and dates -- never key
+    material or the passphrase. Best-effort: a certificate without a CN must not turn a
+    successful write into a reported failure."""
+    if not globalLogger.isEnabledFor(logging.DEBUG):
+        return
+    try:
+        (_key, cert, cas) = pkcs12.load_key_and_certificates(
+            pkcs12_bytes, _normalize_passphrase(passphrase)
+        )
+        globalLogger.debug(f"Created PKCS12 file: {filename}")
+        if cert is not None:
+            globalLogger.debug(f"  Subject: {cert.subject.rfc4514_string()}")
+            globalLogger.debug(f"  Issuer: {cert.issuer.rfc4514_string()}")
+            globalLogger.debug(f"  Not Before: {cert.not_valid_before_utc.date()}")
+            globalLogger.debug(f"  Not After: {cert.not_valid_after_utc.date()}")
+        globalLogger.debug(f"  Intermediates: {len(cas)}")
+    except Exception as e:  # noqa: BLE001 - diagnostics only
+        globalLogger.debug(f"Could not introspect PKCS12 file '{filename}': {e}")
+
+
+###########################################################################################################
 # A domain name (or resolver name) out of the acme store is UNTRUSTED input that is joined
 # straight into a filesystem path. `Path(outputPath) / name` discards `outputPath`
 # entirely when `name` is absolute, and `../` walks out of it -- which is how a crafted
@@ -286,19 +454,6 @@ def _is_safe_path_component(value: str | None) -> bool:
     return bool(value) and _PATH_COMPONENT_PATTERN.match(str(value)) is not None
 
 
-_LOG_CONTROL_CHARS_PATTERN = re.compile(r"[\r\n\x1b]")
-
-
-def _sanitize_for_log(value: str | None) -> str:
-    """Strip characters that let an untrusted, rejected domain/resolver name forge log
-    lines or terminal output: CR/LF (log-line injection) and ESC (ANSI/CSI terminal-escape
-    injection). Applied only to values interpolated into a log *message*, separately from
-    -- and in addition to -- `_is_safe_path_component`'s filesystem-path safety check,
-    which this does not replace.
-    """
-    return _LOG_CONTROL_CHARS_PATTERN.sub("", str(value)) if value is not None else ""
-
-
 def _is_contained_within(base: Path, candidate: Path) -> bool:
     """Is `candidate` `base` itself, or a descendant of it, once both are resolved?
 
@@ -317,22 +472,316 @@ def _is_contained_within(base: Path, candidate: Path) -> bool:
     )
 
 
+def _artifact_paths(
+    base: Path,
+    resolverName: str | None,
+    name: str,
+    *,
+    flat: bool,
+    resolverInPathName: bool,
+) -> list[Path]:
+    """The five artifact paths of one certificate: key, certificate, chain, full chain,
+    PKCS12 (ADR-0040).
+
+    The only place a base, a resolver name and a domain name are joined into a path. The
+    writer takes its targets from here and the restart lookup reads the paths the writer
+    recorded, so the two cannot disagree about the layout. Pure: no settings object, no
+    filesystem access.
+    """
+    directory = Path(base)
+    if resolverInPathName and resolverName:
+        directory = directory / resolverName
+    if flat:
+        return [
+            directory / f"{name}.key",
+            directory / f"{name}.crt",
+            directory / f"{name}.chain.pem",
+            directory / f"{name}.fullchain.pem",
+            directory / f"{name}.pfx",
+        ]
+    directory = directory / name
+    return [
+        directory / "privkey.pem",
+        directory / "cert.pem",
+        directory / "chain.pem",
+        directory / "fullchain.pem",
+        directory / "cert.pfx",
+    ]
+
+
+# One store file's recorded artifacts: `(resolverName, name) -> paths`. Keyed by resolver
+# as well as name so a failed resolver can keep exactly its own previous record (RV-1).
+_ArtifactEntry = dict[tuple[str | None, str], tuple[Path, ...]]
+
+
+###########################################################################################################
+# Reading Traefik's ACME store (AD-7, ADR-0043). The file is Go's encoding of
+# `map[resolverName]*StoredData{Account; Certificates}` -- or, for Traefik v1.7, one unkeyed
+# `StoredData` -- with no JSON tags, so a nil slice or pointer is `null`. The shape is
+# detected from the keys present, never from `Registration.uri`: that is the account URL
+# at whichever CA issued it (Let's Encrypt, ZeroSSL, Google, step-ca), not a protocol
+# version. The store is trusted Traefik output and is read whole, without a size limit;
+# whoever can write `/data` can already replace the certificates being exported.
+_RESOLVER_NODE_KEYS = ("certificates", "account")
+
+
+def _ci_get(node: object, key: str) -> object:
+    """`node[key]`, matched exactly first and then case-insensitively; `None` when
+    `node` is not a dict or holds no such key."""
+    if not isinstance(node, dict):
+        return None
+    if key in node:
+        return node[key]
+    lowered = key.lower()
+    for candidate, value in node.items():
+        if isinstance(candidate, str) and candidate.lower() == lowered:
+            return value
+    return None
+
+
+def _is_resolver_node(node: object) -> bool:
+    """A `StoredData`: a dict with an `Account` or `Certificates` key, in either case."""
+    return isinstance(node, dict) and any(
+        isinstance(k, str) and k.lower() in _RESOLVER_NODE_KEYS for k in node
+    )
+
+
+def _is_unwrapped_store(data: dict) -> bool:
+    """Is the top level itself one `StoredData` (v1.7, or an unwrapped v2)?
+
+    Its `Account`/`Certificates` values are an account object, a list or `null` -- never a
+    resolver node -- which is what tells it apart from a wrapped store whose resolver
+    happens to be called `account` or `certificates`.
+    """
+    return _is_resolver_node(data) and not any(
+        isinstance(k, str)
+        and k.lower() in _RESOLVER_NODE_KEYS
+        and _is_resolver_node(value)
+        for k, value in data.items()
+    )
+
+
+def _iter_resolver_nodes(data: dict) -> Iterator[tuple[str | None, dict]]:
+    """Every resolver node in a parsed store, as `(resolver name, node)`.
+
+    The name is the top-level key of a resolver-wrapped store and `None` for an unwrapped
+    one; it is never replaced by a synthetic name, because it is what the exported paths
+    are derived from (ADR-0040). A top-level value that is not a resolver node is skipped
+    with a WARNING. Nothing else is checked here: names are validated where they are
+    joined into a path.
+    """
+    if not isinstance(data, dict):
+        return
+    if _is_unwrapped_store(data):
+        yield (None, data)
+        return
+    for name, node in data.items():
+        if _is_resolver_node(node):
+            yield (str(name), node)
+        else:
+            globalLogger.warning(
+                f"Skipping top-level key '{sanitize_for_log(str(name))}': not an ACME "
+                "resolver node"
+            )
+
+
+def _certificate_entries(node: dict) -> list[dict]:
+    """The certificate entries of one resolver node.
+
+    `Certificates` (v2/v3, v1.7) when it is a list, or the legacy ACME-v1
+    `DomainsCertificate.Certs`, at node level or under `Account`. `null` anywhere on the
+    way means "no certificates". A `Certificates` value that is neither a list nor `null`
+    is a structurally broken node and raises `ValueError`; an entry that is not a dict is
+    skipped with a WARNING.
+    """
+    certificates = _ci_get(node, "Certificates")
+    if certificates is not None and not isinstance(certificates, list):
+        raise ValueError(
+            f"'Certificates' is a {type(certificates).__name__}, not a list"
+        )
+
+    entries: list = list(certificates or [])
+    legacy = _ci_get(node, "DomainsCertificate") or _ci_get(
+        _ci_get(node, "Account"), "DomainsCertificate"
+    )
+    legacyCerts = _ci_get(legacy, "Certs")
+    if isinstance(legacyCerts, list):
+        entries.extend(legacyCerts)
+
+    valid: list[dict] = []
+    for index, entry in enumerate(entries):
+        if isinstance(entry, dict):
+            valid.append(entry)
+        else:
+            globalLogger.warning(
+                f"Skipping certificate entry {index}: a {type(entry).__name__}, not an "
+                "object"
+            )
+    return valid
+
+
+def _entry_fields(entry: dict) -> tuple[object, object, object, object]:
+    """`(main domain, key, full chain, SANs)` of one entry, each case chosen by the keys
+    that entry has. A legacy v1 entry nests them under `Certificate` (`Domain`,
+    `PrivateKey`, `Certificate`) with SANs under `Domains`."""
+    nested = _ci_get(entry, "Certificate")
+    if isinstance(nested, dict):
+        return (
+            _ci_get(nested, "Domain"),
+            _ci_get(nested, "PrivateKey"),
+            _ci_get(nested, "Certificate"),
+            _ci_get(_ci_get(entry, "Domains"), "SANs"),
+        )
+    domain = _ci_get(entry, "Domain")
+    return (
+        _ci_get(domain, "Main"),
+        _ci_get(entry, "Key"),
+        nested,
+        _ci_get(domain, "SANs"),
+    )
+
+
+class _Candidate(NamedTuple):
+    """One exportable certificate entry, as read from the store."""
+
+    resolverName: str | None
+    storeName: str  # `domain.main` as stored, wildcard prefix included
+    name: str  # the name the artifacts are written under
+    privatekey: str
+    fullchain: str
+    sans: list[str]
+
+
+def _covers_name(candidate: _Candidate) -> bool:
+    """Does the entry's certificate cover the name its files are written under? True when
+    the stored main domain is that name, or a stored SAN is. A wildcard main domain whose
+    prefix was stripped covers only its subdomains, never the bare name (ADV-4)."""
+    name = candidate.name.lower()
+    return candidate.storeName.lower() == name or any(
+        san.lower() == name for san in candidate.sans
+    )
+
+
+_NO_EXPIRY = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+
+
+def _leaf_not_after(fullchainB64: str) -> datetime.datetime | None:
+    """The leaf's `notAfter`, or `None` when the chain cannot be decoded or parsed."""
+    try:
+        return _parse_fullchain(b64decode(fullchainB64, validate=True))[
+            0
+        ].not_valid_after_utc
+    except Exception:  # noqa: BLE001 - an unparsable chain simply never wins
+        return None
+
+
+def _format_expiry(value: datetime.datetime | None) -> str:
+    return value.isoformat() if value is not None else "unknown"
+
+
+def _log_resolver(resolverName: str | None) -> str:
+    """A resolver name fit for a log line; `(unnamed)` for an unwrapped store."""
+    return (
+        f"'{sanitize_for_log(resolverName)}'"
+        if resolverName is not None
+        else "(unnamed)"
+    )
+
+
+def _read_store(path: str) -> dict:
+    """The parsed store, read whole (no size limit: it is Traefik's own output).
+
+    Raises `FileNotFoundError` when absent, and `ValueError` when empty, not valid JSON
+    (including undecodable bytes), or nested deeply enough to exhaust the parser.
+    """
+    text = Path(path).read_text(encoding="utf-8")
+    if not text.strip():
+        raise ValueError("the file is empty")
+    try:
+        return json.loads(text)
+    except RecursionError as e:
+        raise ValueError("the JSON is nested too deeply to parse") from e
+
+
 ###########################################################################################################
 class AcmeCertificateExporter:
     def __init__(self, settings: Settings):
 
         self.__settings = settings
         self.__logger = globalLogger
+        # store file -> what its last pass recorded (ADR-0040 §4). Read by the restart
+        # lookup, which can run on a deferred-restart timer thread while a drain rebuilds
+        # an entry. So the published mapping is never mutated: a writer builds a new one
+        # and publishes it with one assignment, and a reader takes one reference and
+        # iterates that (AG-13). The lock only serialises writers.
+        self.__artifactIndex: dict[str, _ArtifactEntry] = {}
+        self.__artifactIndexLock = threading.Lock()
 
     # --------------------------------------------------------------------------------------
-    def __exportCertificate(
-        self, data: dict, resolverName: str | None = None, keys: str = "lowercase"
-    ) -> list | None:
-        names: list[str] = []
-        sweptDirectories: set[Path] = set()
+    def artifactMtime(self, domain: str) -> float | None:
+        """The newest mtime of the artifacts recorded for `domain`, or `None`.
 
-        # Determine ACME version
-        acme_version = 2 if "acme-v02" in data["Account"]["Registration"]["uri"] else 1
+        Covers every store file this process has processed (ADR-0040 §6), so a domain
+        exported under two resolvers yields its newest file. Only recorded paths are
+        examined: nothing is re-derived from settings and the output directory is never
+        globbed, so a file the exporter did not write cannot make a container a candidate.
+        A path that cannot be stat'ed counts as missing.
+        """
+        index = self.__artifactIndex
+        newest: float | None = None
+        for entry in index.values():
+            for (_resolverName, name), paths in entry.items():
+                if name != domain:
+                    continue
+                for path in paths:
+                    try:
+                        mtime = os.stat(path).st_mtime
+                    except OSError as e:
+                        self.__logger.debug(
+                            f"Cannot stat {path}: {e}; treated as missing"
+                        )
+                        continue
+                    if newest is None or mtime > newest:
+                        newest = mtime
+        return newest
+
+    # --------------------------------------------------------------------------------------
+    def __recordArtifacts(
+        self,
+        sourceFile: str,
+        recorded: _ArtifactEntry,
+        keepNames: set[tuple[str | None, str]],
+        keepResolvers: set[str | None],
+    ) -> None:
+        """Publish `sourceFile`'s new entry (ADR-0040 §4).
+
+        `keepNames` are certificates whose rebuild failed and `keepResolvers` resolvers
+        that failed as a whole: their previous paths are carried over rather than dropped,
+        so a restart lost to a crash is still recovered on the next pass (RV-1).
+        """
+        with self.__artifactIndexLock:
+            previous = self.__artifactIndex.get(sourceFile, {})
+            entry: _ArtifactEntry = {
+                key: paths
+                for key, paths in previous.items()
+                if key in keepNames or key[0] in keepResolvers
+            }
+            entry.update(recorded)
+            index = dict(self.__artifactIndex)
+            index[sourceFile] = entry
+            self.__artifactIndex = index
+
+    # --------------------------------------------------------------------------------------
+    def __certificateCandidates(
+        self, data: dict, resolverName: str | None = None
+    ) -> list[_Candidate]:
+        """The exportable certificate entries of one resolver node.
+
+        Raises only for a structurally broken node (the caller isolates resolvers from one
+        another); every per-entry problem is logged here and the next entry continues.
+        """
+        candidates: list[_Candidate] = []
+        logResolver = _log_resolver(resolverName)
 
         if (
             self.__settings.resolverInPathName
@@ -342,51 +791,35 @@ class AcmeCertificateExporter:
             # The resolver name is joined into the output path exactly like the domain
             # name is, and comes from the same untrusted acme store.
             self.__logger.error(
-                f"Refusing to export: resolver name '{_sanitize_for_log(resolverName)}' "
+                f"Refusing to export: resolver name {logResolver} "
                 "is not a valid path component"
             )
-            return names
+            return candidates
 
-        # Find certificates
-        certs = []
-        if acme_version == 1:
-            certs = data["DomainsCertificate"]["Certs"]
-        elif acme_version == 2:
-            certs = data["Certificates"]
+        entries = _certificate_entries(data)
+        self.__logger.info(
+            f"Resolver {logResolver}: {len(entries)} certificate entries"
+        )
+        if self.__logger.isEnabledFor(logging.DEBUG):
+            # Informational only: the CA is never used to decide the store's shape.
+            uri = _ci_get(_ci_get(_ci_get(data, "Account"), "Registration"), "uri")
+            self.__logger.debug(
+                f"Resolver {logResolver}: CA account "
+                f"'{sanitize_for_log(uri) if isinstance(uri, str) else '(none)'}'"
+            )
 
-        # Loop over all certificates
-        for c in certs:
+        for c in entries:
             try:
-                name = ""
-                privatekey = ""
-                fullchain = ""
-                sans = ""
+                storeName, privatekey, fullchain, sans = _entry_fields(c)
 
-                if acme_version == 1:
-                    name = c["Certificate"]["Domain"]
-                    privatekey = c["Certificate"]["PrivateKey"]
-                    fullchain = c["Certificate"]["Certificate"]
-                    sans = c["Domains"]["SANs"]
-                elif acme_version == 2:
-                    if keys == "uppercase":
-                        name = c["Domain"]["Main"]
-                        privatekey = c["Key"]
-                        fullchain = c["Certificate"]
-                        sans = c["Domain"]["SANs"]
-                    else:
-                        name = c["domain"]["main"]
-                        privatekey = c["key"]
-                        fullchain = c["certificate"]
-                        # not sure what this is - can't find any here...
-                        sans = c["domain"].get("sans", [])
-                else:
-                    # This should NEVER happen
-                    self.__logger.error(
-                        f"CRITICAL ERROR - Unknown ACME version detected: {acme_version}"
+                if not isinstance(storeName, str) or not storeName:
+                    self.__logger.warning(
+                        f"Skipping a certificate entry of resolver {logResolver}: it "
+                        "has no main domain"
                     )
                     continue
 
-                name = name.removeprefix("*.")
+                name = storeName.removeprefix("*.")
 
                 if not _is_safe_path_component(name):
                     # This value is joined into a filesystem path (a directory in the
@@ -394,7 +827,7 @@ class AcmeCertificateExporter:
                     # discards `outputPath` entirely and `../` walks out of it, so a
                     # crafted `domain.main` chooses where the private key lands.
                     self.__logger.error(
-                        f"Refusing to export domain '{_sanitize_for_log(name)}': not a "
+                        f"Refusing to export domain '{sanitize_for_log(name)}': not a "
                         "valid certificate name for a filesystem path"
                     )
                     continue
@@ -410,180 +843,331 @@ class AcmeCertificateExporter:
 
                     continue
 
-                if len(privatekey) <= 0 or len(fullchain) <= 0:
+                if (
+                    not isinstance(privatekey, str)
+                    or not isinstance(fullchain, str)
+                    or len(privatekey) <= 0
+                    or len(fullchain) <= 0
+                ):
                     self.__logger.warning(
                         f"Unable to find private key or full chain for cert domain: {name}"
                     )
                     continue
 
-                # Decode private key, certificate and chain
-                privatekey = b64decode(privatekey).decode("utf-8")
-                fullchain = b64decode(fullchain).decode("utf-8")
-                start = fullchain.find("-----BEGIN CERTIFICATE-----", 1)
-                cert = fullchain[0:start]
-                chain = fullchain[start:]
-
-                if not self.__settings.dryRun:
-                    # Create domain     directory if it doesn't exist
-                    basePath = (
-                        Path(self.__settings.outputPath)
-                        if self.__settings.outputPath
-                        else Path.cwd()
-                    )
-                    directory = basePath
-                    if (
-                        self.__settings.resolverInPathName
-                        and resolverName
-                        and len(resolverName) > 0
-                    ):
-                        directory = directory / resolverName
-
-                    if not self.__settings.flat:
-                        directory = directory / name
-
-                    if not _is_contained_within(basePath, directory):
-                        # Containment is the property that matters; the name pattern above
-                        # is how it is normally kept, this is the assertion of it.
-                        self.__logger.error(
-                            f"Refusing to export domain '{name}': resolved output "
-                            f"directory '{directory}' escapes '{basePath}'"
-                        )
-                        continue
-
-                    if not directory.exists():
-                        directory.mkdir(parents=True, exist_ok=True)
-
-                    if directory not in sweptDirectories:
-                        _sweep_stale_temp_files(directory)
-                        sweptDirectories.add(directory)
-
-                    if self.__settings.flat:
-                        # Write private key, certificate and chain to flat files
-                        self.__logger.debug(f"Exporting private key for: {name}")
-                        _atomic_write_text(
-                            directory / (str(name) + ".key"),
-                            privatekey,
-                            mode=_SECRET_FILE_MODE,
-                        )
-
-                        self.__logger.debug(f"Exporting cert for: {name}")
-                        _atomic_write_text(directory / (str(name) + ".crt"), fullchain)
-
-                        self.__logger.debug(f"Exporting chain for: {name}")
-                        _atomic_write_text(
-                            directory / (str(name) + ".chain.pem"), chain
-                        )
-
-                        self.__logger.debug(f"Exporting full chain for: {name}")
-                        _atomic_write_text(
-                            directory / (str(name) + ".fullchain.pem"), fullchain
-                        )
-
-                        self.__logger.debug(f"Exporting pfx for: {name}")
-                        PemToPfxConverter.export_to_pkcs12(
-                            (directory / (str(name) + ".pfx")),
-                            privatekey,
-                            cert,
-                            self.__settings.pkcs12Passphrase,
-                        )
-                    else:
-                        # Write private key, certificate and chain to file
-                        self.__logger.debug(f"Exporting private key for: {name}")
-                        _atomic_write_text(
-                            directory / "privkey.pem",
-                            privatekey,
-                            mode=_SECRET_FILE_MODE,
-                        )
-
-                        self.__logger.debug(f"Exporting cert for: {name}")
-                        _atomic_write_text(directory / "cert.pem", cert)
-
-                        self.__logger.debug(f"Exporting chain for: {name}")
-                        _atomic_write_text(directory / "chain.pem", chain)
-
-                        self.__logger.debug(f"Exporting full chain for: {name}")
-                        _atomic_write_text(directory / "fullchain.pem", fullchain)
-
-                        self.__logger.debug(f"Exporting pfx for: {name}")
-                        PemToPfxConverter.export_to_pkcs12(
-                            directory / "cert.pfx",
-                            privatekey,
-                            cert,
-                            self.__settings.pkcs12Passphrase,
-                        )
-
-                names.append(name)
-
-                self.__logger.info(
-                    "Extracted certificate for: {} ({})".format(
-                        name, ", ".join(sans) if sans else ""
+                candidates.append(
+                    _Candidate(
+                        resolverName=resolverName,
+                        storeName=storeName,
+                        name=name,
+                        privatekey=privatekey,
+                        fullchain=fullchain,
+                        sans=[str(x) for x in sans] if isinstance(sans, list) else [],
                     )
                 )
             except Exception as e:  # noqa: BLE001 - one bad domain must not stop the rest
-                self.__logger.error(f"Error processing domain: {e}")
+                self.__logger.error(
+                    f"Error processing domain: {sanitize_for_log(str(e))}"
+                )
 
-        return names
+        return candidates
 
     # --------------------------------------------------------------------------------------
-    def exportCertificatesForFile(self, sourceFile: str) -> "list[str] | None":
+    def __artifactPaths(
+        self, name: str, resolverName: str | None
+    ) -> tuple[Path, list[Path]]:
+        """`(base, paths)`: the output base and a domain's five artifact paths."""
+        basePath = (
+            Path(self.__settings.outputPath)
+            if self.__settings.outputPath
+            else Path.cwd()
+        )
+        return basePath, _artifact_paths(
+            basePath,
+            resolverName,
+            name,
+            flat=self.__settings.flat,
+            resolverInPathName=self.__settings.resolverInPathName,
+        )
+
+    # --------------------------------------------------------------------------------------
+    def __owners(self, candidates: list[_Candidate]) -> list[_Candidate]:
+        """One candidate per set of artifact files, in store order.
+
+        Two entries map onto the same files when two resolvers hold one domain and the
+        resolver is not in the path, or when one resolver holds both `example.test` and
+        `*.example.test` (the wildcard prefix is stripped from the name). Exporting both
+        made them overwrite each other on every pass (BL-E014-012). An entry that covers
+        the name the files are written under (its stored main domain is that name, or its
+        SANs list it) beats one that does not, so a wildcard without an apex SAN never
+        becomes the apex's files (ADV-4). Among equals, the entry whose leaf expires last
+        owns the files; on a tie, the first in store order does (Traefik writes the
+        resolver map with sorted keys, so the order is stable). Each other entry is
+        skipped with a WARNING.
+        """
+        groups: dict[Path, list[int]] = {}
+        for index, c in enumerate(candidates):
+            _base, paths = self.__artifactPaths(c.name, c.resolverName)
+            # The key file stands for the set: two candidates share one iff they share it.
+            groups.setdefault(paths[0], []).append(index)
+
+        owners: set[int] = set()
+        for target, indices in groups.items():
+            if len(indices) == 1:
+                owners.add(indices[0])
+                continue
+            expiry = {i: _leaf_not_after(candidates[i].fullchain) for i in indices}
+            covers = {i: _covers_name(candidates[i]) for i in indices}
+            # max() keeps the first of equal keys, so ties go to store order.
+            owner = max(indices, key=lambda i: (covers[i], expiry[i] or _NO_EXPIRY))
+            owners.add(owner)
+            kept = candidates[owner]
+            for i in indices:
+                if i == owner:
+                    continue
+                skipped = candidates[i]
+                hint = (
+                    "; set resolverinpathname to export both"
+                    if skipped.resolverName != kept.resolverName
+                    else ""
+                )
+                if covers[owner] and not covers[i]:
+                    hint += (
+                        f"; '{sanitize_for_log(skipped.storeName)}' does not cover "
+                        f"'{sanitize_for_log(skipped.name)}'"
+                    )
+                self.__logger.warning(
+                    f"Not exporting '{sanitize_for_log(skipped.storeName)}' (resolver "
+                    f"{_log_resolver(skipped.resolverName)}, expires "
+                    f"{_format_expiry(expiry[i])}): '{target}' is exported from "
+                    f"'{sanitize_for_log(kept.storeName)}' (resolver "
+                    f"{_log_resolver(kept.resolverName)}, expires "
+                    f"{_format_expiry(expiry[owner])}){hint}"
+                )
+
+        return [c for i, c in enumerate(candidates) if i in owners]
+
+    # --------------------------------------------------------------------------------------
+    def __exportDomain(
+        self,
+        name: str,
+        privatekeyB64: str,
+        fullchainB64: str,
+        resolverName: str | None,
+        sweptDirectories: set[Path],
+    ) -> tuple[bool, list[Path] | None]:
+        """Build, compare and write one domain's artifact set (ADR-0043).
+
+        Returns `(changed, paths)`. `changed` is True if and only if at least one of the
+        domain's files changed on disk in this pass (in a dry run: would have changed).
+        That is the per-domain change signal: a domain whose artifacts all match the files
+        already on disk is neither rewritten nor reported. `paths` are the domain's
+        artifact paths once it reached the write step, rewritten or not (ADR-0040 §4), and
+        `None` when it did not: its build failed or its directory was refused.
+        """
+        logName = sanitize_for_log(name)
+        passphrase = self.__settings.pkcs12Passphrase
+
+        # 1. Build every artifact in memory. Nothing touches the output directory until
+        #    all of them exist, so a domain that cannot be exported keeps its old files.
+        stage = "key"
+        try:
+            # Strict: a non-alphabet byte is an error, never silently dropped.
+            keyPem = b64decode(privatekeyB64, validate=True)
+            key = serialization.load_pem_private_key(keyPem, password=None)
+            stage = "certificate chain"
+            fullchainPem = b64decode(fullchainB64, validate=True)
+            certs = _parse_fullchain(fullchainPem)
+            stage = "pkcs12"
+            pfx = PemToPfxConverter.build_pkcs12(keyPem, certs, passphrase)
+        except Exception as e:  # noqa: BLE001 - one bad domain must not stop the rest
+            # The exception type and message only: never key bytes or the passphrase.
+            self.__logger.error(
+                f"Not exporting certificate for '{logName}': the {stage} could not be "
+                f"built ({type(e).__name__}: {sanitize_for_log(str(e))}); its existing "
+                "files are left as they were"
+            )
+            return False, None
+
+        leafPem = certs[0].public_bytes(serialization.Encoding.PEM)
+        chainPem = b"".join(
+            c.public_bytes(serialization.Encoding.PEM) for c in certs[1:]
+        )
+
+        basePath, paths = self.__artifactPaths(name, resolverName)
+        directory = paths[0].parent
+
+        if not _is_contained_within(basePath, directory):
+            # Containment is the property that matters; the name pattern is how it is
+            # normally kept, this is the assertion of it.
+            self.__logger.error(
+                f"Refusing to export domain '{logName}': resolved output "
+                f"directory '{directory}' escapes '{basePath}'"
+            )
+            return False, None
+
+        # (path, bytes, policy mode). The flat `.crt` keeps holding the full chain; the
+        # per-domain `cert.pem` holds the leaf alone.
+        keyPath, certPath, chainPath, fullchainPath, pfxPath = paths
+        pems = [
+            (keyPath, keyPem, _SECRET_FILE_MODE),
+            (certPath, fullchainPem if self.__settings.flat else leafPem, None),
+            (chainPath, chainPem, None),
+            (fullchainPath, fullchainPem, None),
+        ]
+
+        if not self.__settings.dryRun:
+            if not directory.exists():
+                directory.mkdir(parents=True, exist_ok=True)
+            if directory not in sweptDirectories:
+                _sweep_stale_temp_files(directory)
+                sweptDirectories.add(directory)
+
+        # 2. Compare with what is on disk; keep only what would change.
+        changed = [
+            (path, data, mode)
+            for (path, data, mode) in pems
+            if _file_differs(path, data, mode=mode, dryRun=self.__settings.dryRun)
+        ]
+        if _pfx_differs(pfxPath, key, certs, passphrase, dryRun=self.__settings.dryRun):
+            changed.append((pfxPath, pfx, _SECRET_FILE_MODE))
+
+        if not changed:
+            self.__logger.debug(f"Certificate for {logName} unchanged; nothing written")
+            return False, paths
+
+        changedNames = [path.name for (path, _data, _mode) in changed]
+        if self.__settings.dryRun:
+            self.__logger.debug(
+                f"Dry run: would write {', '.join(changedNames)} for {logName}"
+            )
+            return True, paths
+
+        # 3. Write only the changed artifacts, each atomically. Per-file atomicity plus
+        #    build-first is the contract; the set as a whole is not transactional.
+        written: list[str] = []
+        for path, data, mode in changed:
+            try:
+                _atomic_write_bytes(path, data, mode=mode)
+            except Exception as e:  # noqa: BLE001 - reported below, never swallowed
+                unwritten = [n for n in changedNames if n not in written]
+                if not written:
+                    self.__logger.error(
+                        f"Failed to export certificate for '{logName}': nothing was "
+                        f"written ({e})"
+                    )
+                    return False, paths
+                # Files on disk changed, so the domain IS reported. The next pass sees
+                # the remaining differences and writes them.
+                self.__logger.error(
+                    f"Partial export for '{logName}': wrote {', '.join(written)}; did "
+                    f"not write {', '.join(unwritten)} ({e})"
+                )
+                return True, paths
+            written.append(path.name)
+
+        if pfxPath.name in written:
+            _log_pkcs12_details(pfxPath, pfx, passphrase)
+        self.__logger.debug(
+            f"Exported {logName}: {len(certs) - 1} intermediate(s); changed: "
+            f"{', '.join(written)}"
+        )
+        return True, paths
+
+    # --------------------------------------------------------------------------------------
+    def exportCertificatesForFile(self, sourceFile: str) -> list[str]:
+        """Export every resolver in one store file (ADR-0043).
+
+        Returns the de-duplicated union of the domains whose artifacts changed, in any
+        resolver -- never `None`. A file that cannot be read or parsed returns `[]` with
+        an ERROR; a resolver that fails is logged and skipped without discarding the
+        others' domains.
+
+        Also replaces this file's entry in the artifact index the restart lookup reads
+        (ADR-0040 §4). A file-level failure leaves the previous entry in place.
+        """
+        indexKey = os.path.abspath(sourceFile)
         self.__logger.info(f"Processing file: {sourceFile}")
 
         try:
-            # does the file exist
-            if not os.path.isfile(sourceFile):
-                self.__logger.error(f"File not found: {sourceFile}")
-                return []
+            data = _read_store(sourceFile)
+        except FileNotFoundError:
+            self.__logger.error(f"File not found: {sourceFile}")
+            return []
+        except (OSError, ValueError, MemoryError) as e:
+            self.__logger.error(
+                f"Error reading file '{sourceFile}': {type(e).__name__}: "
+                f"{sanitize_for_log(str(e))}"
+            )
+            return []
 
-            # is the file size greater than 0
-            if os.stat(sourceFile).st_size == 0:
-                self.__logger.error(f"File is empty: {sourceFile}")
-                return []
-
-            data = json.loads(Path(sourceFile).read_text())
-
-            resolversToProcess = []
-            keys = "uppercase"
-            if (
-                self.__settings.traefikResolverId
-                and len(self.__settings.traefikResolverId) > 0
-            ):
-                if self.__settings.traefikResolverId in data:
-                    resolversToProcess.append(self.__settings.traefikResolverId)
-                    keys = "lowercase"
-                else:
-                    self.__logger.warning(
-                        f"Specified traefik resolver id '{self.__settings.traefikResolverId}' is not found in acme file '{sourceFile}'. Skipping file"
-                    )
-                    return []
-            else:
-                # Should we try to get the first resolver if it is there?
-                elementNames = list(data.keys())
-                self.__logger.debug(
-                    f"[DEBUG] Checking node '{elementNames[0]}' to see if it is a resolver node"
+        resolverId = self.__settings.traefikResolverId
+        if resolverId:
+            node = data.get(resolverId) if isinstance(data, dict) else None
+            if not isinstance(node, dict) or not _is_resolver_node(node):
+                self.__logger.warning(
+                    f"Specified traefik resolver id '{sanitize_for_log(resolverId)}' "
+                    f"is not found in acme file '{sourceFile}'. Skipping file"
                 )
-                if "Account" in data[elementNames[0]]:
-                    resolversToProcess = elementNames
-                    keys = "lowercase"
+                return []
+            resolvers: list[tuple[str | None, dict]] = [(resolverId, node)]
+        else:
+            resolvers = list(_iter_resolver_nodes(data))
 
-            names = []
+        if not resolvers:
+            self.__logger.warning(f"Skipping '{sourceFile}': no resolver node found")
+            return []
 
-            if len(resolversToProcess) > 0:
-                self.__logger.info(f"Resolvers to process: {resolversToProcess}")
+        candidates: list[_Candidate] = []
+        failed = 0
+        failedResolvers: set[str | None] = set()
+        for resolverName, node in resolvers:
+            try:
+                candidates.extend(self.__certificateCandidates(node, resolverName))
+            except Exception as e:  # noqa: BLE001 - one resolver must not stop the rest
+                failed += 1
+                failedResolvers.add(resolverName)
+                self.__logger.error(
+                    f"Resolver {_log_resolver(resolverName)} failed in "
+                    f"'{sourceFile}': {type(e).__name__}: {sanitize_for_log(str(e))}"
+                )
 
-                for resolver in resolversToProcess:
-                    names.extend(
-                        self.__exportCertificate(
-                            data[resolver], resolverName=resolver, keys=keys
-                        )
-                        or []
-                    )
+        names: list[str] = []
+        sweptDirectories: set[Path] = set()
+        recorded: _ArtifactEntry = {}
+        notRebuilt: set[tuple[str | None, str]] = set()
+        for c in self.__owners(candidates):
+            try:
+                changed, paths = self.__exportDomain(
+                    c.name, c.privatekey, c.fullchain, c.resolverName, sweptDirectories
+                )
+            except Exception as e:  # noqa: BLE001 - one bad domain must not stop the rest
+                self.__logger.error(
+                    f"Error processing domain '{sanitize_for_log(c.name)}': "
+                    f"{sanitize_for_log(str(e))}"
+                )
+                notRebuilt.add((c.resolverName, c.name))
+                continue
+            if paths is None:
+                notRebuilt.add((c.resolverName, c.name))
             else:
-                names = self.__exportCertificate(data, keys=keys) or []
+                recorded[(c.resolverName, c.name)] = tuple(paths)
+            if not changed:
+                continue
+            if c.name not in names:
+                names.append(c.name)
+            self.__logger.info(
+                "Extracted certificate for: {} ({})".format(
+                    c.name, sanitize_for_log(", ".join(c.sans))
+                )
+            )
 
-            return names
-        except Exception as e:  # noqa: BLE001 - one bad file must not stop the sweep
-            self.__logger.error(f"Error processing file '{sourceFile}': {e}")
-            return None
+        if failed:
+            self.__logger.warning(
+                f"{failed} of {len(resolvers)} resolvers failed in {sourceFile}"
+            )
+
+        self.__recordArtifacts(indexKey, recorded, notRebuilt, failedResolvers)
+        return names
 
     # --------------------------------------------------------------------------------------
     def exportCertificates(self) -> list:
@@ -601,49 +1185,36 @@ class AcmeCertificateExporter:
 
 class PemToPfxConverter:
     @staticmethod
-    def export_to_pkcs12(
-        filename,
-        key_data: str | bytes | PrivateKeyTypes,
-        cert_data: str | bytes | x509.Certificate,
-        passphrase: str | bytes | None = None,
-    ):
+    def build_pkcs12(
+        key_pem: bytes,
+        certs: list[x509.Certificate],
+        passphrase: str | bytes | None,
+    ) -> bytes:
+        """The PKCS12 bundle for a key and its chain (leaf first). Pure: no I/O.
 
-        # if passphrase is a string, convert to bytes
-        if isinstance(passphrase, str):
-            passphrase = passphrase.encode("utf-8")
-
-        # if data is a string, convert to bytes, if it is a private key leave it alone for now
-        if isinstance(key_data, str):
-            key_data = key_data.encode("utf-8")
-
-        # if data is a string, convert to bytes, if it is a certificate leave it alone for now
-        if isinstance(cert_data, str):
-            cert_data = cert_data.encode("utf-8")
-
-        # if the private key is bytes lets load it, otherwise assume it is a private key object
-        if isinstance(key_data, bytes):
-            key = serialization.load_pem_private_key(key_data, password=passphrase)
-        else:
-            key = key_data
-
-        # if the certificate is bytes lets load it, otherwise assume it is a certificate object
-        if isinstance(cert_data, bytes):
-            cert = x509.load_pem_x509_certificate(cert_data)
-        else:
-            cert = cert_data
+        The key is loaded with `password=None`: the ACME store's key is unencrypted PEM,
+        and the passphrase protects the OUTPUT only (loading the key with it raised
+        `TypeError` for every domain -- B2). The intermediates are included, in order.
+        A non-empty passphrase selects `BestAvailableEncryption` (AES-256/SHA-256);
+        `None` or empty means an unencrypted bundle.
+        """
+        key = serialization.load_pem_private_key(key_pem, password=None)
+        leaf = certs[0]
 
         # get the common name from the certificate
         try:
-            cert_subject_common_name = str(
-                cert.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[
+            cert_subject_common_name: str | None = str(
+                leaf.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[
                     0
                 ].value
-            )  # type: ignore
+            )
         except Exception:  # noqa: BLE001 - fall back to an unnamed certificate
-            globalLogger.error("Failed to get common name from certificate")
+            # DEBUG, not ERROR: this runs on every pass for every domain, changed or not,
+            # and a CN-less leaf (Let's Encrypt's shortlived/tlsserver profiles) is valid.
             globalLogger.debug(
-                f"File: '{filename}', Certificate Subject: '{cert.subject!s}'"
-            )  # type: ignore
+                f"Certificate has no subject common name ('{leaf.subject!s}'); using "
+                "the default PKCS12 friendly name"
+            )
 
             cert_subject_common_name = None
 
@@ -656,51 +1227,67 @@ class PemToPfxConverter:
         else:
             cert_subject_common_name = "LetsEncrypt Certificate"
 
+        password = _normalize_passphrase(passphrase)
         pkcs12_encryption = (
-            serialization.BestAvailableEncryption(passphrase)
-            if passphrase is not None
+            serialization.BestAvailableEncryption(password)
+            if password is not None
             else serialization.NoEncryption()
         )
-        pkcs12_bytes = pkcs12.serialize_key_and_certificates(
+        return pkcs12.serialize_key_and_certificates(
             cert_subject_common_name.encode("utf-8"),
-            key,  # type: ignore
-            cert,  # type: ignore
-            None,
+            key,  # type: ignore[arg-type]
+            leaf,
+            certs[1:] or None,
             pkcs12_encryption,
         )
 
-        # Atomic for the same reason the PEM siblings are: a `.pfx` is a certificate
-        # file a service loads directly, and truncate-then-write leaves it zero-length
-        # if the process dies mid-write (ADR-0024).
-        #
-        # 0600 unconditionally: the bundle embeds the private key, and `NoEncryption()` is
-        # what it gets whenever `pkcs12passphrase` is unset -- the documented default. A
-        # world-readable `.pfx` is a world-readable private key.
-        _atomic_write_bytes(Path(filename), pkcs12_bytes, mode=_SECRET_FILE_MODE)
+    @staticmethod
+    def export_to_pkcs12(
+        filename,
+        key_data: str | bytes | PrivateKeyTypes,
+        cert_data: str | bytes | x509.Certificate | list[x509.Certificate],
+        passphrase: str | bytes | None = None,
+    ):
+        """`build_pkcs12` plus an atomic 0600 write, kept for external callers.
 
-        if globalLogger.isEnabledFor(logging.DEBUG):
-            (_pkcs12_key, pkcs12_cert, _pkcs12_chain) = (
-                pkcs12.load_key_and_certificates(pkcs12_bytes, passphrase)
+        `cert_data` is a full-chain PEM (leaf first), one certificate, or a list.
+        """
+        if isinstance(key_data, str):
+            key_data = key_data.encode("utf-8")
+        if not isinstance(key_data, bytes):
+            key_data = key_data.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
             )
 
-            globalLogger.debug(f"Creating PKCS12 file: {filename}")
-            globalLogger.debug(f"  Name: {cert_subject_common_name}")
-            globalLogger.debug(
-                f"  Subject: {pkcs12_cert.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value!s}"
-            )  # type: ignore
-            globalLogger.debug(
-                f"  Issuer: {pkcs12_cert.issuer.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value!s}"
-            )  # type: ignore
-            globalLogger.debug(
-                f"  Not Before: {pkcs12_cert.not_valid_before_utc.date()}"
-            )  # type: ignore
-            globalLogger.debug(f"  Not After: {pkcs12_cert.not_valid_after_utc.date()}")  # type: ignore
+        if isinstance(cert_data, str):
+            cert_data = cert_data.encode("utf-8")
+        if isinstance(cert_data, bytes):
+            certs = _parse_fullchain(cert_data)
+        elif isinstance(cert_data, x509.Certificate):
+            certs = [cert_data]
+        else:
+            certs = list(cert_data)
+
+        pkcs12_bytes = PemToPfxConverter.build_pkcs12(key_data, certs, passphrase)
+
+        # Atomic for the same reason the PEM siblings are (ADR-0024). 0600
+        # unconditionally: the bundle embeds the private key, and an unset passphrase --
+        # the documented default -- means `NoEncryption()`.
+        _atomic_write_bytes(Path(filename), pkcs12_bytes, mode=_SECRET_FILE_MODE)
+
+        _log_pkcs12_details(filename, pkcs12_bytes, passphrase)
 
 
 ###########################################################################################################
 # Seconds between the first change in a burst and the export pass. Named rather than
 # inline so the watch tests can drive the handler without waiting on wall-clock time.
 WATCH_DEBOUNCE_SECONDS = 2
+
+# INFO, once per pass that changed nothing: the hook and notifications are skipped then
+# (ADR-0045), and a quiet pass must still be visible. Shared with app.py's start-up pass.
+NO_CHANGE_MESSAGE = "No certificate changed; no hook or notification"
 
 # How long shutdown waits for an in-flight drain to finish before giving up on it.
 #
@@ -1042,24 +1629,32 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
 
     # --------------------------------------------------------------------------------------
     def __processPath(self, path: str, correlationId: str | None = None) -> None:
-        domains = self.__exporter.exportCertificatesForFile(path)
+        domains = self.__exporter.exportCertificatesForFile(path) or []
 
-        run_post_export_command(
-            self.__settings.postExportCommand,
-            domains or [],
-            self.__settings.dryRun,
-            correlationId=correlationId,
-        )
-        # Scope: this file's domains, once per file per drain -- not the pass total.
-        # app.py's run-at-start notifies once for the union of every file instead. The two
-        # differ because the two passes differ, and ADR-0014 requires each to be stated
-        # rather than left for an operator to infer from message counts.
-        send_export_notifications(
-            self.__settings.appriseUrls,
-            domains or [],
-            self.__settings.dryRun,
-            correlationId=correlationId,
-        )
+        # Only for the domains whose artifacts changed; a file whose export changed
+        # nothing runs neither (ADR-0045, amending ADR-0014 §7).
+        if domains:
+            run_post_export_command(
+                self.__settings.postExportCommand,
+                domains,
+                self.__settings.dryRun,
+                correlationId=correlationId,
+            )
+            # Scope: this file's changed domains, once per file per drain -- not the pass
+            # total. app.py's run-at-start notifies once for the union of every file
+            # instead. The two differ because the two passes differ, and ADR-0014 requires
+            # each to be stated rather than left for an operator to infer from counts.
+            send_export_notifications(
+                self.__settings.appriseUrls,
+                domains,
+                self.__settings.dryRun,
+                correlationId=correlationId,
+            )
+        else:
+            self.__logger.info(NO_CHANGE_MESSAGE)
 
         if self.__settings.restartContainers:
-            self.__dockerManager.restartLabeledContainers(domains)
+            # Every pass, whether or not a domain changed: the rule compares the exported
+            # files with each container's start, so a restart lost to a crash or a
+            # shutdown is recovered here (ADR-0045).
+            self.__dockerManager.restartLabeledContainers(self.__exporter.artifactMtime)

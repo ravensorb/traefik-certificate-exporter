@@ -3,6 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-06
 - **Deciders:** Maintainer (ravensorb)
+- **Amended by:** ADR-0043 (the `.pfx` is built with the rest of the set before any replace, and is rewritten only when its content changed)
 - **Epic:** E011
 - **Departs from spec:** n/a
 - **Principle(s) in tension:** ADR-0023's atomic-write decision (`tempfile.NamedTemporaryFile` +

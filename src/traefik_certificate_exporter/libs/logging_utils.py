@@ -5,6 +5,7 @@ import logging
 import logging.config
 import logging.handlers
 import os
+import re
 import traceback
 import uuid
 from pathlib import Path
@@ -16,6 +17,32 @@ import pythonjsonlogger.json
 import yaml
 
 ###################################################################################################
+
+# Read with `os.getenv` because logging is configured before settings load, so confuse
+# never maps them. `legacy_settings.valid_env_names()` takes them from these constants.
+LOGGING_CFGFILE_ENV = "TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CFGFILE"
+LOGGING_CONSOLEJSON_ENV = "TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON"
+LOGGING_CONSOLEONLY_ENV = "TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY"
+
+# The `-ll` choices, shared with the `LOGGING_LEVEL` env fallback in `app.py` so the two
+# entry points accept exactly the same set. Kept here, in the leaf module (AD-13), so
+# `legacy_settings` can name the env var without importing `cli_args` (and Docker).
+LOG_LEVEL_CHOICES: tuple[str, ...] = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+LOG_LEVEL_ENV = "TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL"
+DEFAULT_LOG_LEVEL = "INFO"
+
+_LOG_CONTROL_CHARS_PATTERN = re.compile(r"[\r\n\x1b]")
+
+
+def sanitize_for_log(value: str | None) -> str:
+    """Strip characters that let an untrusted, rejected domain/resolver name forge log
+    lines or terminal output: CR/LF (log-line injection) and ESC (ANSI/CSI terminal-escape
+    injection). Applied only to values interpolated into a log *message*, separately from
+    -- and in addition to -- `_is_safe_path_component`'s filesystem-path safety check,
+    which this does not replace.
+    """
+    return _LOG_CONTROL_CHARS_PATTERN.sub("", str(value)) if value is not None else ""
+
 
 # The join key an operator greps for. One value per drain pass, carried across the
 # watch event -> debounce timer -> export -> post-export command -> notification hops
@@ -195,8 +222,8 @@ class RollingFileHanderEx(logging.handlers.RotatingFileHandler):
 def setup_logging(
     cfg_file_name: str = "logging.yaml",
     default_level=logging.INFO,
-    env_key: str = "TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CFGFILE",
-    console_json_env_key: str = "TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON",
+    env_key: str = LOGGING_CFGFILE_ENV,
+    console_json_env_key: str = LOGGING_CONSOLEJSON_ENV,
 ):
     """
     | **@author:** Prathyush SP
@@ -276,7 +303,7 @@ install_correlation_id_record_factory()
 
 globalLoggerName = (
     "traefik_certificate_exporter_consoleonly"
-    if str(os.getenv("TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY", "0")).lower()
+    if str(os.getenv(LOGGING_CONSOLEONLY_ENV, "0")).lower()
     in ["true", "1", "t", "y", "yes"]
     else "traefik_certificate_exporter"
 )

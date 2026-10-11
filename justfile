@@ -8,9 +8,11 @@ default_branch := `b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEA
 # into the project-local .poetry/ plugin environment, which needs network access.
 # Needs a vX.Y.Z tag reachable from HEAD (strict versioning, AD-7); in a shallow or
 # tagless clone run `git fetch --tags --unshallow` first.
+# `sync --all-groups` makes the venv exactly poetry.lock, optional groups included, so the
+# pip-audit hook audits every lock group without naming one (ADR-0042).
 # Install the Poetry-managed project and development environment.
 install:
-    poetry install
+    poetry sync --all-groups
 
 # Run exactly the gates CI runs (AD-3): every pre-commit hook, then the test suite.
 check:

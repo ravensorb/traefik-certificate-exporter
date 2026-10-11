@@ -43,7 +43,7 @@ destination table and the `PUBLISH_*` secrets, is in
 
 | Recipe | Does |
 | --- | --- |
-| `just install` | `poetry install` |
+| `just install` | `poetry sync --all-groups` (every lock group, so the pip-audit hook sees every group as installed for this Python and platform; ADR-0042) |
 | `just check` | every pre-commit hook over the whole repository, then `pytest` — the CI gate |
 | `just build` | clean `dist/`, then `poetry build` (one wheel, one sdist) |
 | `just image` | `just build`, then build and load `traefik-certificate-exporter:local` from that wheel |

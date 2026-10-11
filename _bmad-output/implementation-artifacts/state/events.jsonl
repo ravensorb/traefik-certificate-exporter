@@ -957,3 +957,7 @@
 {"cause": "cli", "epic": "014", "event": "issue_opened", "key": "BL-E014-058", "session": "l3io-pm-20261011T161302Z-43c8ef", "severity": "Low", "ts": "2026-10-11T21:58:00Z"}
 {"cause": "cli", "epic": "014", "event": "issue_opened", "key": "BL-E014-059", "session": "l3io-pm-20261011T161302Z-43c8ef", "severity": "Low", "ts": "2026-10-11T21:58:02Z"}
 {"cause": "cli", "epic": "014", "event": "issue_opened", "key": "BL-E014-060", "session": "l3io-pm-20261011T161302Z-43c8ef", "severity": "Low", "ts": "2026-10-11T21:58:03Z"}
+{"cause": "cli", "epic": "014", "event": "issue_resolved", "key": "BL-E014-017", "ref": "E014-S02-003", "resolution": "wontfix", "session": "l3io-pm-20261011T161302Z-43c8ef", "ts": "2026-10-11T22:00:36Z"}
+{"epic": "E014", "event": "actual", "from": null, "key": "S01", "node": "sprint", "session": null, "sprint": "S01", "to": null, "ts": "2026-10-11T22:02:05Z"}
+{"epic": "E014", "event": "actual", "from": null, "key": "S01", "node": "sprint", "session": null, "sprint": "S01", "to": null, "ts": "2026-10-11T22:02:05Z"}
+{"epic": "E014", "event": "status", "from": "backlog", "key": "S01", "node": "sprint", "session": null, "sprint": "S01", "to": "done", "ts": "2026-10-11T22:02:13Z"}

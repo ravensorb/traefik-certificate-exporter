@@ -1,7 +1,11 @@
 import json
 import logging
+import shlex
+import subprocess
 import sys
 from unittest.mock import patch
+
+import pytest
 
 from traefik_certificate_exporter.libs import post_export
 from traefik_certificate_exporter.libs.post_export import run_post_export_command
@@ -111,6 +115,81 @@ def test_post_export_log_lines_carry_the_passed_correlation_id(caplog):
     assert [r.correlation_id for r in caplog.records] == ["pass-5678"]
 
 
+# ---------------------------------------------------------------------------
+# E014-S01-010 (review-product m4): `postexportcommand` often carries a credential, so a
+# hook log line names only the program, `argv[0]` -- never the arguments or the command.
+# ---------------------------------------------------------------------------
+
+_CREDENTIAL_COMMAND = 'curl -H "Authorization: Bearer s3cr3t" https://x.example.test'
+
+
+def _assert_credential_not_logged(caplog):
+    assert caplog.records, "the hook logged nothing at all"
+    for record in caplog.records:
+        message = record.getMessage()
+        assert "s3cr3t" not in message, message
+        assert "Authorization" not in message, message
+
+
+def test_nonzero_exit_log_names_only_the_program(caplog):
+    failed = subprocess.CompletedProcess(["curl"], 7, stdout="", stderr="refused")
+    with (
+        caplog.at_level(logging.DEBUG),
+        patch.object(post_export.subprocess, "run", return_value=failed),
+    ):
+        run_post_export_command(_CREDENTIAL_COMMAND, ["example.com"], dryRun=False)
+
+    _assert_credential_not_logged(caplog)
+    assert any(
+        "Post-export command curl exited 7: refused" in m for m in caplog.messages
+    ), caplog.messages
+
+
+def test_timeout_log_names_only_the_program(caplog):
+    timeout = subprocess.TimeoutExpired(cmd=["curl"], timeout=30)
+    with (
+        caplog.at_level(logging.DEBUG),
+        patch.object(post_export.subprocess, "run", side_effect=timeout),
+    ):
+        run_post_export_command(_CREDENTIAL_COMMAND, ["example.com"], dryRun=False)
+
+    _assert_credential_not_logged(caplog)
+    assert any(
+        m.startswith("Post-export command curl timed out") for m in caplog.messages
+    ), caplog.messages
+
+
+def test_start_failure_log_names_only_the_program(caplog):
+    missing = FileNotFoundError(2, "No such file or directory", "curl")
+    with (
+        caplog.at_level(logging.DEBUG),
+        patch.object(post_export.subprocess, "run", side_effect=missing),
+    ):
+        run_post_export_command(_CREDENTIAL_COMMAND, ["example.com"], dryRun=False)
+
+    _assert_credential_not_logged(caplog)
+    assert any(
+        m.startswith("Post-export command curl failed to start")
+        for m in caplog.messages
+    ), caplog.messages
+
+
+def test_unparsable_command_log_names_neither_command_nor_parser_message(caplog):
+    """`shlex`'s message can echo a fragment of the command, so it is not logged either."""
+    unterminated = 'curl -H "Authorization: Bearer s3cr3t https://x.example.test'
+    with pytest.raises(ValueError) as parserError:
+        shlex.split(unterminated)
+
+    with caplog.at_level(logging.DEBUG):
+        run_post_export_command(unterminated, ["example.com"], dryRun=False)
+
+    _assert_credential_not_logged(caplog)
+    for message in caplog.messages:
+        assert "curl" not in message, message
+        assert str(parserError.value) not in message, message
+    assert any("could not be parsed" in m for m in caplog.messages), caplog.messages
+
+
 def test_post_export_without_an_id_logs_rather_than_failing(caplog):
     """A missing correlation id must never take down the pass it exists to observe."""
     with caplog.at_level(logging.INFO):
@@ -118,3 +197,47 @@ def test_post_export_without_an_id_logs_rather_than_failing(caplog):
 
     assert caplog.records
     assert all(getattr(r, "correlation_id", None) for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# ADV-3: a failing hook's stderr is untrusted and may echo the hook's own (secret)
+# arguments. Only its last line is logged: arguments masked, control characters
+# stripped, truncated.
+# ---------------------------------------------------------------------------
+
+
+def test_failing_hook_stderr_is_masked_sanitized_and_reduced_to_its_last_line(caplog):
+    script = (
+        "import sys; "
+        "sys.stderr.write('earlier line ' + sys.argv[1] + '\\n'); "
+        "sys.stderr.write('curl: (6) Could not resolve ' + sys.argv[1] + "
+        "' \\x1b[31mFORGED\\r\\n'); "
+        "sys.exit(6)"
+    )
+    command = shlex.join([sys.executable, "-c", script, "https://h.test/?token=s3cr3t"])
+
+    with caplog.at_level(logging.DEBUG):
+        run_post_export_command(command, ["example.com"], dryRun=False)
+
+    errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1, caplog.messages
+    message = errors[0]
+    assert "s3cr3t" not in message
+    assert "earlier line" not in message
+    assert "\x1b" not in message and "\r" not in message and "\n" not in message
+    assert "Could not resolve ***" in message
+    assert "exited 6" in message
+
+
+def test_failing_hook_stderr_last_line_is_truncated(caplog):
+    failed = subprocess.CompletedProcess(["hook"], 1, stdout="", stderr="x" * 5000)
+    with (
+        caplog.at_level(logging.DEBUG),
+        patch.object(post_export.subprocess, "run", return_value=failed),
+    ):
+        run_post_export_command("hook --flag", ["example.com"], dryRun=False)
+
+    (message,) = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(message) < 400
+    assert "x" * post_export.HOOK_STDERR_LOG_LIMIT in message
+    assert "x" * (post_export.HOOK_STDERR_LOG_LIMIT + 1) not in message

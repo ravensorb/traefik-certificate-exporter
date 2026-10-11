@@ -13,3 +13,9 @@ settings:
   watchforchanges: true
   runatstart: true
   watchinterval: 10
+
+# Logging is configured from the environment, not from this file (it is set up before this
+# file is read). CONSOLEONLY and CONSOLEJSON default to off for a PyPI install; this image
+# sets TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY=true. To change verbosity in the
+# container, set TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL (DEBUG, INFO, WARNING, ERROR,
+# CRITICAL; default INFO) -- the container's command line is fixed, so -ll is not available.
