@@ -74,3 +74,11 @@ spines). If something here turns out wrong, record it in your story's notes file
 - Each story's `## Verification` section is the definition of done: run every command listed,
   record the output (or its tail) in the notes file, and record every run with
   `pm-status add-test-run`.
+
+## Maintainer approvals recorded at execution start (2026-10-11)
+
+- E014-S02-004: the maintainer approved closing the stale PRs and removing stale git
+  worktrees ("yes lets close the stale PRs (and any stale worktrees)"). Close each PR with a
+  comment citing the reason, and record each closure in the notes file. `git worktree list`
+  showed only the main checkout at execution start.
+- Network access is available for `pip-audit`, PyPI/OSV lookups and image pulls.

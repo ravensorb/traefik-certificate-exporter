@@ -57,11 +57,24 @@ If `readiness: red` → warn:
 This is a degraded path, not a clean one, and this step has no inbox to wait on — write what
 you found and stop:
 ```
-BLOCKED: plan readiness is RED for {current_plan_file}. Two things unblock it: run
-/l3io-plan to resolve the readiness gaps and rebuild the plan (recommended), or, having
-accepted the risk, edit readiness: in {planning_artifacts}/plan-output-meta.yaml to amber and
-re-run /l3io-execute.
+BLOCKED: plan readiness is RED for {current_plan_file}. Two things unblock it:
+  1. Run /l3io-plan to resolve the readiness gaps and rebuild the plan (recommended).
+  2. Accept the risk: say so, and I will set readiness to amber in
+     {planning_artifacts}/plan-output-meta.yaml, then you re-run /l3io-execute.
 ```
+
+**Never tell the user to edit that file themselves.** It is written by
+`step-06-plan-output.md` §4, so it is ours, and the rule across this package is that the human
+decides and the agent edits — "go and change it yourself" is not an outcome we hand back. A
+hand edit is not safer here either, only more error-prone: the wrong field, the wrong file, or
+damaged YAML, in a pointer `l3io-execute` treats as the sole authority for which plan is
+current.
+
+**The friction stays; only the mechanism moves.** Accepting a red plan must remain a
+deliberate act, so do not offer this as a menu option or infer it from impatience. Act only on
+an explicit statement that the risk is accepted, rewrite **just** the `readiness:` field,
+leave every other key untouched, and say plainly what you changed and in which file.
+
 **Do not tell the user to simply re-run `/l3io-execute`.** A re-run reads the same
 `readiness: red` from the same pointer and blocks here identically; there is no override flag,
 and naming one that does not exist sends them round a loop. Only the two remedies above change

@@ -64,6 +64,53 @@ For each epic, list its sprint directories and each sprint's story `.yaml` files
 For each story, record: `key`, `classification`, `status`, `estimate` (present/absent),
 `depends_on`, and whether it is assigned to a sprint.
 
+### 1.1 Guard: there must be something to plan
+
+**Check the scope set is non-empty before validating anything in it.** Every check in §2 is
+stated per story, so over an empty set all of them hold — no Red finding, no Amber finding — and
+§4's `All Green → green` is reached **vacuously**. A run with nothing in it would otherwise
+report green readiness, write a snapshot of 0 epics across 0 phases, and tell the user to run
+`/l3io-execute`, which is the one piece of advice that cannot possibly be right.
+
+This guard is **ours and not the external readiness checker's**, for three reasons that are
+worth keeping here: the legacy `bmad-check-implementation-readiness` is invoked *per story*, so
+with zero stories it is invoked zero times and structurally cannot report their absence;
+`bmad-sprint-planning` reads BMad's own scope, not `{pm_state_root}`; and §3 is skipped entirely
+when neither resolves, which would make the guard disappear on exactly the installs least likely
+to notice. §1 computes the set, so §1 is where its emptiness is known.
+
+If **no epics** are in scope — nothing under `active/` with `status: in-progress`, nothing under
+`planned/` with `status: backlog` — halt with `{readiness}` = `red`:
+
+```
+🔴 Readiness check FAILED — there is nothing to plan.
+
+No epics are in scope: {pm_state_root}/active/ holds no epic with status in-progress,
+and {pm_state_root}/planned/ holds none with status backlog.
+
+Fix: create epics and break them into stories first. If you already have epic or story
+documents in {implementation_artifacts}, they have no state nodes yet — run
+/l3io-doctor bootstrap-state to create them.
+```
+
+If epics are in scope but **together they hold zero stories**, halt with `{readiness}` = `red`
+and **name them** — an epic that was declared and never decomposed is the common way to reach
+this, and the user needs to know which:
+
+```
+🔴 Readiness check FAILED — {epic_count} epic(s) in scope hold no stories.
+
+{list each epic key and title}
+
+An epic with no stories contributes nothing to a plan: it has no estimate to roll up and
+no work to order. Break these down into stories first.
+```
+
+If **some** epics hold stories and others hold none, do not halt — the plan is still
+producible. Record one **Amber** finding per empty epic, so it appears in §5's report and
+carries into `{readiness}`. An empty epic otherwise rolls up as a zero-cost epic in the
+estimate and reads as cheap rather than as undecomposed.
+
 ## 2. Run validation checks
 
 For each story, evaluate the following checks:
@@ -71,12 +118,50 @@ For each story, evaluate the following checks:
 | Check | Green | Amber | Red |
 |-------|-------|-------|-----|
 | Classification | `classification` is `simple`, `standard`, or `complex` | — | Missing or unrecognized value |
-| Technical ACs | If `{work_type}` is CODE, CONFIG or MIXED: story file exists with non-empty "Acceptance Criteria" section containing technical details (interfaces, data model, error handling) | Story has only functional ACs (no technical details), **or the story document does not exist yet** | Story document exists but carries no AC section at all |
+| Technical ACs | If `{work_type}` is CODE, CONFIG or MIXED: story file exists, carries `## Technical acceptance criteria`, and **every one of the six dimensions** below is present and either filled or marked `N/A — <reason>` | **Any applicable dimension missing or empty**, or the story document does not exist yet | Story document exists but carries no `## Technical acceptance criteria` heading at all |
+| Business ACs | `## Business acceptance criteria` is present with a non-empty `### Outcome` | Section absent, or `### Outcome` empty | — |
 | Estimate block | `estimate` block present with at least `man_hours` or `man_hours_low` | **Absent** — `steps/shared/step-estimate.md` writes it later in this same run | — |
 | `depends_on` validity | All referenced keys exist in scope and are not `done` | — | Any key missing from any state file, or a cycle detected |
 | Sprint assignment | Story is assigned to a named sprint in its epic | — | Orphaned story (not in any sprint) |
 
 Technical ACs check applies when `{work_type}` is CODE, CONFIG or MIXED. For DOCS only, skip this check for all stories. It must run for CONFIG: step 03 elaborates only the stories this check grades Amber, so skipping CONFIG here would leave `{readiness}` green and elaborate nothing for an infrastructure epic.
+
+**The six dimensions, and why this check must name all six.** They are the headings step 03's
+enricher writes, and the canonical reference is `references/ac-dimensions.md`, which both this
+skill and `l3io-execute` carry so the two cannot drift:
+
+| # | `###` heading | Covers |
+|---|---|---|
+| 1 | Interface contracts | signatures, data model, what callers see |
+| 2 | Error and edge case handling | what fails, how, and what the caller gets |
+| 3 | Observability requirements | logging, metrics, tracing the change must emit |
+| 4 | Security considerations | auth, validation, data handling |
+| 5 | Testability approach | test entry points and mock boundaries |
+| 6 | Existing-library check | which library or platform capability covers this, or why custom code is warranted |
+
+This check previously named three of them — interfaces, data model, error handling — while the
+elaborator four steps later wrote all six and `l3io-execute`'s story gate **blocks**
+`ready-for-dev` on any applicable dimension left unfilled. The enricher and the checker in one
+skill disagreed about what "ready" means, and the stricter of the two was the one that did not
+gate. The effect was not a missed warning: a thin story was graded Amber, estimated, placed on
+the critical path, and only then blocked at execution — so the schedule had been built around
+work that could not start. Grading the same six here makes that block predictable at plan time
+and tells step 03 exactly which dimensions to fill.
+
+**A dimension marked `N/A — <reason>` is Green, not Amber.** "Does not apply, and here is why"
+is a filled dimension; an unfilled one is a gap. Omitting the heading entirely is never
+acceptable — that is indistinguishable from not having considered it.
+
+**Both AC rows are Amber, never Red, for the reason the next two notes give**: step 03 runs
+immediately after and exists to close exactly these gaps. Red would halt the run before the
+step that fixes it.
+
+**Spec pointers are deliberately NOT checked here.** In plan mode `Spec: none — <reason>` is the
+expected answer for every applicable dimension: `spec_alignment` and `spec_paths` are
+`l3io-execute` keys, and `l3io-plan` passes no spec index (see `step-03-story-elaboration.md`).
+Running `spec-align.py check-pointers` at plan time would fail every story by design, and
+`l3io-plan` does not carry that script in any case. Pointer resolution is `l3io-execute`'s gate,
+where the index exists.
 
 **An absent story document is Amber, not Red, deliberately.** Red halts this step with `BLOCKED` and forbids loading the next one (§6) — and the next one, step 03, is exactly where §4 says "if the file does not yet exist at the given path, create it first" before enriching it. Grading a missing document Red therefore blocked the only step that could produce it, and left that create-it-first branch unreachable by any input: Amber requires a file to exist, so no story could ever arrive at it. Amber is the grade for a gap elaboration closes, and a missing document is one. A document that exists but carries no AC section stays Red — that is a story someone wrote and left empty, which is a content decision rather than a missing artifact.
 
@@ -114,7 +199,13 @@ Fold "not ready" findings into the gate:
 
 - Any Red finding on any story → `{readiness}` = `red`
 - Any Amber finding, no Red → `{readiness}` = `amber`
-- All Green → `{readiness}` = `green`
+- All Green **over a non-empty scope set** → `{readiness}` = `green`
+
+**Green requires stories to have been checked, not merely no failures to have been found.**
+§1.1 already halts on an empty set, so this restatement is belt and braces — but the two
+clauses fail independently, and the one that is easy to delete by accident is the guard. Every
+check in §2 is universally quantified over the stories, so without the qualifier here, deleting
+§1.1 would silently restore a green verdict over nothing rather than producing an error.
 
 ## 5. Write readiness-report.md
 
@@ -129,11 +220,15 @@ Stories checked: {total_story_count}
 
 ## Findings
 
-| Story | Check | Result | Detail |
+| Node | Check | Result | Detail |
 |-------|-------|--------|--------|
 | E001-S01-001 | Technical ACs | 🟡 Amber | Functional ACs only — no interface specs |
 | E002-S01-003 | Estimate | 🔴 Red | Missing estimate block |
 | E001-S02-001 | depends_on | 🟢 Green | — |
+| E004 | Decomposition | 🟡 Amber | Epic holds no stories — contributes nothing to the plan |
+
+The first column is a **node** key, not only a story key: §1.1's empty-epic finding is recorded
+against the epic, because that is the node the user has to act on.
 
 ## Summary
 

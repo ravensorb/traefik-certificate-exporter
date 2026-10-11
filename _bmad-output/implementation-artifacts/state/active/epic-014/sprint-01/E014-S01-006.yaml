@@ -1,0 +1,93 @@
+key: 'E014-S01-006'
+epic: 'E014'
+sprint: 'S01'
+title: "Restart cooldown: defer, don't drop (with ADR)"
+status: done
+classification: standard
+resolves: [BL-E012-004, BL-E012-008]
+estimate:
+  man_hours: 10.58
+  hitl_hours: 0.05
+  elapsed_hours: 0.75
+  cost: 5.91
+  model: claude-opus-5
+  fix_factor: 2.8333
+  scope_ratios:
+    man_hours: 0.6225
+    hitl_hours: 0.0541
+    elapsed_hours: 0.1315
+    tokens_k: 1.8087
+  tokens_k:
+    total: 7248
+    input: 0
+    output: 12
+    cache_write: 347
+    cache_read: 6889
+updated_at: '2026-10-11T18:47:43Z'
+depends_on:
+- 'E014-S01-001'
+- 'E014-S01-005'
+- 'E014-S01-002'
+- 'E014-S01-003'
+completion_evidence:
+  test_runs:
+  - command: poetry check --lock && poetry run python -c "import dateutil; print(dateutil.__version__)"
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_docker.py::test_only_on_change_unchanged_second_pass_restarts_nothing tests/libs/test_docker.py::test_only_on_change_fresh_process_over_same_output_restarts_nothing
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_docker.py::test_only_on_change_first_pass_into_empty_output_restarts tests/libs/test_docker.py::test_only_on_change_restarts_only_containers_of_changed_domain tests/libs/test_docker.py::test_only_on_change_crash_recovery_restarts_from_file_mtimes tests/libs/test_docker.py::test_only_on_change_artifacts_older_than_start_do_not_restart tests/libs/test_docker.py::test_only_on_change_missing_or_zero_started_at_does_not_restart tests/libs/test_docker.py::test_only_on_change_mtime_slack tests/libs/test_docker.py::test_only_on_change_missing_files
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_docker.py::test_restart_inside_cooldown_is_deferred_coalesced_and_fires tests/libs/test_docker.py::test_rate_floor_applies_after_deferred_restart
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_docker.py::test_deferred_restart_skipped_when_label_removed tests/libs/test_docker.py::test_deferred_restart_skipped_when_container_restarted_externally tests/libs/test_docker.py::test_deferred_restart_container_gone_is_info tests/libs/test_docker.py::test_failed_deferred_restart_releases_and_next_pass_recovers tests/libs/test_docker.py::test_dry_run_logs_would_restart_and_arms_nothing tests/libs/test_docker.py::test_cancel_prevents_captured_callback_from_restarting tests/libs/test_docker.py::test_next_pass_recovers_cancelled_deferral tests/libs/test_docker.py::test_cancel_racing_fire_does_not_restart tests/libs/test_docker.py::test_deferred_restart_carries_arming_correlation_id tests/libs/test_docker.py::test_real_timer_fires_deferred_restart_end_to_end
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_docker.py::test_second_pass_inside_the_cooldown_window_does_not_restart_again tests/libs/test_docker.py::test_cooldown_skip_is_logged_at_info_so_an_operator_can_see_it
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_certificate_exporter.py::test_artifact_mtime_is_newest_of_layout_files tests/libs/test_certificate_exporter.py::test_artifact_mtime_missing_domain_is_none tests/libs/test_certificate_exporter.py::test_artifact_mtime_oserror_counts_as_missing
+    exit_code: 0
+  - command: poetry run pytest -q tests/test_app.py::test_run_at_start_evaluates_restarts_every_pass tests/test_app.py::test_run_cancels_pending_restarts_on_every_exit_path tests/libs/test_certificate_exporter_watch.py::test_drain_evaluates_restarts_every_pass
+    exit_code: 0
+  - command: grep -nE 'RESTART_COOLDOWN_SECONDS|300|RESTART_MTIME_SLACK_SECONDS' docs/operational.md docs/adr/*restart-policy-only-on-change*.md
+    exit_code: 0
+  - command: poetry run pytest -q -v tests/libs/test_certificate_exporter.py::test_artifact_paths_layouts tests/libs/test_certificate_exporter.py::test_artifact_mtime_finds_every_layout tests/libs/test_certificate_exporter.py::test_artifact_mtime_unwrapped_store_default_settings tests/libs/test_certificate_exporter.py::test_artifact_mtime_two_resolvers_same_domain_newest_wins tests/libs/test_certificate_exporter.py::test_artifact_mtime_covers_previously_processed_store_files tests/libs/test_certificate_exporter.py::test_artifact_mtime_ignores_files_not_written_by_exporter
+    exit_code: 0
+  - command: grep -nE 'resolverInPathName|outputPath' src/traefik_certificate_exporter/libs/certificate_exporter.py
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_certificate_exporter.py::test_artifact_index_rebuild_during_lookup_is_safe tests/libs/test_certificate_exporter.py::test_failed_rebuild_keeps_previous_artifact_paths
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 poetry run pytest -q -m integration tests/test_container_restart.py
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 poetry run pytest -q -m integration -rs tests/libs/test_docker_engine.py tests/test_container_restart.py
+    exit_code: 0
+  - command: just check
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_docker.py::test_deferred_restart_skipped_when_slot_reserved_since_arming
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_docker.py::test_deferred_restart_skipped_when_label_removed tests/libs/test_docker.py::test_deferred_restart_skipped_when_container_restarted_externally tests/libs/test_docker.py::test_deferred_restart_container_gone_is_info tests/libs/test_docker.py::test_failed_deferred_restart_releases_and_next_pass_recovers tests/libs/test_docker.py::test_dry_run_logs_would_restart_and_arms_nothing tests/libs/test_docker.py::test_cancel_prevents_captured_callback_from_restarting tests/libs/test_docker.py::test_next_pass_recovers_cancelled_deferral tests/libs/test_docker.py::test_cancel_racing_fire_does_not_restart tests/libs/test_docker.py::test_deferred_restart_carries_arming_correlation_id tests/libs/test_docker.py::test_real_timer_fires_deferred_restart_end_to_end
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_docker.py::test_restart_inside_cooldown_is_deferred_coalesced_and_fires tests/libs/test_docker.py::test_rate_floor_applies_after_deferred_restart
+    exit_code: 0
+  - command: grep -nE 'RESTART_COOLDOWN_SECONDS|300|RESTART_MTIME_SLACK_SECONDS' docs/operational.md docs/adr/*restart-policy-only-on-change*.md
+    exit_code: 0
+  - command: just check
+    exit_code: 1
+  - command: just check
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 poetry run pytest -q -m integration -rs tests/libs/test_docker_engine.py tests/test_container_restart.py
+    exit_code: 0
+  tests_passing: true
+  fix_iterations: 1
+  files_changed: 17
+actual:
+  elapsed_hours: 0.5
+  man_hours: 20
+  hitl_hours: 0
+  tokens_k:
+    total: 14193.83
+    input: 0.188
+    output: 14.3
+    cache_write: 385.162
+    cache_read: 13794.184
+  cost: 9.66
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-11T18:47:43Z'

@@ -1,17 +1,23 @@
 {
-  "version": "3.3.1",
-  "generated_from": "skills/_shared/",
+  "version": "3.4.2",
+  "generated_from": "skills/<skill>/",
   "files": {
-    "references/config-resolution.md": "cada754f77e576cfa0eb51f6719b19d2ab6b3ef08d2db40fcc684783ebd5a384",
-    "steps/shared/step-00-activate.md": "447516d828f46b1f20c1f675a18c3019fa9129511857f87c457cb1583fcc24ee",
+    "SKILL.md": "65eb06fa8e0a9d26a35e140668060e158087e896f622266a82b198db2ca899cf",
+    "assets/sync-config-template.yaml": "8174ba46714b4597f5541a5dda1d680f0f718058533d999253d6f8fbeb0f4cdc",
+    "customize.toml": "d6d62042e149d9e030cde85f41c78532b3e0261a2461252e41bd0957a2e136da",
+    "references/calibration-model.md": "e3fc8d9fc41285bca19257f0ac796856e025e9992ce6401a5c41437f55830f27",
+    "references/config-resolution.md": "153baa1edb1ca9eb49fc391c546a79b1fe4260dac1c1bad27abbcbcd3726994a",
+    "references/metrics-contract.md": "fd31b35d4ed5f31037fed0b58038d2d59262bd820274b9088f654b8bd90abb31",
+    "references/status-files.md": "775f13a437ddd5a35cf048e92cec5f7a817615bd68a7ff52a5f2aa3079886fe1",
+    "scripts/detect-platform.py": "8a1a8d23d792a01ef24ec9b52b4de28bfbad651cfa119aab82d662bd4dab3635",
+    "scripts/drift-report.py": "8c1b7708472d1cd95827221836489333925c2821fc60faabe609c4b9d4d47ff7",
+    "scripts/sync-state.py": "f7431a9e858d63b8c07f9c6134afa1f31d7408eb59394cee7d9c1126e622ba54",
+    "steps/shared/step-00-activate.md": "17219274207a62a1074086ac22174f14e0503ece3cac127e9846839e2ed25865",
     "steps/shared/step-00-digest.md": "27af27894b622e1da2ffade4cd6d292d207bf4d114ef0f1bb5706be86ee0146d",
     "steps/shared/step-01-classify-work.md": "53b6c3df3744f01fc4f7bc38fbf56e27f54ec13ba1cc67fbf5334d26bfb9a12c",
     "steps/shared/step-estimate.md": "dc361f48af47290aace3c10e9aa42cfd4201941cd976ea200f4ec7c25a8ea94a",
     "steps/sync/step-02-detect-platform.md": "d50890bb28f9df3c5e9197e840b19818e19d0204e4b0be02d17ffae6bbc1344e",
     "steps/sync/step-03-operations.md": "cf687718a6a1e741e1054c77654390fa0248f420732c3e7d79672c732d8b230e",
-    "steps/sync/step-04-resolve.md": "39fbbf32862b7951ece20b0d3bb9045dba90316fa61237b49ffd7a4ddc414f5d",
-    "references/status-files.md": "6615b1335b64333fab8095da08cf51c52bb67c3f08bf11873fdde4f5d0a42279",
-    "references/metrics-contract.md": "fd31b35d4ed5f31037fed0b58038d2d59262bd820274b9088f654b8bd90abb31",
-    "references/calibration-model.md": "e3fc8d9fc41285bca19257f0ac796856e025e9992ce6401a5c41437f55830f27"
+    "steps/sync/step-04-resolve.md": "39fbbf32862b7951ece20b0d3bb9045dba90316fa61237b49ffd7a4ddc414f5d"
   }
 }

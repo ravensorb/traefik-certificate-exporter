@@ -1,12 +1,28 @@
 {
-  "version": "3.3.1",
-  "generated_from": "skills/_shared/",
+  "version": "3.4.2",
+  "generated_from": "skills/<skill>/",
   "files": {
-    "references/config-resolution.md": "cada754f77e576cfa0eb51f6719b19d2ab6b3ef08d2db40fcc684783ebd5a384",
+    "SKILL.md": "bd8eea9ab402f63e579c7066d1acdb914ea24c23b122a437b08a120be7ca3b0d",
+    "assets/adr-template.md": "dfa9baf138b236303512aead42377e880fbdd00641b7cda1d974b47e785103cc",
     "assets/agent-instructions.md": "6f31741b68015da8c2b13c7f1d68539111686f3b99b8aa78e7c29f79ec7b5d38",
+    "assets/customize-architect.md": "a69eb8a7252b519478415844c4c85f675e0f45a33c469c26fe15ee728bac8a82",
+    "assets/module-help.csv": "ea4145bbb8abc15b03e8d85472eb1b70a637f4db6531b7a9ff76e0bd6bed6d39",
+    "assets/module-setup.md": "8567ae5c4dc40f7393bc3925e196d7f0579fd69d970985b4cfb8fb5e7df4671a",
+    "assets/module.yaml": "de9e20a4b0d6f70061fdc5f8b0c15de4e50de198c494e632ba641d73d43a7ab3",
+    "customize.toml": "74d4c0bdccfd9a2c1fcece3bbb5e801ca6be7ee97a01df2419578825fd97e17c",
+    "module.yaml": "de9e20a4b0d6f70061fdc5f8b0c15de4e50de198c494e632ba641d73d43a7ab3",
+    "references/config-resolution.md": "153baa1edb1ca9eb49fc391c546a79b1fe4260dac1c1bad27abbcbcd3726994a",
+    "references/review-report.md": "1d66983684e5104811ed3a75acf349498da8b43847a70161c4147ce7b4e1bc27",
+    "references/standards-core.md": "89a51a4a3076413fc2ea663c89c297a6abee1e78b9d71c753c03807e932a18e1",
+    "references/standards-docker.md": "0a1972fe0ba16c5a6b9d77b01174e128edfe0f1a12a34f53ca7388fb27a85bae",
+    "references/standards-dotnet.md": "13b1e8f9e4616f2736c7700d71f9172bfcdc6a87e69b851cf0d96ab9e23971e4",
+    "references/standards-github-actions.md": "8bb34bbbd24a274fb45d50ed94f2efaac41d2c9344c9c13bc62ad6ecf6b57467",
+    "references/standards-nodejs.md": "79ad1b76ecda53f1475eb02b115a5bae037744cc3c51223203666fd70de7b94d",
+    "references/standards-powershell.md": "bc70d154cb231a43f7ff14d6b61f1bc7283a66134217dbc03371f4cb277f542b",
+    "references/standards-python.md": "b6c0c020d18fde60f5fac87202b29d9cb10fe6e6db47e87898a66c94a29b4261",
+    "references/standards-shell.md": "4e13744a81e2f097fadf30d739208c0680f9b761a35d71a9d4d6ed32dfd4b9f3",
     "scripts/merge-config.py": "22f51eed631c64134d352c236917e0a98ec5b5fe5d0810394f4615905c6ef7dc",
     "scripts/merge-help-csv.py": "44cae89d74a247395cc851970e28b65605e958efa04b632209f9bd5ecbc70d69",
-    "scripts/write-module-config.py": "fdc0e81cda51221599907b9023a096b0570e096b7d921fb0c1db2050afa7a80f",
-    "assets/module-setup.md": "8567ae5c4dc40f7393bc3925e196d7f0579fd69d970985b4cfb8fb5e7df4671a"
+    "scripts/write-module-config.py": "fdc0e81cda51221599907b9023a096b0570e096b7d921fb0c1db2050afa7a80f"
   }
 }

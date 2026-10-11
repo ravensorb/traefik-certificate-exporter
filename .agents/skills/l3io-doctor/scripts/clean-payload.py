@@ -47,7 +47,21 @@ from pathlib import Path
 # Where an installer puts skills. Derived per-root rather than assumed: a project may carry
 # one, both, or neither, and a missing one is not an error.
 _SKILL_ROOTS = (".claude/skills", ".agents/skills")
-_GENERATED_FROM = "skills/_shared/"
+
+# BOTH VALUES ARE OURS, and the pair is a migration, not an accident.
+#
+# The manifest's scope used to be "files synced from skills/_shared/", and `generated_from`
+# recorded that. It is now every file the skill directory ships, so the writer emits
+# `skills/<skill>/`. This constant is how a skill is recognised as OURS at all, so accepting
+# only the new value would make this script walk past every project installed before the
+# change -- reporting `none-found` and removing nothing, which reads exactly like a clean
+# uninstall and is the most dangerous way to be wrong here.
+#
+# An upgrade replaces the whole skill directory, so manifest and script normally move
+# together. "Normally" is doing too much work for an uninstall path: a partial copy, a
+# restored backup, or a project upgraded by hand can leave one old manifest beside a new
+# script. Accepting both costs one tuple and removes the whole class.
+_GENERATED_FROM = ("skills/<skill>/", "skills/_shared/")
 _SELF_INSTALLED = ("_bmad/scripts/pm-status.py",)
 
 
@@ -82,7 +96,7 @@ def discover(project: Path) -> list[tuple[Path, dict]]:
                 data = json.loads(manifest.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
-            if data.get("generated_from") != _GENERATED_FROM:
+            if data.get("generated_from") not in _GENERATED_FROM:
                 continue
             if isinstance(data.get("files"), dict):
                 found.append((entry, data))

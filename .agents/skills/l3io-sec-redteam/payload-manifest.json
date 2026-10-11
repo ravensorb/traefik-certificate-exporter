@@ -1,12 +1,30 @@
 {
-  "version": "3.3.1",
-  "generated_from": "skills/_shared/",
+  "version": "3.4.2",
+  "generated_from": "skills/<skill>/",
   "files": {
-    "references/config-resolution.md": "cada754f77e576cfa0eb51f6719b19d2ab6b3ef08d2db40fcc684783ebd5a384",
+    "SKILL.md": "b1b453783db9d1e9da19a0815968add40b2a868b8db4e75e1f5a39f0c5b628c1",
+    "assets/BOND-template.md": "24657cd8d7462a9177818fe112f7f0dce0dd05cb6020948b812f14b53dfc7fa5",
+    "assets/CAPABILITIES-template.md": "4756990ba1b63b2feeb9638342146ab9a4b98c845d7b860078b9761d080d7d53",
+    "assets/CREED-template.md": "75ab2c56e45bc0f2fccf24ade8f84136777c18b4d6e666a8acb1edc4573c98c2",
+    "assets/INDEX-template.md": "6832d0b8c08343827ff27600807eae52d6832d5b99ed86508ba0fa26b1ca66c3",
+    "assets/MEMORY-template.md": "130a1604d1befe7f09fc37383b43f38651112c12e88dae9fadfe41b8da59c076",
+    "assets/PERSONA-template.md": "5ee73cedffa46b5568a74c503b4f21ee50636cf4dca98ba94d50f9dd5118d5d2",
     "assets/agent-instructions.md": "6f31741b68015da8c2b13c7f1d68539111686f3b99b8aa78e7c29f79ec7b5d38",
+    "assets/module-help.csv": "7f7bf7b17dbbdd843b5bb7d75bd0083731b5b05046b3e5c75fd3139c6145715f",
+    "assets/module-setup.md": "8567ae5c4dc40f7393bc3925e196d7f0579fd69d970985b4cfb8fb5e7df4671a",
+    "assets/module.yaml": "985b5004cd7b90d2f58580c6c90f8b7ddcd62cace4db6c08ea25e3b75d717eb7",
+    "customize.toml": "1d52f68b9b96f3b47f4fc8a3a470a6425a5efba018e0456e64d79d50ac6b854a",
+    "module.yaml": "985b5004cd7b90d2f58580c6c90f8b7ddcd62cace4db6c08ea25e3b75d717eb7",
+    "references/config-resolution.md": "153baa1edb1ca9eb49fc391c546a79b1fe4260dac1c1bad27abbcbcd3726994a",
+    "references/findings-report.md": "1c178ff6298c649606052613185838effab861ebbcd820840529ddd0691a5a37",
+    "references/first-breath.md": "b68a98be7127faf95b2eecd4651f009f45581d464c220c67fab03575c10366e5",
+    "references/memory-guidance.md": "89adfee818db58556d028c8ad0dbabcdc7c2096d19ebc711453133b1d92fa1cb",
+    "references/platform-research.md": "8bb5100e785ddd5443d3f818495238cdc1a178eea1aec690da3dda4e3f101f64",
+    "references/scope-mapping.md": "a5af725fdb99868308bc94549deb20d994a7ffdf0f650068fc61baf4ada27bfd",
+    "references/threat-analysis.md": "45201fe051fe9f21d09e0416e886cf0438025823fae6d52a7c85d60252b52e2b",
+    "scripts/init-sanctum.py": "59ed2e8fd03db56a1a4ff6cae82c51d9459b9b7039ae96728d2a3486f58459f6",
     "scripts/merge-config.py": "22f51eed631c64134d352c236917e0a98ec5b5fe5d0810394f4615905c6ef7dc",
     "scripts/merge-help-csv.py": "44cae89d74a247395cc851970e28b65605e958efa04b632209f9bd5ecbc70d69",
-    "scripts/write-module-config.py": "fdc0e81cda51221599907b9023a096b0570e096b7d921fb0c1db2050afa7a80f",
-    "assets/module-setup.md": "8567ae5c4dc40f7393bc3925e196d7f0579fd69d970985b4cfb8fb5e7df4671a"
+    "scripts/write-module-config.py": "fdc0e81cda51221599907b9023a096b0570e096b7d921fb0c1db2050afa7a80f"
   }
 }

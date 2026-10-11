@@ -1,7 +1,17 @@
 {
-  "version": "3.3.1",
-  "generated_from": "skills/_shared/",
+  "version": "3.4.2",
+  "generated_from": "skills/<skill>/",
   "files": {
-    "references/config-resolution.md": "cada754f77e576cfa0eb51f6719b19d2ab6b3ef08d2db40fcc684783ebd5a384"
+    "SKILL.md": "2f124e4ae2c484cad1e3162340d1736d347a355971c6cf437d96c176529321e9",
+    "customize.toml": "8f69c02ad4c487c73c5ecec9d9bfd469cc9638c26e79cb3baf2d3a72dc96650e",
+    "references/config-resolution.md": "153baa1edb1ca9eb49fc391c546a79b1fe4260dac1c1bad27abbcbcd3726994a",
+    "steps/mode-catalog.md": "3d56d2c21232c47e7a393fdda24692c8bd469d74df656ef1da3b6e98ee2fa971",
+    "steps/mode-list-plan.md": "c9dd477c002cd59679f577b00f95bf4d7f2851f8791d98a1053498aca4999086",
+    "steps/mode-progress.md": "0aa153de147aa04ae52e37d4c9d2007b0b6562680813f3fb0738b08fae52f142",
+    "steps/step-01-config.md": "146c699e4d66bbbccc7cff17511b910a99d7666426ed2fbaf4b0a281c1089427",
+    "steps/step-02-detect-layout.md": "4061610ecd6b0355d057bbfe77ffc7cb8f44f67f0075b2d15d65550301703397",
+    "steps/step-03-read-state.md": "57fe5966c2d78ca1655a9257a91657f35cb4ce73236009b8a07f49c55037d1f4",
+    "steps/step-04-health-snapshot.md": "8a8a6fcaddccd3c2c59bb5711868c19dbd42c3d241798d5346362e200046f507",
+    "steps/step-05-recommend.md": "c86e8a3861642361e69a3954bf886e18f4959c5a59179839baa1dc23fc0282fa"
   }
 }

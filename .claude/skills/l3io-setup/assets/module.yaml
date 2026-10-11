@@ -1,7 +1,7 @@
 code: l3io-pm
 name: "LiquidLogicLabs PM"
 description: "PM orchestration for LiquidLogicLabs delivery teams — dependency-aware phased planning, full epic and sprint execution, closure quality gates, progress reporting, and GitHub Issues sync."
-module_version: 3.3.1
+module_version: 3.4.2
 default_selected: false
 # Required LiquidLogicLabs modules that must be installed alongside l3io-pm.
 # BMad's installer schema captures this field into `moduleInfo.dependencies` at
@@ -13,6 +13,35 @@ default_selected: false
 # for the runtime rationale (l3io-help forwards several modes to l3io-doctor).
 dependencies:
   - l3io-util
+# Setup ASKS whether this project runs single-developer or multi-lane, and records the
+# answer. The mode is a decision, never an inference: a project configured for three lanes
+# that has not assigned any yet looks exactly like a single-developer project if you only
+# scan the tree, and they must not get the same answer. Asking is also how the capability
+# becomes known — a user never shown the question does not learn lanes exist.
+#
+# `lane_count` is TEAM-scoped (committed): the partition is a shared fact.
+# `lane` is USER-scoped (gitignored): who works a lane is personal, and keeping it out of
+# git is what makes "a lane is never a person" true of the repository rather than merely
+# intended.
+variables:
+  - name: lane_count
+    prompt: >
+      How many developers will work this plan in parallel? Each works their own clone and
+      owns whole epics, so their state files never collide. Choose 1 for a single developer
+      — lanes then stay completely out of your way.
+    default: 1
+    regex: "^[1-9][0-9]{0,2}$"
+    example: "1 for a single developer, 3 for three working in parallel"
+  - name: lane
+    user_setting: true
+    prompt: >
+      Which lane are YOU? (only asked when more than one lane is configured; answer a number
+      between 1 and the lane count). This is stored in your personal, gitignored config — it
+      never reaches the repository, which is why a lane is a number and never a name.
+    default: ""
+    regex: "^([1-9][0-9]{0,2})?$"
+    example: "2"
+
 module_greeting: >
   LiquidLogicLabs PM module is configured!
   Use /l3io-plan to build the execution plan.

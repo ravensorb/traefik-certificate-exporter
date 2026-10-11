@@ -76,6 +76,8 @@ Bind these at activation, applying the default when the key is absent:
 | `{token_rates_json}` | `modules.l3io-pm.token_rates`, **JSON-encoded** | empty — the shipped rate table applies unchanged |
 | `{business_ac_required}` | `modules.l3io-pm.business_ac_required` | `"CODE,MIXED"` |
 | `{reorg_auto_apply}` | `modules.l3io-pm.reorg_auto_apply` | `"never"` |
+| `{lane_count}` | `modules.l3io-pm.lane_count` | absent — lanes off |
+| `{lane}` | `modules.l3io-pm.lane` (**user layer only**) | absent |
 
 `{business_ac_required}` names the work types whose stories must carry a `## Business acceptance
 criteria` section for the story-prep gate to pass (`CODE`, `DOCS`, `CONFIG`, `MIXED`, comma-separated,
@@ -221,3 +223,26 @@ grep -qE "^[[:space:]]*-[[:space:]]*name:[[:space:]]*l3io-arch[[:space:]]*$" \
 Substitute the module code being tested (`l3io-arch`, `l3io-sec`). If the manifest itself is
 missing, treat the module as absent and self-skip — but say so in the phase output, so a
 skipped gate is never mistaken for a passed one.
+
+## Lanes
+
+`{lane_count}` and `{lane}` partition planned work across developers who each have their own
+clone. Three states, and the first two are **not the same fact**:
+
+| `lane_count` | Means | Behaviour |
+|---|---|---|
+| absent | setup not run, or predates lanes | lanes off |
+| `1` | single-developer, **chosen** | lanes off |
+| `N > 1` | multi-lane | lanes on |
+
+The first two behave identically, and that is required rather than convenient: §5 above makes
+an absent `modules.l3io-pm` section a valid permanent state that **never** triggers a first-run,
+so an absent key must not prompt. But "we never asked" is not the same record as "they said one
+developer", and only setup asking produces the second.
+
+**`{lane}` resolves from the user layer — `custom/config.user.toml`, which is gitignored — and
+belongs nowhere else.** `lane_count` and the `lane:` field on an epic are the partition, which
+is a shared fact and is committed. *Which human works which lane* is personal, and keeping it
+out of git is what makes "a lane is a slot, never a person" true of the repository rather than
+merely intended. That is also why a lane is a **number**: a word-shaped token cannot be
+screened, since `backend` and `sarah` are the same shape.

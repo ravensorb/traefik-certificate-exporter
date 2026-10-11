@@ -1,4 +1,4 @@
-next: 40
+next: 46
 reserved:
 - number: 1
   slug: action-pin-policy
@@ -100,3 +100,27 @@ reserved:
   slug: publish-environments
   epic: E013
   reserved_at: '2026-10-09T21:46:10Z'
+- number: 40
+  slug: arch-gate
+  epic: E014
+  reserved_at: '2026-10-11T16:25:09Z'
+- number: 41
+  slug: arch-gate
+  epic: E014
+  reserved_at: '2026-10-11T16:25:09Z'
+- number: 42
+  slug: arch-gate
+  epic: E014
+  reserved_at: '2026-10-11T16:25:09Z'
+- number: 43
+  slug: export-commit-and-reporting-contract
+  epic: E014
+  reserved_at: '2026-10-11T16:53:16Z'
+- number: 44
+  slug: container-run-once-contract
+  epic: E014
+  reserved_at: '2026-10-11T17:58:31Z'
+- number: 45
+  slug: restart-policy-only-on-change-defer-not-drop
+  epic: E014
+  reserved_at: '2026-10-11T18:18:54Z'

@@ -107,8 +107,16 @@ def has_cycle(edges: dict) -> list:
     return found
 
 
-def validate(plan: dict, target) -> list:
-    """Every reason to refuse. Empty means accept."""
+def validate(plan: dict, target, stage: str = "structure") -> list:
+    """Every reason to refuse. Empty means accept.
+
+    `stage` narrows the legal move set. `structure` is the full one: a story may be placed in
+    any planned epic and sprint. `balance` additionally refuses any row that changes a story's
+    EPIC, which is what makes "the balancing pass cannot undo the structural pass" a property
+    of the format rather than a convention somebody has to remember. Balancing is levelling
+    sprint load inside an epic; moving work across an epic boundary is the structural pass's
+    job and its decision to own.
+    """
     errs = []
 
     def bad(where, why):
@@ -169,6 +177,26 @@ def validate(plan: dict, target) -> list:
                        f"whether it should come back")
         retired[str(row["key"])] = row
 
+    # --- the balancing pass may not cross an epic boundary --------------------------
+    #
+    # UNREPRESENTABLE, NOT MERELY DISCOURAGED — the same argument the target format makes
+    # everywhere else. The structural pass spends its whole proposal moving stories to remove
+    # dependencies that cross an epic boundary; a balancing pass free to move them back could
+    # undo that silently while legitimately levelling sprint load, and the result would pass
+    # every other check here because both placements are individually legal. Refusing the
+    # epic change outright means the composition cannot regress what the first pass achieved.
+    if stage == "balance":
+        for key, row in placed.items():
+            was = stories.get(key)
+            if was and str(row.get("epic")) != was[0]:
+                bad(f"target[{key}]", f"moves from {was[0]} to {row.get('epic')} — a "
+                                      f"balancing pass levels sprint load WITHIN an epic and "
+                                      f"may not cross an epic boundary. Crossing one is the "
+                                      f"structural pass's decision to make")
+        if retires:
+            bad("retire", "a balancing pass does not retire epics — retirement is a "
+                          "structural decision")
+
     # --- every key must resolve, and must be planned --------------------------------
     for key, row in placed.items():
         if key not in stories:
@@ -218,7 +246,30 @@ def validate(plan: dict, target) -> list:
                                      f"retire the dependent too, or keep {d}")
 
     # --- ordering ---------------------------------------------------------------------
+    #
+    # SPRINTS INSIDE AN EPIC ARE SEQUENTIAL, so position is (sprint_index, order) and not
+    # `order` alone. This rule used to fire only when two stories shared a sprint, which left
+    # the commoner violation accepted outright: a story in S01 depending on one in S02 of the
+    # same epic returned `OK target is valid`. Moving a story forward past its dependent is
+    # the canonical balancing move, so the gap was exactly where a balancing pass would land.
+    #
+    # SPRINT INDEX COMES FROM SORTED KEY ORDER, never from arithmetic on the number. An epic
+    # whose sprints are S01, S03, S07 has indices 0, 1, 2; subtracting keys would read S03 and
+    # S07 as four apart and S01/S03 as adjacent, neither of which is a fact about execution
+    # order. The target may also create a sprint, so the index is built over the union of the
+    # epic's existing sprints and any this target introduces.
+    def sprint_order_index(plan_sprints, created_sprints):
+        by_epic = {}
+        for e, sp in set(plan_sprints) | set(created_sprints):
+            by_epic.setdefault(e, set()).add(sp)
+        return {(e, sp): i
+                for e, sps in by_epic.items()
+                for i, sp in enumerate(sorted(sps))}
+
+    sprint_idx = sprint_order_index(sprints, created)
+
     def place_of(k):
+        """(epic, sprint, order) for a story, from the target when placed, else from state."""
         if k in placed:
             r = placed[k]
             return str(r.get("epic")), str(r.get("sprint")), r.get("order")
@@ -230,8 +281,20 @@ def validate(plan: dict, target) -> list:
             if d not in stories:
                 continue                        # active/archived: ordering is not ours
             de, ds, do = place_of(d)
-            if (ke, ks) == (de, ds) and isinstance(ko, int) and isinstance(do, int) \
-                    and ko <= do:
+            if ke != de:
+                continue                        # cross-epic: the PHASE graph orders epics,
+                                                # and epics in one phase run concurrently.
+                                                # An unbacked cross-epic edge is reported by
+                                                # the analyzer, not judged here.
+            ki, di = sprint_idx.get((ke, ks)), sprint_idx.get((de, ds))
+            if ki is None or di is None:
+                continue                        # an unresolvable destination is already an
+                                                # error above; do not report it twice
+            if di > ki:
+                bad(f"target[{key}]", f"placed in {ke}-{ks} but depends on {d} in {de}-{ds}, "
+                                      f"a LATER sprint of the same epic — sprints run "
+                                      f"sequentially, so a dependency cannot come after")
+            elif di == ki and isinstance(ko, int) and isinstance(do, int) and ko <= do:
                 bad(f"target[{key}]", f"ordered at {ko} but depends on {d} at {do} in the "
                                       f"same sprint — a dependency cannot come later")
     return errs
@@ -242,6 +305,9 @@ def main(argv=None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--target", required=True, help="the proposed target placement (YAML)")
     ap.add_argument("--format", choices=("text", "json"), default="text")
+    ap.add_argument("--stage", choices=("structure", "balance"), default="structure",
+                    help="`balance` additionally refuses any row that changes a story's epic, "
+                         "so a balancing pass cannot undo the structural pass")
     a = ap.parse_args(argv)
 
     try:
@@ -260,7 +326,7 @@ def main(argv=None) -> int:
         sys.stderr.write(f"reorg-validate.py: {err}\n")
         return 2
 
-    errs = validate(plan, target)
+    errs = validate(plan, target, a.stage)
     if a.format == "json":
         sys.stdout.write(json.dumps({"ok": not errs, "errors": errs}, indent=2) + "\n")
     elif errs:

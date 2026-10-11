@@ -3,6 +3,7 @@ next:
   '011': 42
   '012': 14
   '013': 44
+  '014': 61
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -255,18 +256,6 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
-- key: BL-E011-018
-  epic: '011'
-  sprint: '01'
-  title: ACME file ingestion is unbounded and unvalidated (no size cap, b64decode without validate)
-  source: redteam (RT-014)
-  source_phase: redteam
-  source_ref: RT-014
-  severity: Low
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
-  story: E014-S01-003
-  scheduled_at: '2026-10-10T22:27:13Z'
 - key: BL-E011-020
   epic: '011'
   sprint: '01'
@@ -381,18 +370,6 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md
-- key: BL-E011-032
-  epic: '011'
-  sprint: '01'
-  title: config.sample.yml says both logging switches default off; the image ships CONSOLEONLY=true
-  source: arch-drift (SD-01-8)
-  source_phase: arch-drift
-  source_ref: SD-01-8
-  severity: Low
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md
-  story: E014-S01-004
-  scheduled_at: '2026-10-10T22:27:15Z'
 - key: BL-E011-033
   epic: '011'
   sprint: '01'
@@ -501,18 +478,6 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-012/arch/arch-gate-review.md (consolidated MINOR findings)
-- key: BL-E012-004
-  epic: '012'
-  sprint: ''
-  title: Story E012-S01-001's restartLabeledContainers cooldown-gated skip behavior never states the cooldown window duration or where it's configured
-  source: arch-gate (l3io-arch-review)
-  source_phase: arch-gate
-  source_ref: l3io-arch-review
-  severity: Low
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-012/arch/arch-gate-review.md (consolidated MINOR findings)
-  story: E014-S01-006
-  scheduled_at: '2026-10-10T22:27:18Z'
 - key: BL-E012-005
   epic: '012'
   sprint: ''
@@ -543,18 +508,6 @@ backlog:
   severity: Low
   status: backlog
   description: Review finding 9. logging.yaml's RotatingFileHandler uses a relative filename resolved against the root-owned WORKDIR /config, so the abc account gets PermissionError inside dictConfig and silently falls back to console logging. Needs a writable log location (e.g. a chowned /logs volume) or an explicit documented restriction. See _bmad-output/implementation-artifacts/epic-012/sprint-01/closure/review-E012-S01-001.md section 9.
-- key: BL-E012-008
-  epic: '012'
-  sprint: '01'
-  title: Restart filtering needs a per-domain certificate fingerprint, not domain names
-  source: code-review (E012-S01-001)
-  source_phase: code-review
-  source_ref: E012-S01-001
-  severity: Medium
-  status: scheduled
-  description: Review finding 2 follow-up. Name-based change detection was reverted because a renewal keeps the domain name, so it suppressed every restart after the first for a process lifetime. Only the 300s per-container cooldown remains. Precise filtering requires the export path to report a per-domain fingerprint/serial that restartLabeledContainers can compare. See _bmad-output/implementation-artifacts/epic-012/sprint-01/closure/review-E012-S01-001.md section 2.
-  story: E014-S01-006
-  scheduled_at: '2026-10-11T12:15:41Z'
 - key: BL-E012-013
   epic: '012'
   sprint: '01'
@@ -823,13 +776,563 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-013/sprint-02/closure/review-E013-S02-002.md
-- key: BL-E013-042
-  epic: '013'
+- key: BL-E014-003
+  epic: '014'
+  sprint: ''
+  title: 'E014-S02-005: Verification row 5 first-boot docker run uses watch mode and never exits'
+  source: arch-gate (AG-7)
+  source_phase: arch-gate
+  source_ref: AG-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/arch/arch-gate-review.md (AG-7); architect verdict in arch-gate-review-architect.md
+- key: BL-E014-004
+  epic: '014'
+  sprint: ''
+  title: 'E014-S02-005: Verification row 12 leaves a throwaway dev package on the real Gitea index (version collision risk)'
+  source: arch-gate (AG-8)
+  source_phase: arch-gate
+  source_ref: AG-8
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/arch/arch-gate-review.md (AG-8); architect verdict in arch-gate-review-architect.md
+- key: BL-E014-005
+  epic: '014'
+  sprint: ''
+  title: 'E014-S02-004: files review item m4 as open although E014-S01-010 fixes it first'
+  source: arch-gate (AG-9)
+  source_phase: arch-gate
+  source_ref: AG-9
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/arch/arch-gate-review.md (AG-9); architect verdict in arch-gate-review-architect.md
+- key: BL-E014-006
+  epic: '014'
+  sprint: ''
+  title: 'E014-S02-003: E014 pipeline-amendments ADR content list omits CI spine L405 items; check only counts headers'
+  source: arch-gate (AG-10)
+  source_phase: arch-gate
+  source_ref: AG-10
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/arch/arch-gate-review.md (AG-10); architect verdict in arch-gate-review-architect.md
+- key: BL-E014-008
+  epic: '014'
+  sprint: '01'
+  title: 'E014-S01-006: artifact index needs a thread-safety rule (lock or atomic snapshot swap) vs. deferred-restart timer reads'
+  source: arch-gate (AG-13)
+  source_phase: arch-gate
+  source_ref: AG-13
+  severity: Low
+  status: backlog
+  description: Arch-gate re-validation; see _bmad-output/implementation-artifacts/epic-014/arch/ (AG-13). Carried into the story file as a dev note.
+- key: BL-E014-009
+  epic: '014'
   sprint: '02'
-  title: Sample compose/README env var names don't match the TRAEFIK_CERTIFICATE_EXPORTER_ settings convention (RESTART_CONTAINERS, RESTARTCONTAINER) so they set nothing
-  source: story-prep
+  title: 'E014-S02-003: CI spine AD-2 step 2 (L91) and AD-16 just-install row (L265) still say plain poetry install; route ADR-0042 text'
+  source: arch-gate (AG-14)
+  source_phase: arch-gate
+  source_ref: AG-14
+  severity: Low
+  status: backlog
+  description: Arch-gate re-validation; see _bmad-output/implementation-artifacts/epic-014/arch/ (AG-14). Carried into the story file as a dev note.
+- key: BL-E014-010
+  epic: '014'
+  sprint: '01'
+  title: 'E014-S01-006: keep previous index paths for a resolver/domain whose rebuild failed, so crash-lost restarts still recover'
+  source: arch-gate (RV-1)
+  source_phase: arch-gate
+  source_ref: RV-1
+  severity: Low
+  status: backlog
+  description: Arch-gate re-validation; see _bmad-output/implementation-artifacts/epic-014/arch/ (RV-1). Carried into the story file as a dev note.
+- key: BL-E014-011
+  epic: '014'
+  sprint: '01'
+  title: 'R-03: on a filesystem that ignores chmod (CIFS, WSL drvfs) the key and .pfx never reach 0600, so every pass rewrites and reports every domain'
+  source: code-review (E014-S01-002)
+  source_phase: code-review
+  source_ref: E014-S01-002
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-002.md
+- key: BL-E014-013
+  epic: '014'
+  sprint: '01'
+  title: 'R-04: one domain held in two separate store files (per-resolver storage) with resolverinpathname off: the file processed last wins and the two can overwrite each other every pass'
+  source: code-review (E014-S01-003)
+  source_phase: code-review
+  source_ref: E014-S01-003
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-003.md R-04. The owner rule of ADR-0043 decision 6 is per store file; exportCertificates does not share it across files.
+- key: BL-E014-014
+  epic: '014'
+  sprint: '01'
+  title: "E014-S01-009 review L1: legacy/unknown-name WARNINGs carry the unset correlation_id (settings load precedes any start-up id); AC says 'under the start-up correlation_id'"
+  source: code-review (E014-S01-009)
+  source_phase: code-review
+  source_ref: E014-S01-009
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-009.md (L1). Either bind one start-up id around the settings load in app._run, or amend the AC/AD-6 text to 'before the first pass, outside any pass id' (routed in notes-E014-S01-009.md).
+- key: BL-E014-015
+  epic: '014'
+  sprint: '01'
+  title: 'E014-S01-009 review L2: a sparse list index (e.g. only ..._SETTINGS_APPRISEURLS_3) is accepted silently but confuse builds a dict, not a list'
+  source: code-review (E014-S01-009)
+  source_phase: code-review
+  source_ref: E014-S01-009
+  severity: Low
+  status: backlog
+  description: 'See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-009.md (L2). Optional names-only check: warn when the indices for one list name are not 0..n-1.'
+- key: BL-E014-016
+  epic: '014'
+  sprint: '01'
+  title: 'run-once exit code does not reflect export failures (PRD §6 #23)'
+  source: dev (E014-S01-005)
+  source_phase: dev
+  source_ref: E014-S01-005
+  severity: Low
+  status: backlog
+  description: The run-once container exits with the pass's exit code, which reflects start-up failures only (0, or 1 for a missing data path). Export failures are logged at ERROR and do not change it, so a scheduler cannot detect a failed export. Needs a failure contract across E014-S01-002/003 (which failures count; whether a partial export is a failure). Recorded in ADR-0044.
+- key: BL-E014-017
+  epic: '014'
+  sprint: '01'
+  title: Image ENV defaults (WATCHFORCHANGES/RUNATSTART=true) outrank /config/config.yaml, so the config file cannot select run-once in the container
+  source: code-review (E014-S01-005)
+  source_phase: code-review
+  source_ref: E014-S01-005
   severity: Medium
-  status: scheduled
-  description: 'Found while elaborating E013-S02-004: docker/docker-compose.yml uses TRAEFIK_CERTIFICATE_EXPORTER_RESTART_CONTAINERS and docker/README.md uses ..._SETTINGS_RESTARTCONTAINER; the confuse convention (AGENTS.md) is TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESTARTCONTAINERS. Users copying the samples get restartcontainers silently off.'
-  story: E014-S01-004
-  scheduled_at: '2026-10-10T22:27:15Z'
+  status: backlog
+  description: "docker/Dockerfile:128-129 set TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=true and _RUNATSTART=true; env outranks the config file, so 'watchforchanges: false' in /config/config.yaml is ignored in the image. Removing the ENV defaults changes behaviour for mounted configs that omit the keys (packaged default is false) — needs a maintainer decision. E014-S01-005 documents the env var as the container's run-once switch. See review-E014-S01-005.md F1."
+- key: BL-E014-018
+  epic: '014'
+  sprint: '01'
+  title: Removing the s6 'Skipping' branch drops WATCHFORCHANGES=false as a way to keep the exporter idle (release note covers it)
+  source: code-review (E014-S01-005)
+  source_phase: code-review
+  source_ref: E014-S01-005
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-005.md
+- key: BL-E014-019
+  epic: '014'
+  sprint: '01'
+  title: docker/README.md smoke command has no time bound if the container fails to leave watch mode
+  source: code-review (E014-S01-005)
+  source_phase: code-review
+  source_ref: E014-S01-005
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-005.md
+- key: BL-E014-020
+  epic: '014'
+  sprint: '01'
+  title: ADR-0040 §4 and E014-S01-006 interface text describe the artifact index as name->set[Path]; code keys it (resolverName, name) for RV-1 carry-over, and the pending state is a _Pending tuple - route the amendment via S02-003
+  source: code-review (E014-S01-006)
+  source_phase: code-review
+  source_ref: E014-S01-006
+  severity: Low
+  status: backlog
+  description: Review L2. See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-006.md; amendment text is in closure/notes-E014-S01-006.md
+- key: BL-E014-021
+  epic: '014'
+  sprint: '01'
+  title: docs/architecture.md sequence diagram still shows restartLabeledContainers(domains); now restartLabeledContainers(artifactMtime) on every pass (ADR-0045)
+  source: code-review (E014-S01-006)
+  source_phase: code-review
+  source_ref: E014-S01-006
+  severity: Low
+  status: backlog
+  description: Review L3. See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-006.md
+- key: BL-E014-022
+  epic: '014'
+  sprint: '01'
+  title: Drop python-dateutil when requires-python floor reaches 3.11 and datetime.fromisoformat parses Docker StartedAt (ADR-0045 revisit condition, AG-11)
+  source: code-review (E014-S01-006)
+  source_phase: code-review
+  source_ref: E014-S01-006
+  severity: Low
+  status: backlog
+  description: Revisit condition recorded in docs/adr/0045-restart-policy-only-on-change-defer-not-drop.md
+- key: BL-E014-023
+  epic: '014'
+  sprint: '01'
+  title: pip-audit does not audit poetry.lock entries gated by environment markers (other platforms such as pywin32/tzdata on win32; other Python minors such as exceptiongroup/tomli on 3.10)
+  source: code-review (E014-S01-007) — review F1; scope limit stated, gap open
+  source_phase: code-review
+  source_ref: E014-S01-007
+  severity: Medium
+  status: backlog
+  description: 'The venv from poetry sync --all-groups holds only packages whose PEP 508 markers match the running interpreter/platform. Options: audit the lock text when Poetry writes a pylock pip-audit --locked reads (ADR-0042 revisit), or add a 3.10 audit run at release (E014-S02-005). See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-007.md F1.'
+- key: BL-E014-024
+  epic: '014'
+  sprint: '01'
+  title: Watch-path quiet-pass line does not name its store file and can sit beside a hook run for another file in the same drain
+  source: code-review (E014-S01-010)
+  source_phase: code-review
+  source_ref: E014-S01-010
+  severity: Low
+  status: backlog
+  description: F3 in _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-010.md
+- key: BL-E014-025
+  epic: '014'
+  sprint: '01'
+  title: Hook log lines interpolate argv[0] without stripping control characters (operator-config-sourced)
+  source: code-review (E014-S01-010)
+  source_phase: code-review
+  source_ref: E014-S01-010
+  severity: Low
+  status: backlog
+  description: F5 in _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-010.md
+- key: BL-E014-026
+  epic: '014'
+  sprint: '01'
+  title: README usage block is only checked for long-option presence, not compared against --help output
+  source: code-review (E014-S01-008)
+  source_phase: code-review
+  source_ref: E014-S01-008
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-008.md
+- key: BL-E014-027
+  epic: '014'
+  sprint: '01'
+  title: Dry-run restart preview wrong when artifact mtimes unchanged
+  source: adversarial (ADV-5)
+  source_phase: adversarial
+  source_ref: ADV-5
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/adversarial-review.md
+- key: BL-E014-028
+  epic: '014'
+  sprint: '01'
+  title: DOCKER_HOST and engine exception text logged unredacted
+  source: adversarial (ADV-6)
+  source_phase: adversarial
+  source_ref: ADV-6
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/adversarial-review.md
+- key: BL-E014-029
+  epic: '014'
+  sprint: '01'
+  title: traefikresolverid lookup exact-case and wrapped-store only
+  source: adversarial (ADV-7)
+  source_phase: adversarial
+  source_ref: ADV-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/adversarial-review.md
+- key: BL-E014-030
+  epic: '014'
+  sprint: '01'
+  title: s6-no-raw-settings-env guard is case-sensitive, narrower than the rule
+  source: adversarial (ADV-8)
+  source_phase: adversarial
+  source_ref: ADV-8
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/adversarial-review.md
+- key: BL-E014-031
+  epic: '014'
+  sprint: '01'
+  title: pip-audit has no scheduled run; advisories on unchanged lock go unseen
+  source: adversarial (ADV-9)
+  source_phase: adversarial
+  source_ref: ADV-9
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/adversarial-review.md
+- key: BL-E014-032
+  epic: '014'
+  sprint: '01'
+  title: Run-once becomes a 1s respawn loop when init mode resolution fails
+  source: adversarial (ADV-10)
+  source_phase: adversarial
+  source_ref: ADV-10
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/adversarial-review.md
+- key: BL-E014-033
+  epic: '014'
+  sprint: '01'
+  title: 'Dead code: PemToPfxConverter.export_to_pkcs12 and _atomic_write_text'
+  source: clean-release (CR-1/SD-01-4)
+  source_phase: clean-release
+  source_ref: CR-1/SD-01-4
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/adversarial-review.md
+- key: BL-E014-034
+  epic: '014'
+  sprint: '01'
+  title: _resolve_log_level is dead in production (test-only caller)
+  source: clean-release (CR-2)
+  source_phase: clean-release
+  source_ref: CR-2
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/adversarial-review.md
+- key: BL-E014-035
+  epic: '014'
+  sprint: '01'
+  title: ADR-0040 names a removed writer method and a superseded recording rule
+  source: arch-drift (SD-01-3)
+  source_phase: arch-drift
+  source_ref: SD-01-3
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/arch-drift-review.md
+- key: BL-E014-036
+  epic: '014'
+  sprint: '01'
+  title: app.py repeats the LOGGING_CFGFILE env name instead of the constant
+  source: arch-drift (SD-01-5)
+  source_phase: arch-drift
+  source_ref: SD-01-5
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/arch-drift-review.md
+- key: BL-E014-037
+  epic: '014'
+  sprint: '01'
+  title: 'Restart cooldown helpers in docker.py untyped with bare type: ignore'
+  source: arch-drift (SD-01-6)
+  source_phase: arch-drift
+  source_ref: SD-01-6
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/arch-drift-review.md
+- key: BL-E014-038
+  epic: '014'
+  sprint: '01'
+  title: s6 svc run script lacks strict mode
+  source: arch-drift (SD-01-7)
+  source_phase: arch-drift
+  source_ref: SD-01-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/arch-drift-review.md
+- key: BL-E014-039
+  epic: '014'
+  sprint: '01'
+  title: Restart/deferred-restart flow has no diagram
+  source: arch-drift (SD-01-8)
+  source_phase: arch-drift
+  source_ref: SD-01-8
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/arch-drift-review.md
+- key: BL-E014-040
+  epic: '014'
+  sprint: '01'
+  title: Env invalid log level / unknown names warn while CLI exits; no ADR for the asymmetry
+  source: arch-drift (SD-01-9)
+  source_phase: arch-drift
+  source_ref: SD-01-9
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/arch-drift-review.md
+- key: BL-E014-041
+  epic: '014'
+  sprint: '01'
+  title: Unknown-setting warning points to README Usage, which lists no env names
+  source: ux-review (UX-1)
+  source_phase: ux-review
+  source_ref: UX-1
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-042
+  epic: '014'
+  sprint: '01'
+  title: Notifications/hook docs still say every pass instead of only on change
+  source: ux-review (UX-2)
+  source_phase: ux-review
+  source_ref: UX-2
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-043
+  epic: '014'
+  sprint: '01'
+  title: docker/README compose sample quotes values that become part of the value
+  source: ux-review (UX-3)
+  source_phase: ux-review
+  source_ref: UX-3
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-044
+  epic: '014'
+  sprint: '01'
+  title: Nothing-to-do warning names config keys not flags; -r help does not say run-once
+  source: ux-review (UX-4)
+  source_phase: ux-review
+  source_ref: UX-4
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-045
+  epic: '014'
+  sprint: '01'
+  title: README watch example missing line continuation drops -w
+  source: ux-review (UX-5)
+  source_phase: ux-review
+  source_ref: UX-5
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-046
+  epic: '014'
+  sprint: '01'
+  title: Scheduled run-once container can hang; docs give no scheduler timeout guard
+  source: ux-review (UX-6)
+  source_phase: ux-review
+  source_ref: UX-6
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-047
+  epic: '014'
+  sprint: '01'
+  title: 'Multiple typos: Did-you-mean lines not tied to the token they correct'
+  source: ux-review (UX-7)
+  source_phase: ux-review
+  source_ref: UX-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-048
+  epic: '014'
+  sprint: '01'
+  title: -ll case-sensitive while LOGGING_LEVEL is case-insensitive
+  source: ux-review (UX-8)
+  source_phase: ux-review
+  source_ref: UX-8
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-049
+  epic: '014'
+  sprint: '01'
+  title: argparse prefix abbreviations accepted silently
+  source: ux-review (UX-9)
+  source_phase: ux-review
+  source_ref: UX-9
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-050
+  epic: '014'
+  sprint: '01'
+  title: --restart-container singular vs restartcontainers plural
+  source: ux-review (UX-10)
+  source_phase: ux-review
+  source_ref: UX-10
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-051
+  epic: '014'
+  sprint: '01'
+  title: Unknown-setting warning wording inconsistent with legacy-setting warning
+  source: ux-review (UX-11)
+  source_phase: ux-review
+  source_ref: UX-11
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-052
+  epic: '014'
+  sprint: '01'
+  title: Help-text copy defects regenerated into README
+  source: ux-review (UX-12)
+  source_phase: ux-review
+  source_ref: UX-12
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-053
+  epic: '014'
+  sprint: '01'
+  title: s6 finish messages undocumented and on a different stream from run
+  source: ux-review (UX-13)
+  source_phase: ux-review
+  source_ref: UX-13
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-054
+  epic: '014'
+  sprint: '01'
+  title: Config-file key typos silent while env typos warn
+  source: ux-review (UX-14)
+  source_phase: ux-review
+  source_ref: UX-14
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/ux-review.md
+- key: BL-E014-055
+  epic: '014'
+  sprint: '01'
+  title: Failed or interrupted post-export hook is never retried under only-on-change
+  source: redteam (RT-1)
+  source_phase: redteam
+  source_ref: RT-1
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/redteam-report.md
+- key: BL-E014-056
+  epic: '014'
+  sprint: '01'
+  title: Partial export can restart consumers into a mismatched key/certificate pair
+  source: redteam (RT-2)
+  source_phase: redteam
+  source_ref: RT-2
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/redteam-report.md
+- key: BL-E014-057
+  epic: '014'
+  sprint: '01'
+  title: Planted cert.pfx with huge KDF iteration count stalls the exporter
+  source: redteam (RT-4)
+  source_phase: redteam
+  source_ref: RT-4
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/redteam-report.md
+- key: BL-E014-058
+  epic: '014'
+  sprint: '01'
+  title: Future mtime causes perpetual restarts; cooldown resets with the process
+  source: redteam (RT-5)
+  source_phase: redteam
+  source_ref: RT-5
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/redteam-report.md
+- key: BL-E014-059
+  epic: '014'
+  sprint: '01'
+  title: Empty pkcs12passphrase silently produces or downgrades to an unencrypted PFX
+  source: redteam (RT-7)
+  source_phase: redteam
+  source_ref: RT-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/redteam-report.md
+- key: BL-E014-060
+  epic: '014'
+  sprint: '01'
+  title: Socket-proxy guidance self-contradictory and too narrow for the SDK 7.2 client
+  source: redteam (RT-8)
+  source_phase: redteam
+  source_ref: RT-8
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/redteam-report.md

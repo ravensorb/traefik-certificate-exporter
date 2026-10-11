@@ -1,0 +1,78 @@
+key: 'E014-S01-008'
+epic: 'E014'
+sprint: 'S01'
+title: 'CLI/output hygiene: redaction, usage text, flag errors (moved from E012-S01-004)'
+classification: standard
+status: done
+updated_at: '2026-10-11T19:27:55Z'
+depends_on:
+- 'E014-S01-004'
+- 'E014-S01-006'
+- 'E014-S01-009'
+- 'E014-S01-010'
+estimate:
+  man_hours: 10.58
+  hitl_hours: 0.05
+  elapsed_hours: 0.75
+  cost: 5.91
+  model: claude-opus-5
+  fix_factor: 2.8333
+  scope_ratios:
+    man_hours: 0.6225
+    hitl_hours: 0.0541
+    elapsed_hours: 0.1315
+    tokens_k: 1.8087
+  tokens_k:
+    total: 7248
+    input: 0
+    output: 12
+    cache_write: 347
+    cache_read: 6889
+completion_evidence:
+  test_runs:
+  - command: poetry run pytest -q tests/libs/test_settings.py tests/libs/test_cli_args.py tests/test_settings_surface.py (fail-first, pre-change code)
+    exit_code: 1
+  - command: poetry run pytest -q tests/libs/test_settings.py::test_secret_list_is_redacted_per_element_keeping_scheme tests/libs/test_settings.py::test_secret_list_non_string_and_empty_elements_are_safe
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_settings.py::test_settings_dump_is_multiline_json_that_round_trips
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_settings.py::test_settings_dump_omits_raw_passphrase
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_cli_args.py::test_flag_typo_suggests_nearest_and_points_to_help tests/libs/test_cli_args.py::test_dissimilar_flag_typo_gets_help_pointer_only
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_cli_args.py::test_flag_and_env_suggestions_share_nearest_name
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_cli_args.py::test_every_value_taking_action_has_dotless_metavar tests/libs/test_cli_args.py::test_help_contains_no_settings_paths
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_cli_args.py::test_strict_parse_still_prints_help_and_exits_zero
+    exit_code: 0
+  - command: poetry run pytest -q tests/test_settings_surface.py::test_every_long_option_is_in_readme
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_cli_args.py::test_stray_positional_argument_still_exits_two
+    exit_code: 0
+  - command: poetry run traefik-certificate-exporter --dtaa-path /x 2>&1 | tail -3; test ${PIPESTATUS[0]} -eq 2
+    exit_code: 0
+  - command: "! grep -n difflib src/traefik_certificate_exporter/libs/cli_args.py; test $(COLUMNS=220 poetry run traefik-certificate-exporter --help | grep -c 'SETTINGS\\.') -eq 0 && test $(grep -c 'SETTINGS\\.' README.md) -eq 0"
+    exit_code: 0
+  - command: just check
+    exit_code: 1
+  - command: just check
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_settings.py tests/libs/test_cli_args.py tests/test_settings_surface.py
+    exit_code: 0
+  tests_passing: false
+  fix_iterations: 0
+  files_changed: 8
+actual:
+  elapsed_hours: 0.2
+  man_hours: 6
+  hitl_hours: 0
+  tokens_k:
+    total: 3948.01
+    input: 0.098
+    output: 6.997
+    cache_write: 184.842
+    cache_read: 3756.068
+  cost: 3.21
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-11T19:27:55Z'

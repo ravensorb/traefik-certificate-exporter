@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["ruamel.yaml>=0.18"]
 # ///
-# pm-status-version: 3.3.1   (machine-readable marker; `self-install` compares this across copies — keep at top)
+# pm-status-version: 3.4.2   (machine-readable marker; `self-install` compares this across copies — keep at top)
 """
 pm-status.py — deterministic, atomic, round-trip-safe writer for the l3io-pm
 sharded state tree, and the reader behind its progress report.
@@ -83,8 +83,9 @@ Subcommands
                 cost is DERIVED from tokens x rates — --cost/--cost-low/--cost-high are
                 declared but always rejected; use estimate-story/estimate-rollup instead)
                 [--confidence {low,medium,high}] [--flock]
-  set-depends-on --state-root S  (--story KEY | --epic ID)  --add KEY [--add KEY ...]
-                (appends to depends_on, the one LIST-shaped field: epic keys on an epic
+  set-depends-on --state-root S  (--story KEY | --epic ID)
+                (--add KEY [--add KEY ...] | --remove KEY [--remove KEY ...] [--force])
+                (adds to or removes from depends_on, the one LIST-shaped field: epic keys on an epic
                 node, story keys on a story node -- status-files.md §11. set-field would
                 store a list as the string "['E001']", which a reader takes for a scalar.
                 Idempotent, order preserved, all-or-nothing: every key is validated
@@ -231,7 +232,7 @@ Subcommands
                 unschedule writes an issue_unscheduled event; a story node that does
                 not parse, is not valid UTF-8 or is not a mapping exits 2 naming the
                 file, before any write)
-  dump-plan     --state-root S
+  dump-plan     --state-root S  [--pretty]
                   (the planned tree plus read-only context, as JSON. The one read interface
                    for consumers that need a plan's SHAPE: check 26 forbids any file under
                    skills/ from assembling a state path, so the reorg analyzer asks for the
@@ -332,7 +333,7 @@ except ModuleNotFoundError:  # pragma: no cover - environment guard
     )
     sys.exit(2)
 
-PM_STATUS_VERSION = "3.3.1"  # keep in sync with the top-of-file `# pm-status-version:` marker
+PM_STATUS_VERSION = "3.4.2"  # keep in sync with the top-of-file `# pm-status-version:` marker
 
 VALID_STORY_STATUS = {"backlog", "ready-for-dev", "in-progress", "review", "done", "blocked"}
 VALID_SPRINT_STATUS = {"backlog", "in-progress", "review", "done"}
@@ -4819,7 +4820,7 @@ DEPENDS_ON_KEY_RE = {"epic": EPIC_KEY_RE, "story": STORY_KEY_RE}
 
 
 def cmd_set_depends_on(args) -> int:
-    """Append epic keys to an epic's `depends_on` list.
+    """Add or remove keys on a node's `depends_on` list.
 
     `depends_on` is epic-only and list-shaped (status-files.md §11). `set-field --value` takes a
     single string, so routing a list through it would store "['E001']" as a scalar -- worse than
@@ -4829,6 +4830,21 @@ def cmd_set_depends_on(args) -> int:
     All-or-nothing: every key is validated before anything is written, because a half-applied
     dependency list is a worse artefact than an absent one -- l3io-plan topologically sorts
     on it, so a missing edge silently reorders a phase.
+
+    --remove EXISTS BECAUSE ITS ABSENCE FORCED A HAND EDIT. This verb was append-only, and
+    `set-field` refuses a list, so the only way to drop a dependency was to open epic.yaml and
+    edit it -- which the state contract forbids, and for the reason this whole script exists:
+    free-form YAML edits were dropped and malformed under parallel execution. A reorg that
+    removes the last story edge justifying `E001 depends_on E003` leaves that declaration
+    standing, and phases come from epic-level depends_on, so the two epics keep serialising
+    and the reorg's whole purpose goes unrealised. There was no command to recommend.
+
+    REMOVING A STILL-JUSTIFIED DEPENDENCY IS REFUSED. If any story under this node still
+    depends on a story under the key being removed, dropping the edge tells the planner the
+    two can run concurrently when they cannot. `--force` overrides, because an epic
+    dependency can also encode a sequencing decision no story edge expresses ("ship the API
+    before the client"), and this script cannot tell those apart -- but it can make the
+    difference deliberate.
     """
     from ruamel.yaml.comments import CommentedSeq
     from ruamel.yaml.scalarstring import SingleQuotedScalarString as SQ
@@ -4841,15 +4857,49 @@ def cmd_set_depends_on(args) -> int:
     self_key = args.epic if kind == "epic" else args.story
 
     keys = list(args.add or [])
-    if not keys:
-        _die_usage("set-depends-on needs at least one --add KEY")
-    for k in keys:
+    drops = list(getattr(args, "remove", None) or [])
+    if not keys and not drops:
+        _die_usage("set-depends-on needs at least one --add KEY or --remove KEY")
+    if keys and drops:
+        # Refused rather than ordered. Whichever order were chosen, half the readers of a
+        # later command would assume the other, and the two are trivially separable calls.
+        _die_usage("--add and --remove in one call is refused: the result would depend on an "
+                   "order nobody can see. Run them as two commands")
+    for k in keys + drops:
         if not key_re.match(k):
-            _die_usage(f"--add {k!r} is not a {kind} key (expected {key_re.pattern}); "
+            flag = "--add" if k in keys else "--remove"
+            _die_usage(f"{flag} {k!r} is not a {kind} key (expected {key_re.pattern}); "
                        f"nothing written")
+    for k in keys:
         if k == self_key:
             _die_usage(f"--add {k!r} is the node itself -- it cannot depend on itself; "
                        f"nothing written")
+
+    # The justification check runs BEFORE the lock, because it reads the whole epic tree and
+    # refusing is the common outcome on a mistaken call -- taking a write lock to then refuse
+    # would block a concurrent legitimate write for no reason.
+    if drops and kind == "epic" and not getattr(args, "force", False):
+        # Only keys actually PRESENT can be refused. Removing one that is not there is a
+        # no-op, and a no-op must not be blocked by a justification for an edge that is
+        # already gone -- a caller acting on a stale read would otherwise get an error for
+        # asking for a state the tree is already in.
+        _p = epic_file(args.state_root, canonical_epic_key(self_key))
+        _cur = []
+        if _p:
+            _, _n = load_node(_p)
+            if isinstance(_n, dict):
+                _cur = [str(e) for e in (_n.get("depends_on") or [])]
+        present = [k for k in drops if str(k) in _cur]
+        blocked = _justifying_story_edges(args.state_root, self_key, present) if present else []
+        if blocked:
+            shown = ", ".join(f"{a} -> {b}" for a, b in blocked[:5])
+            more = f" (+{len(blocked) - 5} more)" if len(blocked) > 5 else ""
+            _die_usage(f"refusing to remove {sorted({b for _a, b in blocked})} from "
+                       f"{self_key}: {len(blocked)} story dependency(ies) still cross that "
+                       f"boundary — {shown}{more}. Dropping the edge would tell the planner "
+                       f"these epics can run concurrently when they cannot. Move the stories "
+                       f"first (/l3io-plan reorg), or pass --force if this dependency is a "
+                       f"sequencing decision no story edge expresses")
 
     with _epic_write_lock(args, kind):
         y, node, path, label = _load_checked(args.state_root, args, kind)
@@ -4857,16 +4907,53 @@ def cmd_set_depends_on(args) -> int:
         if not isinstance(existing, list):
             existing = CommentedSeq()
             node["depends_on"] = existing
-        added = []
+        added, removed = [], []
         for k in keys:
             if str(k) not in [str(e) for e in existing]:
                 existing.append(SQ(k))
                 added.append(k)
+        for k in drops:
+            # Idempotent, like --add: removing a key that is not there is a no-op, not an
+            # error. A caller acting on a stale read should not have to care.
+            hits = [e for e in existing if str(e) == str(k)]
+            for h in hits:
+                existing.remove(h)
+            if hits:
+                removed.append(k)
+        # An emptied list is written as `depends_on: []` rather than dropped, so a reader
+        # sees "declared, and empty" exactly as it sees "never declared" -- both mean no
+        # dependencies, and every reader here treats a missing key and [] the same way.
         node["updated_at"] = _now_iso()
         save_node(y, node, path, getattr(args, "flock", False))
 
-    sys.stdout.write(f"OK set-depends-on {label} += {added or '(nothing new)'}\n")
+    if drops:
+        sys.stdout.write(f"OK set-depends-on {label} -= {removed or '(nothing present)'}\n")
+    else:
+        sys.stdout.write(f"OK set-depends-on {label} += {added or '(nothing new)'}\n")
     return 0
+
+
+def _justifying_story_edges(state_root: str, epic_key: str, targets: list) -> list:
+    """(story, target_epic) for every story edge crossing from epic_key into one of targets.
+
+    What makes an epic-level dependency earned: a story under this epic depending on a story
+    under that one. Zero such edges is what `plan-graph.py` reports as
+    `unneeded-cross-epic-dependency`, and what makes a removal safe.
+    """
+    want = {canonical_epic_key(t) for t in targets}
+    out = []
+    for story_key, path in iter_story_files(state_root, canonical_epic_key(epic_key)):
+        _, node = load_node(path)
+        if not isinstance(node, dict):
+            continue
+        for dep in (node.get("depends_on") or []):
+            try:
+                dep_epic, _sp, _n = parse_story_key(str(dep))
+            except ValueError:
+                continue
+            if dep_epic in want:
+                out.append((story_key, dep_epic))
+    return sorted(out)
 
 
 def cmd_import_node(args) -> int:
@@ -5989,8 +6076,48 @@ def cmd_set_field(args) -> int:
                    f"{DERIVED_NODE_FIELDS[contained]}")
 
     kind = _infer_kind(args)
+    _check_lane_value(args, kind)
     with _epic_write_lock(args, kind):
         return _set_field(args, kind)
+
+
+# A lane is a NUMBER, 1..999. Not a style choice -- it is what makes "never a person"
+# mechanical instead of hopeful. A word-shaped token cannot be screened: `sarah` and
+# `backend` are the same shape, so any regex permitting the second permits the first, and a
+# list of names to reject would be both brittle and culturally parochial. Numbering closes
+# the question by construction, and it matches the rest of the design: `lane_count` is a
+# count, and a lane is a slot in `1..lane_count`.
+_LANE_RE = re.compile(r"^[1-9][0-9]{0,2}$")
+
+
+def _check_lane_value(args, kind) -> None:
+    """Guard the `lane` field: epic-only, and never a person's name.
+
+    WHY THE FIELD IS `lane` AND NOT `owner`. `owner` attracts names — somebody commits
+    `owner: sarah` and the generic concept erodes by default rather than by decision. A lane
+    is a slot in a partition; who fills it lives in the gitignored user layer, so a human's
+    name cannot reach the repository at all. The vocabulary is the guardrail, and this
+    function is what stops the vocabulary being the ONLY guardrail.
+
+    EPIC-ONLY, because `1 epic = 1 lane` is the invariant everything else rests on: sprints
+    and stories live under their epic's directory and inherit its lane by construction. A
+    story carrying its own lane would make the lane graph a different graph from the epic
+    graph, and every cross-lane question would need its own traversal instead of relabelling
+    the epic one.
+    """
+    if getattr(args, "field", None) != "lane":
+        return
+    if kind != "epic":
+        _die_usage(f"`lane` lives on an epic node, not a {kind}. Sprints and stories inherit "
+                   f"their epic's lane from the directory they are in — one epic is one lane, "
+                   f"and a story with its own lane would break that")
+    value = str(getattr(args, "value", "") or "")
+    if not _LANE_RE.match(value):
+        _die_usage(f"lane {value!r} is not a lane number. A lane is a SLOT in a partition — "
+                   f"1, 2, 3 — never a person: who works a lane is recorded in the gitignored "
+                   f"user config, so a name cannot reach the repository. Numbering is what "
+                   f"makes that mechanical: a word-shaped token cannot be screened, because "
+                   f"`backend` and `sarah` are the same shape. Expected 1-999")
 
 
 def _set_field(args, kind) -> int:
@@ -7921,7 +8048,13 @@ def _rewrite_references(state_root: str, old_key: str, new_key: str) -> int:
         with issues_lock(open_path):
             store = IssueStore(open_path)
             hit = False
-            for lst in (store.backlog(), store.resolved()):
+            # PROPERTIES, not methods. `store.backlog()` raised
+            # `TypeError: 'CommentedSeq' object is not callable` and left the move
+            # half-applied -- the node had already been renamed and its key rewritten, so
+            # the tree kept a story at its new key with every reference still naming the
+            # old one. Every other call site in this file reads them correctly; this was
+            # the only one, and no test reached it because none created an issues.yaml.
+            for lst in (store.backlog, store.resolved):
                 for item in lst:
                     if isinstance(item, dict) and item.get("ref") == old_key:
                         item["ref"] = new_key
@@ -8176,6 +8309,10 @@ def dump_plan(state_root: str) -> dict:
             "key": epic_key,
             "status": str(enode.get("status") or ""),
             "depends_on": [str(v) for v in (enode.get("depends_on") or [])],
+            # Absent when lanes are not in use, which is the normal single-developer state.
+            # Consumers cannot read state directly (check 26), so this is the only way the
+            # partition reaches plan-graph.py.
+            "lane": str(enode["lane"]) if enode.get("lane") is not None else None,
             "estimate": _plain(enode.get("estimate")),
             "sprints": [],
         }
@@ -8225,7 +8362,17 @@ def _plain(v):
 
 
 def cmd_dump_plan(args) -> int:
-    sys.stdout.write(json.dumps(dump_plan(args.state_root), indent=2) + "\n")
+    # COMPACT, and `--pretty` when a human is reading it.
+    #
+    # Every consumer of this is a script that parses it — the reorg analyzer, the validator,
+    # the derivation, and the two plan-run advisories — and it is piped on every plan run.
+    # `indent=2` measured 16,895 B against 8,349 B compact on the same 10-epic/40-story tree:
+    # 2.09x the raw YAML it came from, versus 1.03x. Same data, half the bytes, and the only
+    # thing lost is readability for a person running it by hand, which `--pretty` restores.
+    pretty = bool(getattr(args, "pretty", False))
+    sep = None if pretty else (",", ":")
+    sys.stdout.write(json.dumps(dump_plan(args.state_root),
+                                indent=2 if pretty else None, separators=sep) + "\n")
     return 0
 
 
@@ -8987,14 +9134,20 @@ def build_parser() -> argparse.ArgumentParser:
     di.set_defaults(func=cmd_story_doc_init)
 
     sdo = sub.add_parser("set-depends-on",
-                         help="append dependency keys to an epic or story node's depends_on list")
+                         help="add or remove dependency keys on an epic or story node's depends_on list")
     sdo.add_argument("--state-root", required=True)
     sdo.add_argument("--epic")
     sdo.add_argument("--story", help="a story node's depends_on takes story keys")
     sdo.add_argument("--sprint")
-    sdo.add_argument("--add", action="append", required=True, metavar="KEY",
+    sdo.add_argument("--add", action="append", metavar="KEY",
                      help="repeatable; idempotent, order preserved. Epic keys for an epic "
                           "node, story keys for a story node")
+    sdo.add_argument("--remove", action="append", metavar="KEY",
+                     help="repeatable; idempotent. Refused while story edges still cross "
+                          "that boundary, unless --force")
+    sdo.add_argument("--force", action="store_true",
+                     help="remove even while story edges justify it — for a sequencing "
+                          "decision no story edge expresses")
     sdo.set_defaults(func=cmd_set_depends_on)
 
     imp = sub.add_parser("import-node",
@@ -9389,6 +9542,9 @@ def build_parser() -> argparse.ArgumentParser:
     dp = sub.add_parser("dump-plan",
                         help="the planned tree plus read-only context, as JSON (read-only)")
     dp.add_argument("--state-root", required=True)
+    dp.add_argument("--pretty", action="store_true",
+                    help="indent the JSON for reading by hand; the default is compact, "
+                         "which halves the bytes every consumer pipes")
     dp.set_defaults(func=cmd_dump_plan)
 
     re_ = sub.add_parser("retire-epic",

@@ -161,6 +161,7 @@ title: 'Epic 001 — Foundation'
 goal: 'Stand up the core platform'
 status: in-progress
 depends_on: []                            # epic keys; read by l3io-plan
+lane: 2                                   # OPTIONAL. 1..999. Which lane owns this epic
 estimate:                                 # ranges at epic/sprint level
   man_hours_low: 40
   man_hours_high: 60
@@ -659,6 +660,30 @@ per-node-kind path variable — every path below `{pm_state_root}` is resolved i
 `pm-status.py` from keys, never bound by a step file.
 
 ## 11. Dependency fields
+
+### `lane` — which lane owns this epic
+
+**Optional, epic-only, and a NUMBER.** Absent means lanes are not in use, which is the normal
+state for a single-developer project and must stay completely inert.
+
+`lane` partitions planned work across developers who each have their **own clone**. That is why
+it exists at all: every `flock` in `pm-status.py` guards one filesystem, and two clones share
+none, so concurrency stops being mediated by locks and becomes mediated by `git merge`. With
+each lane writing only its own `epic-{nnn}/` directory, git merges disjoint paths cleanly and
+the collision surface shrinks to four shared files.
+
+**1 epic = 1 lane**, and sprints and stories inherit it from the directory they live in — they
+never carry their own. That is the invariant the rest rests on: it makes the lane graph the
+epic graph with relabelled nodes, so every cross-lane question is answered by relabelling a
+computation that already exists rather than by a second traversal. Moving work between lanes
+therefore means moving a story between epics, which is a reorg (`/l3io-plan reorg`) and re-keys
+the story.
+
+**It is a number because a word cannot be screened.** A lane is a slot in a partition, never a
+person — who works a lane is recorded in the **gitignored** user config, so a name cannot reach
+the repository. `backend` and `sarah` are the same shape, so any pattern permitting the first
+permits the second; numbering closes that by construction. `set-field` refuses anything else,
+and refuses `lane` on a sprint or story outright.
 
 `depends_on` on an epic node (`epic.yaml`): list of epic keys that must be `status: done`
 before this epic can start. Present regardless of which status folder the epic currently

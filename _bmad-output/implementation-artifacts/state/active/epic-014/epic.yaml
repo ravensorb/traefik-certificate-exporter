@@ -1,8 +1,12 @@
+_lock:
+  session_id: l3io-pm-20261011T161302Z-43c8ef
+  claimed_at: '2026-10-11T19:28:20Z'
+  ttl_minutes: 30
 key: 'E014'
 title: Epic 014 — 0.3.0 release readiness
-goal: ''
-status: backlog
-updated_at: '2026-10-11T16:04:21Z'
+goal: 'Ship 0.3.0: make restart, PKCS12, ACME parsing and settings actually work; harden the CI supply chain and destination gating; repair the decision record; close E012; release 0.3.0 from protected tags.'
+status: in-progress
+updated_at: '2026-10-11T16:34:35Z'
 estimate:
   man_hours_low: 301.7
   man_hours_high: 330.35

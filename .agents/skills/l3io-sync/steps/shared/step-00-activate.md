@@ -236,11 +236,27 @@ fi
   When `notice` exits 1 it has already been offered for this harness; say nothing. Keying per
   harness is the point — a single global key would mean the second harness is never asked.
 - **2** — the file is not valid UTF-8, or its `l3io:begin`/`l3io:end` markers are ambiguous.
-  **Do not offer to add a block**: the file is the user's and is already in a state the
-  script refused to guess about. Print one line —
+  **Do not offer to add a block, and never repair this on your own judgement.** The script
+  refused precisely because it could not tell which marker was real, and picking one is the
+  damage it exists to prevent.
+
+  **Refusing to guess is not the same as refusing to help.** Deciding which block is right is
+  the user's; finding the markers and splicing the lines is not, and handing that back gives
+  them the easy half. So:
+
+  1. **Show the ambiguity.** Name each `l3io:begin` and `l3io:end` with its line number and a
+     few surrounding lines — "two `l3io:begin`, lines 42 and 118; the one at 42 has no
+     matching end" — so they can see what they are choosing between. For invalid UTF-8, name
+     the byte offset instead; there is nothing to choose, only to report.
+  2. **Ask which reading is right.** The one question only a human can answer.
+  3. **Make the edit yourself**, touching nothing outside the markers they resolved, and say
+     what you changed.
+
+  If they decline to choose, say so and continue — never edit on a guess, and never block the
+  run. Print one line while unresolved —
   `⚠️  {runtime} instruction file could not be read for the l3io block (invalid UTF-8 or
-  ambiguous markers); repair it by hand — see /l3io-doctor.` — and continue. This line is not
-  recorded in the notice ledger, so it repeats until the file is fixed.
+  ambiguous markers). Tell me which block is current and I will fix it.` — and continue. This
+  line is not recorded in the notice ledger, so it repeats until the file is fixed.
 - Any other exit — say nothing and continue; a documentation probe never fails the run.
 
 ## 3. Detect state layout

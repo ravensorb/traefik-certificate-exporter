@@ -1,0 +1,8 @@
+{
+  "version": "3.4.2",
+  "generated_from": "skills/<skill>/",
+  "files": {
+    "SKILL.md": "7740167c13ba881811a3f52e64e7eb0ddec00af7912166d6dadcef60c0cb786d",
+    "customize.toml": "41c73b2b641390a6495d48da43adc8b8e5c160d762de9004a4f3be0e04d50aa8"
+  }
+}

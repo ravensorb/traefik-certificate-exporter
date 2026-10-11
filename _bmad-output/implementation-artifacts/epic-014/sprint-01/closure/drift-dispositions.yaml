@@ -1,0 +1,18 @@
+review: _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/arch-drift-review.md
+findings:
+  SD-01-1:
+    severity: MAJOR (RESOLVED-IN-CODE, CLOSURE FIX ITERATION 1; SEE ADVERSARIAL-REVIEW.MD)
+    title: The diff introduces two import cycles. **Cycle 1:** `settings → legacy_settings → cli_args → docker → settings`. The comment at `settings.py:364-366` admits it. **Cycle 2:** `legacy_settings → certificate_exporter → settings → legacy_settings`. Both cycles are broken only by function-local imports. In addition, `app.py` and `legacy_settings.py` both import the private helper `certificate_exporter._sanitize_for_log`. A settings-layer module therefore reaches into the domain module for a logging utility, and `legacy_settings` imports `cli_args` (and through it the Docker SDK) only to get the constant `LOG_LEVEL_ENV`. AD-13 is not enforced mechanically, so nothing caught any of this. No ADR covers it.
+    disposition: resolved-in-code
+    spec:
+    adr:
+    commit:
+    issue:
+  SD-01-2:
+    severity: MAJOR (RESOLVED-IN-CODE, CLOSURE FIX ITERATION 1; SEE ADVERSARIAL-REVIEW.MD)
+    title: "`restartLabeledContainers` lists running containers only. `_deferredRestart`, by contrast, re-fetches with `client.containers.get(id)` and re-checks the label, the mtime rule and the floor, but never the container's state. `StartedAt` keeps its old value after a stop, so the rule still holds. Docker's restart endpoint starts a stopped container, so the following happens. A container is restarted, a second rotation lands within 300 s, a trailing restart is armed, and the operator stops the container for maintenance. When the timer fires, the exporter starts that container over the host-root-equivalent socket. The candidate-set contract from ADR-0045 §2 is applied at arming time but dropped at fire time. No test covers a container that stops between arming and firing."
+    disposition: resolved-in-code
+    spec:
+    adr:
+    commit:
+    issue:

@@ -76,7 +76,7 @@ state tree, and neither decides anything.
 
 ```bash
 uv run {pm_status} dump-plan --state-root {pm_state_root} > {reorg_run}-current.json
-uv run {skill-root}/scripts/reorg-analyze.py < {reorg_run}-current.json > {reorg_run}-findings.json
+uv run {skill-root}/scripts/plan-graph.py analyze < {reorg_run}-current.json > {reorg_run}-findings.json
 ```
 
 Read `{reorg_run}-findings.json`. Every finding carries an `id`, a `severity`, the `nodes`
@@ -94,8 +94,10 @@ Two findings change what you do next rather than merely informing it:
   This is **a question, never a retirement recommendation.** Leaf work is very often the actual
   deliverable of a plan. If you mention it at all, mention it as a question for the user.
 
-The `critical-path` finding is the primary objective (§7). Record its `elapsed_hours` and its
-node list — that is the "was" number the report compares against.
+The `cross-epic-coupling` and `unbacked-cross-epic-dependency` findings are the objective
+(§7). Record their edge counts — those are the "was" numbers the report compares against. Also
+record the `dependency-chain` finding's `hops`: it is context, not a target, because no move a
+reorg can make shortens it.
 
 ## 4. Stage 2 — write a target placement
 
@@ -141,8 +143,8 @@ allocator realises that sequence as key order. It **cannot reorder a story that 
 the only way to do that is to re-key it, churning its key, its document filename, its
 `previous_keys` and its remote-issue mapping for a purely local sequencing change. Do not
 promise the user more than this in the report. It is also not a loss worth working around:
-within-sprint order is local sequencing, while the objective (§7) is the critical path, which
-is a dependency-chain property that reordering inside a sprint cannot change.
+within-sprint order is local sequencing, while the objective (§7) is the number of
+dependencies crossing an epic boundary, which reordering inside a sprint cannot change.
 
 Propose **one** improvement with its evidence, and stop. This mode is not trying to produce
 the optimal arrangement; it is trying to produce one a user can check in about a minute.
@@ -151,8 +153,13 @@ the optimal arrangement; it is trying to produce one a user can check in about a
 
 ```bash
 uv run {skill-root}/scripts/reorg-validate.py --target {reorg_run}-target.yaml \
-  < {reorg_run}-current.json
+  --stage {reorg_stage} < {reorg_run}-current.json
 ```
+
+`{reorg_stage}` is `structure` on the first pass and `balance` on the second (§11). Under
+`balance` the validator additionally refuses any row that changes a story's **epic**, which is
+what stops the balancing pass undoing the structural one — see §11 for why that is a refusal
+rather than an instruction.
 
 Exit 0 means the target is legal. Exit 2 means it is refused **whole**, and every offending row
 is named on stderr so one pass fixes them all. A partly-applied target is neither the old plan
@@ -182,7 +189,7 @@ files other than by a story having moved between sprint lists, that is a bug in 
 not a proposal — fix it rather than reporting it.
 
 ```bash
-uv run {skill-root}/scripts/reorg-analyze.py < {reorg_run}-proposed.json > {reorg_run}-proposed-findings.json
+uv run {skill-root}/scripts/plan-graph.py analyze < {reorg_run}-proposed.json > {reorg_run}-proposed-findings.json
 ```
 
 You now have the same measurements for both shapes: `critical_path_hours`,
@@ -246,20 +253,29 @@ sprint it came from with a new key, because a vacated key is never reissued.
 Accept this plan? (y / n / moves-only)
 ```
 
-### 7.1 The objective, and the guardrail that is not the objective
+### 7.1 The objective, and the things that are reported but never pursued
 
-**Primary objective: reduce the cost of discovering a problem late** — concretely, minimise the
-critical path, the longest `depends_on` chain weighted by `elapsed_hours`. Every hour on that
-chain is an hour where nothing else can proceed, and a late discovery there invalidates the
-most downstream work. That is the number the report leads with and the one a proposal is
-argued on.
+**Primary objective: reduce the cost of discovering a problem late** — concretely, **minimise
+the dependencies that cross an epic boundary**. Each crossing edge is a serialisation point
+between units that would otherwise be independent, and it is the one thing a re-placement can
+remove: move a story into the epic its dependencies live in and the edge is gone. That is the
+number the report leads with and the one a proposal is argued on (ADR-0011).
 
-**Total effort is a guardrail, not an objective — and saying so is part of the report.** A
-reorg that cuts the critical path by moving work off it has not made the work smaller; it has
-made it more parallel. Total effort can rise slightly while the plan gets better, and that is a
-good trade, so **show the regression and name it a trade rather than hiding it or optimising it
-away**. Treating effort reduction as the goal would make retirement — deleting scope — the
-highest-scoring move available, which is precisely the wrong incentive to give this mode.
+**Report these; never aim at them.** Each is a real property of the plan that **no move this
+mode can make will change**, so presenting one as a target would promise an outcome the move
+set cannot deliver:
+
+- **Dependency chain** (in hops) — a reorg never edits `depends_on`, so no regrouping shortens
+  it. Say how serialised the work is; do not claim to reduce it.
+- **Sprint balance** — a reorg never makes work smaller. This is the balancing pass's input.
+- **Closure overhead** — the only way a reorg moves effort at all, and second-order: fewer,
+  fuller sprints pay fewer closure bands.
+
+**Effort is an impact, not a goal, and not a guardrail either** — a guardrail no legal move can
+breach is not a guardrail. Show any effort change the regrouping causes, and name it as a
+consequence rather than defending it as a trade. Treating effort reduction as the goal would
+make retirement — deleting scope — the highest-scoring move available, which is precisely the
+wrong incentive to give this mode.
 
 Four guardrails are reported when they change, each with the "was" beside it: cross-epic
 coupling (dependency edges crossing an epic boundary), sprint cohesion (overlap of `Spec:`
@@ -319,7 +335,7 @@ is a command-line argument.
 
 - **y** — apply the whole proposal.
 - **n** — apply nothing. Say so plainly and stop; rejecting is free and costs the user nothing.
-  Print the status line in §11 with `declined`.
+  Print the status line in §13 with `declined`.
 - **moves-only** — apply the reparenting and skip every retirement. Rewrite the target with
   `retire:` emptied and **re-run §5** before deriving: a target with retirements removed is a
   different target, and the one that was validated is not the one you would be applying. The
@@ -372,7 +388,7 @@ that file, not a formatting choice:
    ```
 
    It prints `OK reparent-story {old_key} -> {new_key}`. **Record every old → new pair** — the
-   report in §11 needs it, and so does the journal. Both trees move together under one lock:
+   report in §12 needs it, and so does the journal. Both trees move together under one lock:
    the state node and the story document, with the document's frontmatter `key:` rewritten and
    its optional `-slug` filename suffix preserved.
 
@@ -457,7 +473,121 @@ different rate card than the plan did.
 `l3io-execute` may be reading one. Tell the user to run `/l3io-plan` for a snapshot that
 reflects the new shape, exactly as `/l3io-plan estimate` does.
 
-## 11. Output
+## 10.1 Report the epic dependencies this reorg made unnecessary
+
+**A reorg cannot finish its own job, and this is where it says so.** Its objective is to
+remove dependencies crossing an epic boundary — but it never edits epic-level `depends_on`,
+because the target format has no field for one. So after the last story edge between two epics
+is gone, `E001 depends_on E003` is still declared, phases are built from that declaration, and
+the two epics keep running in sequence. The parallelism the whole proposal was for does not
+arrive until somebody drops the edge.
+
+Compare the `unneeded-epic-dependency` findings in §6's measurement of the proposed plan
+against §3's measurement of the plan you started with. Report only the ones **this reorg
+caused** — present now, absent before. A declaration that was already unjustified before the
+reorg is not this run's business and is noise here.
+
+For each, print the two commands, filled in:
+
+```bash
+uv run {pm_status} set-depends-on --state-root {pm_state_root} --epic {epic} --remove {target}
+```
+
+Then `/l3io-plan`, to rebuild the snapshot so execution picks up the new order.
+
+```
+↯ This reorg removed the last {n} story dependency(ies) justifying {epic} depends_on {target}.
+  Dropping it would let {epic} and {target} run in the same parallel phase.
+  Optional — the dependency may be a sequencing decision no story edge expresses.
+```
+
+**Say "optional" and mean it.** "Ship the API before the client" is a real ordering with zero
+story edges behind it, and nothing measured here can tell that from a leftover. Offer the
+command; do not run it as part of the reorg, and do not treat declining as an unfinished step.
+
+`set-depends-on --remove` refuses on its own if a story edge still crosses — so a stale
+measurement cannot cause a wrong removal. `--force` exists for the sequencing case.
+
+**If more epics end up sharing a phase, say so once.** Epics in one parallel phase are
+dispatched concurrently into a single working tree, and nothing checks that their source files
+are independent. That is a known limit worth naming at the moment parallelism increases,
+rather than at the moment two concurrent epics collide.
+
+## 11. Stage B — balance sprint load, inside the structure you just built
+
+Run this **after** §10 has recorded the structural pass, and only then. Bind `{reorg_stage}` =
+`balance` and run §3 through §10 a second time, with the differences below. Everything else —
+the target format, the validator, the derivation, the apply loop — is unchanged, because
+balancing is the same operation against a narrower move set.
+
+### 11.1 Skip it unless there is something to balance
+
+Two conditions, both checked before anything is proposed:
+
+1. **The plan carries estimates.** `sprint-imbalance` is measured from `elapsed_hours`; with
+   none recorded there is nothing to level and nothing to level it against. Say so and stop:
+
+   ```
+   Balancing skipped — no story estimates recorded yet, so sprint load cannot be compared.
+   Run /l3io-plan to estimate, then ask for a reorg again if you want the sprints levelled.
+   ```
+
+2. **The analyzer reports at least one `sprint-imbalance` finding.** No finding, no proposal —
+   do not invent a rebalance because the stage exists.
+
+Either way this is a **normal, silent-ish outcome**, never a failure. The structural pass has
+already been applied and recorded; a skipped Stage B changes nothing about that.
+
+### 11.2 The move set is narrower, and the validator enforces it
+
+A balancing target may move a story **between sprints of the same epic**. It may not:
+
+- change a story's **epic** — `reorg-validate.py --stage balance` refuses the row
+- **retire** anything — retirement is a structural decision, refused under this stage
+- violate any dependency, which the ordinary ordering rules already prevent: a dependency must
+  sit in an earlier sprint of the epic, or the same sprint at a lower `order`
+
+**Why a refusal and not an instruction.** The structural pass spends its entire proposal moving
+stories to remove dependencies that cross an epic boundary. A balancing pass free to move them
+back could undo that while legitimately levelling load, and the result would pass every other
+check, because both placements are individually legal. Making the epic change unrepresentable
+means the composition cannot regress what the first pass achieved — the same argument the
+target format makes everywhere else (§5.3.1): drift is not mitigated, it is impossible.
+
+### 11.3 The report says what it is
+
+Use the §7 report shape, with the objective line replaced — this pass is not claiming to change
+structure:
+
+```
+⚖ Balance proposal — {move_count} stories re-placed within {epic_count} epic(s)
+
+{epic}: S01 {old}→{new} hrs · S02 {old}→{new} hrs · S03 {old}→{new} hrs   (ratio {old_ratio} → {new_ratio})
+
+WHY
+  {one paragraph per epic, citing its sprint-imbalance finding}
+
+MOVES
+  {what moves between which sprints, and what stays}
+
+Cross-epic edges: unchanged — a balancing pass cannot move work between epics.
+Total effort: unchanged except for closure overhead, if the number of sprints changed.
+```
+
+State the unchanged lines explicitly. A reader who has just accepted a structural proposal needs
+to know this pass is not quietly revisiting it.
+
+### 11.4 One journal entry, not two
+
+Record **both** passes in a single `reorg-log` entry (§10), with the structural operations first
+and the balancing operations after, in the order they were applied. Undo then reverses the whole
+reorg as one act, which is what a user who says "undo that reorg" means — they are not thinking
+in stages, and an undo that reverted only the balancing half would leave a tree matching neither
+the plan they had nor the one they accepted.
+
+The `rationale` holds both reports, verbatim, in order.
+
+## 12. Output
 
 ```
 ✅ Reorg applied — {move_count} stories re-placed, {retire_count} retired
@@ -480,11 +610,11 @@ If the user declined, print instead:
 No changes made — the proposal was declined. Nothing in planned/ was written.
 ```
 
-## 12. Output status line
+## 13. Output status line
 
 ```
 Step reorg complete — moved: {move_count}, retired: {retire_count}, journal: {reorg_id}
-DONE — Reorg: {move_count} moved, {retire_count} retired, critical path {old_cp} → {new_cp} hrs
+DONE — Reorg: {move_count} moved, {retire_count} retired, cross-epic edges {old_edges} → {new_edges}
 ```
 
 Use `DONE — Reorg: declined` when the user said no, and `BLOCKED: <one-line reason>` when §5

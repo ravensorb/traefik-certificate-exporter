@@ -918,3 +918,133 @@ resolved:
   resolved_at: '2026-10-11T12:15:40Z'
   ref: BL-E013-020
   note: Same pre-commit hook pinning finding; carried by BL-E013-020 in E014-S02-001.
+- key: BL-E011-018
+  epic: '011'
+  sprint: '01'
+  title: ACME file ingestion is unbounded and unvalidated (no size cap, b64decode without validate)
+  source: redteam (RT-014)
+  source_phase: redteam
+  source_ref: RT-014
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+  story: E014-S01-003
+  scheduled_at: '2026-10-10T22:27:13Z'
+  resolution: fixed
+  resolved_at: '2026-10-11T17:21:33Z'
+  ref: E014-S01-003
+  note: 'Strict base64: every store base64 field is decoded with b64decode(validate=True); an invalid value fails only that certificate (test_invalid_base64_key_fails_only_that_certificate). No size cap, by maintainer decision 2026-10-11: rationale in the E014-S01-003 story Non-goals and docs/adr/0043-export-commit-and-reporting-contract.md decision 6 (No size limit).'
+- key: BL-E014-012
+  epic: '014'
+  sprint: '01'
+  title: 'R-04: one domain held by two resolvers with resolverinpathname off flips its files every pass (each resolver overwrites the other)'
+  source: code-review (E014-S01-002)
+  source_phase: code-review
+  source_ref: E014-S01-002
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/review-E014-S01-002.md (relates to E014-S01-003 per-resolver clause)
+  resolution: fixed
+  resolved_at: '2026-10-11T17:21:34Z'
+  ref: E014-S01-003
+  note: 'Within one store file, entries that map onto the same artifact files (two resolvers with resolverinpathname off, or a wildcard and its apex) now have one owner: the leaf that expires last, ties to store order; the others are skipped with a WARNING. An unchanged store stays quiet (test_domain_held_by_two_resolvers_is_exported_once_and_stays_quiet, test_the_entry_that_expires_last_owns_shared_files). ADR-0043 decision 6. The cross-file case is BL-E014-013.'
+- key: BL-E011-032
+  epic: '011'
+  sprint: '01'
+  title: config.sample.yml says both logging switches default off; the image ships CONSOLEONLY=true
+  source: arch-drift (SD-01-8)
+  source_phase: arch-drift
+  source_ref: SD-01-8
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md
+  story: E014-S01-004
+  scheduled_at: '2026-10-10T22:27:15Z'
+  resolution: fixed
+  resolved_at: '2026-10-11T17:37:49Z'
+  ref: E014-S01-004
+- key: BL-E013-042
+  epic: '013'
+  sprint: '02'
+  title: Sample compose/README env var names don't match the TRAEFIK_CERTIFICATE_EXPORTER_ settings convention (RESTART_CONTAINERS, RESTARTCONTAINER) so they set nothing
+  source: story-prep
+  severity: Medium
+  status: resolved
+  description: 'Found while elaborating E013-S02-004: docker/docker-compose.yml uses TRAEFIK_CERTIFICATE_EXPORTER_RESTART_CONTAINERS and docker/README.md uses ..._SETTINGS_RESTARTCONTAINER; the confuse convention (AGENTS.md) is TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESTARTCONTAINERS. Users copying the samples get restartcontainers silently off.'
+  story: E014-S01-004
+  scheduled_at: '2026-10-10T22:27:15Z'
+  resolution: fixed
+  resolved_at: '2026-10-11T17:37:49Z'
+  ref: E014-S01-004
+- key: BL-E014-001
+  epic: '014'
+  sprint: ''
+  title: 'E014-S01-009: runtime list of valid env-var names is hand-kept, not tied to the source-derived list'
+  source: arch-gate (AG-5)
+  source_phase: arch-gate
+  source_ref: AG-5
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-014/arch/arch-gate-review.md (AG-5); architect verdict in arch-gate-review-architect.md
+  resolution: fixed
+  resolved_at: '2026-10-11T17:53:31Z'
+  ref: E014-S01-009
+  note: valid_env_names() = config_default.yaml leaves (packaged registry) + SOURCE_ENV_NAMES built from the owner modules' constants; tests/test_settings_surface.py::test_runtime_valid_env_names_equal_source_scan ties it to the src literal scan; probe (os.getenv literal without constant) fails it.
+- key: BL-E014-007
+  epic: '014'
+  sprint: ''
+  title: "E014-S01-009: history scan does not inherit S01-004's vendored-tree exclusion; filter git log -p by path and add a probe"
+  source: arch-gate (AR-2)
+  source_phase: arch-gate
+  source_ref: AR-2
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-014/arch/arch-gate-review.md (AR-2); architect verdict in arch-gate-review-architect.md
+  resolution: fixed
+  resolved_at: '2026-10-11T17:53:33Z'
+  ref: E014-S01-009
+  note: '_history_names attributes git log -p hunks by their diff --git header and drops vendored files with the same _vendored_exclude_pattern() as the tree scan; unattributable headers fail. Tests: test_history_scan_drops_vendored_paths (.claude/ ignored, docs/ reported), test_history_scan_refuses_an_unattributable_header.'
+- key: BL-E012-004
+  epic: '012'
+  sprint: ''
+  title: Story E012-S01-001's restartLabeledContainers cooldown-gated skip behavior never states the cooldown window duration or where it's configured
+  source: arch-gate (l3io-arch-review)
+  source_phase: arch-gate
+  source_ref: l3io-arch-review
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-012/arch/arch-gate-review.md (consolidated MINOR findings)
+  story: E014-S01-006
+  scheduled_at: '2026-10-10T22:27:18Z'
+  resolution: fixed
+  resolved_at: '2026-10-11T18:47:43Z'
+  ref: E014-S01-006
+- key: BL-E012-008
+  epic: '012'
+  sprint: '01'
+  title: Restart filtering needs a per-domain certificate fingerprint, not domain names
+  source: code-review (E012-S01-001)
+  source_phase: code-review
+  source_ref: E012-S01-001
+  severity: Medium
+  status: resolved
+  description: Review finding 2 follow-up. Name-based change detection was reverted because a renewal keeps the domain name, so it suppressed every restart after the first for a process lifetime. Only the 300s per-container cooldown remains. Precise filtering requires the export path to report a per-domain fingerprint/serial that restartLabeledContainers can compare. See _bmad-output/implementation-artifacts/epic-012/sprint-01/closure/review-E012-S01-001.md section 2.
+  story: E014-S01-006
+  scheduled_at: '2026-10-11T12:15:41Z'
+  resolution: fixed
+  resolved_at: '2026-10-11T18:47:44Z'
+  ref: E014-S01-006
+- key: BL-E014-002
+  epic: '014'
+  sprint: ''
+  title: 'E014-S01-008: strict CLI parse does not state that stray positional arguments still exit 2'
+  source: arch-gate (AG-6)
+  source_phase: arch-gate
+  source_ref: AG-6
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-014/arch/arch-gate-review.md (AG-6); architect verdict in arch-gate-review-architect.md
+  resolution: fixed
+  resolved_at: '2026-10-11T19:27:37Z'
+  ref: E014-S01-008
+  note: parse_args_strict errors on ANY leftover token (dash or not); pinned by tests/libs/test_cli_args.py::test_stray_positional_argument_still_exits_two

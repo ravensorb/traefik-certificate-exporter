@@ -21,7 +21,14 @@ Skip to step 7 (output status line).
 
 ## 2. Identify thin stories
 
-From `{planning_artifacts}/readiness-report.md`, extract all stories with an Amber "Technical ACs" finding.
+From `{planning_artifacts}/readiness-report.md`, extract all stories with an Amber finding on
+**either** "Technical ACs" **or** "Business ACs".
+
+Both rows, not just the technical one. §4 below writes `## Business acceptance criteria` and
+`## Technical acceptance criteria` in the same pass, so a story thin in either section is work
+for this step. Matching only "Technical ACs" would let a story whose business outcome is missing
+be reported by step 02 and then elaborated by nobody — a finding that appears in every readiness
+report and never clears, which is worse than not having checked.
 
 That set includes stories whose document **does not exist yet** — step 02 grades an absent document Amber precisely so it reaches this step, because §4 below is the only place that creates one. Do not filter them out for having no file to read: a missing file is the input §4 is written for, not a malformed finding.
 

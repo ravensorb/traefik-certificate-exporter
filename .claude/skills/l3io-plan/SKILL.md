@@ -61,6 +61,7 @@ and carries no procedure.
 | `plan` (or no argument) | the full-plan step list below | registered | the default: readiness → elaboration → graph → estimate → snapshot |
 | `estimate` | `steps/shared/step-estimate.md` | registered | re-estimate only; optional `E{nnn}` or `E{nnn}-S{nn}` scope |
 | `reorg` | `steps/reorg/step-reorg.md` | registered | propose, confirm and apply a better plan shape — writes planned work only |
+| `lanes` | `steps/lanes/step-lanes.md` | registered | who owns what when several developers share one plan; inert unless `lane_count` > 1 |
 
 **Undo has no keyword, by design.** A user asks for it in prose — "undo that reorg" — and the
 agent resolves which journal entry they mean. Load `steps/reorg/step-reorg-undo.md` on such a
@@ -73,7 +74,7 @@ Bind `{scope}` = `all` before loading step-estimate.
 ```
 {skill-root}/steps/plan/step-backlog-intake.md         ← offers backlog → story promotion; never automatic
 {skill-root}/steps/plan/step-02-readiness-check.md
-{skill-root}/steps/plan/step-03-story-elaboration.md   ← skipped if work_type is DOCS or CONFIG
+{skill-root}/steps/plan/step-03-story-elaboration.md   ← no-op when readiness is green
 {skill-root}/steps/plan/step-04-load-state.md
 {skill-root}/steps/plan/step-05-dependency-graph.md
 {skill-root}/steps/shared/step-estimate.md
@@ -129,3 +130,14 @@ is archived with its reason recorded, and the whole reorg is journaled so it can
 Like estimate mode, reorg writes state and **must not touch any plan snapshot** — snapshots
 are immutable once written. Tell the user to run `/l3io-plan` for a snapshot that reflects the
 new shape.
+
+**Lanes mode** (arg starts with `lanes`):
+
+```
+{skill-root}/steps/lanes/step-lanes.md
+```
+
+Shows who owns which epics when several developers work one plan, proposes a partition when
+`{lane_count}` is set above 1 and none has been made, and carries the protocol that keeps two
+clones from colliding. **Completely inert when `{lane_count}` is absent or 1** — a
+single-developer project must not be able to tell this mode exists.
