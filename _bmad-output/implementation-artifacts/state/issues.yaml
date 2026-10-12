@@ -1478,7 +1478,7 @@ backlog:
   source: live-host-test (rwusdckrls6-2026-10-12)
   source_phase: live-host-test
   source_ref: rwusdckrls6-2026-10-12
-  severity: Low
+  severity: Medium
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
 - key: BL-E014-107

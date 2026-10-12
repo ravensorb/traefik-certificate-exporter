@@ -1436,3 +1436,17 @@ resolved:
   resolved_at: '2026-10-12T03:44:17Z'
   ref: 3880faf60b4313cb96e027a8b202cacd1bd14328
   note: 'Sprint 02 closure: priority=1000 on the image-version raw tag in release.yaml and dev.yaml, enforced by the workflows-version-label-priority pygrep hook. act release dry run (throwaway clone, local registry): org.opencontainers.image.version=0.3.0 on amd64+arm64; tags 0.3.0, 0.3, latest; no :0. Evidence: epic-014/sprint-02/closure/release-0.3.0-evidence.md (BL-E014-075 fix section).'
+- key: BL-E014-078
+  epic: '014'
+  sprint: '02'
+  title: latest (and X.Y) can move backwards on an older or re-run tag; guard is prose only
+  source: adversarial (AR-3)
+  source_phase: adversarial
+  source_ref: AR-3
+  severity: Medium
+  status: resolved
+  description: Also redteam RT-4 (Low). Gate type=raw,value=latest on the tag being the highest v-tag; release-workflow design change deferred to after 0.3.0. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/adversarial-review.md.
+  resolution: fixed
+  resolved_at: '2026-10-12T10:25:05Z'
+  ref: c7394e2
+  note: latest gated on highest vX.Y.Z tag; X.Y re-run caveat remains documented (AD-14).
