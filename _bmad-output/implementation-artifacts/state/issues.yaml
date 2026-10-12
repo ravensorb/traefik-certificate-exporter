@@ -3,7 +3,7 @@ next:
   '011': 42
   '012': 14
   '013': 44
-  '014': 105
+  '014': 108
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -1461,3 +1461,33 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/local-release-test-2026-10-12.md; CI images unaffected (workflows set labels).
+- key: BL-E014-105
+  epic: '014'
+  sprint: '02'
+  title: 'Watch mode ignores stores replaced by atomic rename (write temp + rename): AcmeCertificateFileHandler handles on_created/on_modified only, no on_moved; Traefik writes in place so production is unaffected, but restores/tools that rename are missed'
+  source: live-host-test (rwusdckrls6-2026-10-12)
+  source_phase: live-host-test
+  source_ref: rwusdckrls6-2026-10-12
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
+- key: BL-E014-106
+  epic: '014'
+  sprint: '02'
+  title: 'Export pass costs ~1-1.5 s per certificate (74 certs: 74 s first pass, 108 s unchanged pass; a one-domain change re-processes its whole store file, ~36 s for 22 entries); profile PKCS12 build/compare'
+  source: live-host-test (rwusdckrls6-2026-10-12)
+  source_phase: live-host-test
+  source_ref: rwusdckrls6-2026-10-12
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
+- key: BL-E014-107
+  epic: '014'
+  sprint: '02'
+  title: Legacy detection misses pre-confuse env names (TRAEFIK_RESOLVERID, TRAEFIK_FILESPEC, TRAEFIK_RESOLVERID_INOUTPUTPATHNAME, ...); production rwusdckrls6 still sets TRAEFIK_RESOLVERID_INOUTPUTPATHNAME=1 and gets no warning
+  source: live-host-test (rwusdckrls6-2026-10-12)
+  source_phase: live-host-test
+  source_ref: rwusdckrls6-2026-10-12
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.

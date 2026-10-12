@@ -1124,3 +1124,6 @@
 {"agent": "l3io-pm-closure", "epic": "E014", "event": "dispatch_close", "session": "l3io-pm-20261011T161302Z-43c8ef", "sprint": "S02", "ts": "2026-10-12T03:44:45Z"}
 {"cause": "cli", "epic": "014", "event": "issue_opened", "key": "BL-E014-104", "session": null, "severity": "Low", "ts": "2026-10-12T10:25:04Z"}
 {"cause": "cli", "epic": "014", "event": "issue_resolved", "key": "BL-E014-078", "ref": "c7394e2", "resolution": "fixed", "session": "l3io-pm-20261011T161302Z-43c8ef", "ts": "2026-10-12T10:25:06Z"}
+{"cause": "cli", "epic": "014", "event": "issue_opened", "key": "BL-E014-105", "session": null, "severity": "Medium", "ts": "2026-10-12T16:33:52Z"}
+{"cause": "cli", "epic": "014", "event": "issue_opened", "key": "BL-E014-106", "session": null, "severity": "Low", "ts": "2026-10-12T16:33:53Z"}
+{"cause": "cli", "epic": "014", "event": "issue_opened", "key": "BL-E014-107", "session": null, "severity": "Low", "ts": "2026-10-12T16:33:54Z"}
