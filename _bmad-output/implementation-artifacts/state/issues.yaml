@@ -1201,16 +1201,6 @@ backlog:
   severity: Medium
   status: backlog
   description: 'Deferred from closure fix-in-place: making the partial warning fail release.yaml contradicts CI AD-9 (Destination configuration always exits 0, ADOPTED); needs a maintainer decision and an ADR amendment. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/adversarial-review.md.'
-- key: BL-E014-078
-  epic: '014'
-  sprint: '02'
-  title: latest (and X.Y) can move backwards on an older or re-run tag; guard is prose only
-  source: adversarial (AR-3)
-  source_phase: adversarial
-  source_ref: AR-3
-  severity: Medium
-  status: backlog
-  description: Also redteam RT-4 (Low). Gate type=raw,value=latest on the tag being the highest v-tag; release-workflow design change deferred to after 0.3.0. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/adversarial-review.md.
 - key: BL-E014-079
   epic: '014'
   sprint: '02'
