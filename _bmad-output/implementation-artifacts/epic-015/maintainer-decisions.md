@@ -13,38 +13,9 @@ Status legend: **open** = needs an answer; the story proceeds on the recommendat
 
 ## Product (sprint S01)
 
-### MD-01 — Root exporter and an untrusted config file: refuse or warn? (E015-S01-001 AC 4)
-- **Question:** when the exporter runs as root and a config/.env file it loads (or that file's directory) is not owned by root or is world-writable, what happens?
-- **Options:** (a) refuse: one ERROR, exit 1; (b) WARNING only; (c) refuse only when `postexportcommand` is set.
-- **Recommendation:** (a). A warning leaves RT-1's escalation open; (c) misses `.env` files that set the command through the environment.
-- **Story assumes:** (a) for not-root-owned or world-writable (sticky directories excepted); group-writable stays the existing WARNING.
-- **Status:** open. **Answer:**
+### MD-01 … MD-05 — WITHDRAWN (2026-10-12)
 
-### MD-02 — Also take `/app` and `/defaults` back to root? (E015-S01-001 AC 1–2)
-- **Options:** `/config` only; all three.
-- **Recommendation:** all three. Owning `/app` lets the account swap the venv that root runs on hosts with overlay `redirect_dir=on` (RT-1 "Related"); nothing in the image needs `abc` to own any of them (research §1).
-- **Story assumes:** all three.
-- **Status:** open. **Answer:**
-
-### MD-03 — Operators who edit `/config/config.yaml` as the PUID user on the host (E015-S01-001)
-- **Question:** after 0.3.1 the bind-mounted `/config` directory and `config.yaml` become `root:root` without group/other write. Operators lose PUID-owned editing.
-- **Options:** (a) accept and document (edit with `sudo`, or override through `TRAEFIK_CERTIFICATE_EXPORTER_*` env vars); (b) refuse PUID-owned files without changing their owner (every upgrade breaks); (c) keep PUID ownership (leaves the hole).
-- **Recommendation:** (a), with automatic take-back on first start and one INFO line per changed path, plus a release note and an upgrade note.
-- **Story assumes:** (a).
-- **Status:** open. **Answer:**
-
-### MD-04 — Neutralise the base image's three `lsiown` lines at image build? (E015-S01-001 AC 1)
-- **Options:** (a) yes, with a build-time count assertion and `bash -n` (a changed base image fails the build loudly); (b) no, take back in our init only and accept the per-boot race between `init-adduser` and our init.
-- **Recommendation:** (a). Revisit when LinuxServer ships a supported opt-out that keeps PUID/PGID.
-- **Cost accepted:** a project-owned edit of a base-image file; base-image bump PRs fail when upstream changes those lines.
-- **Story assumes:** (a).
-- **Status:** open. **Answer:**
-
-### MD-05 — Refusal scope includes confuse's packaged default and user config (E015-S01-001 AC 4–5)
-- **Question:** a PyPI install run as root over a venv owned by another user would be refused at start.
-- **Recommendation:** include them: the checked set is derived from what the loader actually reads (global rule 4); that other user already controls the code root runs.
-- **Story assumes:** included.
-- **Status:** open. **Answer:**
+Withdrawn by the maintainer constraint for E015-S01-001, 2026-10-12, verbatim: **"for the root fix -- do NOT break lsio and the way they do things"**. The withdrawn recommendations were: refuse a non-root-owned config in root mode (MD-01); take `/app` and `/defaults` back to root (MD-02); take `/config` and `config.yaml` back to root, ending PUID editing (MD-03); neutralise the base image's `lsiown` lines at build (MD-04); extend the ownership refusal to confuse's default/user config (MD-05). `/config` stays owned by `abc` (PUID/PGID), the LinuxServer init is untouched, and host operators keep editing `config.yaml` as their PUID user. Replaced by MD-19 … MD-23 (research §1).
 
 ### MD-06 — Upgrade from 0.3.0: how is the first fingerprint sidecar created? (E015-S01-002)
 - **Options:** (a) verify each existing `.pfx` once by content (slow path, ~0.6 s per RSA-4096 `.pfx`) and write only the sidecar; (b) rebuild every `.pfx` (every labelled container restarts once and the hook fires for every domain).
@@ -72,6 +43,36 @@ Status legend: **open** = needs an answer; the story proceeds on the recommendat
 ### MD-09 — Warn only, or honour old names as aliases? (E015-S01-004 D-2)
 - **Recommendation:** warn and ignore (the existing legacy policy). An alias is a compatibility contract and would need an ADR. Production is unaffected: `resolverinpathname` already defaults to true.
 - **Story assumes:** warn and ignore.
+- **Status:** open. **Answer:**
+
+### MD-19 — How RT-1 is closed without breaking LinuxServer conventions (E015-S01-001)
+- **Options:** (a) run the post-export hook as `abc` even when the exporter is root (`subprocess.run(user=)`, `s6-setuidgid` or `setpriv`, all available); (b) when running as root, take the root-sensitive settings from the environment/CLI only and ignore their values from `config.yaml`, the confuse user config and `.env` files; (c) split a root-only reader from an `abc` worker.
+- **Recommendation:** (b). It closes the reproduced attack (the RT-1 payload's hook comes from `config.yaml`, so root ignores it) without touching LSIO init or ownership. (a) breaks root hooks that must read the `0600 root` keys or the Docker socket, and a root opt-in would still have to come from the environment; (c) has no LSIO precedent for a single app (swag runs fail2ban as root from `/config`-seeded config) and needs new IPC plumbing.
+- **Story assumes:** (b), with a declared trust class for every setting in `config_default.yaml` (`ROOT_SETTING_TRUST`), plus tests that every key is classified, every file the loader opens is covered, and the hook is the package's only process-spawn site; an image test replays RT-1.
+- **Status:** open. **Answer:**
+
+### MD-20 — What happens to a file-sourced root-sensitive value in root mode? (E015-S01-001)
+- **Options:** (a) ignore it, fall back to the next non-file source, log one ERROR naming setting and file (never the value), keep exporting; (b) exit 1.
+- **Recommendation:** (a): certificates keep flowing, the ERROR repeats every start, and an upgrade does not crash-loop.
+- **Story assumes:** (a).
+- **Status:** open. **Answer:**
+
+### MD-21 — Which settings are environment-only when running as root? (E015-S01-001)
+- **Options:** (a) `postexportcommand` and `outputpath` only; (b) also `restartcontainers`, `appriseurls`, `datapath`.
+- **Recommendation:** (a). Root + the Docker socket is host-root, but `docker.py` only pings, lists by label, gets and restarts labelled containers, with the endpoint from `DOCKER_HOST` only; so a file-set `restartcontainers: true` gains at most restarts of containers carrying the restart label. Apprise loads no plugins (`plugin_paths` empty) and reads no local attachment; `datapath`/`filespec` are only read. The image `ENV` already pins `outputpath=/certs`.
+- **Story assumes:** (a); E015-S01-002's new `validatekeys` is classified any-source (the classification test will fail S01-002 until it is added — intended).
+- **Status:** open. **Answer:**
+
+### MD-22 — Opt-in for a hook that must run as root (E015-S01-001)
+- **Options:** (a) setting the hook in the environment (or CLI) is itself the opt-in; it runs with the exporter's uid; (b) a new `…POSTEXPORTRUNASROOT` flag; (c) default the hook to `abc`.
+- **Recommendation:** (a), no new flag. Upgrade note: root-mode users with the hook in `config.yaml` must move it to the container `environment:`.
+- **Story assumes:** (a).
+- **Status:** open. **Answer:**
+
+### MD-23 — Adjacent gaps found during the redesign: venv under `abc`-owned `/app`; root-owned seeded `config.yaml`
+- **Options:** (a) fix in E015-S01-001; (b) separate backlog items.
+- **Recommendation:** (b), both outside RT-1's reproduced path and both touching image layout: BL-E015-002 (Medium: move the venv to `/lsiopy` as LSIO Python images do; renaming `/app/.venv` as `abc` is blocked today only by overlay2 `EXDEV`) and BL-E015-003 (Low: seed `config.yaml` as `abc:abc` per LSIO convention so PUID in-place editors work). Consider scheduling BL-E015-002 into 0.3.1 if the maintainer wants the `/app` path closed before release.
+- **Story assumes:** (b); both are non-goals of E015-S01-001.
 - **Status:** open. **Answer:**
 
 ## Release pipeline (sprint S02)

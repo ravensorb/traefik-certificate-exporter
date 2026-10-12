@@ -1178,3 +1178,5 @@
 {"agent": "l3io-story-enrich", "epic": "E015", "event": "dispatch_open", "session": "l3io-plan-20261012T213915Z-718702", "ts": "2026-10-12T21:42:39Z"}
 {"agent": "l3io-story-enrich", "epic": "E015", "event": "dispatch_close", "session": "l3io-plan-20261012T213915Z-718702", "ts": "2026-10-12T22:09:25Z"}
 {"cause": "cli", "epic": "015", "event": "issue_opened", "key": "BL-E015-001", "session": "l3io-plan-20261012T213915Z-718702", "severity": "Low", "ts": "2026-10-12T22:12:40Z"}
+{"cause": "cli", "epic": "015", "event": "issue_opened", "key": "BL-E015-002", "session": "l3io-plan-20261012T213915Z-718702", "severity": "Medium", "ts": "2026-10-12T22:38:29Z"}
+{"cause": "cli", "epic": "015", "event": "issue_opened", "key": "BL-E015-003", "session": "l3io-plan-20261012T213915Z-718702", "severity": "Low", "ts": "2026-10-12T22:38:30Z"}

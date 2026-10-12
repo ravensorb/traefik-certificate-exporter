@@ -4,7 +4,7 @@ next:
   '012': 14
   '013': 45
   '014': 123
-  '015': 2
+  '015': 4
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -1672,3 +1672,23 @@ backlog:
   severity: Low
   status: backlog
   description: Found while elaborating E015-S01-001 (readlink /proc/<pid>/cwd on 0.3.0). Out of scope there (non-goal). See _bmad-output/planning-artifacts/research/research-2026-10-12-release-0.3.1.md section 1.
+- key: BL-E015-002
+  epic: '015'
+  sprint: '01'
+  title: Image venv lives under the abc-owned /app (base init-adduser lsiown); root mode executes it. Renaming /app/.venv as abc was blocked only by overlay2 EXDEV, so the boundary depends on the storage driver; LSIO Python images put the venv at /lsiopy
+  source: planning (E015-S01-001)
+  source_phase: planning
+  source_ref: E015-S01-001
+  severity: Medium
+  status: backlog
+  description: 'Found re-elaborating E015-S01-001 under the 2026-10-12 LSIO constraint (no change to /app ownership). Candidate fix: build the venv at /lsiopy as LSIO images do (linuxserver/docker-bazarr, docker-sabnzbd). Research brief research-2026-10-12-release-0.3.1.md section 1; maintainer-decisions MD-23.'
+- key: BL-E015-003
+  epic: '015'
+  sprint: '01'
+  title: Seeded /config/config.yaml is 0:0 0644, so the PUID user cannot edit it in place (nano etc.); LSIO convention is abc-owned seeded config (lsiown abc:abc)
+  source: planning (E015-S01-001)
+  source_phase: planning
+  source_ref: E015-S01-001
+  severity: Low
+  status: backlog
+  description: Found re-elaborating E015-S01-001 under the 2026-10-12 LSIO constraint (operators keep editing config.yaml as PUID). Rename-based editors work today; in-place editors fail. Harmless to hand to abc once E015-S01-001's root-mode env-only rule lands. maintainer-decisions MD-23.

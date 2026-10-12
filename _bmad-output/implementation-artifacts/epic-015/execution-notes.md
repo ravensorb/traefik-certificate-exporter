@@ -12,7 +12,7 @@ out wrong, record it in your story's notes file and keep going.
 - CI/CD architecture: `_bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md`
 - Decisions: `docs/adr/` (0001–0048 at planning time)
 - Verified library/platform facts for this epic: `_bmad-output/planning-artifacts/research/research-2026-10-12-release-0.3.1.md` (§1–§8, one per story); the 0.3.0 brief `research-2026-10-10-release-0.3.0.md` still holds for what it covers.
-- Open maintainer decisions and the defaults each story proceeds on: `_bmad-output/implementation-artifacts/epic-015/maintainer-decisions.md` (MD-01 … MD-18).
+- Open maintainer decisions and the defaults each story proceeds on: `_bmad-output/implementation-artifacts/epic-015/maintainer-decisions.md` (MD-06 … MD-23; MD-01 … MD-05 withdrawn).
 
 ## Toolchain on this host (re-verified 2026-10-12)
 
@@ -194,5 +194,5 @@ per run, recorded in the story's notes.
 ## Maintainer approvals recorded at planning (2026-10-12)
 
 - BL-E014-106 scope (S01-002) as recorded in `state/events.jsonl` (2026-10-12 note): see
-  `maintainer-decisions.md` header. Every other open decision is MD-01 … MD-18 there; stories
+  `maintainer-decisions.md` header. Every other open decision is MD-06 … MD-23 there (MD-01 … MD-05 withdrawn by the LSIO constraint); stories
   proceed on the recommendations until answered.

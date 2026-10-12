@@ -11,7 +11,7 @@ Enricher: `l3io-story-enrich` (general subagents, foreground), 4 batches run in 
 
 | Story | Result | Notes |
 |-------|--------|-------|
-| E015-S01-001 | ✅ Elaborated | 10 ACs, 12 verification rows; build-time neutralising of base `lsiown` lines + init take-back + root-mode loader refusal + image test attacking the scope; new ADR + ADR-0030 amendment; MD-01..05 |
+| E015-S01-001 | ✅ Elaborated (re-elaborated 2026-10-12 under the LSIO constraint) | root mode takes `postexportcommand` and `outputpath` from environment/CLI only; `ROOT_SETTING_TRUST` classification + file-source + spawn-site guards; RT-1 replay image test; `/config` stays PUID-owned (regression row); new ADR + ADR-0030 amendment; MD-19..23 (MD-01..05 withdrawn) |
 | E015-S01-002 | ✅ Elaborated | 18 ACs, 15 rows; `settings.validatekeys`, lazy key load, `.pfx` fingerprint sidecar, verify-once upgrade; new ADR + ADR-0043 amendment; MD-06..07 |
 | E015-S01-003 | ✅ Elaborated | 10 ACs, 7 rows; `on_moved` with destination re-check (watchdog dispatches on src OR dest), real inotify + polling observer tests |
 | E015-S01-004 | ✅ Elaborated | 8 ACs, 8 rows; 11 historical names derived from git history (8 unprefixed); reclassified simple → standard; MD-08..09 |

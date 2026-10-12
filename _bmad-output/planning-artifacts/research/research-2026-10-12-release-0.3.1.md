@@ -2,13 +2,14 @@
 
 - **Date:** 2026-10-12
 - **Repository:** traefik-certificate-exporter @ `8e54307` (`main`)
+- **Revision:** §1 rewritten 2026-10-12 after the maintainer's LSIO constraint (see §1 header).
 - **Inputs:** BL-E014-105, -106, -107, -108, -111 (spec proposal AD-1), -112 (spec proposal AD-2), -119 (red-team RT-1), -120 (RT-2); `_bmad-output/implementation-artifacts/epic-014/epic-closure/` (redteam-report.md, spec-proposals/); `epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md`.
 - **Method:** every fact below was checked on 2026-10-12 against a primary source: an upstream repository at a named ref (`gh api`), PyPI JSON, official documentation, the installed package in the project `.venv` (file:line cited), the digest-pinned base image or released image (read with `docker create` + `docker cp` / `docker run`), or a local probe. Probe files lived under `/tmp` and were deleted; probe containers were removed. No repository source was modified.
 - **Assumption recorded:** where a section says "Recommended", the brief makes the choice so planning can proceed. Each choice that needs the maintainer is listed in `_bmad-output/implementation-artifacts/epic-015/maintainer-decisions.md`. Nothing here is an ADR.
 
 | § | Topic | Story |
 |---|---|---|
-| 1 | LinuxServer base image init and `/config` ownership | E015-S01-001 |
+| 1 | LinuxServer conventions and the root boundary (revised 2026-10-12 under the LSIO constraint) | E015-S01-001 |
 | 2 | cryptography: RSA key validation cost and PKCS#12 change detection | E015-S01-002 |
 | 3 | watchdog moved events | E015-S01-003 |
 | 4 | Historical `TRAEFIK_*` / pre-confuse environment names | E015-S01-004 |
@@ -19,36 +20,50 @@
 
 ---
 
-## 1. LinuxServer base image init and /config ownership (E015-S01-001)
+## 1. LinuxServer conventions and the root boundary (E015-S01-001)
+
+**Maintainer constraint (2026-10-12), verbatim:** "for the root fix -- do NOT break lsio and the way they do things". `/config` stays `abc`-owned (PUID/PGID), the base image's `lsiown` lines and init scripts are not disabled, patched or worked around, and host operators keep editing `config.yaml` as their PUID user. The first version of this section recommended taking `/config`, `/app`, `/defaults` back to root, neutralising `lsiown` at build, and refusing non-root-owned config; that recommendation is **withdrawn** (maintainer-decisions MD-01 … MD-05).
 
 | Fact | Source |
 |---|---|
-| The base image is `ghcr.io/linuxserver/baseimage-alpine:3.24@sha256:d2deff7a9aff1388bd79ded33a4efda6bd4b26358f9234a23deccba724738fea`, label version `4bf86442-ls13`, revision `f6b732b1b63eb886310b46f05087f7c765affc3d`. | `docker/Dockerfile:6`; `docker inspect` of that digest |
-| `init-adduser/run:53-57` runs `lsiown abc:abc /app`, `/config` and `/defaults` unless `LSIO_READ_ONLY_FS` or `LSIO_NON_ROOT_USER` is set. | `docker create <digest>` + `docker cp /etc/s6-overlay/s6-rc.d`; same text at github.com/linuxserver/docker-baseimage-alpine@f6b732b1 `root/etc/s6-overlay/s6-rc.d/init-adduser/run` |
-| The same two variables also skip `usermod`/`groupmod`, so PUID/PGID are not applied (`:7-15`). | same file |
-| `lsiown` without `-R` only changes the named directories, not their contents (`find <p> -maxdepth 0 ! -xtype l … -exec chown`). | `/usr/bin/lsiown:30` in the image |
-| Start-up order: `init-migrations → init-adduser → init-device-perms → init-os-end → init-config → init-traefik-certificate-exporter-config` (ours) `→ init-config-end → init-mods… → init-custom-files → init-services → svc`. Our init always runs after the chown; Docker mods and custom init scripts run after ours. | `dependencies.d` in the image; `docker/root/etc/s6-overlay/s6-rc.d/init-traefik-certificate-exporter-config/dependencies.d/init-config` |
-| The chown is reapplied on every container start: after `chown 0:0` on all three and `docker restart`, they were `1000:1000` again. | local probe, `ravensorb/traefik-certificate-exporter:0.3.0` (`sha256:e3be04980b69…`), `PUID=1000` |
-| On a booted 0.3.0 container, `/config`, `/app` and `/defaults` are `1000:1000`, while `/config/config.yaml` is `0:0`. | same probe, `stat` / `ls -lan` |
-| The exporter service runs as root (root mode) and its working directory is `/run/s6-rc:s6-rc-init:…/servicedirs/svc-traefik-certificate-exporter`, not `/config`. | same probe, `readlink /proc/<pid>/cwd` |
-| The image has no `/migrations` and no `/defaults/crontabs`, so the base `init-crontab-config` import of `/config/crontabs/root` is inert. | `docker run --entrypoint sh <base digest> -c 'ls /defaults …'`; 0.3.0 probe |
-| `S6_BEHAVIOUR_IF_STAGE2_FAILS` is unset in the base image; the s6-overlay default 0 means "Continue silently even if a script has failed", so a failing init does not stop the container. | `docker inspect` env; github.com/just-containers/s6-overlay README |
-| In read-only and non-root operation "The PUID & PGID variables will not have any effect"; in non-root mode operators "manually manage the permissions of any mounted volumes". | https://docs.linuxserver.io/misc/read-only/, https://docs.linuxserver.io/misc/non-root/ |
-| No application code needs `abc` to own or write `/config`: init seeds the sample as root, and run state lives in `/run/traefik-certificate-exporter`. | `init-traefik-certificate-exporter-config/run:23-49`; 0.3.0 probe |
+| Base `ghcr.io/linuxserver/baseimage-alpine:3.24@sha256:d2deff7a9aff1388bd79ded33a4efda6bd4b26358f9234a23deccba724738fea`, label `4bf86442-ls13`, revision `f6b732b1`. | `docker/Dockerfile:6`; `docker inspect traefik-certificate-exporter:local` |
+| `init-adduser/run` runs `lsiown abc:abc /app`, `/config` and `/defaults` on every boot unless `LSIO_READ_ONLY_FS` or `LSIO_NON_ROOT_USER` is set. | `linuxserver/docker-baseimage-alpine@f6b732b1:root/etc/s6-overlay/s6-rc.d/init-adduser/run:54-56` (`gh api …?ref=3.24`); image `:53-57` |
+| `lsiown` without `-R` is `find -maxdepth 0 … -exec chown`: it changes the directory, not its contents. | image `/usr/bin/lsiown:30` |
+| s6 order: init-adduser → … → init-config → init-traefik-certificate-exporter-config → init-config-end → mods → custom files → svc. Oneshots re-run on every start; the chown is re-applied on every restart. | image `dependencies.d`; 0.3.0 probe |
+| Booted with `PUID=1000`: `/config`, `/app`, `/defaults` are `1000:1000 755`; the seeded `config.yaml` is `0:0 644`; uid 1000 can replace it by rename (in-place editors fail). | `docker run -e PUID=1000 …:0.3.0`, `docker exec stat` (2026-10-12) |
+| RT-1 reproduces on the current `:local` image: a uid-1000 rename of `config.yaml` carrying `restartcontainers: true` + `postexportcommand` made the next boot's hook write `uid=0(root)`. | manual replay 2026-10-12 |
+| The service working directory is its s6 service dir; init's `python -` does not import a planted `/config/glob.py` or `tempfile.py`. | `/proc/<pid>/cwd`; planted-module probe with restart (2026-10-12) |
+| As `abc`, `os.rename('/app/.venv', …)` fails with `EXDEV` on overlay2; creating new entries in `/app` succeeds. (Filed as BL-E015-002.) | `docker exec -u 1000:1000 … python -c os.rename` (2026-10-12) |
+| `/usr/bin/s6-setuidgid` (→ `/command/s6-setuidgid`) and `/bin/setpriv` are present in the image; its Python is 3.14.8. | `docker exec … command -v` |
+| `subprocess.Popen` accepts `user`/`group`/`extra_groups` (Python 3.9+); the project floor is `>=3.10`. | `inspect.signature`; `pyproject.toml:15` |
+| confuse 2.3.0 `ConfigView.resolve()` yields each value with the source that supplied it (and whether it is the packaged default); its YAML loader subclasses `SafeLoader`. | local check; `confuse.yaml_util.Loader.__mro__` |
+| Apprise 1.13.1 loads plugins only when told to (`plugin_paths` defaults to empty; `notify.py:55` passes none); `ntfy ?attach=` sends a remote URL and reads no local file; the only process-spawning plugin (`macosx`) is Darwin-only. | image `apprise/asset.py:202,244-265`, `plugins/ntfy.py:873`, `plugins/macosx.py` |
+| `docker.py` only calls `ping`, `version`, `containers.list(filters=label)`, `containers.get` and `restart`; the endpoint comes from `DOCKER_HOST` only. | `src/traefik_certificate_exporter/libs/docker.py:139,157-158,300-301,365,479` |
+| The image `ENV` sets `…_OUTPUTPATH=/certs` and `…_DATAPATH=/data`, and the environment outranks the file; the logging config is already environment-only. | `docker/Dockerfile:123-130`; `settings.py:325-346`; `logging_utils.py:240-260` |
+| Output writes are temp file + `os.replace`: a symlink at the target is replaced, not written through; path parts are whitelisted and containment-checked. | `certificate_exporter.py:107-235,448-470` |
+| LSIO practice for root components configured from `/config`: swag copies `/config/fail2ban` into `/etc/fail2ban` and runs `fail2ban-client` as root (no privilege-split service pattern). | `linuxserver/docker-swag@0cc53e20:root/etc/s6-overlay/s6-rc.d/init-fail2ban-config/run`, `svc-fail2ban/run` |
+| LSIO Python images build their venv at `/lsiopy`, not under `/app`. | `linuxserver/docker-bazarr`, `linuxserver/docker-sabnzbd` `Dockerfile` (`python3 -m venv /lsiopy`) |
+| LSIO documents PUID/PGID as the mapping to a host user for file ownership and reduced privilege. | https://docs.linuxserver.io/general/understanding-puid-and-pgid/ |
 
-**Recommended:**
-- **(a′) At image build**, replace the three base `lsiown` lines with no-ops, with a count assertion and `bash -n` so a changed base image fails the build loudly. This removes the per-boot handover.
-- **(a) In our init, on every start and in both modes**, before the settings resolver runs: take `/config`, `/app`, `/defaults` and `/config/config.yaml` back to `root:root` and remove group/other write. Never recurse, never follow a symlink. This also repairs host directories that 0.3.0 already handed over.
-- **(d) In the settings loader, when running as root**, refuse (exit 1, one ERROR) any file it actually loads that is not owned by root or is world-writable, or whose directory is. Group-writable stays a warning. A test derives the checked set from the real `load_dotenv` / `YamlSource` calls rather than from a list.
-- **Image test** that boots the real image and attacks the scope (symlink into a subdirectory the take-back does not walk; read-only `/config`).
-- **Rejected:** moving the config out of `/config` (breaks the documented mount); `LSIO_READ_ONLY_FS` / `LSIO_NON_ROOT_USER` (both lose PUID/PGID; non-root makes root mode impossible).
+**Settings classification** (all 16 keys of `config_default.yaml`):
+- **Environment/CLI-only when running as root:** `postexportcommand` (root executes it), `outputpath` (root writes there and init chowns under it).
+- **Any source:** `datapath`, `filespec` (read only); `traefikresolverid`, `resolverinpathname`, `flat`, `domains.include`, `domains.exclude` (shape whitelisted, contained paths); `restartcontainers` (bounded Docker API use, above); `appriseurls` (network egress only); `pkcs12passphrase`, `dryrun`, `watchforchanges`, `runatstart`, `watchinterval` (no privilege effect).
+
+**Candidates evaluated:**
+- (a) Hook as `abc` in root mode (`subprocess.run(user=)`, `s6-setuidgid`, `setpriv`): rejected as the primary fix. Root writes keys `0600 root:root`, so an `abc` hook cannot read `privkey.pem`/`.pfx` or reach the socket, breaking legitimate root hooks; any root opt-in would still have to come from the environment.
+- (b) Root-sensitive settings from environment/CLI only when euid is 0: **recommended**. It closes the reproduced attack (the payload's hook is file-sourced, so root ignores it), changes no ownership and no LSIO init.
+- (c) Root-only reader handing the store to an `abc` worker: no maintained simple mechanism and no LSIO precedent for one app; the hook and Docker restarts would still need root.
+- (d) Restart path: a file-set `restartcontainers: true` still forces root mode, but with (b) root then runs no file-sourced command and writes no file-chosen path; the remaining gain is restarting containers that carry the restart label.
+
+**Recommended:** in root mode, `postexportcommand` and `outputpath` come only from environment/CLI; a file-sourced value is ignored with one ERROR (setting and file named, value never). A declared trust class for every key (`ROOT_SETTING_TRUST`) with tests that every key is classified, every file the loader opens is covered, and the hook is the package's only process-spawn site; an image test replays RT-1 and a regression test proves `/config` stays PUID-owned and editable. LSIO init untouched.
 
 **Risks:**
-- The build-time patch is a project-owned edit of a base-image file; it will block base-image bump PRs whenever upstream changes those lines (intended: loud failure).
-- (a) alone leaves a per-boot window between `init-adduser` and our init (follows from the verified ordering; not demonstrated).
-- The take-back fails on read-only or remote mounts; the root exporter then refuses to start rather than running the hook (deliberate fail-closed).
-- Docker mods and custom init scripts run after our init; only (d) covers them.
-- Operators lose PUID-owned editing of `config.yaml` on the host.
+- An operator's environment-set root hook that runs a script stored in `/config` (abc-writable) re-opens the path; documented.
+- `LOGGING_CFGFILE` or a `FILE__*` secret pointed into `/config` makes that file root-sensitive; documented.
+- Docker mods and custom init scripts run as root after our init (operator-supplied).
+- The venv under `abc`-owned `/app` (BL-E015-002); only overlay2's `EXDEV` blocks the rename today.
+- Apprise egress carries domain names (unchanged).
+- Root-mode users with the hook in `config.yaml` must move it to the container environment at upgrade.
 
 ---
 
@@ -241,6 +256,6 @@ git log -p --no-color --format='COMMIT %h' HEAD -- . ':(exclude)_bmad-output/**'
 | Docker 29.0–29.2 rejects old API clients ("client version … too old"; Watchtower issues #2122, #2124, #2126); reported workarounds: `DOCKER_API_VERSION=1.44` or the fork. | https://github.com/containrrr/watchtower/issues/2124, /2122, /2126; https://forums.docker.com/t/docker-29-increased-minimum-api-version-breaks-traefik-reverse-proxy/150384 |
 | The live test saw Docker Engine API 1.56 on the host. | live-host test, row E |
 
-**Recommended:** before tagging, pin production to the 0.2.0 digest so the GHCR `latest` move cannot upgrade it unobserved; release with `just release patch` (maintainer); verify every destination (six `enabled` lines, zero partial-destination warnings, zero `Unexpected input`, one digest across all registry/tag lookups); upgrade production by hand to `:0.3`; post-check version label, privilege line, legacy warning, `/config` ownership `0:0`, `cert.pem` fingerprints unchanged, export pass time; rollback = pin back to `@sha256:2e2cf7f7…`.
+**Recommended:** before tagging, pin production to the 0.2.0 digest so the GHCR `latest` move cannot upgrade it unobserved; release with `just release patch` (maintainer); verify every destination (six `enabled` lines, zero partial-destination warnings, zero `Unexpected input`, one digest across all registry/tag lookups); upgrade production by hand to `:0.3`; post-check version label, privilege line, legacy warning, `/config` still PUID-owned, a `Post-export command:` line showing source and uid, no `Ignoring settings.` line, `cert.pem` fingerprints unchanged, export pass time; rollback = pin back to `@sha256:2e2cf7f7…`.
 
-**Risks:** Watchtower may already be broken on this host (Docker 29 API floor); `/config` ownership changes on the production bind mount (E015-S01-001); GHCR `latest` jumps straight from 0.2.0 to 0.3.1 for every GHCR consumer.
+**Risks:** Watchtower may already be broken on this host (Docker 29 API floor); if production runs as root with the hook in `config.yaml`, E015-S01-001 ignores it: move it to the container `environment:` before the upgrade; GHCR `latest` jumps straight from 0.2.0 to 0.3.1 for every GHCR consumer.
