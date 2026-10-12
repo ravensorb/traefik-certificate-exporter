@@ -1120,3 +1120,4 @@
 {"epic": "E014", "event": "actual", "from": null, "key": "S02", "node": "sprint", "session": null, "sprint": "S02", "to": null, "ts": "2026-10-12T03:43:31Z"}
 {"epic": "E014", "event": "actual", "from": null, "key": "S02", "node": "sprint", "session": null, "sprint": "S02", "to": null, "ts": "2026-10-12T03:43:32Z"}
 {"epic": "E014", "event": "status", "from": "backlog", "key": "S02", "node": "sprint", "session": "l3io-pm-20261011T161302Z-43c8ef", "sprint": "S02", "to": "done", "ts": "2026-10-12T03:43:39Z"}
+{"cause": "cli", "epic": "014", "event": "issue_resolved", "key": "BL-E014-075", "ref": "3880faf60b4313cb96e027a8b202cacd1bd14328", "resolution": "fixed", "session": "l3io-pm-20261011T161302Z-43c8ef", "ts": "2026-10-12T03:44:17Z"}

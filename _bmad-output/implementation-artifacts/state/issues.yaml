@@ -1181,16 +1181,6 @@ backlog:
   status: backlog
   ref: _bmad-output/implementation-artifacts/state/adr-register.yaml
   description: CO-10. State must not be hand-edited, so the register was left as is; docs/architecture.md section 6 explains ADR-0034 as a skipped number. Needs an l3io-doctor/pm-status register-repair capability (back-fill slugs, record 0034 as void with a reason).
-- key: BL-E014-075
-  epic: '014'
-  sprint: '02'
-  title: Release image label org.opencontainers.image.version is 0.3, not 0.3.0 (metadata action takes the first sorted tag)
-  source: verification (E014-S02-005)
-  source_phase: verification
-  source_ref: E014-S02-005
-  severity: High
-  status: backlog
-  description: "Act dry run of release.yaml (E014-S02-005 AC 5): LiquidLogicLabs/git-action-docker-metadata@v6 reports 'Docker image version 0.3' and the pushed manifest's org.opencontainers.image.version label is 0.3. E014-S02-007 AC 8 requires 0.3.0. Likely fix: pass the version explicitly to the metadata action (or a labels: override org.opencontainers.image.version=${{ needs.build.outputs.image-version }}) in release.yaml publish-image (and check dev.yaml). Fix before tagging. Evidence: _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/release-0.3.0-evidence.md AC 5."
 - key: BL-E014-076
   epic: '014'
   sprint: '02'

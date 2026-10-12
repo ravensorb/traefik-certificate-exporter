@@ -36,7 +36,7 @@ These are recorded as they are, not corrected. Details are in `retrospective.md`
   - there are zero `partially configured` warnings.
 
   The evidence is in `release-0.3.0-evidence.md`, in its "BL-E014-075 fix" section. Nothing was published to a real forge or registry.
-- **Resolution recorded.** `resolve-issue --resolution fixed` requires a commit SHA. The issue is therefore resolved against the closure commit, and that resolution is recorded in a follow-up commit.
+- **Resolution recorded.** `resolve-issue --resolution fixed` requires a commit SHA, so the issue is resolved against closure commit 3880faf, in a follow-up commit.
 
 ## Phases
 
@@ -88,7 +88,7 @@ None of the deferred findings is Critical or High.
 
 ## Gates
 
-- **`just check`:** exit 0 on the final tree. Pre-commit hooks passed, including the new hook, and pytest reported 462 passed, 5 skipped. `pip-audit-bootstrap` was skipped as "no files to check", because `.github/requirements/poetry.txt` was untracked. It was run after the commit; the result is recorded in the commit-checkpoint notes below.
+- **`just check`:** exit 0 on the final tree. Pre-commit hooks passed, including the new hook, and pytest reported 462 passed, 5 skipped. `pip-audit-bootstrap` was skipped as "no files to check", because `.github/requirements/poetry.txt` was untracked. After commit 3880faf it was run with `pre-commit run pip-audit-bootstrap --all-files`: it ran (not skipped) and passed, exit 0.
 
 ## Sprint status
 

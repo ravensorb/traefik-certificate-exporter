@@ -1422,3 +1422,17 @@ resolved:
   resolution: fixed
   resolved_at: '2026-10-12T02:15:55Z'
   ref: E014-S02-003
+- key: BL-E014-075
+  epic: '014'
+  sprint: '02'
+  title: Release image label org.opencontainers.image.version is 0.3, not 0.3.0 (metadata action takes the first sorted tag)
+  source: verification (E014-S02-005)
+  source_phase: verification
+  source_ref: E014-S02-005
+  severity: High
+  status: resolved
+  description: "Act dry run of release.yaml (E014-S02-005 AC 5): LiquidLogicLabs/git-action-docker-metadata@v6 reports 'Docker image version 0.3' and the pushed manifest's org.opencontainers.image.version label is 0.3. E014-S02-007 AC 8 requires 0.3.0. Likely fix: pass the version explicitly to the metadata action (or a labels: override org.opencontainers.image.version=${{ needs.build.outputs.image-version }}) in release.yaml publish-image (and check dev.yaml). Fix before tagging. Evidence: _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/release-0.3.0-evidence.md AC 5."
+  resolution: fixed
+  resolved_at: '2026-10-12T03:44:17Z'
+  ref: 3880faf60b4313cb96e027a8b202cacd1bd14328
+  note: 'Sprint 02 closure: priority=1000 on the image-version raw tag in release.yaml and dev.yaml, enforced by the workflows-version-label-priority pygrep hook. act release dry run (throwaway clone, local registry): org.opencontainers.image.version=0.3.0 on amd64+arm64; tags 0.3.0, 0.3, latest; no :0. Evidence: epic-014/sprint-02/closure/release-0.3.0-evidence.md (BL-E014-075 fix section).'
