@@ -3,7 +3,7 @@ next:
   '011': 42
   '012': 14
   '013': 44
-  '014': 104
+  '014': 105
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -1461,3 +1461,13 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/ux-review.md.
+- key: BL-E014-104
+  epic: '014'
+  sprint: '02'
+  title: Locally built images (just image) carry the base image's org.opencontainers.image.version label (e.g. 4bf86442-ls13); add app labels via justfile --label or a Dockerfile LABEL from VERSION/REVISION
+  source: local-release-test (2026-10-12)
+  source_phase: local-release-test
+  source_ref: '2026-10-12'
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/local-release-test-2026-10-12.md; CI images unaffected (workflows set labels).

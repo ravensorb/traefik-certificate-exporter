@@ -177,6 +177,15 @@ repos:
         language: pygrep
         entry: 'type=raw,value=\$\{\{\s*needs\.build\.outputs\.image-version\s*\}\}(?!,priority=1000\s*$)'
         files: ^\.github/.*\.ya?ml$
+      # AR-3: `latest` must only move for the highest release tag, so every `latest` tag line
+      # must carry the validate-tag gate. Coverage limit: it checks that the gate is present
+      # on the line, not that validate-tag computes it correctly (held by review and the
+      # release dry run).
+      - id: workflows-latest-tag-gated
+        name: latest image tag is gated on the highest release tag (AR-3, AD-8)
+        language: pygrep
+        entry: 'type=raw,value=latest(?!,enable=\$\{\{\s*needs\.validate-tag\.outputs\.is-latest\s*==\s*''true''\s*\}\}\s*$)'
+        files: ^\.github/.*\.ya?ml$
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0

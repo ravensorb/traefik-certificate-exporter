@@ -59,7 +59,8 @@ Git tags are the only source of a version. `pyproject.toml` always says `0.0.0`;
 - Commit hashes appear only as the image tag `sha-<7>`. PyPI rejects hashes in package
   versions, and they don't sort.
 - Each tag has one owner. `dev.yaml` writes `-dev.N`, `sha-*` and `dev`. `release.yaml`
-  writes `X.Y.Z`, `X.Y`, `X` and `latest`.
+  writes `X.Y.Z`, `X.Y`, `X` and `latest`; `latest` moves only when the tag is the highest
+  `vX.Y.Z` tag, so an older line's patch release never takes it.
 
 ## Where things are published
 
@@ -289,8 +290,8 @@ instead of going quiet.
   third tag is pushed while one release runs and another is waiting, the newer tag cancels
   the waiting release. That cancelled release published nothing, and it must be re-run with
   `gh run rerun <run-id>` (or "Re-run all jobs" in the forge UI) -- **only while no newer
-  tag has released.** A re-run that finishes after a newer release re-points `latest` and
-  `X.Y` back to the older digest, which is the race AD-14 exists to prevent. If the newer
+  tag has released.** A re-run that finishes after a newer release re-points `X.Y` back
+  to the older digest (`latest` is protected: it moves only for the highest tag), which is the race AD-14 exists to prevent. If the newer
   tag has already released (or is running), leave the cancelled version unreleased and cut
   the next patch instead; never delete or re-push its tag. (`queue: max` would keep every
   pending run, but actionlint v1.7.12 rejects it; it is revisited when actionlint accepts it.)

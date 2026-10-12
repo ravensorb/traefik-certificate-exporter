@@ -14,8 +14,8 @@ permissions:
 # AD-14 / F-10: at most one release runs and one waits; a running release is never
 # cancelled. GitHub keeps one pending run per group, so a newer tag cancels the waiting
 # release, and that one must be re-run (`gh run rerun <run-id>`) -- but only while no newer
-# tag has released, or it re-points `latest` backwards (docs/ci/pipeline-walkthrough.md
-# "Releasing"). `queue: max` would queue them all, but actionlint v1.7.12 rejects it.
+# tag has released, or it re-points `X.Y` backwards; `latest` is gated on the tag being the
+# highest release (validate-tag, AR-3) (docs/ci/pipeline-walkthrough.md "Releasing"). `queue: max` would queue them all, but actionlint v1.7.12 rejects it.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -30,6 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      is-latest: ${{ steps.latest.outputs.is-latest }}
     steps:
       # Only a plain vX.Y.Z tag releases (AD-12); floating and pre-release tags do not.
       - uses: LiquidLogicLabs/git-action-tag-validate-version@v2
@@ -71,6 +73,19 @@ jobs:
             echo "refusing to release tag $TAG: commit $sha is not on origin/$DEFAULT_BRANCH" >&2
             exit 1
           fi
+
+      # AR-3: `latest` moves only when this tag is the highest plain vX.Y.Z tag, so a re-run
+      # of an older release or a patch on an older line never points `latest` backwards. The
+      # workflows-latest-tag-gated pre-commit hook refuses an ungated `latest` line (AD-8).
+      - name: Is this the highest release tag
+        id: latest
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          highest="$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)"
+          if [ "$highest" = "$TAG" ]; then is_latest=true; else is_latest=false; fi
+          echo "tag=$TAG highest=$highest is-latest=$is_latest"
+          echo "is-latest=$is_latest" >> "$GITHUB_OUTPUT"
 
   build:
     needs: validate-tag
@@ -284,7 +299,7 @@ jobs:
     name: publish-image
     # Publish credentials live only in the release environment (ADR-0039).
     environment: release
-    needs: build
+    needs: [validate-tag, build]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -454,7 +469,7 @@ jobs:
             type=raw,value=${{ needs.build.outputs.image-version }},priority=1000
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.build.outputs.image-version }}
             type=semver,pattern={{major}},value=${{ needs.build.outputs.image-version }},enable=${{ !startsWith(needs.build.outputs.image-version, '0.') }}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ needs.validate-tag.outputs.is-latest == 'true' }}
 
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         if: env.PUBLISH_IMAGE == 'true'
