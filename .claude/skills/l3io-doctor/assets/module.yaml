@@ -1,7 +1,7 @@
 code: l3io-util
 name: "LiquidLogicLabs Utilities"
 description: "Utility skills for LiquidLogicLabs BMad projects — project state diagnostics, the plan-aware progress dashboard, one-time layout migrations, and housekeeping."
-module_version: 3.4.2
+module_version: 3.4.4
 default_selected: false
 module_greeting: >
   LiquidLogicLabs Utilities module is configured!

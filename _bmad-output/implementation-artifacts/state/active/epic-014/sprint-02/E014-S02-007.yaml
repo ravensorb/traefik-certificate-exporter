@@ -3,8 +3,8 @@ epic: 'E014'
 sprint: 'S02'
 title: Release 0.3.0 — maintainer-run tag and destination verification (HITL; split from S02-005)
 classification: standard
-status: ready-for-dev
-updated_at: '2026-10-11T22:08:33Z'
+status: done
+updated_at: '2026-10-12T20:52:30Z'
 depends_on:
 - 'E014-S02-005'
 - 'E013-S02-001'
@@ -27,3 +27,54 @@ estimate:
     hitl_hours: 0.0057
     elapsed_hours: 0.0737
     tokens_k: 1.6797
+completion_evidence:
+  test_runs:
+  - command: pm-status show --epic E014 --sprint 02 (E014-S02-005 done)
+    exit_code: 0
+  - command: gh run view 38281339396 -R ravensorb/traefik-certificate-exporter --json conclusion,headBranch,event,jobs (success; validate-tag/build/publish-package/publish-image/release success)
+    exit_code: 0
+  - command: gh run view 38281339396 -R ravensorb/traefik-certificate-exporter --log | grep -E 'is-latest=|partially configured| enabled$' (is-latest=true; PyPI enabled; Docker Hub enabled; 0 warnings)
+    exit_code: 0
+  - command: curl -fsS https://pypi.org/pypi/traefik-certificate-exporter/0.3.0/json (wheel+sdist; sha256 equal run wheel-sha256/sdist-sha256)
+    exit_code: 0
+  - command: uv venv -p 3.10/3.14 + uv pip install traefik-certificate-exporter==0.3.0 + --help (py3.10 ok, py3.14 ok)
+    exit_code: 0
+  - command: docker buildx imagetools inspect docker.io/ravensorb/traefik-certificate-exporter:{0.3.0,0.3,latest} --format '{{json .Manifest.Digest}}' (one digest sha256:e3be0498...)
+    exit_code: 0
+  - command: docker buildx imagetools inspect docker.io/ravensorb/traefik-certificate-exporter:0.3.0 | grep Platform (linux/amd64, linux/arm64)
+    exit_code: 0
+  - command: '! docker buildx imagetools inspect docker.io/ravensorb/traefik-certificate-exporter:0 (no :0 tag)'
+    exit_code: 0
+  - command: docker pull -q docker.io/ravensorb/traefik-certificate-exporter:0.3.0 && docker image inspect --format version label (0.3.0)
+    exit_code: 0
+  - command: docker run --rm --entrypoint traefik-certificate-exporter docker.io/ravensorb/traefik-certificate-exporter:0.3.0 --help
+    exit_code: 0
+  - command: '! gh release view v0.3.0 -R ravensorb/traefik-certificate-exporter (no forge release: PUBLISH_RELEASE_TOKEN not configured)'
+    exit_code: 0
+  - command: gh secret list -R ravensorb/traefik-certificate-exporter (empty); gh api repos/ravensorb/traefik-certificate-exporter/environments (dev, release)
+    exit_code: 0
+  - command: gh secret list --env release; gh variable list --env release; gh secret list --env dev -R ravensorb/traefik-certificate-exporter
+    exit_code: 0
+  - command: gh run view 38246616295 -R ravensorb/traefik-certificate-exporter --attempt 2 --log (success; TestPyPI enabled; 0 partially configured)
+    exit_code: 0
+  - command: gh run view 38246748217 -R ravensorb/traefik-certificate-exporter --log (PR build success; base-image pre-pull present)
+    exit_code: 0
+  - command: gh pr list -R ravensorb/traefik-certificate-exporter --state all --search poetry.txt (no match by title)
+    exit_code: 0
+  - command: gh pr list --app dependabot --search requirements; gh pr diff 18 | grep -c '^+.*--hash=sha256:' (4); gh pr checks 18 (build / build pass)
+    exit_code: 0
+  tests_passing: true
+  fix_iterations: 0
+actual:
+  elapsed_hours: 1
+  man_hours: 3
+  hitl_hours: 0.5
+  tokens_k:
+    total: 2184.17
+    input: 0.06
+    output: 3.658
+    cache_write: 92.7
+    cache_read: 2087.75
+  cost: 1.72
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-12T20:52:17Z'

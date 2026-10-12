@@ -1,5 +1,5 @@
 {
-  "version": "3.4.2",
+  "version": "3.4.4",
   "generated_from": "skills/<skill>/",
   "files": {
     "SKILL.md": "983d3aa89e09f002b0f4dae399a8ddb6e8d931d0dc05b57f1861909c1aaf6c88",
@@ -10,13 +10,13 @@
     "assets/migrate-state.md": "3362d8e8cbd1496e45f317ad2e35b91dfadd03ea0b76edebe9199141df0bce7d",
     "assets/module-help.csv": "b0c93768a292b9542dcc05939f7b5fd8c993f108785a3a7583db974dca9dabc4",
     "assets/module-setup.md": "8567ae5c4dc40f7393bc3925e196d7f0579fd69d970985b4cfb8fb5e7df4671a",
-    "assets/module.yaml": "32b059546d128e8c674f9885e1eec0d1b6a3ecb0d33bcfe9e349ccd3d6ccf7fe",
+    "assets/module.yaml": "6fd2eac7784cc1f9171eb208f17c16949ca6b2b4f2aeaf09ebc93a4548b3778e",
     "assets/overlays/README.md": "025a2edcef96e70fb905c9db914e6d98ab6601737ba7f3eb0b6edf6ff6d9f91d",
     "assets/overlays/overlay-mode.md": "72f6186ac39eaad18e6f8a2766dc68294e4c6bb79c30b125dccf8f31d0fcb4c9",
     "customize.toml": "60d30a8af1e956c7a3f9644413710d20f2f3dded2aad6c5145a05d832a866c03",
-    "module.yaml": "32b059546d128e8c674f9885e1eec0d1b6a3ecb0d33bcfe9e349ccd3d6ccf7fe",
+    "module.yaml": "6fd2eac7784cc1f9171eb208f17c16949ca6b2b4f2aeaf09ebc93a4548b3778e",
     "references/config-resolution.md": "153baa1edb1ca9eb49fc391c546a79b1fe4260dac1c1bad27abbcbcd3726994a",
-    "references/status-files.md": "775f13a437ddd5a35cf048e92cec5f7a817615bd68a7ff52a5f2aa3079886fe1",
+    "references/status-files.md": "2da74468ac33c0d19a512e922feaf18066d8d6e8fc67b7da7e63a8b0fe89113f",
     "scripts/audit-backlog.py": "e2043b901d27bdae5d1b5f3b73aaf2265cece52a0f6d49c89341c81b89728205",
     "scripts/bmad-deps.py": "a696117c4a0670367a38baa0d1e00839971867cb255237faa1ba99c7b0a8aa0e",
     "scripts/check-pm-status.py": "097ce44f0cdc1ca850cbf7a7099fd63d8d0f7565f35ca3d3925ec555b03b0cb1",
@@ -25,7 +25,7 @@
     "scripts/merge-config.py": "22f51eed631c64134d352c236917e0a98ec5b5fe5d0810394f4615905c6ef7dc",
     "scripts/merge-help-csv.py": "44cae89d74a247395cc851970e28b65605e958efa04b632209f9bd5ecbc70d69",
     "scripts/migrate-engine.py": "5ac91ab5959da7b7b047dd77841684abf765616a3db592ee094789d43fc14ec9",
-    "scripts/pm-status.py": "b35c8f3e70794667bb19a2b4e466e698b6df3ee5b9988f3bc7b56106502975ef",
+    "scripts/pm-status.py": "3f5c7a966b702f53f0563ae1a3f132dfb8adc297aee79bb773a5262aa2903db4",
     "scripts/read-artifacts.py": "8157532189b569724bcbaad99fff335b2a4dfb2de5aae3a7757c4d53e8aff315",
     "scripts/read-bmad-flat.py": "f376e6191f0ccd27ccd40d4cfb8b13e6de9abdbd0f11a1856c17bc4242d27c01",
     "scripts/read-l3io-flat.py": "b9941eb319c9c4d4da226f2894b17abf879d598d9c6dd3ec49d67225aacd346e",
@@ -41,7 +41,7 @@
     "steps/clean-layout.md": "3c6f4dbf0b730279d867dfa49f0c32e46cac350b278313c6062cad96c99e3b21",
     "steps/clean-legacy.md": "0550fc8bba7e7a2ffd431e0214bf235fce0f0378ff5e3bd1632e997990941c1b",
     "steps/harvest-debt.md": "85cbd63f2918dfefd306d31b49196be0169fef3787a1c0a625118977fb43085c",
-    "steps/health-check.md": "15e873ab0955872bc0e49db0494c7bce0dcd8ac7e27313a1304eeb80522b03ed",
+    "steps/health-check.md": "14923e22999ecb2c5a89c715c885e81cddc322fbd4f28f9a8a3ddc60d4fb9c55",
     "steps/install.md": "2cc37aad69e17037ec8373e27a31ffc3ed07668bf6b05eb74ac6907e1a4652f0",
     "steps/migrate-adrs.md": "db291c28805b6bfd464dfaa9d1125de5ee9380606e9a46123ccd2e5b564d8f70",
     "steps/migrate-state.md": "f60d920473ee9139fbaf476c251811f83d53ffb97527b791ba80648407f6a737",
@@ -51,8 +51,8 @@
     "steps/sort-status.md": "c4ffa1cda08c3550279cc515aec5df0506b4ff7721d0bddad235fa77d106bdca",
     "steps/split-status.md": "5e376ae3fe872afb4b42890db15f1e305197d46a6d2ec0ff3d1917de242025df",
     "steps/stats.md": "6e1e9d702cb0abaa44e0e70e0bb86860f6ba8a1cd3fbf2e0571325e035ef9e0f",
-    "steps/triage.md": "c7cb845ba66c33d198308bf1a09f095f4e52bc80a60d049b3a79b946d6009938",
-    "steps/update-ai-rules.md": "81c59a71c08bb07c1f6d2547b3a4d483ac4f0ce165e0f4d4892483b1a353f3cf",
+    "steps/triage.md": "cfbdcd18db4cf02fc3cefa21a47945bd6d80b20478896d837eb0cfc8694134f5",
+    "steps/update-ai-rules.md": "2b9d85ba05660b67385ab605f6acd2d15bb31ef0a19f01f8a6a870addbfa1c69",
     "steps/version.md": "cf5b6cdc28ba11f7cc3bf7ba7328f9e4ae3d9e3e3f64bccdf2950eaa954e27e7"
   }
 }

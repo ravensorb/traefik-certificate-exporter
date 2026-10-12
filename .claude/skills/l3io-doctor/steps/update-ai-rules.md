@@ -82,7 +82,16 @@ So on Claude the file created is `{project-root}/CLAUDE.md`, on Copilot
 `{project-root}/.github/copilot-instructions.md`, on Gemini `{project-root}/GEMINI.md`, and
 `{project-root}/AGENTS.md` only when the runtime is a generic agent.
 
-**Never create an instruction file for an AI system that is not the one running.** This step
+**Never create an instruction file for an AI system that is not the one running.** The other
+half of this rule lives in `pm-status.py`'s `sync-agent-instructions`, which applies it to the
+marker-wrapped l3io block rather than to this migration — and which additionally *refreshes* a
+block already present in another harness's file, because that block is ours and a stale copy
+of our own instructions is not neutrality. Same rule, two mechanisms, and it must change in
+both: it was argued correctly here for a long time while the block side was silently missing
+the refresh half. A rule argued in the mechanism that happened to need it first does not
+propagate itself.
+
+This step
 used to say "always target `AGENTS.md` regardless of which AI system is running", which
 contradicted this mode's own summary, `SKILL.md`, and the `{to_create}` list AR1 actually
 builds. It also restated the gate as "no instruction file of any kind exists in the project",

@@ -1,5 +1,5 @@
 {
-  "version": "3.4.2",
+  "version": "3.4.4",
   "generated_from": "skills/<skill>/",
   "files": {
     "SKILL.md": "65eb06fa8e0a9d26a35e140668060e158087e896f622266a82b198db2ca899cf",
@@ -8,7 +8,7 @@
     "references/calibration-model.md": "e3fc8d9fc41285bca19257f0ac796856e025e9992ce6401a5c41437f55830f27",
     "references/config-resolution.md": "153baa1edb1ca9eb49fc391c546a79b1fe4260dac1c1bad27abbcbcd3726994a",
     "references/metrics-contract.md": "fd31b35d4ed5f31037fed0b58038d2d59262bd820274b9088f654b8bd90abb31",
-    "references/status-files.md": "775f13a437ddd5a35cf048e92cec5f7a817615bd68a7ff52a5f2aa3079886fe1",
+    "references/status-files.md": "2da74468ac33c0d19a512e922feaf18066d8d6e8fc67b7da7e63a8b0fe89113f",
     "scripts/detect-platform.py": "8a1a8d23d792a01ef24ec9b52b4de28bfbad651cfa119aab82d662bd4dab3635",
     "scripts/drift-report.py": "8c1b7708472d1cd95827221836489333925c2821fc60faabe609c4b9d4d47ff7",
     "scripts/sync-state.py": "f7431a9e858d63b8c07f9c6134afa1f31d7408eb59394cee7d9c1126e622ba54",

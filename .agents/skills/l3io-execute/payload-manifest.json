@@ -1,5 +1,5 @@
 {
-  "version": "3.4.2",
+  "version": "3.4.4",
   "generated_from": "skills/<skill>/",
   "files": {
     "SKILL.md": "cf1ef7adec406fbbb05816fcc4c4c600140ef1becf6772ce6ad31e074c2beb66",
@@ -8,7 +8,7 @@
     "references/calibration-model.md": "e3fc8d9fc41285bca19257f0ac796856e025e9992ce6401a5c41437f55830f27",
     "references/config-resolution.md": "153baa1edb1ca9eb49fc391c546a79b1fe4260dac1c1bad27abbcbcd3726994a",
     "references/metrics-contract.md": "fd31b35d4ed5f31037fed0b58038d2d59262bd820274b9088f654b8bd90abb31",
-    "references/status-files.md": "775f13a437ddd5a35cf048e92cec5f7a817615bd68a7ff52a5f2aa3079886fe1",
+    "references/status-files.md": "2da74468ac33c0d19a512e922feaf18066d8d6e8fc67b7da7e63a8b0fe89113f",
     "scripts/spec-align.py": "bf7385ca6337b3ec3e842716339553f2a5a54a5ca81e721507dce212ed27faec",
     "steps/closure/epic-closure.md": "884ce16ea9acb657c1edc9b01228ade1ad4d4b26f2c6666218e6ac1285727ccf",
     "steps/closure/sprint-closure.md": "1ae1dd2721b27ba39837a6f22616540eba2a2a5a19eff893bcbc86d0e8e49f60",

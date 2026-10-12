@@ -1,7 +1,7 @@
 code: l3io-sec
 name: "LiquidLogicLabs Security Red Team"
 description: "Adversarial security analysis for LiquidLogicLabs projects — five threat lenses with AI poisoning cross-cut and live cloud/platform best practices research."
-module_version: 3.4.2
+module_version: 3.4.4
 default_selected: false
 module_greeting: >
   LiquidLogicLabs Security module is configured!

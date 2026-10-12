@@ -1,27 +1,27 @@
 installation:
   version: 6.12.2
   installDate: 2026-08-30T18:53:39.264Z
-  lastUpdated: 2026-10-11T21:57:20.822Z
+  lastUpdated: 2026-10-12T20:52:21.433Z
   installShims: true
 modules:
   - name: core
     version: 6.12.2
     installDate: 2026-08-30T18:53:38.761Z
-    lastUpdated: 2026-10-11T21:57:20.786Z
+    lastUpdated: 2026-10-12T20:52:21.379Z
     source: built-in
     npmPackage: null
     repoUrl: null
   - name: bmm
     version: 6.12.2
     installDate: 2026-08-30T19:35:31.656Z
-    lastUpdated: 2026-10-11T21:57:20.788Z
+    lastUpdated: 2026-10-12T20:52:21.383Z
     source: built-in
     npmPackage: null
     repoUrl: null
   - name: cis
     version: v0.3.2
     installDate: 2026-09-25T12:46:28.998Z
-    lastUpdated: 2026-10-11T21:57:20.795Z
+    lastUpdated: 2026-10-12T20:52:21.398Z
     source: external
     npmPackage: bmad-creative-intelligence-suite
     repoUrl: https://github.com/bmad-code-org/bmad-module-creative-intelligence-suite
@@ -30,7 +30,7 @@ modules:
   - name: l3io-pm
     version: main
     installDate: 2026-08-30T18:53:38.879Z
-    lastUpdated: 2026-10-11T21:57:20.803Z
+    lastUpdated: 2026-10-12T20:52:21.409Z
     source: custom
     npmPackage: null
     repoUrl: https://github.com/ravensorb/bmad-extensions
@@ -38,7 +38,7 @@ modules:
   - name: l3io-sec
     version: main
     installDate: 2026-08-30T18:53:38.916Z
-    lastUpdated: 2026-10-11T21:57:20.808Z
+    lastUpdated: 2026-10-12T20:52:21.419Z
     source: custom
     npmPackage: null
     repoUrl: https://github.com/ravensorb/bmad-extensions
@@ -46,7 +46,7 @@ modules:
   - name: l3io-util
     version: main
     installDate: 2026-08-30T18:53:38.973Z
-    lastUpdated: 2026-10-11T21:57:20.815Z
+    lastUpdated: 2026-10-12T20:52:21.425Z
     source: custom
     npmPackage: null
     repoUrl: https://github.com/ravensorb/bmad-extensions
@@ -54,7 +54,7 @@ modules:
   - name: l3io-arch
     version: main
     installDate: 2026-08-30T18:53:38.997Z
-    lastUpdated: 2026-10-11T21:57:20.822Z
+    lastUpdated: 2026-10-12T20:52:21.432Z
     source: custom
     npmPackage: null
     repoUrl: https://github.com/ravensorb/bmad-extensions

@@ -1,5 +1,5 @@
 {
-  "version": "3.4.2",
+  "version": "3.4.4",
   "generated_from": "skills/<skill>/",
   "files": {
     "SKILL.md": "bd8eea9ab402f63e579c7066d1acdb914ea24c23b122a437b08a120be7ca3b0d",
@@ -8,9 +8,9 @@
     "assets/customize-architect.md": "a69eb8a7252b519478415844c4c85f675e0f45a33c469c26fe15ee728bac8a82",
     "assets/module-help.csv": "ea4145bbb8abc15b03e8d85472eb1b70a637f4db6531b7a9ff76e0bd6bed6d39",
     "assets/module-setup.md": "8567ae5c4dc40f7393bc3925e196d7f0579fd69d970985b4cfb8fb5e7df4671a",
-    "assets/module.yaml": "de9e20a4b0d6f70061fdc5f8b0c15de4e50de198c494e632ba641d73d43a7ab3",
+    "assets/module.yaml": "5b53c73ed80a12d2282bc2dcdc56cc3dab71af1e0eb16671d89ceca8d2c57ed5",
     "customize.toml": "74d4c0bdccfd9a2c1fcece3bbb5e801ca6be7ee97a01df2419578825fd97e17c",
-    "module.yaml": "de9e20a4b0d6f70061fdc5f8b0c15de4e50de198c494e632ba641d73d43a7ab3",
+    "module.yaml": "5b53c73ed80a12d2282bc2dcdc56cc3dab71af1e0eb16671d89ceca8d2c57ed5",
     "references/config-resolution.md": "153baa1edb1ca9eb49fc391c546a79b1fe4260dac1c1bad27abbcbcd3726994a",
     "references/review-report.md": "1d66983684e5104811ed3a75acf349498da8b43847a70161c4147ce7b4e1bc27",
     "references/standards-core.md": "89a51a4a3076413fc2ea663c89c297a6abee1e78b9d71c753c03807e932a18e1",

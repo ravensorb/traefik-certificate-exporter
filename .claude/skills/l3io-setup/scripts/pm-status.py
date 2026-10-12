@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["ruamel.yaml>=0.18"]
 # ///
-# pm-status-version: 3.4.2   (machine-readable marker; `self-install` compares this across copies — keep at top)
+# pm-status-version: 3.4.4   (machine-readable marker; `self-install` compares this across copies — keep at top)
 """
 pm-status.py — deterministic, atomic, round-trip-safe writer for the l3io-pm
 sharded state tree, and the reader behind its progress report.
@@ -178,7 +178,10 @@ Subcommands
                 --sprint S  --classification {simple,standard,complex}  [--title T]
                 [--model M] [--token-rates JSON] [--session-id ID] [--cause C]
                 (creates an estimated story whose `resolves:` lists the items, writes its
-                document, rolls up sprint and epic, then marks the items scheduled; every
+                document, rolls up sprint and epic, then marks the items scheduled; a key
+                given TWICE is refused (exit 2) rather than deduped, because --title is
+                required on len(keys) > 1 and collapsing a repeat would skip it --
+                schedule-issue still dedups, since nothing there reads the count; every
                 refusal is checked before the first write; a retry after an interrupted
                 run resumes the existing story -- only with the same --epic/--sprint (a
                 claimant elsewhere exits 2 naming them), and a dead claim (a story under
@@ -206,7 +209,7 @@ Subcommands
                 decisive check through the save; every refusal is checked before the first
                 write)
   audit-issues  --state-root S  [--format {text,json}]
-                (read-only integrity checks 1a-1k over both issue files and the story
+                (read-only integrity checks 1a-1l over both issue files and the story
                 nodes' resolves:, read under issues_lock when either issue file exists;
                 otherwise the story walk still runs, unlocked, over an empty store;
                 a key with a resolved entry is not evaluated for 1b, 1c, 1d, 1f
@@ -216,14 +219,22 @@ Subcommands
                 story under archived/ that is not done; 1j fires only when the
                 ref story's resolves: lists the key; 1e also reports every
                 non-canonical alias key in next (1 or '1' for '001') whatever its
-                value, and any next above 1000; exit 4 when anything is
+                value, and any next above 1000; 1l reports a `story` or `ref`
+                field holding a story key no story carries any more, and names
+                the heir when exactly one story records it in previous_keys --
+                a scheduled item with such an heir is 1l, NOT 1b, because
+                repointing restores the scheduling that unschedule discards;
+                exit 4 when anything is
                 found, and on a malformed issue file or a story node that does
                 not parse, is not valid UTF-8 or is not a mapping, where
                 --format json prints {"findings": [], "error": MSG})
-  repair-issue  --state-root S  --key K  --action {unschedule,link,reseed,reopen}
+  repair-issue  --state-root S  --key K  --action {unschedule,link,repoint,reseed,reopen}
                 [--story KEY] [--session-id ID] [--cause C]
                 (each action refuses unless its audit finding holds: unschedule 1b/1g,
-                link 1d (--story must be the story that lists K), reseed 1e, reopen 1j;
+                link 1d (--story must be the story that lists K), repoint 1l with an
+                heir (it repoints every stale story-key field of the one item the key
+                resolves to, resolved entry first, and writes an issue_repointed event),
+                reseed 1e, reopen 1j;
                 unschedule and link also refuse a key with a resolved entry -- rerun
                 resolve-issue to clear the stale open copy (1a); reseed merges
                 non-canonical aliases of the epic's next key by max, drops them, and
@@ -245,7 +256,8 @@ Subcommands
   reparent-story  --state-root S  --artifacts-root A  --story K  --to-epic E  --to-sprint SP
                   (moves a PLANNED story to another sprint, re-keying it; moves the state
                    node and its document together, preserving any -slug, repoints inbound
-                   depends_on and backlog refs, appends the old key to previous_keys, and
+                   depends_on and both backlog story-key fields (`story` and `ref`, in both
+                   issue files), appends the old key to previous_keys, and
                    raises the source sprint's high-water so the vacated key is never reissued)
   reorg-log     --state-root S  [--hash] [--record FILE] [--list] [--show ID]
                 [--format {text,json}]
@@ -300,8 +312,12 @@ Subcommands
                 [--body-file F] [--version V]  (--apply | --remove | --check)
                 (creates, replaces or removes the marker-wrapped l3io block in the running
                 harness's instruction file, under a lock held across read and write; never
-                deletes the file; exit 1 = --check found no block, exit 2 = usage, an
-                undecodable file, or ambiguous markers)
+                deletes the file. A block already present in ANOTHER harness's instruction
+                file is refreshed in place by --apply and stripped by --remove -- ours to
+                keep current wherever it is -- but never created there. exit 1 = --check
+                found no block for this harness, exit 2 = usage, an undecodable file, or
+                ambiguous markers, exit 3 = --check found another harness's file holding a
+                stale copy)
 
 Exit codes: 0 = success/verified, 1 = notice already emitted for this key
 (notice only), 2 = usage error or, for notice only, an unexpected recording failure,
@@ -323,6 +339,19 @@ import subprocess
 import sys
 import tempfile
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+# Type-checking only, and load-bearing. Every other ruamel import here is lazy -- inside
+# the function that uses it -- so the `except ModuleNotFoundError` guard below can print a
+# readable message instead of a traceback. That leaves `CommentedSeq` out of scope at module
+# level, and an annotation naming a type mypy cannot resolve degrades silently to `Any`:
+# calling `Any` is permitted, so IssueStore's accessors would type-check nothing.
+#
+# TYPE_CHECKING is False at runtime, so nothing is imported and the guard below is
+# untouched. `check:types` fails on [name-defined], which is what removing this import
+# looks like, so the gate cannot go blind without failing.
+if TYPE_CHECKING:
+    from ruamel.yaml.comments import CommentedSeq
 
 try:
     from ruamel.yaml import YAML
@@ -333,7 +362,7 @@ except ModuleNotFoundError:  # pragma: no cover - environment guard
     )
     sys.exit(2)
 
-PM_STATUS_VERSION = "3.4.2"  # keep in sync with the top-of-file `# pm-status-version:` marker
+PM_STATUS_VERSION = "3.4.4"  # keep in sync with the top-of-file `# pm-status-version:` marker
 
 VALID_STORY_STATUS = {"backlog", "ready-for-dev", "in-progress", "review", "done", "blocked"}
 VALID_SPRINT_STATUS = {"backlog", "in-progress", "review", "done"}
@@ -3331,18 +3360,72 @@ _RUNTIME_INSTRUCTION_FILE = {
 }
 
 
+def _other_instruction_files(project_root: str, runtime: str) -> list:
+    """Every known instruction file that is NOT the running harness's, deduplicated.
+
+    `codex` and `other` share AGENTS.md, so the distinct paths are fewer than the runtimes.
+    Order is stable for reproducible output.
+    """
+    mine = os.path.join(project_root, *_RUNTIME_INSTRUCTION_FILE[runtime])
+    seen, out = {mine}, []
+    for rt in sorted(_RUNTIME_INSTRUCTION_FILE):
+        p = os.path.join(project_root, *_RUNTIME_INSTRUCTION_FILE[rt])
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def _foreign_blocks(project_root: str, runtime: str) -> list:
+    """`(path, version)` for every OTHER harness's instruction file already holding our block.
+
+    A project that switches harness -- or that was set up before the target was decided by
+    `--runtime` alone -- keeps our block in the file the old harness used. That block is ours
+    and carries our version marker, so leaving it is not neutrality: two blocks that disagree
+    are two sets of instructions, and harnesses routinely read more than one of these files.
+    A file with no block of ours is not listed; it is simply not ours to touch.
+    """
+    out = []
+    for p in _other_instruction_files(project_root, runtime):
+        if not os.path.isfile(p):
+            continue
+        try:
+            with open(p, encoding="utf-8", newline="") as fh:
+                found = find_block(fh.read())
+        except (UnicodeDecodeError, OSError, BlockError):
+            continue        # unreadable or ambiguous: reported by the running file's own path
+        if found:
+            out.append((p, found[2]))       # (start, end, version)
+    return out
+
+
 def cmd_sync_agent_instructions(args) -> int:
     """Create, replace or remove the l3io block in the running harness's instruction file.
 
-    NEVER writes a file for a harness that is not running: the target comes from --runtime
-    alone. That rule is inherited from update-ai-rules Step AR5, where writing AGENTS.md
-    under Claude put a block in a file belonging to another AI system.
+    NEVER CREATES a file for a harness that is not running: the target comes from --runtime
+    alone, so running under Claude never puts a block into AGENTS.md.
 
-    NEVER deletes the file. --remove strips the block and leaves whatever else is there,
-    including nothing.
+    THE OTHER HALF OF THAT RULE LIVES IN `l3io-doctor/steps/update-ai-rules.md` Step AR5,
+    which applies it to the legacy-reference migration. Same rule, two mechanisms, and it has
+    to change in both: it was argued correctly in AR5 for a long time while this side was
+    silently missing the refresh half below. A rule argued in the mechanism that happened to
+    need it first does not propagate itself.
 
-    Exit 0 = acted or already correct; 1 = --check found the block absent; 2 = usage, an
-    undecodable file, or ambiguous markers -- all cases where we must not write.
+    ALWAYS REFRESHES a block already present in another harness's file. The two rules are
+    not in tension -- the first is about whose file we may colonise, the second about our own
+    content. A project that switches harness, or that predates the --runtime rule, keeps our
+    block where the old harness read it; that block carries our version marker, and leaving
+    it stale means two sets of our instructions disagreeing in one repo, which harnesses
+    that read several of these files will both pick up. Refreshing, not removing, because a
+    project may genuinely still use the other harness.
+
+    NEVER deletes the file. --remove strips the block from every file that has one and
+    leaves whatever else is there, including nothing.
+
+    Exit 0 = acted or already correct; 1 = --check found the block absent for this harness;
+    2 = usage, an undecodable file, or ambiguous markers -- all cases where we must not
+    write; 3 = --check found this harness's block current but another harness's file holding
+    a STALE copy, which --apply repairs.
     """
     target = os.path.join(args.project_root, *_RUNTIME_INSTRUCTION_FILE[args.runtime])
 
@@ -3354,6 +3437,7 @@ def cmd_sync_agent_instructions(args) -> int:
                          f"utf-8 ({e}); refusing to write\n")
         return 2
 
+    extra = []
     body = ""
     if not args.remove and not args.check:
         try:
@@ -3379,9 +3463,19 @@ def cmd_sync_agent_instructions(args) -> int:
             # every skill activation, and under a mistyped --project-root). Its answer is
             # advisory and inherently racy, so the lock would buy nothing.
             try:
-                return 0 if find_block(_read_target()) else 1
+                here = find_block(_read_target())
             except UnicodeDecodeError as e:
                 return _undecodable(target, e)
+            if not here:
+                return 1
+            stale = [(p, v) for p, v in _foreign_blocks(args.project_root, args.runtime)
+                     if v != (args.version or PM_STATUS_VERSION)]
+            for p, v in stale:
+                sys.stderr.write(f"pm-status.py: sync-agent-instructions: {p} holds an l3io "
+                                 f"block at v={v}, not v="
+                                 f"{args.version or PM_STATUS_VERSION} -- --apply refreshes "
+                                 f"it\n")
+            return 3 if stale else 0
         # The lock spans the READ as well as the write: otherwise two callers each read the
         # pre-write text and the second silently overwrites the first's block.
         with agent_instructions_lock(args.project_root):
@@ -3396,13 +3490,28 @@ def cmd_sync_agent_instructions(args) -> int:
             if action not in ("unchanged", "absent"):
                 os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
                 _atomic_text_write(target, out)
+            # Our block in the other harnesses' files, refreshed in place. Existing blocks
+            # only -- `apply_block` is never reached for a file without one, so no file is
+            # created here and a file we never wrote to stays untouched.
+            for p, _v in _foreign_blocks(args.project_root, args.runtime):
+                with open(p, encoding="utf-8", newline="") as fh:
+                    ftext = fh.read()
+                if args.remove:
+                    fout, faction = remove_block(ftext)
+                else:
+                    fout, faction = apply_block(ftext, body,
+                                                args.version or PM_STATUS_VERSION)
+                if faction not in ("unchanged", "absent"):
+                    _atomic_text_write(p, fout)
+                    extra.append(f"{faction} {p}")
     except BlockError as e:
         sys.stderr.write(f"pm-status.py: sync-agent-instructions: {target}: {e}\n")
         return 2
     except OSError as e:
         sys.stderr.write(f"pm-status.py: sync-agent-instructions: {e}\n")
         return 2
-    sys.stdout.write(f"OK sync-agent-instructions {action} {target}\n")
+    tail = ("; also " + ", ".join(extra)) if extra else ""
+    sys.stdout.write(f"OK sync-agent-instructions {action} {target}{tail}\n")
     return 0
 
 
@@ -4888,7 +4997,7 @@ def cmd_set_depends_on(args) -> int:
         if _p:
             _, _n = load_node(_p)
             if isinstance(_n, dict):
-                _cur = [str(e) for e in (_n.get("depends_on") or [])]
+                _cur = [str(e) for e in deps_list(_n, _p)]
         present = [k for k in drops if str(k) in _cur]
         blocked = _justifying_story_edges(args.state_root, self_key, present) if present else []
         if blocked:
@@ -4946,7 +5055,7 @@ def _justifying_story_edges(state_root: str, epic_key: str, targets: list) -> li
         _, node = load_node(path)
         if not isinstance(node, dict):
             continue
-        for dep in (node.get("depends_on") or []):
+        for dep in deps_list(node, path):
             try:
                 dep_epic, _sp, _n = parse_story_key(str(dep))
             except ValueError:
@@ -6304,12 +6413,15 @@ class IssueStore:
                                  f"a list that cannot say what is recorded cannot be trusted "
                                  f"to receive more. Fix or restore it by hand, then retry.")
 
+    # Annotated so reading these as methods -- `store.backlog()` -- is a type error rather
+    # than a runtime TypeError. The annotations only bind because of the TYPE_CHECKING
+    # import at the top of this file; without it they resolve to `Any` and check nothing.
     @property
-    def backlog(self):
+    def backlog(self) -> CommentedSeq:
         return self.open["backlog"]
 
     @property
-    def resolved(self):
+    def resolved(self) -> CommentedSeq:
         return self.res["resolved"]
 
     @staticmethod
@@ -6617,8 +6729,19 @@ def _append_issue(args) -> int:
 _STORY_KEY_RE = re.compile(r"^E\d{3}-S\d{2}-\d{3}$")
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 
+# The backlog fields holding a STORY key, and so the fields a re-key invalidates: `story`
+# (an open item's scheduling target, copied through to its resolved entry) and `ref` (what
+# resolved it). `ref` is overloaded -- on a spec-change/spec-proposal item it is a commit
+# SHA or a proposal path -- so every reader must match _STORY_KEY_RE before treating a
+# value as a story pointer. `story` is named first in messages: its loss costs more.
+STORY_REF_FIELDS = ("story", "ref")
+
 
 def _validate_resolution_flags(resolution, ref, note) -> None:
+    # DEFENSIVE, and unreachable from every current caller -- do not write a fixture for it.
+    # argparse constrains --resolution to `choices=list(RESOLUTIONS)`, and the two in-process
+    # callers pass the literals "fixed" and "deferred". It guards the next caller, which is a
+    # real risk here because resolve_issue_core is invoked internally as well as from the CLI.
     if resolution not in RESOLUTIONS:
         raise PMError(2, f"--resolution must be one of {', '.join(RESOLUTIONS)}")
     if resolution == "fixed":
@@ -6878,6 +7001,30 @@ def _yaml_error_reason(e) -> str:
     return f"{problem} (line {mark.line + 1}, column {mark.column + 1})"
 
 
+def deps_list(node, path) -> list:
+    """A node's `depends_on` as a list, refusing (PMError 2) anything else.
+
+    A scalar is not a near-miss, it is an erasure: `depends_on: 'E001'` iterates as
+    CHARACTERS, so consumers see `["E", "0", "0", "1"]` and plan-graph's `if d in epics`
+    filter drops every one. The epic then reads as having NO dependencies, its phase is
+    marked `parallel: true`, and two epics declared sequential are dispatched concurrently
+    into one working tree. Phantom dependencies would fail on the first lookup; an empty
+    list is indistinguishable from a correct independent epic, so this must refuse.
+
+    Refusing, not coercing: a scalar may have been meant as a one-element list or as a
+    string of keys, and promoting it picks one without evidence.
+    """
+    dep = node.get("depends_on")
+    if dep is None or isinstance(dep, list):
+        return list(dep or [])
+    shown = repr(dep)
+    hint = f"[{dep!r}]" if isinstance(dep, str) else "[...]"
+    raise PMError(2, f"{path}: depends_on is {type(dep).__name__} ({shown}), not a list -- "
+                     f"write it as {hint}. A non-list is read character by character by "
+                     f"every consumer, which silently DROPS the dependency and lets the "
+                     f"planner run these epics concurrently; fix the file by hand")
+
+
 def _walk_story_nodes(state_root):
     """Yield (story_key, status_dir, node, path) for every story node in every status folder.
 
@@ -7039,8 +7186,22 @@ def _promote_issue(args) -> int:
         k = canonical_bl_key(raw)
         if k is None:
             raise PMError(2, f"--key {raw!r} is not a backlog key")
-        if k not in keys:
-            keys.append(k)
+        # REFUSED, not deduped. The --title rule below reads len(keys), so collapsing a
+        # repeat would disarm the one guard that makes a multi-item promotion deliberate:
+        # the call asks for two items, yields one, and is never prompted for the title two
+        # distinct keys would demand. The caller here is usually an agent assembling this
+        # list from a user's prose (steps/plan/step-backlog-intake.md §3), which is exactly
+        # the caller that can name one item twice.
+        #
+        # schedule-issue keeps the dedup on purpose: nothing downstream of it reads the key
+        # count, so a repeat there changes nothing observable. Same shape, different
+        # decision, because the consequence differs -- not an inconsistency to tidy up.
+        if k in keys:
+            raise PMError(2, f"--key {k} was given twice. Promoting several items into one "
+                             f"story needs --title, and a repeated key would skip that "
+                             f"check by collapsing to one. Drop the duplicate, or name the "
+                             f"other key you meant.")
+        keys.append(k)
     if len(keys) > 1 and not args.title:
         raise PMError(2, "promoting several items into one story needs --title")
     model = args.model or DEFAULT_ESTIMATE_MODEL
@@ -7089,6 +7250,12 @@ def _promote_issue(args) -> int:
                                      f"-- retry with --epic {c_epic[1:]} --sprint {c_sprint[1:]}")
             else:
                 story_key = _next_story_key(sr, ar, epic_key, sprint_key)
+                # DEFENSIVE, and deliberately kept without a fixture. `_next_story_key` above
+                # already skips a key whose artifact document exists, so the key it just
+                # returned cannot have one -- this arm is unreachable from inside the call.
+                # It is not dead, though: it guards against a writer outside our locks, and
+                # agents in this system do author story documents directly. The two locks
+                # held here exclude another promote, never an external author.
                 if os.path.exists(story_doc_path(ar, story_key)):
                     raise PMError(2, f"story document for {story_key} already exists -- "
                                      f"refusing to adopt it")
@@ -7299,17 +7466,47 @@ def _schedule_issue(args) -> int:
 _BL_NEXT_MAX = 1000
 
 
-def _audit_findings(state_root, store) -> list:
-    """Structural integrity findings 1a-1k (spec §3.1). The caller holds issues_lock."""
-    findings = []
+def _stale_story_refs(item, stories, moved) -> list:
+    """The (field, old_key, new_key | None) triples on one backlog item whose story key no
+    longer exists AND is recorded in some story's `previous_keys`. `new_key` is that story
+    when exactly one records it, and None when more than one does (ambiguous: reported,
+    never guessed at).
 
-    def add(fid, key, detail, repair, story=None, epic=None):
-        findings.append({"id": fid, "key": key, "story": story, "epic": epic,
-                         "detail": detail, "repair": repair})
+    A dangling key that NO story records is deliberately not reported here: that is the
+    ordinary shape of a story whose directory was removed or whose epic was retired, no
+    verb here can repair it, and the one actionable case -- an open item scheduled to a
+    story that no longer exists -- is finding 1b, whose `unschedule` repair is correct
+    precisely because there is no key to point at instead.
 
-    # claims: every story listing a key (1b and 1j read it). live: the same minus dead claims
-    # (_dead_claim) -- 1d and 1h read only live claims, so the 1g repair leaves a clean audit.
-    stories, claims, live = {}, {}, {}
+    A field is only considered when its value PARSES as a story key: `ref` also carries a
+    commit SHA or a proposal path for a spec-change item, and neither is a broken pointer.
+    A key that still names a live story is never stale -- including the case where the key
+    was re-issued to different work, which reads as resolved and is indistinguishable from
+    here. The allocator's high-water is what prevents that, not this check.
+    """
+    out = []
+    for field in STORY_REF_FIELDS:
+        v = str(item.get(field) or "")
+        if not _STORY_KEY_RE.match(v) or v in stories:
+            continue
+        heirs = moved.get(v, [])
+        if heirs:
+            out.append((field, v, heirs[0] if len(heirs) == 1 else None))
+    return out
+
+
+def _story_index(state_root):
+    """One walk of every story node, as the four maps the backlog checks read.
+
+    stories: key -> (status folder, status).
+    claims:  BL key -> every story listing it in `resolves` (1b and 1j read it).
+    live:    the same minus dead claims (`_dead_claim`) -- 1d and 1h read only live claims,
+             so the 1g repair leaves a clean audit.
+    moved:   old story key -> the stories that now carry it in `previous_keys`, which is how
+             a reference orphaned by reparent-story is told apart from one that never
+             resolved at all (1l).
+    """
+    stories, claims, live, moved = {}, {}, {}, {}
     for skey, sdir, node, _ in _walk_story_nodes(state_root):
         stories[skey] = (sdir, str(node.get("status", "")))
         dead = _dead_claim(sdir, node)
@@ -7317,6 +7514,28 @@ def _audit_findings(state_root, store) -> list:
             claims.setdefault(str(k), []).append(skey)
             if not dead:
                 live.setdefault(str(k), []).append(skey)
+        for pk in node.get("previous_keys") or []:
+            moved.setdefault(str(pk), []).append(skey)
+    return stories, claims, live, moved
+
+
+def _story_key_maps(state_root):
+    """`(stories, moved)` -- the two maps `_stale_story_refs` needs. The repoint repair
+    re-derives them from the same walk audit-issues used, so the gate and the write can
+    never disagree about which story carries an old key."""
+    stories, _claims, _live, moved = _story_index(state_root)
+    return stories, moved
+
+
+def _audit_findings(state_root, store) -> list:
+    """Structural integrity findings 1a-1l (spec §3.1). The caller holds issues_lock."""
+    findings = []
+
+    def add(fid, key, detail, repair, story=None, epic=None):
+        findings.append({"id": fid, "key": key, "story": story, "epic": epic,
+                         "detail": detail, "repair": repair})
+
+    stories, claims, live, moved = _story_index(state_root)
     open_by, res_by = {}, {}
     for lst, by in ((store.backlog, open_by), (store.resolved, res_by)):
         for it in lst:
@@ -7334,6 +7553,38 @@ def _audit_findings(state_root, store) -> list:
         if k in res_by:
             add("1a", k, "present in both issue files",
                 "resolve-issue rerun -- it clears the open copy")
+
+    # 1l -- a story-key field pointing at a key a re-key moved. Computed before the loops
+    # below because 1b defers to it: a scheduled item with a repointable heir must be
+    # repointed, and 1b's `unschedule` would discard the scheduling instead. A dangling key
+    # no story records is not 1l at all (see `_stale_story_refs`), so 1b still owns every
+    # case where unschedule is the right answer.
+    stale = {}
+    for by, fname in ((open_by, ISSUES_FILENAME), (res_by, RESOLVED_FILENAME)):
+        for k, its in by.items():
+            if len(its) != 1:
+                continue        # 1i: an ambiguous key is never evaluated
+            if by is open_by and k in res_by:
+                continue        # Ruling 8, resolved first: the open copy is 1a, and the
+                                # rerun that clears it would discard any repoint done here
+            for fld, old, new in _stale_story_refs(its[0], stories, moved):
+                stale.setdefault(k, []).append((fld, old, new, fname))
+    for k in sorted(stale):
+        for fld, old, new, fname in stale[k]:
+            if new is not None:
+                add("1l", k, f"{fld}: {old} in {fname} names no story; {new} records it in "
+                             f"previous_keys (it was re-keyed by reparent-story)",
+                    f"repair-issue --action repoint --key {k}", story=new)
+            else:
+                add("1l", k, f"{fld}: {old} in {fname} names no story, and {len(moved[old])} "
+                             f"stories record it in previous_keys "
+                             f"({', '.join(sorted(moved[old]))})",
+                    "report only -- which story this means is not derivable; the duplicate "
+                    "previous_keys entry is the defect, so fix that and rerun repoint")
+
+    def repointable(k) -> bool:
+        return any(f == "story" and n is not None for f, _o, n, _fn in stale.get(k, []))
+
     for k in open_by:
         if k in res_by:
             continue            # Ruling 8, resolved first: the stale open copy is 1a only
@@ -7354,7 +7605,9 @@ def _audit_findings(state_root, store) -> list:
         elif str(kind) in SPEC_ISSUE_KINDS and not str(it.get("ref") or "").strip():
             add("1k", k, f"{kind} item has no ref",
                 "report only -- add the commit SHA or the proposal path by hand")
-        if st == "scheduled":
+        if st == "scheduled" and repointable(k):
+            pass                # 1l owns it: repoint, do not unschedule
+        elif st == "scheduled":
             sk = str(it.get("story", "") or "")
             if sk not in stories or sk not in claims.get(k, []):
                 add("1b", k, f"scheduled to {sk or '(none)'}, which is missing or does not "
@@ -7482,7 +7735,10 @@ def cmd_repair_issue(args) -> int:
     audit finding holds for --key, so it can only move the backlog toward a state
     audit-issues accepts -- never invent one it would flag. `unschedule` and `link` act on
     an open item, so they also refuse a key with a resolved entry (Ruling 8, resolved
-    first): a stale open copy is finding 1a, cleared by a resolve-issue rerun."""
+    first): a stale open copy is finding 1a, cleared by a resolve-issue rerun. `repoint`
+    acts on whichever file holds the item -- the resolved entry when there is one, for the
+    same reason: repointing an open copy a resolve-issue rerun is about to delete is work
+    thrown away."""
     return _run_core(lambda: _repair_issue(args))
 
 
@@ -7719,6 +7975,35 @@ def _repair_issue(args) -> int:
                 msg = f"{k} {was} -> resolved as deferred (its epic is closed)"
             else:
                 msg = f"{k} {was} -> {it['status']} (legacy status normalized)"
+        elif act == "repoint":
+            # Gated like the rest, but on 1l AND on there being exactly one heir to point
+            # at: a key no story records is reported, never guessed at. The heir is
+            # re-derived here rather than read off the finding, so the gate and the write
+            # cannot disagree about which story that is.
+            if not holds({"1l"}):
+                raise PMError(2, f"repoint: audit finding 1l does not hold for {k}")
+            opens, done = store.open_items(k), store.resolved_items(k)
+            # Ruling 8, resolved first: repointing an open copy that a resolve-issue rerun
+            # is about to delete would be work thrown away, and 1l skips it for that reason.
+            items = [done[-1]] if done else opens
+            if len(items) != 1:
+                raise PMError(2, f"repoint: {k} does not resolve to one item")
+            stories, moved = _story_key_maps(args.state_root)
+            fixes = [(f, o, n) for f, o, n in _stale_story_refs(items[0], stories, moved)
+                     if n is not None]
+            if not fixes:
+                raise PMError(2, f"repoint: {k} has a stale story key, but no story records "
+                                 f"it in previous_keys -- there is nothing to repoint it to")
+            for field, old, new in fixes:
+                items[0][field] = new
+            if done:
+                store.save_resolved()
+            else:
+                store.save_open()
+            _issue_event(store.state_root, "issue_repointed", items[0], args.session_id,
+                         args.cause, story=str(items[0].get("story") or "") or None,
+                         fields={f: [o, n] for f, o, n in fixes})
+            msg = f"{k} " + ", ".join(f"{f} {o} -> {n}" for f, o, n in fixes)
         elif act == "reseed":
             if not any(f["id"] == "1e" and (f["epic"] == epic or f["key"] == "next")
                        for f in findings):
@@ -8018,8 +8303,8 @@ def _doc_slug(path: str, story_key: str) -> str:
     return stem[len(story_key):] if stem.startswith(story_key) else ""
 
 
-def _rewrite_references(state_root: str, old_key: str, new_key: str) -> int:
-    """Repoint every reference to `old_key` at `new_key`. Returns how many it changed.
+def _rewrite_references(state_root: str, old_key: str, new_key: str) -> None:
+    """Repoint every reference to `old_key` at `new_key`.
 
     A re-key invalidates references the moving node does not own, and they are the half of
     this operation most likely to rot silently: a `depends_on` naming a key that no longer
@@ -8027,43 +8312,41 @@ def _rewrite_references(state_root: str, old_key: str, new_key: str) -> int:
     a vanished story reads as an unlinked promotion in `audit-issues` rather than as damage
     this operation did.
 
-    Two kinds, both rewritten here: `depends_on` lists on any story or epic node, and the
-    `ref` field on open and resolved backlog items.
+    Two kinds: `depends_on` lists on story nodes, and the two story-key fields on backlog
+    items -- `ref` (what fixed it) and `story` (what it is scheduled to) -- in BOTH issue
+    files. Both fields in both files, because a resolved entry carries `story` as well
+    (`resolve_issue_core` copies every field of the open item), and a `story` left on the
+    old key reads as audit finding 1b, whose repair discards the scheduling rather than
+    restoring it.
     """
-    changed = 0
     for _k, _sdir, node, path in _walk_story_nodes(state_root):
-        dep = node.get("depends_on")
-        if isinstance(dep, list) and old_key in dep:
-            for i, v in enumerate(dep):
-                if v == old_key:
-                    dep[i] = new_key
+        # deps_list, not an isinstance guard: a guard would skip a malformed `depends_on`
+        # silently, leaving the stale key behind. reparent_story pre-flights the same check
+        # before its first write, so this cannot raise mid-move.
+        if old_key in deps_list(node, path):
             y, n = load_node(path)
-            if isinstance(n, dict) and isinstance(n.get("depends_on"), list):
-                n["depends_on"] = [new_key if v == old_key else v for v in n["depends_on"]]
-                save_node(y, n, path)
-                changed += 1
+            n["depends_on"] = [new_key if v == old_key else v for v in deps_list(n, path)]
+            save_node(y, n, path)
 
-    open_path = os.path.join(state_root, ISSUES_FILENAME)
-    if os.path.exists(open_path):
+    # Either file, not just the open one: a project whose every issue is closed still has
+    # resolved refs to repoint. cmd_audit_issues takes no lock when neither exists because
+    # it is read-only; this is a write path, so creating the lock file is correct.
+    open_path, res_path = issues_paths(state_root)
+    if os.path.exists(open_path) or os.path.exists(res_path):
         with issues_lock(open_path):
             store = IssueStore(open_path)
             hit = False
-            # PROPERTIES, not methods. `store.backlog()` raised
-            # `TypeError: 'CommentedSeq' object is not callable` and left the move
-            # half-applied -- the node had already been renamed and its key rewritten, so
-            # the tree kept a story at its new key with every reference still naming the
-            # old one. Every other call site in this file reads them correctly; this was
-            # the only one, and no test reached it because none created an issues.yaml.
             for lst in (store.backlog, store.resolved):
                 for item in lst:
-                    if isinstance(item, dict) and item.get("ref") == old_key:
-                        item["ref"] = new_key
-                        hit = True
+                    if not isinstance(item, dict):
+                        continue
+                    for field in STORY_REF_FIELDS:
+                        if item.get(field) == old_key:
+                            item[field] = new_key
+                            hit = True
             if hit:
                 store.save_open()
                 store.save_resolved()
-                changed += 1
-    return changed
 
 
 def _raise_sprint_high_water(state_root: str, epic_key: str, sprint_key: str,
@@ -8190,6 +8473,12 @@ def reparent_story(state_root: str, artifacts_root: str, story_key: str,
             if os.path.exists(dest_doc):
                 raise PMError(2, f"destination document already exists: {dest_doc}")
 
+        # Every node `_rewrite_references` will read, validated before the first move: it
+        # runs after the node and document have been renamed, so a refusal raised there
+        # would leave the move half-applied.
+        for _k, _sd, _n, _p in _walk_story_nodes(state_root):
+            deps_list(_n, _p)
+
         # --- WRITE ------------------------------------------------------------------
         _git_or_plain_move(src_node, dest_node, state_root)
         if src_doc is not None:
@@ -8301,14 +8590,14 @@ def dump_plan(state_root: str) -> dict:
             out[bucket].append({
                 "key": epic_key,
                 "status": str(enode.get("status") or ""),
-                "depends_on": [str(v) for v in (enode.get("depends_on") or [])],
+                "depends_on": [str(v) for v in deps_list(enode, epath)],
             })
             continue
 
         epic = {
             "key": epic_key,
             "status": str(enode.get("status") or ""),
-            "depends_on": [str(v) for v in (enode.get("depends_on") or [])],
+            "depends_on": [str(v) for v in deps_list(enode, epath)],
             # Absent when lanes are not in use, which is the normal single-developer state.
             # Consumers cannot read state directly (check 26), so this is the only way the
             # partition reaches plan-graph.py.
@@ -8332,14 +8621,17 @@ def dump_plan(state_root: str) -> dict:
             for fname in sorted(os.listdir(sdir)):
                 if fname == "sprint.yaml" or not fname.endswith(".yaml"):
                     continue
-                _, st = load_node(os.path.join(sdir, fname))
+                stpath = os.path.join(sdir, fname)
+                _, st = load_node(stpath)
                 if not isinstance(st, dict):
                     continue
                 sprint["stories"].append({
                     "key": str(st.get("key") or ""),
                     "status": str(st.get("status") or ""),
                     "classification": str(st.get("classification") or ""),
-                    "depends_on": [str(v) for v in (st.get("depends_on") or [])],
+                    # stpath, not spath: a refusal must name the file that holds the defect,
+                    # and the sprint.yaml beside it is not where anyone would look.
+                    "depends_on": [str(v) for v in deps_list(st, stpath)],
                     # The whole chain, oldest first. `l3io-sync` reads this to tell a
                     # RE-KEYED story from a DELETED one: without it a reorg produces a
                     # `missing_local` for the old key AND an `unmapped_local` for the new,
@@ -8371,9 +8663,15 @@ def cmd_dump_plan(args) -> int:
     # thing lost is readability for a person running it by hand, which `--pretty` restores.
     pretty = bool(getattr(args, "pretty", False))
     sep = None if pretty else (",", ":")
-    sys.stdout.write(json.dumps(dump_plan(args.state_root),
-                                indent=2 if pretty else None, separators=sep) + "\n")
-    return 0
+
+    # Through _run_core: dump_plan refuses a malformed `depends_on` (deps_list). Every
+    # consumer is a script reading stdout, so a refusal has to be exit 2 with stdout empty
+    # -- parseable -- rather than a traceback.
+    def run():
+        sys.stdout.write(json.dumps(dump_plan(args.state_root),
+                                    indent=2 if pretty else None, separators=sep) + "\n")
+        return 0
+    return _run_core(run)
 
 
 def retire_epic(state_root: str, epic_key: str, reason: str) -> str:
@@ -8422,17 +8720,20 @@ def cmd_retire_epic(args) -> int:
 
 
 def cmd_reparent_story(args) -> int:
-    try:
-        new_key = reparent_story(args.state_root, args.artifacts_root, args.story,
-                                 args.to_epic, args.to_sprint)
-    except PMError:
-        raise
-    except FileNotFoundError as e:
-        _die_notfound(str(e))
-    except (ValueError, FileExistsError) as e:
-        _die_usage(str(e))
-    sys.stdout.write(f"OK reparent-story {args.story} -> {new_key}\n")
-    return 0
+    # Through _run_core, like every other verb: main() has no PMError handler, so a
+    # re-raise here would reach the caller as a traceback and exit 1 rather than one stderr
+    # line and exit 2. This verb's refusals are usage errors and must read as such.
+    def run():
+        try:
+            new_key = reparent_story(args.state_root, args.artifacts_root, args.story,
+                                     args.to_epic, args.to_sprint)
+        except FileNotFoundError as e:
+            _die_notfound(str(e))
+        except (ValueError, FileExistsError) as e:
+            _die_usage(str(e))
+        sys.stdout.write(f"OK reparent-story {args.story} -> {new_key}\n")
+        return 0
+    return _run_core(run)
 
 
 # --------------------------------------------------------------------------------------
@@ -9436,8 +9737,8 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--key", default=None,
                     help="the item; for reseed, any key of the epic; omit with --all-legacy")
     rp.add_argument("--action", required=True,
-                    choices=["unschedule", "link", "reseed", "reopen", "normalize-status",
-                             "normalize-keys"])
+                    choices=["unschedule", "link", "repoint", "reseed", "reopen",
+                             "normalize-status", "normalize-keys"])
     rp.add_argument("--story", default=None, help="with --action link")
     rp.add_argument("--all-legacy", dest="all_legacy", action="store_true",
                     help="with --action normalize-status: every legacy status in one pass")

@@ -1,7 +1,7 @@
 code: l3io-arch
 name: "LiquidLogicLabs Architecture Standards"
 description: "Engineering-standards architecture guardrails and review for LiquidLogicLabs projects — universal best practices (separation of concerns, reuse, design-by-contract, testability, dependency/GA policy, unified correlated logging, documentation with diagrams) plus per-stack overlays (Python, Node.js, .NET, GitHub Actions)."
-module_version: 3.4.2
+module_version: 3.4.4
 default_selected: false
 module_greeting: >
   LiquidLogicLabs Architecture Standards module is configured!

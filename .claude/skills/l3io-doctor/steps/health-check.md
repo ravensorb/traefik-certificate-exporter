@@ -437,6 +437,14 @@ different findings with opposite remedies:
   Priority: **Medium** · print the script's message. **Never offered as a fix and never
   auto-run**: the file is the user's and its markers are already in a state the script refused
   to guess about
+- Exit 3 (this harness's block is current, but **another** harness's instruction file holds a
+  stale copy of ours) → flag · Priority: **Medium** · print the script's message, which names
+  the file and both versions. The fix is the same `sync-agent-instructions --apply` as a
+  normal block update — it refreshes the other file's block in place rather than creating or
+  removing anything — so this one **is** offered in Step HC6's sequence. Typically a project
+  that changed harness: the block stayed where the old harness read it, and a repo carrying
+  two l3io blocks at different versions is two sets of instructions, both live, because
+  harnesses commonly read more than one of these files
 - Exit 0 → ✓
 - Any other exit → not a finding; mention the exit code and continue
 

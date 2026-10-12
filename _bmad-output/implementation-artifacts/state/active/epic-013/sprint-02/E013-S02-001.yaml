@@ -3,8 +3,8 @@ epic: 'E013'
 sprint: 'S02'
 title: Live verification on GitHub, Gitea 1.27 and local act
 classification: standard
-status: in-progress
-updated_at: '2026-10-10T12:14:00Z'
+status: done
+updated_at: '2026-10-12T20:51:49Z'
 depends_on:
 - 'E013-S01-002'
 - 'E013-S02-002'
@@ -35,4 +35,26 @@ completion_evidence:
     exit_code: 0
   - command: 'act dev.yaml -> Gitea git.ravenwolf.org (fixed AD-11 upload): publish + re-run skip + pip download check'
     exit_code: 0
+  - command: 'gh run view 38246616295 -R ravensorb/traefik-certificate-exporter --attempt 2 --json headSha,conclusion (success on e55dca7; log: TestPyPI enabled, 0 partially configured)'
+    exit_code: 0
+  - command: 'gh run view 38281339396 -R ravensorb/traefik-certificate-exporter --json conclusion,jobs (release v0.3.0: all 5 jobs success)'
+    exit_code: 0
+  - command: gh run view 38246748217 -R ravensorb/traefik-certificate-exporter --log > /tmp/e014-pr-run.log; grep -c 'docker pull "$BASE_IMAGE"' (PR build pre-pull present)
+    exit_code: 0
+  - command: 'gh secret list -R ravensorb/traefik-certificate-exporter (empty: legacy DOCKERHUB_* deleted)'
+    exit_code: 0
   tests_passing: true
+  fix_iterations: 1
+actual:
+  elapsed_hours: 0.25
+  man_hours: 6
+  hitl_hours: 0.1
+  tokens_k:
+    total: 0
+    input: 0
+    output: 0
+    cache_write: 0
+    cache_read: 0
+  cost: 0.0
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-12T20:51:45Z'

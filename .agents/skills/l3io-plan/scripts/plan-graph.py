@@ -464,6 +464,24 @@ def main(argv=None) -> int:
                          "`planned` key); refusing to read an unknown shape.\n")
         return 2
 
+    # dump-plan refuses a non-list `depends_on` at source, so this only fires on a plan
+    # assembled some other way. It is still checked here because this is where the parallel
+    # decision is made: a string iterates as characters, `if d in epics` then drops every
+    # one, and the epic reads as having no dependencies at all -- so two epics declared
+    # sequential are marked `parallel: true` with nothing anywhere saying why.
+    for scope in ("planned", "active", "archived"):
+        for e in plan.get(scope) or []:
+            for node in [e, *(e.get("sprints") or [])]:
+                for item in [node, *(node.get("stories") or [])]:
+                    dep = item.get("depends_on")
+                    if dep is not None and not isinstance(dep, list):
+                        sys.stderr.write(
+                            f"plan-graph.py: {item.get('key') or '?'} has depends_on "
+                            f"{dep!r}, which is not a list. A non-list is read character by "
+                            f"character and silently DROPS the dependency; refusing rather "
+                            f"than planning concurrent work from it.\n")
+                        return 2
+
     if a.mode == "partition":
         if a.lanes < 2:
             sys.stderr.write("plan-graph.py: partition needs --lanes 2 or more; "

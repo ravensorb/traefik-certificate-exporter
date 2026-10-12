@@ -1,5 +1,5 @@
 {
-  "version": "3.4.2",
+  "version": "3.4.4",
   "generated_from": "skills/<skill>/",
   "files": {
     "SKILL.md": "adb2996c1ffdf17962fc4ee2751e2b47510198988093efc9ec40de38ab6032f1",
@@ -8,8 +8,8 @@
     "references/calibration-model.md": "e3fc8d9fc41285bca19257f0ac796856e025e9992ce6401a5c41437f55830f27",
     "references/config-resolution.md": "153baa1edb1ca9eb49fc391c546a79b1fe4260dac1c1bad27abbcbcd3726994a",
     "references/metrics-contract.md": "fd31b35d4ed5f31037fed0b58038d2d59262bd820274b9088f654b8bd90abb31",
-    "references/status-files.md": "775f13a437ddd5a35cf048e92cec5f7a817615bd68a7ff52a5f2aa3079886fe1",
-    "scripts/plan-graph.py": "611816ddf4edff590e08f9f06eabdfaa7cdf192924731a114bfe75b3ddd577e9",
+    "references/status-files.md": "2da74468ac33c0d19a512e922feaf18066d8d6e8fc67b7da7e63a8b0fe89113f",
+    "scripts/plan-graph.py": "d1c96108428aa916b7fe3f7a61c37731a6d0cf6f01b1798e3dadc19f0880fc88",
     "scripts/reorg-derive.py": "cd412e592ad051fcaf860dde0e8de5df1c2902f4979c8b401b1be2f8bbd19862",
     "scripts/reorg-validate.py": "345b96e16244601b3365fd73fb6b7a7d162789c6cb0aa97a2561164024ba4b60",
     "steps/lanes/step-lanes.md": "458aa64ba6d979925b6bf9c8c938a3d832b277dc05aa336af8fc48e156297983",

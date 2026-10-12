@@ -2,8 +2,8 @@ next:
   '009': 22
   '011': 42
   '012': 14
-  '013': 44
-  '014': 108
+  '013': 45
+  '014': 109
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -1491,3 +1491,23 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
+- key: BL-E014-108
+  epic: '014'
+  sprint: '02'
+  title: "docker/setup-buildx-action v4 ignores input 'config' (renamed buildkitd-config): the private-CA BuildKit config is never applied, so publish-image to a private-CA registry would fail TLS; GitHub warns 'Unexpected input(s) config' on every release/dev image job"
+  source: release (v0.3.0-run-38281339396)
+  source_phase: release
+  source_ref: v0.3.0-run-38281339396
+  severity: Medium
+  status: backlog
+  description: 'Seen in the v0.3.0 release run log. Only affects runs with PUBLISH_CA_CERTIFICATE set (not used today). Fix: rename the input to buildkitd-config in dev.yaml and release.yaml; add a check (actionlint does not validate action inputs).'
+- key: BL-E013-044
+  epic: '013'
+  sprint: '02'
+  title: "Pipeline never run on the Gitea instance's own act_runner: ci/dev/release on git.ravenwolf.org runners (artifact hand-off, concurrency, protected tag/branch) unproven; ADR-0035 Status still says live verification pending"
+  source: live-verification (E013-S02-001)
+  source_phase: live-verification
+  source_ref: E013-S02-001
+  severity: Low
+  status: backlog
+  description: "E013-S02-001 closed on GitHub-hosted runs (dev 38246616295, release 38281339396) and Gitea publishing proven from local act 0.2.89 (epic-013/sprint-02/closure/notes-E013-S02-001.md, epic-014/sprint-02/closure/gitea-live-publish-2026-10-12.md). Not proven: the same three workflows executed by an act_runner registered on the Gitea 1.27+ instance, including upload/download-artifact v5/v6 on that runner. When run, record run URLs and update ADR-0035 Status to drop 'live forge verification pending'."
