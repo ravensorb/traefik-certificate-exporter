@@ -1,0 +1,60 @@
+generated: "2026-10-12T23:36:16Z"
+plan_version: 2
+readiness: green
+stories_elaborated: 8
+total_epics_in_scope: 2          # E013 (active, all stories done, read-only context) + E015 (planned)
+
+phases:
+  - phase: 1
+    parallel: false
+    epics: ["E015"]
+    dependencies: []
+    estimate:
+      estimates_as_of: "2026-10-12T22:14:38Z"
+      wall_clock_hours_low: 16.82
+      wall_clock_hours_high: 19.99
+      man_hours_low: 172.72
+      man_hours_high: 196.48
+      hitl_hours_low: 1.98
+      hitl_hours_high: 2.3
+      tokens_k_min: 107962
+      tokens_k_max: 122684
+      cost_low: 86.18
+      cost_high: 97.95
+      confidence: medium
+
+# Story order inside E015 (from story depends_on in state; unchanged since v1; informational —
+# l3io-execute reads state):
+#   wave 1: E015-S01-001, E015-S02-001
+#   wave 2: E015-S01-002 (<- S01-001), E015-S02-002 (<- S02-001), E015-S02-003 (<- S02-001)
+#   wave 3: E015-S01-003 (<- S01-002), E015-S01-004 (<- S01-002)
+#   wave 4: E015-S02-004 (<- all seven; HITL release + production upgrade)
+# Longest story chain (plan-graph analyze): E015-S01-001 -> S01-002 -> S01-003 -> S02-004.
+# No sprint-imbalance finding.
+# Estimates are read from state unchanged (epic.yaml updated_at 2026-10-12T22:14:38Z); not
+# hand-edited. Known low: the HITL figures in state. S02-002's hitl estimate (0.16 h, calibrated
+# band) understates its ~1.5-2 h of maintainer forge work (MD-10..MD-13), and S02-004's (0.16 h)
+# understates the planned ~3-4.5 h release, production upgrade, first-pass acknowledgement and
+# steady-state second pass. Re-estimate with /l3io-plan estimate E015 to change state.
+# Why v2: v1 predates the E015-S01-001 redesign (bacc1f2), the 0.3.1 baseline consolidation
+# (fd383ef) and the validation fixes (epic-015/plan-review/validation-2026-10-12.md, verdict
+# READY after re-validation); scope and depends_on are unchanged.
+
+readiness_detail:
+  - key: E015
+    status: green
+    gaps: []
+    notes:
+      - "8 stories elaborated; every story has an estimate block (pm-status verify --scope epic --epic E015: PASS)"
+      - "maintainer decisions MD-06..MD-23 accepted 2026-10-12; MD-01..MD-05 withdrawn (epic-015/maintainer-decisions.md)"
+      - "baseline: PRD, product spine and CI/CD spine at Target 0.3.1; independent validation READY (V-01..V-16 resolved, R-01/R-02 fixed)"
+      - "E015-S02-002 and E015-S02-004 carry maintainer-only forge and production actions (HITL)"
+  - key: E013
+    status: green
+    gaps:
+      - "active, all 9 stories done; epic closure not yet run (E014 retrospective A8); no planning needed"
+
+arch_gate_summary:
+  ran: false
+  reviewers: []
+  findings: []
