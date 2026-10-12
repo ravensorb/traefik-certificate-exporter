@@ -546,6 +546,54 @@ def test_stale_marker_fails(tmp_path):
     assert _stale_marked_files(tmp_path) == ["docs/x.md"]
 
 
+# The upgrade notes' legacy table is rendered from `LEGACY_SETTING_NAMES`, never typed
+# (E014-S02-005). `legacy_settings` exposes no renderer, and this test is the only
+# consumer, so the renderer lives here. Regenerate the block with
+# `poetry run python -m tests.test_settings_surface`.
+UPGRADING = PROJECT_ROOT / "docs" / "upgrading.md"
+LEGACY_BLOCK_BEGIN = "<!-- legacy-settings:begin -->"
+LEGACY_BLOCK_END = "<!-- legacy-settings:end -->"
+
+
+def render_legacy_table() -> str:
+    """One Markdown row per `LEGACY_SETTING_NAMES` entry, in table order."""
+    rows = [
+        "| Source | Legacy name | Replacement or fix |",
+        "| --- | --- | --- |",
+    ]
+    for entry in LEGACY_SETTING_NAMES:
+        fix = f"`{entry.replacement}`" if entry.replacement else entry.hint
+        fix = fix.replace("|", "\\|")
+        rows.append(f"| {entry.source} | `{entry.name}` | {fix} |")
+    return "\n".join(rows)
+
+
+def _legacy_block(text: str) -> str:
+    """The text between the two markers, which must each appear exactly once, in order."""
+    assert text.count(LEGACY_BLOCK_BEGIN) == 1, f"need one {LEGACY_BLOCK_BEGIN}"
+    assert text.count(LEGACY_BLOCK_END) == 1, f"need one {LEGACY_BLOCK_END}"
+    _, _, rest = text.partition(LEGACY_BLOCK_BEGIN)
+    block, _, _ = rest.partition(LEGACY_BLOCK_END)
+    return block.strip()
+
+
+def test_upgrading_lists_every_legacy_name():
+    """The block between the markers in `docs/upgrading.md` equals a fresh rendering of
+    `LEGACY_SETTING_NAMES`, so the table cannot drift from the code (global rule 3)."""
+    # Non-vacuity: the rendering holds one row per entry plus the two header rows.
+    rendered = render_legacy_table()
+    assert len(rendered.splitlines()) == len(LEGACY_SETTING_NAMES) + 2
+    assert LEGACY_SETTING_NAMES, "LEGACY_SETTING_NAMES is empty"
+
+    block = _legacy_block(UPGRADING.read_text("utf-8"))
+
+    assert block == rendered, (
+        f"{UPGRADING.relative_to(PROJECT_ROOT)}: the legacy-settings block differs from "
+        "LEGACY_SETTING_NAMES; regenerate it with "
+        "`poetry run python -m tests.test_settings_surface`"
+    )
+
+
 def test_valid_env_names_match_confuse_envsource(monkeypatch):
     """A-11: the restated mapping rule is checked against confuse itself, so a change in
     confuse's rule fails here instead of the two diverging silently."""
@@ -687,3 +735,8 @@ def test_every_docker_socket_mount_carries_the_host_root_warning():
     assert any(str(p) == "docker/docker-compose.yml" for p, _, _ in mounts), mounts
     unwarned = [f"{p}:{n}" for p, n, line in mounts if _SOCKET_WARNING not in line]
     assert not unwarned, unwarned
+
+
+if __name__ == "__main__":
+    # The regeneration command named above `LEGACY_BLOCK_BEGIN`.
+    print(render_legacy_table())

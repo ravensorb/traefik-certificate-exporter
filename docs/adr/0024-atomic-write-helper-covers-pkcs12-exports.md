@@ -1,6 +1,6 @@
 # ADR-0024: Atomic-write helper covers PKCS12 (`.pfx`) exports, not just PEM text files
 
-- **Status:** Proposed
+- **Status:** Accepted (implemented by E011-S01-004; status corrected 2026-10-11 by E014-S02-003)
 - **Date:** 2026-10-06
 - **Deciders:** Maintainer (ravensorb)
 - **Amended by:** ADR-0043 (the `.pfx` is built with the rest of the set before any replace, and is rewritten only when its content changed)

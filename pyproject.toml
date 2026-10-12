@@ -31,7 +31,6 @@ pyyaml = "^6.0"
 pre-commit = "^3.2.1"
 pytest = "^9.1.1"
 poetry = "^2.4.2"
-twine = "^7.0.0"
 # Provides the `pysemver` CLI that `just release` uses to compute the next version (AD-15).
 semver = "==3.1.0"
 mypy = "^2.3.1"
@@ -39,6 +38,16 @@ mypy = "^2.3.1"
 # poetry.lock, not by a frozen hook `rev` (C-10).
 pip-audit = "^2.10.1"
 deptry = "^0.25.1"
+
+# Everything a credentialed publish job installs (AD-11): `poetry install --only publish
+# --no-root`, so no dev toolchain sits beside a publish token. `twine` is declared here only.
+# Optional, yet still in every dev venv and the pip-audit scope, because `just install` and
+# build.yaml run `poetry sync --all-groups` (ADR-0042).
+[tool.poetry.group.publish]
+optional = true
+
+[tool.poetry.group.publish.dependencies]
+twine = "^7.0.0"
 
 [tool.poetry.scripts]
 traefik-certificate-exporter = "traefik_certificate_exporter.app:main"

@@ -1,6 +1,6 @@
 # ADR-0027: Vendored-tree "not maintained by us" framing lives only in CODEOWNERS, not `docs/guidelines.md`
 
-- **Status:** Proposed
+- **Status:** Accepted (implemented by E011-S01-002; status corrected 2026-10-11 by E014-S02-003)
 - **Date:** 2026-10-06
 - **Deciders:** Maintainer (ravensorb)
 - **Epic:** E011

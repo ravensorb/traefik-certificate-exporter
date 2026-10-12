@@ -1,6 +1,9 @@
 # ADR-0001: Use Poetry for Python dependency and environment management
 
 - **Status:** Accepted (existing practice, recorded retroactively)
+- **Amended by:** ADR-0046 (2026-10-11, E014-S02-001) -- `.github/requirements/poetry.txt` is a
+  bootstrap-only exception: a hash-locked, generated file that installs Poetry in CI and nothing
+  else; application, dev and publish dependencies stay in `poetry.lock`
 - **Date:** 2026-08-30
 - **Deciders:** Maintainer (ravensorb)
 - **Principle(s) in tension:** Core §7 dependency selection, Python overlay packaging & environment

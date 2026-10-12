@@ -1062,3 +1062,363 @@ resolved:
   resolved_at: '2026-10-11T22:00:36Z'
   ref: E014-S02-003
   note: "Maintainer decision 2026-10-11: environment variables override the config file for ALL settings (precedence CLI > env > config file > defaults). The image's WATCHFORCHANGES/RUNATSTART env defaults stay; the env var is the run-mode switch in the container. E014-S02-003 records this in the product spine/ADR-0044 and operator docs."
+- key: BL-E013-020
+  epic: '013'
+  sprint: '01'
+  title: Pre-commit hook revs are mutable tags running in the build job; no Dependabot pre-commit ecosystem (also AR-05)
+  source: redteam (RT-E013-03)
+  source_phase: redteam
+  source_ref: RT-E013-03
+  severity: Medium
+  status: resolved
+  description: Needs maintainer decision (changes a recorded design decision); not implemented in closure. Related to BL-E013-001. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md
+  story: E014-S02-001
+  scheduled_at: '2026-10-10T22:27:36Z'
+  resolution: fixed
+  resolved_at: '2026-10-11T23:00:42Z'
+  ref: E014-S02-001
+- key: BL-E013-021
+  epic: '013'
+  sprint: '01'
+  title: WHEEL_SHA256 compares downloaded wheel with itself; build-time hash not carried across jobs
+  source: redteam (RT-E013-04)
+  source_phase: redteam
+  source_ref: RT-E013-04
+  severity: Medium
+  status: resolved
+  description: 'Upload-before-third-party-action half fixed by AR-02. Remaining: export wheel-sha256 as build.yaml output and sha256sum -c in publish jobs; needs act/live verification (E013-S02-001). See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md'
+  story: E014-S02-001
+  scheduled_at: '2026-10-10T22:27:36Z'
+  resolution: fixed
+  resolved_at: '2026-10-11T23:00:42Z'
+  ref: E014-S02-001
+- key: BL-E013-024
+  epic: '013'
+  sprint: '01'
+  title: Poetry installed without hashes; credentialed publish jobs install whole dev group before twine
+  source: adversarial (AR-06)
+  source_phase: adversarial
+  source_ref: AR-06
+  severity: Medium
+  status: resolved
+  description: Needs maintainer decision (changes a recorded design decision); not implemented in closure. Changes AD-11 mechanism. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/adversarial-review.md
+  story: E014-S02-001
+  scheduled_at: '2026-10-10T22:27:36Z'
+  resolution: fixed
+  resolved_at: '2026-10-11T23:00:43Z'
+  ref: E014-S02-001
+- key: BL-E011-013
+  epic: '011'
+  sprint: '01'
+  title: 'Vendored agent-instruction trees: 2,222 files verified against nothing (AI-poisoning foothold)'
+  source: redteam (RT-006)
+  source_phase: redteam
+  source_ref: RT-006
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+  story: E012-S01-002
+  scheduled_at: '2026-10-07T12:05:20Z'
+  resolution: wontfix
+  resolved_at: '2026-10-12T01:39:10Z'
+  note: integrity gates retired; loss accepted by ADR-0035 (docs/adr/0035-standard-ci-cd-pipeline.md:74)
+- key: BL-E011-021
+  epic: '011'
+  sprint: '01'
+  title: Vendored-integrity gates hash ~4,700 files per commit and assert hand-maintained counts
+  source: adversarial (AD-09)
+  source_phase: adversarial
+  source_ref: AD-09
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
+  story: E012-S01-002
+  scheduled_at: '2026-10-07T12:05:20Z'
+  resolution: wontfix
+  resolved_at: '2026-10-12T01:39:12Z'
+  note: integrity gates retired; loss accepted by ADR-0035 (docs/adr/0035-standard-ci-cd-pipeline.md:74)
+- key: BL-E011-014
+  epic: '011'
+  sprint: '01'
+  title: Third-party GitHub Actions pinned to mutable tags in publish jobs holding secrets
+  source: redteam (RT-007)
+  source_phase: redteam
+  source_ref: RT-007
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+  story: E012-S01-002
+  scheduled_at: '2026-10-07T12:05:20Z'
+  resolution: duplicate
+  resolved_at: '2026-10-12T01:39:13Z'
+  ref: BL-E013-022
+  note: replaced by the ADR-0035 pin policy; residue tracked as BL-E013-022 and BL-E013-029
+- key: BL-E011-015
+  epic: '011'
+  sprint: '01'
+  title: Secret scanner excludes the vendored trees, leaving an uncovered commit path for credentials
+  source: redteam (RT-008)
+  source_phase: redteam
+  source_ref: RT-008
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
+  story: E012-S01-002
+  scheduled_at: '2026-10-07T12:05:20Z'
+  resolution: fixed
+  resolved_at: '2026-10-12T01:39:14Z'
+  ref: fb75fc6ef8a104275664c2c0bcb396100cef1282
+  note: settled by ADR-0037 plus the gitleaks-no-paths-allowlist pre-commit hook
+- key: BL-E011-020
+  epic: '011'
+  sprint: '01'
+  title: Untracked-file gate fails on any scratch file, incentivising git add of unintended files
+  source: adversarial (AD-08)
+  source_phase: adversarial
+  source_ref: AD-08
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
+  story: E012-S01-002
+  scheduled_at: '2026-10-07T12:05:20Z'
+  resolution: obsolete
+  resolved_at: '2026-10-12T01:39:15Z'
+  note: gate retired by ADR-0035
+- key: BL-E011-033
+  epic: '011'
+  sprint: '01'
+  title: Redacting a list collapses it to a scalar, destroying its count/scheme signal
+  source: ux-review (UX-002)
+  source_phase: ux-review
+  source_ref: UX-002
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
+  story: E012-S01-004
+  scheduled_at: '2026-10-07T12:05:29Z'
+  resolution: fixed
+  resolved_at: '2026-10-12T01:39:29Z'
+  ref: E014-S01-008
+  note: moved from E012-S01-004; delivered by E014-S01-008 (tests in tests/libs/test_settings.py, tests/libs/test_cli_args.py)
+- key: BL-E011-034
+  epic: '011'
+  sprint: '01'
+  title: Unrecognised-flag failure names no near-match and never points at --help
+  source: ux-review (UX-003)
+  source_phase: ux-review
+  source_ref: UX-003
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
+  story: E012-S01-004
+  scheduled_at: '2026-10-07T12:05:29Z'
+  resolution: fixed
+  resolved_at: '2026-10-12T01:39:31Z'
+  ref: E014-S01-008
+  note: moved from E012-S01-004; delivered by E014-S01-008 (tests in tests/libs/test_settings.py, tests/libs/test_cli_args.py)
+- key: BL-E011-035
+  epic: '011'
+  sprint: '01'
+  title: Usage block, now shown on every typo, leaks internal config paths as metavars
+  source: ux-review (UX-004)
+  source_phase: ux-review
+  source_ref: UX-004
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
+  story: E012-S01-004
+  scheduled_at: '2026-10-07T12:05:29Z'
+  resolution: fixed
+  resolved_at: '2026-10-12T01:39:32Z'
+  ref: E014-S01-008
+  note: moved from E012-S01-004; delivered by E014-S01-008 (tests in tests/libs/test_settings.py, tests/libs/test_cli_args.py)
+- key: BL-E011-036
+  epic: '011'
+  sprint: '01'
+  title: Active-settings dump is one unwrapped 400-character JSON line
+  source: ux-review (UX-006)
+  source_phase: ux-review
+  source_ref: UX-006
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
+  story: E012-S01-004
+  scheduled_at: '2026-10-07T12:05:29Z'
+  resolution: fixed
+  resolved_at: '2026-10-12T01:39:34Z'
+  ref: E014-S01-008
+  note: moved from E012-S01-004; delivered by E014-S01-008 (tests in tests/libs/test_settings.py, tests/libs/test_cli_args.py)
+- key: BL-E012-003
+  epic: '012'
+  sprint: ''
+  title: Story E012-S01-001's s6 run-script privilege-drop conditional has no automated test path (manual/documented verification only)
+  source: arch-gate (l3io-arch-review)
+  source_phase: arch-gate
+  source_ref: l3io-arch-review
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-012/arch/arch-gate-review.md (consolidated MINOR findings)
+  resolution: fixed
+  resolved_at: '2026-10-12T01:40:09Z'
+  ref: 2139ad8
+  note: tests/test_s6_privilege_drop.py runs the s6 privilege-drop decision
+- key: BL-E012-013
+  epic: '012'
+  sprint: '01'
+  title: CI-AR44 overstates where verify-build.yaml's self-discovered source-sha flows
+  source: code-review (E012-S01-003)
+  source_phase: code-review
+  source_ref: E012-S01-003
+  severity: Low
+  status: resolved
+  kind: spec-proposal
+  ref: _bmad-output/implementation-artifacts/epic-012/sprint-01/closure/review-E012-S01-003.md
+  description: "CI-AR44 says the self-discovered source-sha is threaded into publish-image.yaml's source-sha input and every expected-source-sha argument. The story's technical AC narrows this to evidence/build-manifest.json only, which is what was implemented: source-integrity declares outputs.source-sha but nothing consumes it, and dev.yaml/release.yaml still pass needs.plan.outputs.source-sha to publish-image. Behaviourally safe (all three values are github.sha; divergence fails closed in verified-bundle). Either thread the output through workflow_call.outputs or amend CI-AR44 and drop the unused job output. See review LOW-1."
+  resolution: obsolete
+  resolved_at: '2026-10-12T01:40:11Z'
+  note: verify-build.yaml and the CI-AR44 spine were retired by ADR-0035
+- key: BL-E011-006
+  epic: '011'
+  sprint: '01'
+  title: "Coverage-check staged-file behaviour deliberately diverges from the story's literal edge-case AC (kind: claim)"
+  source: code-review (E011-S01-002)
+  source_phase: code-review
+  source_ref: E011-S01-002
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-002.md
+  resolution: obsolete
+  resolved_at: '2026-10-12T01:40:12Z'
+  note: coverage gate retired by ADR-0035
+- key: BL-E012-006
+  epic: '012'
+  sprint: ''
+  title: "ADR-0028 is dated the same day as this review and already Status: Accepted via a prior architecture-gate pass, yet Story 3's classification desync (AG-1) survived that same pass uncorrected — worth confirming earlier gate passes actually check story-doc/state sync, not just design content"
+  source: arch-gate (bmad-agent-architect)
+  source_phase: arch-gate
+  source_ref: bmad-agent-architect
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-012/arch/arch-gate-review.md (consolidated MINOR findings)
+  resolution: obsolete
+  resolved_at: '2026-10-12T01:40:13Z'
+  note: concerns a gate process retired by ADR-0035
+- key: BL-E013-037
+  epic: '013'
+  sprint: '01'
+  title: validate-tag checks form only; tag placement/ordering not validated server-side
+  source: arch-drift (SD-01-6)
+  source_phase: arch-drift
+  source_ref: SD-01-6
+  severity: Low
+  status: resolved
+  kind: spec-proposal
+  ref: E013-S02-003
+  description: Spec-proposal for AD-12; resolve together with RT-E013-02.
+  resolution: fixed
+  resolved_at: '2026-10-12T01:40:15Z'
+  note: resolved together with RT-E013-02 (BL-E013-019) by E013-S02-003, ADR-0038
+- key: BL-E013-034
+  epic: '013'
+  sprint: '01'
+  title: zizmor gate runs default persona; secrets-outside-env never fails CI
+  source: redteam (RT-E013-09)
+  source_phase: redteam
+  source_ref: RT-E013-09
+  severity: Low
+  status: resolved
+  description: Do after RT-E013-01. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md
+  resolution: fixed
+  resolved_at: '2026-10-12T01:40:16Z'
+  ref: E013-S02-002
+  note: zizmor hook runs --persona=auditor (.pre-commit-config.yaml, ADR-0039)
+- key: BL-E013-038
+  epic: '013'
+  sprint: '02'
+  title: "F-03: operational.md 'delete the secret to stop publishing' ignores that shared tokens live in both GitHub environments"
+  source: code-review (E013-S02-002)
+  source_phase: code-review
+  source_ref: E013-S02-002
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-02/closure/review-E013-S02-002.md
+  story: E014-S02-003
+  scheduled_at: '2026-10-10T22:27:38Z'
+  resolution: fixed
+  resolved_at: '2026-10-12T02:15:52Z'
+  ref: E014-S02-003
+- key: BL-E013-040
+  epic: '013'
+  sprint: '02'
+  title: 'F-05: ADR-0039 missing from docs/architecture.md section 6 ADR index and from the spine companions list'
+  source: code-review (E013-S02-002)
+  source_phase: code-review
+  source_ref: E013-S02-002
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-02/closure/review-E013-S02-002.md
+  story: E014-S02-003
+  scheduled_at: '2026-10-12T01:51:17Z'
+  resolution: fixed
+  resolved_at: '2026-10-12T02:15:53Z'
+  ref: E014-S02-003
+- key: BL-E013-025
+  epic: '013'
+  sprint: '01'
+  title: dev/release publish jobs duplicated (~150 lines); trade-off not recorded
+  source: arch-drift (SD-01-7)
+  source_phase: arch-drift
+  source_ref: SD-01-7
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/arch-drift-review.md
+  story: E014-S02-003
+  scheduled_at: '2026-10-12T01:51:19Z'
+  resolution: fixed
+  resolved_at: '2026-10-12T02:15:54Z'
+  ref: E014-S02-003
+- key: BL-E014-035
+  epic: '014'
+  sprint: '01'
+  title: ADR-0040 names a removed writer method and a superseded recording rule
+  source: arch-drift (SD-01-3)
+  source_phase: arch-drift
+  source_ref: SD-01-3
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/arch-drift-review.md
+  story: E014-S02-003
+  scheduled_at: '2026-10-12T02:01:54Z'
+  resolution: fixed
+  resolved_at: '2026-10-12T02:15:54Z'
+  ref: E014-S02-003
+- key: BL-E014-039
+  epic: '014'
+  sprint: '01'
+  title: Restart/deferred-restart flow has no diagram
+  source: arch-drift (SD-01-8)
+  source_phase: arch-drift
+  source_ref: SD-01-8
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/arch-drift-review.md
+  story: E014-S02-003
+  scheduled_at: '2026-10-12T02:01:55Z'
+  resolution: fixed
+  resolved_at: '2026-10-12T02:15:55Z'
+  ref: E014-S02-003
+- key: BL-E014-009
+  epic: '014'
+  sprint: '02'
+  title: 'E014-S02-003: CI spine AD-2 step 2 (L91) and AD-16 just-install row (L265) still say plain poetry install; route ADR-0042 text'
+  source: arch-gate (AG-14)
+  source_phase: arch-gate
+  source_ref: AG-14
+  severity: Low
+  status: resolved
+  description: Arch-gate re-validation; see _bmad-output/implementation-artifacts/epic-014/arch/ (AG-14). Carried into the story file as a dev note.
+  story: E014-S02-003
+  scheduled_at: '2026-10-12T02:03:25Z'
+  resolution: fixed
+  resolved_at: '2026-10-12T02:15:55Z'
+  ref: E014-S02-003

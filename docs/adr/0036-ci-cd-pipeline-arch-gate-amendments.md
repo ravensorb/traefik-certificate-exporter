@@ -7,6 +7,7 @@
 - **Departs from spec:** n/a
 - **Spine:** `_bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md` (amends AD-3, AD-5, AD-16, AD-17 and the Conventions row "Idempotent re-run")
 - **Amends:** ADR-0035
+- **Amended by:** ADR-0046 (§5: `--skip-existing` is TestPyPI/PyPI only; CI AD-11)
 - **Gate record:** `_bmad-output/implementation-artifacts/epic-013/arch/arch-gate-review.md` (AG-4, AG-5, AG-7, AG-8, AG-10, AG-11)
 
 ## Context
@@ -38,6 +39,7 @@ Amend the spine in place as follows. AD ids are unchanged.
    - A re-run re-points every tag written by that run, across every enabled registry, to the one digest that run built.
    - It does not reproduce the previous run's digest.
    - Wheel and sdist uploads still use `--skip-existing`, and the release step still uses `allow-updates: true`.
+     *Amended 2026-10-11 (ADR-0046, CI spine AD-11 as amended 2026-10-09):* `--skip-existing` applies to TestPyPI and PyPI only, because twine refuses it for any other index. The Gitea upload asks Gitea which files it already holds and uploads only the missing ones.
 6. **AD-3 — secret scanning covers history (AG-11).**
    - The hook list carries a second gitleaks hook, with `alias: gitleaks-history`:
      - `entry: gitleaks git --redact --no-banner --config .gitleaks.toml`

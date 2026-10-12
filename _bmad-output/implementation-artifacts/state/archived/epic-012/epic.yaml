@@ -1,12 +1,8 @@
-_lock:
-  session_id: l3io-pm-20261008T123118Z-079584
-  claimed_at: '2026-10-08T12:41:41Z'
-  ttl_minutes: 30
 key: 'E012'
 title: Epic 012 — Residual Security/CI Hardening Backlog
 goal: ''
-status: in-progress
-updated_at: '2026-10-08T12:41:41Z'
+status: done
+updated_at: '2026-10-12T01:39:57Z'
 estimate:
   man_hours_low: 105.94
   man_hours_high: 116.0

@@ -84,8 +84,11 @@ backlog item **BL-E014-016**. The docs and the 0.3.0 release notes state this li
   when that is `false`; the 0.2.x "Skipping" respawn loop is gone. In the image the
   Dockerfile's environment default `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=true`
   outranks `/config/config.yaml`, so the environment variable is the container's run-once
-  switch; whether that default should move out of the environment is backlog item
-  **BL-E014-017**.
+  switch. This follows the settings precedence that holds for every setting,
+  `CLI > env > config file > defaults`. The maintainer kept the image default and that
+  precedence on 2026-10-11 (BL-E014-017, resolved wontfix): to run once in the container,
+  set `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=false`; a
+  `watchforchanges: false` in `/config/config.yaml` alone does not change the mode.
 - An unresolved mode (malformed config, or a value confuse rejects) falls back to watch
   mode, so the exporter's own start-up failure is respawned by s6 as it was in 0.2.x. That
   is a crash loop of a broken configuration, reported by the exporter's error on every

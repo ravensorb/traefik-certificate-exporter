@@ -15,5 +15,6 @@ that grounds it.
 | [ci/gitea-runners.md](ci/gitea-runners.md) | Gitea runner and private-CA guidance for running the pipeline on self-hosted Gitea (AD-6, AD-18) |
 | [developer.md](developer.md) | Setup, `just` recipes, local CI under `act`, releasing, build, run, conventions |
 | [operational.md](operational.md) | Deploy, configuration, runbooks (including CI recovery and bad releases), monitoring, rollback |
+| [upgrading.md](upgrading.md) | Upgrade notes per release (0.2.0 → 0.3.0: restarts, privileges, setting names and the legacy-name table, hook/notification contract, run-once, PKCS12, versioning and image tags, where releases come from) |
 
 Keep this index current — a doc that stops matching the code is a defect (Core §10).

@@ -1,0 +1,10 @@
+# Poetry bootstrap for CI only: a bootstrap-only exception to ADR-0001 (ADR-0042). It installs
+# Poetry and nothing else; application, dev and publish dependencies stay in poetry.lock.
+# poetry.txt is generated from this file, never hand-edited. Regenerate it, from the
+# repository root, with the two lines below (the variable makes pip-compile write this exact
+# command into the generated header):
+#   export CUSTOM_COMPILE_COMMAND="pipx run --python 3.14 --spec 'pip-tools==7.6.2' pip-compile --generate-hashes --output-file .github/requirements/poetry.txt .github/requirements/poetry.in"
+#   eval "$CUSTOM_COMPILE_COMMAND"
+# --python 3.14 is the interpreter every workflow's setup-python installs; pip-compile writes
+# no environment markers, so the file resolves for that interpreter only.
+poetry==2.4.2

@@ -7,7 +7,8 @@
 - **Supersedes:**
   - the 2026-08-31 CI/CD spine (CI-AR1..CI-AR50);
   - ADR-0006, 0007, 0009, 0011, 0015, 0019, 0020, 0021, 0022, 0029, 0031, 0032;
-  - the near-miss-probe and untracked-file-gate parts of ADR-0033.
+  - the near-miss-probe and untracked-file-gate parts of ADR-0033;
+  - ADR-0016 and 0017 (already retired by the E009 rescope of 2026-10-06; recorded 2026-10-11 by E014-S02-003).
 - **Amends:**
   - ADR-0008: the image is still built from the tested wheel, but with `docker/build-push-action`, not bake;
   - ADR-0010: release credential;
@@ -15,6 +16,8 @@
 - **Carries forward:** ADR-0004, ADR-0018, ADR-0028, and ADR-0033's rule as restated by ADR-0037: the repository adds no path exemption to secret scanning.
 - **Walkthrough:** `docs/ci/pipeline-walkthrough.md`
 - **Amended by:** ADR-0036 (E013 arch gate); ADR-0037 (inherited gitleaks default allowlist)
+- **Amended by:** ADR-0038 (release only from protected `v*` tags on main); ADR-0039 (publish
+  credentials in forge environments); ADR-0046 (E014 pipeline amendments)
 
 ## Context
 
@@ -54,6 +57,7 @@ Adopt the 2026-10-08 spine. In summary:
    - dev images: `-dev.N`, `sha-*` and `dev`;
    - release images: `X.Y.Z`, `X.Y`, `X` and `latest`.
 6. **Standard checks only.** actionlint, zizmor (whose pin policy allows `LiquidLogicLabs/*` at major tags and requires commit SHAs for everything else), gitleaks, ruff and mypy. No repository code polices workflows.
+   *Amended 2026-10-11 (ADR-0046):* zizmor's `ref-pin` policy accepts any ref for `LiquidLogicLabs/*`, `@main` included, so it does not enforce the major-tag form. The `workflows-lll-major-tag` pygrep hook does (CI spine AD-5, with its coverage limit).
 
 ## Alternatives considered
 

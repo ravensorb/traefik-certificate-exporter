@@ -22,7 +22,8 @@ install` pulls it in on any platform/resolver.
 
 ## Configuration
 
-Three layers, in precedence order (highest wins): CLI flags > environment variables
+Four layers, in precedence order (highest wins), for every setting —
+`CLI > env > config file > defaults`: CLI flags > environment variables
 (`TRAEFIK_CERTIFICATE_EXPORTER_*`) > `config.yaml` (via `-c`) > packaged
 [config_default.yaml](../src/traefik_certificate_exporter/config_default.yaml). Env vars
 deliberately outrank the config file — this is a Docker-first tool, and env vars are the
@@ -436,19 +437,46 @@ the whole Engine API.
 Packages and images are published by `dev.yaml` (every push to `main`) and `release.yaml`
 (every `vX.Y.Z` tag); `ci.yaml` only builds and tests (ADR-0035). Each destination — the
 Gitea package index, TestPyPI, PyPI, GHCR, the Gitea container registry, Docker Hub, and
-the forge release — is enabled only by its own `PUBLISH_*_TOKEN` secret, set separately on
-each forge (AD-9). With none set, a run succeeds and publishes nothing.
+the forge release — is enabled only when its own `PUBLISH_*_TOKEN` secret **and** every
+`PUBLISH_*` variable it needs are set and non-empty, separately on each forge (AD-9). With
+nothing set, a run succeeds and publishes nothing, silently. A partly configured
+destination is skipped with exactly one `::warning::` per run naming what is missing and
+where to set it; the run stays green.
+
+**Where the secrets live.** One forge's run publishes all destinations of a release
+(CI spine AD-9); the other forge holds no `PUBLISH_*` secret or variable (a variable left
+there alone warns on every run).
+
+- **GitHub:** every `PUBLISH_*` secret lives in the `dev` or `release` environment of the
+  jobs that use it, never at repository level, where any same-repository branch workflow
+  could read it ([ADR-0039](adr/0039-publish-credentials-in-forge-environments.md)). A
+  token both workflows use is set in both environments.
+- **Gitea:** Gitea ignores `environment:`, so `PUBLISH_*` secrets are repository-level and
+  are present only when Gitea is the publishing forge. A Gitea-run release may hold the
+  PyPI, TestPyPI, GHCR and Docker Hub tokens too, and then requires the AD-13 mitigations:
+  protected `main` and `v*` tags with push and tag creation limited to trusted accounts,
+  project-scoped tokens, and rotation of every token after any untrusted push (ADR-0039 as
+  amended 2026-10-11, [ADR-0046](adr/0046-e014-pipeline-amendments.md)).
+
+The settings to apply on each forge are the checklist in
+[ci/pipeline-walkthrough.md](ci/pipeline-walkthrough.md#forge-settings-the-maintainer-applies).
 
 The destination table, the `PUBLISH_*` variables that go with each secret, and the image
 tags each workflow writes are in
 [ci/pipeline-walkthrough.md](ci/pipeline-walkthrough.md#where-things-are-published).
 
-The Gitea package index and the Gitea container registry share one secret,
-`PUBLISH_GITEA_TOKEN` (AD-9 table), so neither can be enabled without the other: setting
-it turns on both, and the image side then also needs `PUBLISH_GITEA_IMAGE` and
-`PUBLISH_GITEA_REGISTRY`. A registry whose token is set but whose image (or, for Gitea,
-registry) variable is empty fails `publish-image` at its `Registry configuration guard`
-step, before any login or push.
+The Gitea package index and the Gitea container registry share `PUBLISH_GITEA_TOKEN` and
+`PUBLISH_GITEA_USERNAME` (AD-9 table) but are enabled independently: the index also needs
+`PUBLISH_GITEA_PYPI_URL`, the registry `PUBLISH_GITEA_REGISTRY` and `PUBLISH_GITEA_IMAGE`.
+A registry whose token is set but whose image (or, for Gitea, registry) variable is empty
+is skipped with a warning before any login or push; the other destinations still publish.
+Because a skipped destination does not fail the run, check each release run for zero
+destination warnings (the per-release checklist in
+[ci/pipeline-walkthrough.md](ci/pipeline-walkthrough.md#releasing)). On GitHub, a
+destination only one workflow publishes to keeps its variables in that workflow's
+environment, or the other workflow reports it as partially configured on every run. Legacy secrets that
+nothing reads any more (for example `DOCKERHUB_TOKEN`) are reported once per run with
+their `PUBLISH_*` replacement.
 
 The `PUBLISH_*` **variables** are part of the publication authority, not just the
 secrets. `PUBLISH_GITEA_PYPI_URL` is the upload URL that receives `PUBLISH_GITEA_TOKEN`,
@@ -530,7 +558,13 @@ majors deliberately until `act` supports them.
    `PUBLISH_CA_CERTIFICATE`) is both `dev` and `release`
    (`gh secret set <NAME> --env dev`, then `--env release`). On Gitea update it in the
    repository (or organisation) secret store. To stop publishing to that destination
-   instead, delete the secret: the destination switches off and runs keep succeeding.
+   instead, delete the secret from **every environment that holds it** (`dev` and `release`
+   for a shared token; on Gitea, the repository or organisation store), or clear one of
+   the destination's required `PUBLISH_*` variables: the destination switches off and runs
+   keep succeeding. A secret left in one environment keeps that workflow publishing.
+   Clearing a variable while the secret remains reports the destination as partially
+   configured on every run, which blocks a release under the zero-warning rule: delete the
+   secret too, or clear every variable it needs, before the next release.
 3. **Scope the replacement as narrowly as the destination allows.** Create
    `PUBLISH_PYPI_TOKEN` and `PUBLISH_TESTPYPI_TOKEN` as project-scoped tokens for this
    project, never account-wide ones (an account-scoped token is only needed once, for the

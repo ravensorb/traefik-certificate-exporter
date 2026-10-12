@@ -13,7 +13,9 @@ binds: [FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, FR-1
 sources:
   - .memlog.md
   - _bmad-output/planning-artifacts/prds/prd-traefik-certificate-exporter-2026-08-30/prd.md
-  - docs/adr/0001, 0002, 0003, 0004, 0013, 0014, 0023, 0024, 0025, 0026, 0027, 0030
+  - docs/adr/0001, 0002, 0003, 0004, 0013, 0014, 0023, 0024, 0025, 0026, 0027, 0030, 0040, 0042, 0043, 0044, 0045, 0046, 0048
+  - _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/notes-E014-S01-001..010.md (S02-003 routing)
+  - _bmad-output/implementation-artifacts/epic-014/execution-notes.md (maintainer decisions 2026-10-11)
   - _bmad-output/implementation-artifacts/epic-014/sprint-01/stories/E014-S01-001..008.md
   - _bmad-output/implementation-artifacts/review-all-epics-2026-10-10/review-product.md
 companions:
@@ -37,7 +39,8 @@ only persistent state.
   pass, watch loop, shutdown.
 - **Domain + pass orchestration** — `libs/certificate_exporter.py`: ACME store parsing,
   PEM/PKCS12 build, atomic writes, change detection, artifact mtimes, and the watch handler
-  (`AcmeCertificateFileHandler`) that runs a pass (export → hook → notify → restart).
+  (`AcmeCertificateFileHandler`) that runs a pass (export → hook → notify → restart). This
+  shape is accepted for 0.3.0 and its extraction is planned work (ADR-0048).
 - **Adapters** — `libs/docker.py` (Docker Engine), `libs/post_export.py` (hook subprocess),
   `libs/notify.py` (Apprise), `libs/settings.py` + `libs/legacy_settings.py` (confuse-backed
   config and the settings surface), `libs/cli_args.py` (argparse), `libs/suggest.py`
@@ -70,10 +73,13 @@ graph TD
   hook --> log
   cli --> docker
   cli --> suggest[libs/suggest.py]
+  cli --> log
   settings --> legacy[libs/legacy_settings.py]
   settings --> obj[libs/object.py]
   settings --> log
   legacy --> suggest
+  legacy --> hook
+  legacy --> log
 ```
 
 ### AD-1 — Poetry is the single dependency source [ADOPTED]
@@ -87,7 +93,8 @@ graph TD
   CI, per CI AD-11; nothing else. `[tool.poetry.dependencies]` holds exactly what `src/`
   imports, and the locked environment carries no known vulnerability, enforced by the `deptry`
   and `pip-audit` hooks (CI AD-3 owns their scope and exception rules). No module in `src/`
-  imports `requests`. `uv.lock` is git-ignored; migrating off Poetry needs a new ADR. — ADR-0001.
+  imports `requests`. `uv.lock` is git-ignored; migrating off Poetry needs a new ADR. — ADR-0001,
+  ADR-0046 (bootstrap exception).
 
 ### AD-2 — Container base image and privilege model [ADOPTED]
 
@@ -120,18 +127,24 @@ graph TD
   container
 - **Rule:** secret-bearing config paths are declared once in `SECRET_CONFIG_KEYS`
   (`pkcs12passphrase`, `appriseurls`, `postexportcommand`) and redaction of every sink
-  (settings dump, config dump, raw argparse namespace) derives from that registry via
-  `confuse`'s `redact`; a declared-secret list is redacted per element, keeping only the
-  `<scheme>://` and the count. Hook log lines name only `argv[0]`. File output is JSON; console
+  derives from that registry: the config dump via `confuse`'s `redact`, the settings dump
+  and the raw argparse namespace via `settings._redact_secrets`; redaction is value-aware (an
+  unset secret renders `null`) and a declared-secret list is redacted per element, keeping
+  only the `<scheme>://` and the count. Hook log lines name only the program (`argv[0]`),
+  never its arguments or the command string, and a hook parse failure names neither the
+  command nor the parser message. File output is JSON; console
   is `coloredlogs` unless `TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON` selects JSON.
   Logging config comes from the packaged `logging.yaml` or an explicitly set
   `…_LOGGING_CFGFILE`, never a CWD lookup. Level precedence: `-ll` >
-  `TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL` (case-insensitive) > `INFO`; an invalid value
-  gives one WARNING and `INFO`. The `LOGGING_*` env family is read before settings load and
+  `TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL` (case-insensitive; one pair of surrounding
+  quotes stripped; empty counts as unset) > `INFO`; an invalid value gives one WARNING
+  (variable, sanitized value, allowed set) and `INFO`, never an exit, and one INFO line at
+  start-up names the effective level and its source (`cli`, `env`, `default`). The `LOGGING_*` env family is read before settings load and
   has no config-file key. Every record carries `correlation_id`: one UUID4 per export pass,
   carried in a `ContextVar` and passed explicitly into the drain timer, deferred-restart
   timers, the hook (`TRAEFIK_CERTIFICATE_EXPORTER_CORRELATION_ID`) and notifications; `-`
-  outside a pass. — ADR-0003, ADR-0023, ADR-0014 (Decision 4), E014-S01-004/006/008.
+  outside a pass. — ADR-0003, ADR-0023, ADR-0014 (Decision 4), ADR-0045 (decision 14),
+  E014-S01-004/006/008/010.
 
 ### AD-4 — Docker image built from the locked dependency set [ADOPTED]
 
@@ -170,7 +183,16 @@ graph TD
   replacement and is ignored — no aliases; an unknown `TRAEFIK_CERTIFICATE_EXPORTER_*` env name
   gives one WARNING with a `suggest.nearest_name` suggestion; values are never logged. A file
   that quotes legacy names must carry `tce-settings-scan: legacy-names-listed` and at least one
-  legacy name. `settings.domains.include` and `settings.domains.exclude` are mutually
+  legacy name. The name checks run once at start-up, before the first pass and outside any
+  pass id; they are advisory (a failure in them is logged once and start-up continues). The
+  names the exporter sets for the post-export command (`…_EXPORTED_DOMAINS`,
+  `…_CORRELATION_ID`) are valid names, never suggested and not warned about; list indices
+  that are not contiguous from 0 are accepted silently (BL-E014-015). Coverage is enforced
+  by `tests/test_settings_surface.py` (`test_legacy_map_covers_documented_names` scans
+  `git log -p HEAD` over the documentation pathspecs and fails on a shallow clone). The
+  warn-ignore-no-aliases policy has no ADR by explicit decision (C-16b): it is local to
+  settings loading and reversible; an alias would be a compatibility contract and needs one.
+  `settings.domains.include` and `settings.domains.exclude` are mutually
   exclusive across every surface (CLI, environment, config file): both set, from any
   combination of surfaces, logs one ERROR and exits 1. Production argv is parsed strictly in `main()` (unknown flag → exit 2 with
   `Did you mean …?` from `suggest.nearest_name` and a `--help` pointer); the import-time
@@ -184,17 +206,22 @@ graph TD
   others' results; empty keys written from bad base64
 - **Rule:** detect store shape by keys, never by registration URI: a resolver node is a dict
   with `Certificates` or `Account` (either case); a v1.7 single store is a top-level resolver
-  node; legacy certificates come from `DomainsCertificate.Certs`. Null `Certificates`,
+  node; legacy certificates come from `DomainsCertificate.Certs` at node level or under
+  `Account`. Null `Certificates`,
   `Account`, `Registration` or missing `uri` are empty, not errors. Key case is chosen per
-  certificate entry. Each resolver runs in its own `try` (one ERROR, then continue); a
+  certificate entry. Each resolver runs in its own `try` (one ERROR, then continue); after
+  the resolvers, one WARNING `N of M resolvers failed in <file>` when N > 0; a
   non-resolver top-level key is skipped with a WARNING. Base64 is decoded with
   `validate=True`; a bad field fails only that certificate. `exportCertificatesForFile`
   returns `list[str]`, never `None`. No store size cap. `traefikresolverid` limits processing
-  to that node. Parsing is stdlib `json`/`base64`; no schema validator. — E014-S01-003.
+  to that node. Parsing is stdlib `json`/`base64`; no schema validator. Entries that map onto
+  the same artifact files within one store file (two resolvers with `resolverinpathname`
+  off, or a wildcard and its apex) have one owner: the leaf that expires last, ties to store
+  order; the others are skipped with a WARNING. — E014-S01-003; ADR-0043 decision 6.
 
 ### AD-8 — Export artifacts: build first, write atomically, rewrite only on change [ADOPTED]
 
-- **Binds:** `libs/certificate_exporter.py` (`PemToPfxConverter`, `__exportCertificate`,
+- **Binds:** `libs/certificate_exporter.py` (`PemToPfxConverter`, `__exportDomain`,
   `_atomic_write*`, `artifactMtime`)
 - **Prevents:** half-rotated domains; truncated files; broken PFX when a passphrase is set;
   "changed" signals and mtimes moving when nothing changed
@@ -204,12 +231,15 @@ graph TD
   and the domain unreported. The private key is loaded unencrypted; the passphrase is used only
   to encrypt the `.pfx` (`BestAvailableEncryption`; `None`/`""` means unencrypted); the PFX
   carries the intermediates in input order. Each artifact is compared with the file on disk
-  (PEM by bytes; PFX by key, leaf, intermediates and encryption state) and only changed
-  artifacts are written, each via same-directory temp file + `os.replace` (PEM and `.pfx`
+  (PEM by bytes; PFX by key, leaf, intermediates and encryption state; a symlink or
+  non-regular file at the export path, or a mode looser than the artifact's floor, counts as
+  changed) and only changed artifacts are written, each via same-directory temp file + `os.replace` (PEM and `.pfx`
   alike); key and `.pfx` are mode 0600. A domain is reported (the changed signal) iff at least
-  one artifact was replaced in the pass. No state file or fingerprint store exists besides the
-  exported files. Dry run builds and compares in memory and writes nothing. — ADR-0023,
-  ADR-0024, memlog 2026-10-11, E014-S01-002.
+  one artifact was replaced in the pass; a write failure after the first replace still
+  reports the domain, with one ERROR naming the written and unwritten artifacts. No state file or fingerprint store exists besides the
+  exported files. Dry run builds and compares in memory and writes nothing. — ADR-0043
+  (amends ADR-0014, ADR-0023 Decision 3, ADR-0024), ADR-0023, ADR-0024, ADR-0040, memlog
+  2026-10-11, E014-S01-002.
 
 ### AD-9 — Pass sequence and consumer contracts [ADOPTED]
 
@@ -218,13 +248,19 @@ graph TD
 - **Prevents:** hooks and notifications firing on every pass; a consumer failure aborting an
   export; the two call paths diverging
 - **Rule:** a pass is export → post-export hook → notifications → restart evaluation, on both
-  call paths. The hook and notifications run only when the changed-domain list is non-empty
-  and receive exactly that list. The hook is a subprocess with a fixed 30 s timeout; failure is
+  call paths. The hook and notifications act only on the domains whose exported artifacts
+  changed in the pass (ADR-0043): at both call sites they run only when that list is
+  non-empty and receive exactly it, so `TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS` and
+  the notification body name only changed domains. When nothing changed, neither runs and
+  one INFO line `No certificate changed; no hook or notification` is logged; this holds for
+  every pass, including the run-at-start pass, a run-once container and a pass that only
+  recovers a lost restart. In a dry run the list is the domains that would change. The hook is a subprocess with a fixed 30 s timeout; failure is
   logged, never propagated. Notifications are Apprise (ordinary runtime dependency), fired at
   `post-export` only, fire-and-forget, bounded by Apprise's per-destination timeouts; there is
   no event bus and no `pre-export`/`cert-export` event. Restart evaluation runs on every pass
   regardless of changes (AD-10). In dry run the hook and notifications are skipped with one
-  INFO line each. — ADR-0014, E014-S01-006.
+  INFO line each. — ADR-0014, ADR-0043, ADR-0045 decision 13 (amends ADR-0014 §7),
+  E014-S01-006, E014-S01-010.
 
 ### AD-10 — Container restart: one client, file-mtime trigger, defer not drop [ADOPTED]
 
@@ -234,18 +270,30 @@ graph TD
 - **Rule:** the Docker SDK client is built only by `DockerManager._create_client()` via
   `docker.from_env(use_context=False)`; the Engine must offer API 1.24 or newer (the docker
   SDK 7.x floor), and an older Engine surfaces as the start-up reachability ERROR. When `settings.restartcontainers` is true, start-up
-  pings once and logs reachability; failure logs ERROR and export continues. Candidates are
-  containers labeled `com.github.ravensorb.traefik-certificate-exporter.domain-restart`
-  (comma-separated domains). A candidate is restarted iff the newest mtime of its domains'
-  exported artifacts exceeds its `State.StartedAt` (UTC, `dateutil` `isoparse`) by more than
-  `RESTART_MTIME_SLACK_SECONDS` = 2; missing, empty, unparsable or zero `StartedAt` means no
-  restart. A per-container `RESTART_COOLDOWN_SECONDS` = 300 floor applies; a restart the floor
-  denies arms one coalesced daemon timer, which re-checks label and rule against a fresh client
-  at fire time. Failures log ERROR without re-arming; the next pass recovers by the same rule.
+  pings once and logs reachability; failure logs ERROR and export continues. Expected Engine
+  failures (`docker.errors.DockerException`, `OSError`; the latter covers `requests` transport
+  errors without importing `requests`) are logged as one ERROR line naming the endpoint
+  (`DOCKER_HOST`, else `unix:///var/run/docker.sock`) without a traceback; a container removed
+  mid-pass is skipped (`list(ignore_removed=True)`, INFO `container gone` on `restart`).
+  On every pass — the start-up pass and every drain, including passes in which no domain
+  changed — candidates are the running containers on the connected daemon labeled
+  `com.github.ravensorb.traefik-certificate-exporter.domain-restart` (comma-separated
+  domains) whose label names at least one domain with an exported artifact on disk. A
+  candidate is restarted iff the newest mtime of its labeled domains' exported artifacts
+  (read from the paths the export pass recorded, ADR-0040) exceeds its `State.StartedAt`
+  (UTC, `dateutil` `isoparse`) by more than `RESTART_MTIME_SLACK_SECONDS` = 2; missing,
+  empty, unparsable or zero `StartedAt` means no restart. Unchanged artifacts are not
+  rewritten, so the files' mtimes and the container's start time are the only restart state.
+  A per-container `RESTART_COOLDOWN_SECONDS` = 300 floor applies; a restart the floor denies
+  arms one coalesced daemon timer, which at fire time re-checks, against a fresh client, that
+  the container exists and is still running, its label still names a requesting domain, the
+  rule still holds and no other restart has claimed the window. Failures log ERROR without
+  re-arming; a lost deferral, a failed restart and a crash between write and restart are
+  recovered on the next pass by the same rule.
   `DockerManager.cancel()` clears pending timers on every exit path. Window and slack are not
   configurable; no restart state is persisted. Engine errors are caught as `DockerException`
   and `OSError`. Dry run logs intended restarts and arms nothing. — memlog 2026-10-11,
-  E014-S01-001, E014-S01-006.
+  E014-S01-001, E014-S01-006, ADR-0040, ADR-0045.
 
 ### AD-11 — Watch, debounce and shutdown [ADOPTED]
 
@@ -274,23 +322,41 @@ graph TD
   execs the exporter through the privilege branch. A `finish` script exits 0 in watch mode (s6
   respawns); in run-once mode it writes the exit code to
   `/run/s6-linux-init-container-results/exitcode` and halts the container. A missing or
-  invalid mode file means watch. The exit code reflects start-up failures only.
+  invalid mode file means watch, with one WARNING per start
+  (`run mode unresolved; defaulting to watch mode`). The exit code reflects start-up failures
+  only (non-zero: 1 for a missing data path or conflicting include/exclude, 2 for an unknown
+  flag; AD-6); export failures are logged, not signalled
+  (BL-E014-016, PRD §6 #23). Settings precedence is `CLI > env > config file > defaults` for
+  every setting, the run mode included, so in the image the env default
+  `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=true` outranks `/config/config.yaml`
+  and the env var is the run-once switch (maintainer decision 2026-10-11, BL-E014-017
+  resolved wontfix).
   The image keeps `settings.runatstart` on by default (`Dockerfile` env and the seeded sample;
   the start-up pass produces the first export); when both it and `settings.watchforchanges`
   are false, the app logs one WARNING that there is nothing to do and returns normally. On first boot the init oneshot seeds
   `/config/config.yaml` from `/defaults/config/config.yaml.sample` when the file is absent and
-  never overwrites an existing one. — ADR-0030, E014-S01-005, E014-S01-006.
+  never overwrites an existing one. — ADR-0030, ADR-0044, E014-S01-005, E014-S01-006.
 
 ### AD-13 — Module layering as built [ADOPTED]
 
-- **Binds:** `src/traefik_certificate_exporter/**`
+- **Binds:** `src/traefik_certificate_exporter/**`, `pyproject.toml` `[tool.importlinter]`,
+  `.pre-commit-config.yaml` (hook `import-linter`)
 - **Prevents:** import cycles; adapters reaching back into the domain or entrypoint
-- **Rule:** imports follow the diagram above. `logging_utils` imports nothing in-package;
-  `suggest` and `object` import nothing in-package; adapters (`docker`, `notify`,
-  `post_export`) never import `certificate_exporter` or `app`. `certificate_exporter` hosts the
-  watch handler and orchestrates the adapters for the watch pass; `app` orchestrates the
-  run-at-start pass. New modules join the adapter layer unless they orchestrate a pass. —
-  review-product M7.
+- **Rule:** imports follow the diagram above, in a strict layer order enforced by the
+  `[tool.importlinter]` contracts in `pyproject.toml`: `no-cycles` (no cycle between sibling
+  modules), `entrypoint-on-top` (`app` above `libs`; nothing under `libs` imports `app`) and
+  `libs-layers` (exhaustive; top to bottom `certificate_exporter`, `cli_args`, `docker`,
+  `settings`, `legacy_settings`, `notify | post_export`, `logging_utils | object | suggest`;
+  a module imports only from layers below it). So `logging_utils`, `suggest` and `object`
+  import nothing in-package, and the adapters never import `certificate_exporter` or `app`.
+  `certificate_exporter` hosts the watch handler and orchestrates the adapters for the watch
+  pass; `app` orchestrates the run-at-start pass. A new module must be placed in
+  `libs-layers` (it is exhaustive), in the adapter layers unless it orchestrates a pass.
+  Enforced by the `import-linter` pre-commit hook (`.pre-commit-config.yaml`, id
+  `import-linter`, `lint-imports`), which runs in `just check` and CI. Coverage limit: only
+  what the contracts declare is checked; an object handed to a function at run time is not
+  an import and is not seen. — ADR-0048, review-product M7, arch drift SD-01-1 (maintainer
+  decision 2026-10-11).
 
 ## Consistency Conventions
 
@@ -298,9 +364,9 @@ graph TD
 | --- | --- |
 | Naming (config, CLI, env) | Lowercase-dotted keys (`settings.datapath`); CLI `dest=` is the dotted key; env `TRAEFIK_CERTIFICATE_EXPORTER_` + key path with `_`; docs show placeholders ending in `_` (`…_SETTINGS_<KEY>`) (AD-6) |
 | Naming (code) | `libs/docker.py`, `certificate_exporter.py` classes use `camelCase` methods; module-level private helpers are `_snake_case`; tests for `libs/x.py` live in `tests/libs/test_x.py`; repository-wide checks live at `tests/` top level |
-| Data & formats — artifacts | Per-domain layout `privkey.pem/cert.pem/chain.pem/fullchain.pem/cert.pfx`; flat layout `<name>.key/.crt/.chain.pem/.fullchain.pem/.pfx` (flat `.crt` holds the full chain); `fullchain.pem` is the store bytes unchanged; SANs are logged, not exported |
+| Data & formats — artifacts | Per-domain layout `privkey.pem/cert.pem/chain.pem/fullchain.pem/cert.pfx`; flat layout `<name>.key/.crt/.chain.pem/.fullchain.pem/.pfx` (flat `.crt` holds the full chain); both under `<output>/<resolver>/` when `resolverinpathname` is true and the store is resolver-wrapped, directly under `<output>/` otherwise; paths come only from `_artifact_paths` (ADR-0040); `fullchain.pem` is the store bytes unchanged; SANs are logged, not exported |
 | Data & formats — signals | The changed-domain list is the only change signal; restarts read artifact mtimes vs container `StartedAt`; the files are the state (AD-8, AD-10) |
-| State & cross-cutting | Precedence CLI > env > config file > packaged default (`confuse`); global singletons (`globalLogger`, `globalArgs`, `globalSettingsMgr`) for cross-cutting concerns, no DI; secrets per AD-3 |
+| State & cross-cutting | Precedence CLI > env > config file > packaged default (`confuse`), for every setting (BL-E014-017); global singletons (`globalLogger`, `globalArgs`, `globalSettingsMgr`) for cross-cutting concerns, no DI; secrets per AD-3 |
 | Errors | Per-certificate and per-resolver failures log one ERROR and continue; consumer (hook, notify, restart) failures never abort a pass; start-up misconfiguration (missing data path, unknown flag) fails loudly |
 | Testing | pytest only; real integration seams opt-in via `@pytest.mark.integration` and `TCE_DOCKER_INTEGRATION=1`; image tests target `${TCE_IMAGE:-traefik-certificate-exporter:local}`; fixtures use synthetic domains and the shared `real_chain()` generator |
 | Repository framing | "Not maintained by us" framing of vendored `.agents/`/`.claude/` trees lives only in `.github/CODEOWNERS` (ADR-0027) |
@@ -317,12 +383,16 @@ graph TD
 | cryptography | `^50.0.2` |
 | pyyaml | `^6.0` (main group) |
 | python-dotenv | `^1.2.2` |
+| importlib-resources | `^6.4.0` |
+| jsonpickle | `^3.0.3` |
+| logging-tree | `^1.9` |
 | python-dateutil | `^2.9.0` |
 | apprise | `^1.9` |
 | coloredlogs | `^15.0.1` |
 | python-json-logger | `^4.2.0` |
-| deptry, pip-audit | dev group, locked in `poetry.lock` |
-| `ghcr.io/linuxserver/baseimage-alpine` | `3.24`, digest-pinned in `docker/Dockerfile` `ARG BASE_IMAGE` |
+| deptry, pip-audit | `^0.25.1`, `^2.10.1`; dev group, locked in `poetry.lock` |
+| import-linter | `2.15`, pinned in the `import-linter` hook's `additional_dependencies` (AD-13) |
+| `ghcr.io/linuxserver/baseimage-alpine` | `3.24@sha256:d2deff7a9aff1388bd79ded33a4efda6bd4b26358f9234a23deccba724738fea`, digest-pinned in `docker/Dockerfile` `ARG BASE_IMAGE` (Dependabot bumps) |
 | s6-overlay | `3.2.1.0` (from the base image) |
 
 ## Structural Seed
@@ -369,7 +439,7 @@ graph LR
 | Capability / Area | Lives in | Governed by |
 | --- | --- | --- |
 | FR-1 ACME parsing (v1, v1.7, v2/v3, any CA) | `libs/certificate_exporter.py` | AD-7 |
-| FR-2 PEM + PKCS12 export | `libs/certificate_exporter.py` (`PemToPfxConverter`, `__exportCertificate`) | AD-8 |
+| FR-2 PEM + PKCS12 export | `libs/certificate_exporter.py` (`PemToPfxConverter`, `__exportDomain`) | AD-8 |
 | FR-3 flat / per-domain layouts | `libs/certificate_exporter.py` | AD-8, Conventions (artifacts) |
 | FR-4 domain include/exclude | `libs/settings.py`, `libs/cli_args.py` | AD-6 |
 | FR-5 resolver scoping / auto-detect | `libs/certificate_exporter.py` | AD-7 |
@@ -401,8 +471,9 @@ graph LR
   only until a contract is decided.
 - **SANs export** (PRD #22) — SANs are logged, not exported; revisit on a concrete request.
 - **Module extraction** (review M7, m6) — moving the watch handler and pass sequence into an
-  orchestration module, `_atomic_write*` into an I/O module, and one shared pass helper; AD-13
-  records the current layering until that is decided.
+  orchestration module, `_atomic_write*` into an I/O module, and one shared pass helper. ADR-0048
+  accepts the current layering for 0.3.0 and makes the extraction planned work, revisited by
+  the next feature that touches the pass sequence (Low backlog item filed by E014-S02-003).
 - **Output parent-directory symlink hardening** (review m5) — leaf replacement is safe; a
   swapped parent directory is not yet covered.
 - **Additional events** (`pre-export`, `cert-export`) and checked HTTP actions — unrequested;
@@ -411,7 +482,9 @@ graph LR
   values, nearest-name suggestions for unknown config-file keys, argparse output through the
   structured logger** — unrequested or out of scope for 0.3.0.
 - **Kubernetes-native deployment and multi-instance coordination** — out of scope per PRD §5.
-- **Cross-process correlation id** — revisit only if a network-facing component is added.
+- **Cross-process correlation id** — revisit only if a network-facing component is added. This
+  does not contradict AD-3: AD-3's id is per pass inside one process and is handed to the hook
+  as an env var; no id crosses to another service (BL-E011-041).
 - **Clock skew beyond 2 s and remote Docker daemons** — unsupported for the restart rule.
 - **Notification-delivery failure visibility** (PRD NFR-6, BL-E011-017) — delivery failures
   stay invisible while third-party loggers are suppressed; open until that backlog item is
@@ -420,4 +493,5 @@ graph LR
 ## Changelog
 
 - Consolidated 2026-10-11 from ADR-0001, ADR-0002, ADR-0003, ADR-0004 (with ADR-0008), ADR-0013 (via ADR-0014), ADR-0014, ADR-0023, ADR-0024, ADR-0025, ADR-0026, ADR-0027, ADR-0030 (incl. 2026-10-10 privilege decision); memlog entries "spine authored" (2026-08-30), "AD-4 mechanism poetry install --only main", "restart only on change" (2026-10-11); E014 stories E014-S01-001, E014-S01-002, E014-S01-003, E014-S01-004, E014-S01-005, E014-S01-006, E014-S01-007, E014-S01-008; review-product.md (2026-10-10) AD table, M7, M8.
+- 2026-10-11 E014-S02-003 decision-record repair (headless fallback, one `.memlog.md` line per change): routed the `## Spine/ADR amendments for S02-003` deltas of E014-S01-001..010 into AD-3, AD-6, AD-7, AD-8, AD-9, AD-10, AD-12, Conventions (artifacts), Stack and the Capability map; AD-13 states the enforced `import-linter` layer order (SD-01-1); AD-12 and Conventions state `CLI > env > config file > defaults` for every setting (BL-E014-017); citations of ADR-0040, 0043, 0044, 0045, 0046, 0048.
 - 2026-10-11 baseline cross-check (`epic-014/plan-review/review-baseline-consistency.md`): `target` key; `binds:` and Capability map extended to FR-12..FR-17; AD-1 Poetry bootstrap exception (CI AD-11) and hook mechanics deferred to CI AD-3; AD-6 include/exclude exclusivity; AD-9 dry-run skip; AD-10 Engine API 1.24 floor; AD-12 `runatstart` default, nothing-to-do WARNING, first-boot config seed, ShellCheck and `s6-no-raw-settings-env` routed to CI AD-3; Deferred BL-E011-017.

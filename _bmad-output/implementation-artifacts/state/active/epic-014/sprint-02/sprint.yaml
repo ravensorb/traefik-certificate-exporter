@@ -1,28 +1,58 @@
 key: 'S02'
 epic: 'E014'
 title: Sprint 02 — Pipeline, record, release
-status: backlog
-updated_at: '2026-10-11T16:04:21Z'
+status: done
+updated_at: '2026-10-12T03:43:39Z'
 estimate:
-  man_hours_low: 88.11
-  man_hours_high: 124.54
-  hitl_hours_low: 6.45
-  hitl_hours_high: 8.36
-  elapsed_hours_low: 9.28
-  elapsed_hours_high: 11.81
-  tokens_k_min: 44141
-  tokens_k_max: 50160
+  man_hours_low: 91.26
+  man_hours_high: 128.99
+  hitl_hours_low: 0.25
+  hitl_hours_high: 0.31
+  elapsed_hours_low: 4.44
+  elapsed_hours_high: 5.61
+  tokens_k_min: 47732
+  tokens_k_max: 54241
   closure_ratios:
     man_hours: 3.8059
-    hitl_hours: 2.3155
-    elapsed_hours: 2.0007
+    hitl_hours: 2.051
+    elapsed_hours: 1.6378
     tokens_k: 1.0
   orchestration_ratios:
     man_hours: 0.0
     hitl_hours: 0.1121
-    elapsed_hours: 0.1473
+    elapsed_hours: 0.3181
     tokens_k: 0
-  cost_low: 36.01
-  cost_high: 40.92
+  cost_low: 37.19
+  cost_high: 42.24
   model: claude-opus-5
   confidence: medium
+actual:
+  elapsed_hours: 5.87
+  man_hours: 52
+  hitl_hours: 0
+  tokens_k:
+    total: 91507.01
+    input: 1.472
+    output: 94.44
+    cache_write: 4999.702
+    cache_read: 86411.396
+  cost: 76.82
+  model: claude-opus-5
+orchestration:
+  elapsed_hours: 0
+  man_hours: 0
+  hitl_hours: 0
+  tokens_k:
+    total: 25854.33
+    input: 0.312
+    output: 26.309
+    cache_write: 1806.198
+    cache_read: 24021.514
+  cost: 23.96
+  model: claude-opus-5
+closed:
+  date: '2026-10-11'
+retrospective:
+  summary: Six of seven stories done (supply-chain hardening, destination gating, workflow guards, decision-record repair, E012 closure, release 0.3.0 agent part); E014-S02-007 (maintainer release, HITL, depends on E013-S02-001) carries over. Closure fixed release blocker BL-E014-075 (image version label now 0.3.0, proven by act dry run, guarded by a pygrep hook) and found no Critical/High issues; 27 Medium/Low findings deferred. Four done stories show tests_passing=false from pre-existing audit-issues exit 4 (BL-E014-070), a story-text defect (BL-E014-076) and a broken recorded wrapper command; pm-status needs an expected-failure mode.
+  velocity: '6'
+  carry_over: '1'

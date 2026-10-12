@@ -63,20 +63,55 @@ Git tags are the only source of a version. `pyproject.toml` always says `0.0.0`;
 
 ## Where things are published
 
-Nothing is required. Each destination switches on when its secret is set, on either
-forge, in any combination:
+Nothing is required. A destination is enabled when its token secret **and** every
+variable it needs are set and non-empty, on either forge, in any combination:
 
 ```text
-                          dev   release   switched on by
- Python  Gitea index       ✓       ✓      PUBLISH_GITEA_TOKEN
+                          dev   release   enabled when all set (secret + vars.PUBLISH_*)
+ Python  Gitea index       ✓       ✓      PUBLISH_GITEA_TOKEN + GITEA_USERNAME, GITEA_PYPI_URL
          TestPyPI          ✓       -      PUBLISH_TESTPYPI_TOKEN
          PyPI              -       ✓      PUBLISH_PYPI_TOKEN
- Image   GHCR              ✓       ✓      PUBLISH_GHCR_TOKEN
-         Gitea registry    ✓       ✓      PUBLISH_GITEA_TOKEN
-         Docker Hub        ✓       ✓      PUBLISH_DOCKERHUB_TOKEN
+ Image   GHCR              ✓       ✓      PUBLISH_GHCR_TOKEN + GHCR_USERNAME, GHCR_IMAGE
+         Gitea registry    ✓       ✓      PUBLISH_GITEA_TOKEN + GITEA_USERNAME, GITEA_REGISTRY, GITEA_IMAGE
+         Docker Hub        ✓       ✓      PUBLISH_DOCKERHUB_TOKEN + DOCKERHUB_USERNAME, DOCKERHUB_IMAGE
  Forge   release           -       ✓      PUBLISH_RELEASE_TOKEN
- TLS     private CA        ✓       ✓      PUBLISH_CA_CERTIFICATE
+ TLS     private CA        ✓       ✓      PUBLISH_CA_CERTIFICATE (not a destination; never warns)
 ```
+
+Each destination is in one of three states, reported by the first step of every publish
+job, `Destination configuration`. Its **intent inputs** are the inputs whose presence means
+someone meant to configure it: all of its inputs for GHCR and Docker Hub,
+`PUBLISH_GITEA_PYPI_URL` for the Gitea index, `PUBLISH_GITEA_REGISTRY` and
+`PUBLISH_GITEA_IMAGE` for the Gitea registry (the shared Gitea token and username are
+judged separately, below). Single-input destinations are enabled or silent.
+
+| State | When | What the run shows |
+| --- | --- | --- |
+| unconfigured | none of its intent inputs is set | nothing: no warning, no log line |
+| partial | an intent input is set, but not every required input | exactly one `::warning::` per run naming each missing `secrets.NAME` / `vars.NAME`; the destination is skipped and the run stays green |
+| enabled | every input is set | one plain log line `<Destination> enabled`; it publishes |
+
+A partial warning says where the fix goes: on GitHub, a secret or variable of the job's
+environment (`dev` for `dev.yaml`, `release` for `release.yaml`; Settings → Environments);
+on Gitea, a repository Actions secret or variable (Gitea ignores `environment:`). To
+disable the destination instead, unset the items that are set.
+
+The Gitea package index and the Gitea registry share `PUBLISH_GITEA_TOKEN` and
+`PUBLISH_GITEA_USERNAME`, but each is enabled on its own: the index by
+`PUBLISH_GITEA_PYPI_URL`, the registry by `PUBLISH_GITEA_REGISTRY` and
+`PUBLISH_GITEA_IMAGE`. Those own variables decide whether a Gitea destination was meant to
+be configured, so an index-only setup gets no registry warning and the reverse. A Gitea
+token or username with none of those variables set is reported once per run, by
+`publish-package` ("Gitea shared inputs").
+
+`publish-package` also reports, in one warning per run, any **legacy secret** that the
+pre-0.3.0 workflows read and nothing reads now (`DOCKERHUB_TOKEN`, `DOCKERHUB_USERNAME`,
+`PYPI_TOKEN`, `PYPI_USERNAME`, `FORGE_PACKAGE_TOKEN`, `REGISTRY_USERNAME`,
+`REGISTRY_PASSWORD`, `CI_CA_CERTIFICATE`, `GITEA_PACKAGE_INDEX_CA_CERTIFICATE`,
+`GITEA_FORGE_API_CA_CERTIFICATE`), naming the `PUBLISH_*` replacement for each. Move the
+value to its replacement, then delete the legacy secret. The list is hand-kept from the
+git history of `.github/workflows/`; a legacy name not on it is not detected, and legacy
+**variables** (`DOCKER_IMAGENAME`, `PACKAGE_REPO`, ...) are not detected at all.
 
 Variables that go with them:
 
@@ -101,14 +136,28 @@ workflow.
 
 On GitHub every `PUBLISH_*` secret lives in the `dev` or `release` environment, never at
 repository level, so only a publish job on `main` or on a `v*` tag can read it
-([Environments (GitHub)](#environments-github), ADR-0039); `PUBLISH_*` variables stay at
-repository level.
+([Environments (GitHub)](#environments-github), ADR-0039). `PUBLISH_*` variables of a
+destination both workflows publish to stay at repository level. A destination meant for
+**one** workflow only (for example Docker Hub for releases only) keeps its variables in
+that workflow's environment too: repository-level variables are visible to both
+environments, so the other workflow would see them without the token and report the
+destination as partially configured on every run.
 
 ### How "publish if the token is set" is written
 
 ```text
- publish-package:
+ publish-image:
    env:                                   <- job level: computed once
+     PUBLISH_GHCR: ${{ secrets.PUBLISH_GHCR_TOKEN != '' && vars.PUBLISH_GHCR_USERNAME != '' && vars.PUBLISH_GHCR_IMAGE != '' }}
+     ANY_GHCR:     ${{ secrets.PUBLISH_GHCR_TOKEN != '' || vars.PUBLISH_GHCR_USERNAME != '' || vars.PUBLISH_GHCR_IMAGE != '' }}
+   steps:
+     - name: Destination configuration    <- no if:; reads PUBLISH_*/ANY_* only
+       # enabled = PUBLISH_X; partial = ANY_X and not PUBLISH_X (one ::warning::)
+     - uses: docker/login-action@...
+       if: env.PUBLISH_GHCR == 'true'     <- the only kind of step condition
+
+ publish-package:
+   env:
      PUBLISH_PYPI: ${{ secrets.PUBLISH_PYPI_TOKEN != '' }}
    steps:
      - name: Upload to PyPI
@@ -120,18 +169,30 @@ repository level.
 ```
 
 The flag is computed at job level because neither GitHub nor Gitea allows `secrets` in
-an `if:`.
+an `if:`. Each `PUBLISH_*` flag is the conjunction of presence tests (`!= ''`) over the
+destination's token and variables, and each multi-input destination has an `ANY_*` flag
+beside it; that is the only place the rule lives. "Non-empty" is `!= ''`: an unset
+variable counts as missing, and a value of `" "` counts as set (the consuming step then
+fails loudly). Single-input destinations (TestPyPI, PyPI, the forge release) have no
+`ANY_*` flag: they are enabled or silent, never partial. The `workflows-if-no-secrets-vars`
+pre-commit hook rejects an `if:` that reads `secrets` or `vars` (it checks only the first
+line of a multi-line `if:`); that each `if:` tests exactly one flag is held by review.
+A list entry in `Destination configuration` that names an undefined flag or input fails
+that step with an `::error::`, so an edit that drifts from job `env` turns the run red
+instead of going quiet.
 
 ## One image, every registry
 
 ```text
  publish-image
-   env:  PUBLISH_GHCR / PUBLISH_GITEA / PUBLISH_DOCKERHUB       (one flag each)
+   env:  PUBLISH_GHCR / PUBLISH_GITEA / PUBLISH_DOCKERHUB       (token and every var, one flag each)
+         ANY_GHCR / ANY_GITEA / ANY_DOCKERHUB                    (any own input set: partial if not enabled)
          PUBLISH_IMAGE = any of the three                        (the only combined flag)
-         GHCR_IMAGE / GITEA_IMAGE / DOCKERHUB_IMAGE = name, or "" when switched off
+         GHCR_IMAGE / GITEA_IMAGE / DOCKERHUB_IMAGE = name, or "" when not enabled
 
+   destination configuration      always             enabled lines; one warning per partial registry
+   version guard (dev) / verify dist hashes
    ca-certificate-import          if PUBLISH_CA
-   registry configuration guard   if PUBLISH_IMAGE   enabled registry with an empty image/registry var → fail
    login ghcr                     if PUBLISH_GHCR
    login gitea                    if PUBLISH_GITEA
    login docker hub               if PUBLISH_DOCKERHUB
@@ -142,14 +203,14 @@ an `if:`.
 ```
 
 - One build means one digest, identical on every registry.
-- The `Registry configuration guard` runs after the CA import and before every login
-  (AD-10, AD-18). For each registry whose token is set but whose image variable is empty,
-  and for Gitea with an empty `PUBLISH_GITEA_REGISTRY`, it prints one line such as
-  `publish-image: GHCR is enabled by PUBLISH_GHCR_TOKEN but vars.PUBLISH_GHCR_IMAGE is empty`,
-  reports every half-configured registry, then fails the job. Nothing has been logged in
-  to or pushed, so re-running after setting the variable needs no cleanup. Without it, an
-  empty `PUBLISH_GITEA_REGISTRY` would make `docker/login-action` default to Docker Hub
-  and send the Gitea token there.
+- A half-configured registry is skipped, not failed: its flag is false, so it never logs
+  in and its image name is `""`, and `Destination configuration` prints one warning such as
+  `GHCR partially configured, skipped: missing vars.PUBLISH_GHCR_IMAGE. Set them as dev
+  environment secrets/variables (GitHub) or repository Actions secrets/variables (Gitea),
+  or unset secrets.PUBLISH_GHCR_TOKEN, vars.PUBLISH_GHCR_USERNAME to disable it.` The
+  other registries still publish. Because `PUBLISH_GITEA` requires
+  `PUBLISH_GITEA_REGISTRY`, the Gitea login never runs with an empty registry, which would
+  make `docker/login-action` default to Docker Hub and send the Gitea token there.
 - With no registry configured, every step is skipped and the job succeeds. Releases that
   only publish to PyPI still create their forge release.
 
@@ -201,13 +262,46 @@ an `if:`.
 - A failed release can be re-run safely. Uploads skip files that already exist, the forge
   release is updated in place, and image tags are re-pointed to the digest this run built
   (ADR-0036 §5).
-- If `publish-image`'s registry configuration guard fails, `release` (which `needs` it) does
-  not run, so no forge release is created: a half-configured release halts loudly rather
-  than shipping without that registry. `publish-package` may already have uploaded;
-  the re-run uploads only what is missing (`--skip-existing` for PyPI/TestPyPI, a files check for Gitea; AD-11).
+- A partially configured destination does **not** fail the release: it is skipped with one
+  warning and the run stays green, so a release can ship without a destination you meant
+  to configure. If that happens, set the missing items and re-run; uploads skip what
+  already exists (`--skip-existing` for PyPI/TestPyPI, a files check for Gitea; AD-11).
+  Gating is evaluated per run attempt, so a variable changed between attempts changes
+  what the re-run publishes, and a re-run repeats its own warnings.
+- **A release can run from either forge, one forge per release.** GitHub and Gitea run the
+  same `release.yaml`; the LiquidLogicLabs actions create the forge release on whichever
+  forge runs it. All destinations of one release publish from that one forge's run: every
+  `PUBLISH_*` secret and variable lives on the publishing forge only, and the other forge
+  holds none, so a mirrored tag's run there is silent and publishes nothing. The reason is
+  AD-10's one digest across all registries and AD-8's one writer per tag: two forges
+  publishing one release would build the image and the packages twice. A Gitea release can
+  reach every destination, with the AD-13 token mitigations (CI spine AD-9, AD-13). Not
+  mechanically enforced: the per-release checklist compares secret names on both forges.
+- **Per-release checklist:** the release run shows **zero destination warnings** and each
+  target destination `enabled` exactly once; otherwise fix and re-run before announcing.
+  This is not mechanically enforced: a partially configured destination does not fail
+  the run (NFR-4 trade-off, E014 pipeline ADR).
 - The `release` job gates its steps on `PUBLISH_RELEASE`, except its CA import, which is
   gated on `PUBLISH_CA`: a step tests exactly one flag (AD-9, AD-18), and the import
   publishes nothing.
+- **At most one release runs and one waits** (AD-14). The concurrency group `release`
+  never cancels a running release, but GitHub keeps only one *pending* run per group: if a
+  third tag is pushed while one release runs and another is waiting, the newer tag cancels
+  the waiting release. That cancelled release published nothing, and it must be re-run with
+  `gh run rerun <run-id>` (or "Re-run all jobs" in the forge UI) -- **only while no newer
+  tag has released.** A re-run that finishes after a newer release re-points `latest` and
+  `X.Y` back to the older digest, which is the race AD-14 exists to prevent. If the newer
+  tag has already released (or is running), leave the cancelled version unreleased and cut
+  the next patch instead; never delete or re-push its tag. (`queue: max` would keep every
+  pending run, but actionlint v1.7.12 rejects it; it is revisited when actionlint accepts it.)
+- **Re-run on a ghcr.io 429.** The linuxserver base image is pulled anonymously from
+  ghcr.io, which rate-limits with `429 Too Many Requests` and publishes no numeric limit.
+  `build` pre-pulls it with a bounded retry (4 attempts, 30 s apart) and builds from the
+  local copy; if all four attempts hit 429, the `build` job fails with the last
+  `docker pull` error. `publish-image` builds multi-arch on a BuildKit container that does
+  not read the local image store, so it has no pre-pull and fails on the first 429. In both
+  cases the response is to re-run the failed jobs (`gh run rerun <run-id> --failed`); never
+  add a registry login to `build` (AD-2, AD-13).
 
 ## Running locally
 
@@ -328,7 +422,8 @@ The secrets column is the [publish table](#where-things-are-published) read by c
 derive it from the files, run
 `grep -o 'secrets\.PUBLISH_[A-Z_]*' .github/workflows/<file> | sort -u`. Shared tokens
 (Gitea, GHCR, Docker Hub, CA) are set in both environments. `vars.PUBLISH_*` stay at
-repository level. Gitea and `act` ignore `environment:`; see
+repository level, except those of a destination only one environment publishes to, which
+go in that environment ([Where things are published](#where-things-are-published)). Gitea and `act` ignore `environment:`; see
 [gitea-runners.md](gitea-runners.md#secrets-and-variables-on-gitea) for what that leaves
 open on Gitea.
 
@@ -491,14 +586,18 @@ Only standard tools, all run by `pre-commit` (locally and in `build.yaml`):
 | Tool | Catches |
 | --- | --- |
 | actionlint | invalid workflow syntax and expressions |
-| zizmor | unpinned actions (everything outside `LiquidLogicLabs/*` needs a commit SHA; `LiquidLogicLabs/*` needs only some ref, so zizmor accepts a branch such as `@main` as readily as `@vN` and the major-tag form is held by review), template injection, excessive permissions, a secret used outside an environment (auditor persona), an unnamed job |
+| zizmor | unpinned actions (everything outside `LiquidLogicLabs/*` needs a commit SHA; `LiquidLogicLabs/*` needs only some ref, so zizmor accepts a branch such as `@main` as readily as `@vN`; the major-tag form is enforced by the `workflows-lll-major-tag` pygrep hook), template injection, excessive permissions, a secret used outside an environment (auditor persona), an unnamed job |
 | gitleaks | committed secrets; the repository adds no path exemption, and gitleaks' default allowlist is inherited (ADR-0037) |
-| pygrep hooks | a `paths` allowlist in `.gitleaks.toml`; `ref:`/`repository:` or `ACT` in any workflow |
+| pygrep hooks | a `paths` allowlist in `.gitleaks.toml`; `ref:`/`repository:` or `ACT` in any workflow; a pre-commit hook `rev` that is not a frozen commit SHA (`precommit-revs-frozen`); a workflow `pip install` that is not a hashed install from `.github/requirements/` (`workflows-pip-install-from-requirements`, ADR-0042); a `LiquidLogicLabs/*` `uses:` not at a bare `@vN` (`workflows-lll-major-tag`); a literal `-H`/`--header` Authorization flag (`workflows-no-auth-header-argv`; a header built in a variable or passed by `--config`/`-K` is not seen); a metadata `pattern={{major}}` line without `enable=` (`workflows-major-tag-gated`; presence only, not the expression's value) |
 | ruff, mypy | Python lint, format and types |
 | pip-audit | a known advisory in any `poetry.lock` group (the venv is built by `poetry sync --all-groups`) or, as `pip-audit-bootstrap`, in any hashed `.github/requirements/*.txt` (ADR-0042). Only packages installed for the running Python and platform are audited: a lock entry gated by an environment marker for another platform or Python minor is not (BL-E014-023). Needs network access to PyPI/OSV: offline it fails rather than skips (within 15 minutes of an online run, pip's HTTP cache answers instead; CI starts with a cold cache). An advisory with no fix is accepted only by `--ignore-vuln <ID>` in the hook, with the reason and a `BL-` key |
 | deptry | a dependency `src/` imports but `pyproject.toml` does not declare in the main group, or a main dependency `src/` never imports (review m8, NFR-3) |
 
-Dependabot proposes updates for actions, Python dependencies and the Docker base image.
+Dependabot proposes updates for actions, Python dependencies, the Docker base image, the
+SHA-frozen pre-commit hook revs and the hash-locked Poetry bootstrap file
+(`.github/requirements/poetry.txt`). Gitea has no Dependabot: there, hook revs and the
+bootstrap file are updated by hand, as described in
+[Keep pinned tools current](../developer.md#keep-pinned-tools-current).
 
 ## Requirements
 

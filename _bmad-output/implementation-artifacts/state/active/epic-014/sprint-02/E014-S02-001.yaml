@@ -3,26 +3,84 @@ epic: 'E014'
 sprint: 'S02'
 title: 'Supply chain: SHA-pinned hooks, hashed Poetry bootstrap, wheel/sdist hash hand-off'
 classification: standard
-status: backlog
-updated_at: '2026-10-11T16:04:18Z'
+status: done
+updated_at: '2026-10-11T23:00:41Z'
 resolves: [BL-E013-001, BL-E013-020, BL-E013-021, BL-E013-024]
 depends_on:
 - 'E014-S01-007'
 estimate:
-  man_hours: 10.58
-  hitl_hours: 0.05
-  elapsed_hours: 0.75
-  cost: 5.91
+  man_hours: 10.53
+  hitl_hours: 0.01
+  elapsed_hours: 0.39
+  cost: 5.51
   model: claude-opus-5
-  fix_factor: 2.8333
+  fix_factor: 2.6165
   scope_ratios:
-    man_hours: 0.6225
-    hitl_hours: 0.0541
-    elapsed_hours: 0.1315
-    tokens_k: 1.8087
+    man_hours: 0.6707
+    hitl_hours: 0.0057
+    elapsed_hours: 0.0737
+    tokens_k: 1.6797
   tokens_k:
-    total: 7248
+    total: 7064
     input: 0
-    output: 12
-    cache_write: 347
-    cache_read: 6889
+    output: 11
+    cache_write: 297
+    cache_read: 6756
+completion_evidence:
+  test_runs:
+  - command: "row1: clone (throwaway /tmp/e014-s02-001, bare origin, story changes committed as 'wip E014-S02-001')"
+    exit_code: 0
+  - command: 'row2: hook precommit-revs-frozen (clone, no plant)'
+    exit_code: 0
+  - command: 'row3a: plant rev: v6.0.0 then ! hook precommit-revs-frozen'
+    exit_code: 0
+  - command: "row3b: plant rev: 'v6.0.0' (quoted) then ! hook precommit-revs-frozen"
+    exit_code: 0
+  - command: "review-R3: plant '- rev: v6.0.0' (first key of list item) then ! hook precommit-revs-frozen"
+    exit_code: 0
+  - command: 'row19: plant unhashed pip install (dev.yaml) + hashed install outside .github/requirements (release.yaml) then ! hook workflows-pip-install-from-requirements'
+    exit_code: 0
+  - command: "row4: grep -nE '^\\s+rev:' .pre-commit-config.yaml | grep -vE 'rev: [0-9a-f]{40}  # frozen: v'; test $? -eq 1 && grep -c 'repo: local' .pre-commit-config.yaml"
+    exit_code: 0
+  - command: "row5: grep -A3 'mirrors-mypy' .pre-commit-config.yaml | grep frozen; poetry show mypy | grep version"
+    exit_code: 0
+  - command: "row6: grep -nE 'package-ecosystem: \"?(pre-commit|pip)' .github/dependabot.yml; grep -n -A1 'directory: \"/.github/requirements\"' .github/dependabot.yml; grep -n 'autoupdate --freeze' docs/developer.md; grep -n -i 'gitea' docs/developer.md"
+    exit_code: 0
+  - command: "row7: mkdir -p /tmp/e014-s02-001-r7 && uvx pipx run --python 3.14 --spec 'pip-tools==7.6.2' pip-compile --generate-hashes --output-file /tmp/e014-s02-001-r7/poetry.txt .github/requirements/poetry.in >/dev/null 2>&1 && diff <(grep -v '^#' /tmp/e014-s02-001-r7/poetry.txt) <(grep -v '^#' .github/requirements/poetry.txt) && head -8 .github/requirements/poetry.txt"
+    exit_code: 0
+  - command: 'row8: rm -rf /tmp/e014-s02-001-pb && uv venv -q --seed --python 3.14 /tmp/e014-s02-001-pb && /tmp/e014-s02-001-pb/bin/pip install -q --require-hashes -r .github/requirements/poetry.txt && /tmp/e014-s02-001-pb/bin/poetry --version'
+    exit_code: 0
+  - command: "row9: ! (grep -nE 'pip install' .github/workflows/*.yaml | grep -i poetry | grep -v -- '--require-hashes -r .github/requirements/poetry.txt')"
+    exit_code: 0
+  - command: "row10: grep -n twine pyproject.toml; grep -n 'poetry install --only publish --no-root' .github/workflows/dev.yaml .github/workflows/release.yaml; poetry check --lock 2>/dev/null"
+    exit_code: 0
+  - command: "row11: grep -nE '^\\s+(wheel|sdist)-sha256:' .github/workflows/build.yaml; grep -c 'sha256sum -c' .github/workflows/dev.yaml .github/workflows/release.yaml; grep -n 'WHEEL_SHA256=' .github/workflows/dev.yaml .github/workflows/release.yaml"
+    exit_code: 0
+  - command: 'row12: poetry run pre-commit run actionlint --all-files && poetry run pre-commit run zizmor --all-files'
+    exit_code: 0
+  - command: "row17: poetry sync --all-groups 2>/dev/null | tail -1; poetry run pip show twine | head -2; grep -n 'poetry sync --all-groups' justfile .github/workflows/build.yaml"
+    exit_code: 0
+  - command: 'row18: poetry run pre-commit run pip-audit-bootstrap --files .github/requirements/poetry.txt -v && poetry run pre-commit run workflows-pip-install-from-requirements --all-files'
+    exit_code: 0
+  - command: 'row13: clone && actrun push -W .github/workflows/dev.yaml (no secrets)'
+    exit_code: 0
+  - command: 'row20: just check'
+    exit_code: 0
+  - command: "row16: grep -c '^## Spine/ADR amendments for S02-003$' _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/notes-E014-S02-001.md"
+    exit_code: 0
+  tests_passing: true
+  fix_iterations: 1
+  files_changed: 13
+actual:
+  elapsed_hours: 0.87
+  man_hours: 12
+  hitl_hours: 0
+  tokens_k:
+    total: 13788.76
+    input: 0.218
+    output: 15.605
+    cache_write: 601.566
+    cache_read: 13171.368
+  cost: 10.74
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-11T23:00:41Z'

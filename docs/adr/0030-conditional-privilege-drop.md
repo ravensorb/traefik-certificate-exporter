@@ -1,12 +1,15 @@
-# ADR-0030: Conditional root — privilege drop unless the Docker-socket restart path is enabled
+# ADR-0030: Conditional root — keep root unless the ACME store is proven readable
 
-- **Status:** Proposed
-- **Date:** 2026-10-08
-- **Deciders:** Maintainer (ravensorb), via Epic E012 Sprint S01 (Story E012-S01-001)
-- **Epic:** E012
+- **Status:** Accepted (implemented by E012-S01-001 and E013-S02-004; status corrected
+  2026-10-11 by E014-S02-003)
 - **Amended:** 2026-10-10 (BL-E013-041, E013-S02-004)
 - **Amended by:** ADR-0044 (2026-10-11, E014-S01-005) -- the init resolver also emits the
   run mode (`watch-for-changes`), which the service consumes like the privilege state
+- **Date:** 2026-10-08
+- **Deciders:** Maintainer (ravensorb), via Epic E012 Sprint S01 (Story E012-S01-001)
+- **Epic:** E012
+- **Title note:** retitled 2026-10-11 (E014-S02-003) to state the amended rule; the original
+  title was "privilege drop unless the Docker-socket restart path is enabled"
 - **Amends:** ADR-0002 (linuxserver.io base image and PUID/PGID privilege model). ADR-0002
   accepted "root-owned entrypoint before privilege drop" as the linuxserver.io convention,
   but the shipped service script never dropped: it ran `s6-setuidgid root`, so the

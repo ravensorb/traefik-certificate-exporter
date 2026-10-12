@@ -1,8 +1,8 @@
 key: '01'
 epic: 'E012'
 title: Sprint 01
-status: backlog
-updated_at: '2026-10-08T12:15:02Z'
+status: done
+updated_at: '2026-10-12T01:39:57Z'
 estimate:
   man_hours_low: 82.23
   man_hours_high: 116.23

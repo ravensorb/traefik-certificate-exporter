@@ -3,9 +3,9 @@ epic: 'E014'
 sprint: 'S02'
 title: 'Decision-record repair: ADRs, spines, index, operator docs'
 classification: standard
-status: backlog
-updated_at: '2026-10-11T16:04:19Z'
-resolves: [BL-E013-038]
+status: done
+updated_at: '2026-10-12T02:15:52Z'
+resolves: [BL-E013-038, BL-E013-040, BL-E013-025, BL-E014-035, BL-E014-039, BL-E014-009]
 depends_on:
 - 'E014-S01-001'
 - 'E014-S01-002'
@@ -21,20 +21,56 @@ depends_on:
 - 'E014-S01-010'
 - 'E014-S02-006'
 estimate:
-  man_hours: 10.58
-  hitl_hours: 0.05
-  elapsed_hours: 0.75
-  cost: 5.91
+  man_hours: 10.53
+  hitl_hours: 0.01
+  elapsed_hours: 0.39
+  cost: 5.51
   model: claude-opus-5
-  fix_factor: 2.8333
+  fix_factor: 2.6165
   scope_ratios:
-    man_hours: 0.6225
-    hitl_hours: 0.0541
-    elapsed_hours: 0.1315
-    tokens_k: 1.8087
+    man_hours: 0.6707
+    hitl_hours: 0.0057
+    elapsed_hours: 0.0737
+    tokens_k: 1.6797
   tokens_k:
-    total: 7248
+    total: 7064
     input: 0
-    output: 12
-    cache_write: 347
-    cache_read: 6889
+    output: 11
+    cache_write: 297
+    cache_read: 6756
+completion_evidence:
+  test_runs:
+  - command: just check
+    exit_code: 0
+  - command: python3 .claude/skills/bmad-architecture/scripts/lint_spine.py --workspace <product spine>
+    exit_code: 0
+  - command: python3 .claude/skills/bmad-architecture/scripts/lint_spine.py --workspace <CI spine>
+    exit_code: 0
+  - command: pre-commit run import-linter --all-files
+    exit_code: 0
+  - command: 'row 7: diff ADR files vs docs/architecture.md section 6 rows'
+    exit_code: 0
+  - command: docker buildx imagetools inspect git.ravenwolf.org/ravensorb/traefik-certificate-exporter:dev --format '{{json .Provenance}}'
+    exit_code: 0
+  - command: 'row 18: ! linkcheck $(mdscope) | grep -v <story-doc false positive> | grep -q BROKEN'
+    exit_code: 0
+  - command: pm-status audit-issues --state-root _bmad-output/implementation-artifacts/state (pre-existing 15 findings, same at HEAD)
+    exit_code: 4
+  - command: poetry run pre-commit run --files <11 files changed in fix iteration 1>
+    exit_code: 0
+  tests_passing: false
+  fix_iterations: 1
+  files_changed: 35
+actual:
+  elapsed_hours: 0.42
+  man_hours: 11
+  hitl_hours: 0
+  tokens_k:
+    total: 22142.61
+    input: 0.264
+    output: 20.706
+    cache_write: 750.234
+    cache_read: 21371.409
+  cost: 15.89
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-12T02:15:51Z'

@@ -23,7 +23,11 @@ sources:
   - _bmad-output/implementation-artifacts/epic-014/sprint-02/stories/E014-S02-001.md
   - _bmad-output/implementation-artifacts/epic-014/sprint-02/stories/E014-S02-002.md
   - _bmad-output/implementation-artifacts/epic-014/sprint-02/stories/E014-S02-005.md
+  - _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/notes-E014-S02-001.md, notes-E014-S02-002.md, notes-E014-S02-006.md (S02-003 routing)
 companions:
+  - docs/adr/0042-dependency-audit-scope-is-the-whole-lock.md
+  - docs/adr/0046-e014-pipeline-amendments.md
+  - docs/adr/0047-dev-release-publish-duplication.md
   - docs/adr/0028-ref-free-checkout-across-ci-cd.md
   - docs/adr/0033-secret-scanning-exempts-no-path.md
   - docs/adr/0035-standard-ci-cd-pipeline.md
@@ -80,7 +84,7 @@ to a destination only when that destination is fully configured on the forge run
 - **Rule:**
   - The pipeline is exactly `build.yaml` (`workflow_call` only), `ci.yaml` (`pull_request`), `dev.yaml` (`push` to the default branch) and `release.yaml` (`push` of tags `v*`). Trigger selects behaviour; nothing branches on channel, forge, or host.
   - `ci.yaml` and `dev.yaml` call `build.yaml` as their first job, with job id `build`; `release.yaml` calls it after `validate-tag` (AD-12).
-  - The publish logic duplicated between `dev.yaml` and `release.yaml` (`publish-package`, `publish-image`, including each copy of the Destination configuration step) is accepted. A change to a shared publish step lands in both files in the same commit and the pull request says so; this is held by CODEOWNERS review of `.github/workflows/`, not by a check. Local composite actions are deferred.
+  - The publish logic duplicated between `dev.yaml` and `release.yaml` (`publish-package`, `publish-image`, including each copy of the Destination configuration step) is accepted. A change to a shared publish step lands in both files in the same commit and the pull request says so; this is held by CODEOWNERS review of `.github/workflows/`, not by a check (ADR-0047). Local composite actions are deferred.
 
 ### AD-2 — One build, no credentials [ADOPTED]
 
@@ -88,27 +92,27 @@ to a destination only when that destination is fully configured on the forge run
 - **Prevents:** fork pull requests reaching a credential; a publish job shipping bytes the build did not test; a moved action tag altering `dist` after it was built; a transient base-image 429 failing the required check.
 - **Rule:** `build.yaml` runs, in order:
   1. checkout (AD-6);
-  2. Python, then Poetry from the hash-locked bootstrap file (AD-11), then `poetry install`;
+  2. Python, then Poetry from the hash-locked bootstrap file (AD-11), then `poetry sync --all-groups` (ADR-0042);
   3. `pre-commit run --all-files` (AD-3);
   4. `pytest`;
   5. `poetry build`;
   6. version and hash outputs (AD-7): `version`, `image-version`, `wheel-sha256`, `sdist-sha256`;
   7. upload of `dist/`, before any ref-pinned (`LiquidLogicLabs/*`) action runs in the job;
-  8. a pre-pull of the base image named by `docker/Dockerfile`'s `ARG BASE_IMAGE` default (read at run time, digest-pinned, never repeated in the YAML), with a bounded retry of 4 attempts at 15, 30 and 60 s and no login; an unparsable or unpinned reference fails the step;
-  9. a single-arch, non-pushed `docker/build-push-action` build per AD-17 from that local base, tested with `git-action-docker-test@v2`.
+  8. a `Resolve base image` step that reads `docker/Dockerfile`'s digest-pinned `ARG BASE_IMAGE` default at run time (never repeated in the YAML) and fails, naming the file and the `^ARG BASE_IMAGE=<image>@sha256:<64 hex>$` pattern, unless there is exactly one pinned default; then a `Pre-pull base image` step that pulls it anonymously with `nick-fields/retry` (4 attempts, a fixed 30 s wait; the last `docker pull` error fails the job);
+  9. `docker/setup-buildx-action` with `driver: docker`, so the build reads that local copy rather than fetching the base from ghcr.io, then a single-arch, non-pushed `docker/build-push-action` build per AD-17, tested with `git-action-docker-test@v2`.
 
-  It uploads `dist/` (exactly one `.whl` and one `.tar.gz`) as artifact `dist`, and exposes the four outputs above as `workflow_call` outputs; the two hashes are 64-hex lower case. Its jobs declare `permissions: contents: read` and receive no secrets. Publish jobs download `dist` with `path: dist/` and never run `poetry build`. The retry is a maintained action, SHA-pinned (AD-5); a shell loop is allowed only if no action runs on all three runners, and then its global-rule-1 record goes into the E014 pipeline ADR.
+  It uploads `dist/` (exactly one `.whl` and one `.tar.gz`) as artifact `dist`, and exposes the four outputs above as `workflow_call` outputs; the two hashes are 64-hex lower case. Its jobs declare `permissions: contents: read` and receive no secrets. Publish jobs download `dist` with `path: dist/` and never run `poetry build`. The retry is the maintained action `nick-fields/retry`, SHA-pinned (AD-5); its wait is constant, accepted over a hand-written backoff loop (ADR-0046 item 12). `publish-image` has no pre-pull: its multi-arch build runs on a `docker-container` BuildKit, which does not read the local store; a 429 there, or four in `build`, is answered by re-running the failed jobs.
 
 ### AD-3 — Local and CI gates are one hook list [ADOPTED]
 
 - **Binds:** `.pre-commit-config.yaml`, `justfile`, `build.yaml`
 - **Prevents:** a check that runs only in CI, or only locally; a hook that silently examines nothing; a moved hook tag changing code that runs in the job producing `dist`.
 - **Rule:** Every lint, type, secret, workflow, dependency and hygiene check is a pre-commit hook, and `.pre-commit-config.yaml` is the one list of what runs. `just check` and `build.yaml` both run `pre-commit run --all-files` followed by `pytest`; neither adds a check the other lacks.
-  - Required hooks: ruff, mypy (scoped to `^src/`, rev major equal to the locked mypy major), gitleaks (tree and history), actionlint, zizmor (its official hook, AD-5), `poetry check --lock`, `pip-audit`, `deptry`, `shellcheck` (`shellcheck-py`, SHA-frozen, `files: ^docker/root/`, `types_or: [shell, executable]`; product spine AD-12), and the `repo: local` pygrep guards that enforce AD-5, AD-6, AD-8 and AD-11, the no-`paths`-allowlist rule, and product AD-12's no-raw-settings rule (`s6-no-raw-settings-env`, `files: ^docker/root/`).
+  - Required hooks: ruff, mypy (scoped to `^src/`, rev major equal to the locked mypy major), gitleaks (tree and history), actionlint, zizmor (its official hook, AD-5), `poetry check --lock`, `pip-audit`, `pip-audit-bootstrap`, `deptry`, `import-linter` (product spine AD-13), `shellcheck` (`shellcheck-py`, SHA-frozen, `files: ^docker/root/`, `types_or: [shell, executable]` and `types: [file]`, because upstream's `types: [shell]` would otherwise exclude the `with-contenv` executables; product spine AD-12), and the `repo: local` pygrep guards: `precommit-revs-frozen` and `workflows-pip-install-from-requirements` (this AD, ADR-0042), `workflows-lll-major-tag` (AD-5), `workflows-ref-free-checkout` and `workflows-no-act-env` (AD-6), `workflows-major-tag-gated` and `workflows-version-label-priority` (AD-8), `workflows-if-no-secrets-vars` (AD-9), `workflows-no-auth-header-argv` (AD-11), `gitleaks-no-paths-allowlist`, and product AD-12's `s6-no-raw-settings-env` (`files: ^docker/root/`). Each pygrep guard's coverage limit is stated in its comment in `.pre-commit-config.yaml` and in the AD it enforces.
   - Secret scanning covers the tree and the history. The gitleaks repo carries two hooks: `gitleaks` (`gitleaks dir --redact --no-banner --config .gitleaks.toml .`) and one with `alias: gitleaks-history` (`gitleaks git --redact --no-banner --config .gitleaks.toml`), both `always_run: true`, `pass_filenames: false`. `build.yaml` checks out full history (AD-6), so CI scans it. The repository adds no path exemption; gitleaks' default global allowlist is inherited and its exempt set is recorded with the producing versions in the `.gitleaks.toml` header and `docs/developer.md`, re-diffed in the same change as any gitleaks, plugin-lock or interpreter change (ADR-0037). The `gitleaks-no-paths-allowlist` pygrep hook refuses a `paths` key.
-  - `pip-audit` (`repo: local`, `language: system`, `poetry run pip-audit --skip-editable --progress-spinner off`) audits the whole dev venv. It needs network and fails offline rather than skipping. An advisory is ignored only by `--ignore-vuln <ID>` in the hook entry with a comment giving the reason and a `BL-` key.
+  - `pip-audit` audits the venv that `poetry sync --all-groups` produces (`just install`, `build.yaml`), so its scope is every lock group; `pip-audit-bootstrap` audits every `.github/requirements/*.txt` with `--require-hashes --disable-pip`; the `workflows-pip-install-from-requirements` guard keeps every workflow `pip install` inside that directory (ADR-0042). Both hooks are `repo: local`, `language: system` (`poetry run pip-audit --skip-editable --progress-spinner off --aliases on`; `--aliases on` prints GHSA/CVE IDs beside the PYSEC ID). Not covered: lock entries whose environment marker excludes the interpreter and platform the hook runs on (other OSes, other Python minors) are not installed and so not audited (BL-E014-023). Both need network and fail offline rather than skipping; within PyPI's 15-minute cache lifetime of an online run pip's HTTP cache answers instead, and CI starts cold. An advisory is ignored only by `--ignore-vuln <ID>` in the hook entry with a comment giving the reason and a `BL-` key; no tool polices that comment, review does.
   - `deptry` (`repo: local`, `language: system`, `poetry run deptry src`) checks declared versus imported dependencies over `src/` only, with `[tool.deptry]` in `pyproject.toml`; no rule is ignored globally, and an exception is a `per_rule_ignores` entry naming one package with a reason and a `BL-` key.
-  - Every non-`local` repo is pinned `rev: <40-hex SHA>  # frozen: vX.Y.Z` by `pre-commit autoupdate --freeze`; the `precommit-revs-frozen` pygrep hook refuses any other `rev`. `repo: local` hooks have no `rev`; their tool versions come from `poetry.lock`.
+  - Every non-`local` repo is pinned `rev: <40-hex SHA>  # frozen: vX.Y.Z` by `pre-commit autoupdate --freeze`; the `precommit-revs-frozen` pygrep hook refuses a `rev` that is not a 40-hex SHA; the `# frozen:` comment itself is not checked (coverage: block-style `rev:` lines in `.pre-commit-config.yaml`; a flow-style mapping is not matched). `repo: local` hooks have no `rev`; their tool versions come from `poetry.lock` or from the hook's `additional_dependencies` (`import-linter==2.15`).
 
 ### AD-4 — No custom policy code [ADOPTED]
 
@@ -121,9 +125,9 @@ to a destination only when that destination is fully configured on the forge run
 - **Binds:** every `uses:`, every pre-commit `rev:`
 - **Prevents:** custom scripts where an action exists; third-party code moving under a credentialed job; a documented pin rule no check enforces.
 - **Rule:** Prefer a `LiquidLogicLabs/git-action-*` action, then a widely used documented action, then a `run:` step only when neither works on all three runners (AD-6).
-  - `LiquidLogicLabs/*` is referenced at its bare major tag (`@vN`). The `workflows-lll-major-tag` pygrep hook enforces this over `^\.github/.*\.ya?ml$`, case-insensitive and accepting quoted values. zizmor's `ref-pin` accepts any ref and is not the enforcement.
+  - `LiquidLogicLabs/*` is referenced at its bare major tag (`@vN`). The `workflows-lll-major-tag` pygrep hook enforces this over every YAML file under `.github/` (owner case-insensitive; the ref must be exactly `v<digits>`, optionally quoted and followed by a comment). zizmor's `ref-pin` accepts any ref, `@main` included, and is not the enforcement. Coverage limit: block-style `uses:` lines with the value on the same line; a flow-style mapping, a quoted `"uses":` key, a folded or next-line value, or a reference built by a called script is not matched. The `workflows-no-auth-header-argv` hook's limit is stated in AD-11.
   - Every other action is referenced by full commit SHA with a trailing `# vX.Y.Z` comment, enforced by zizmor `rules.unpinned-uses.config.policies` in `.github/zizmor.yml` (`LiquidLogicLabs/*: ref-pin`, `*: hash-pin`). Pre-commit hook repos follow the same SHA rule (AD-3).
-  - Updates: Dependabot `github-actions`, `pip` and `docker` ecosystems weekly with a `cooldown` block; a `pre-commit` ecosystem entry only if GitHub documents it as GA with `# frozen:` support, otherwise `pre-commit autoupdate --freeze` monthly and before each release (documented in `docs/developer.md`). Gitea has no Dependabot; updates there are manual.
+  - Updates: Dependabot `github-actions` (`/`), `pip` (`/` and `/.github/requirements`), `docker` (`/docker`) and `pre-commit` (`/`) ecosystems, each weekly with `cooldown.default-days: 7`. Gitea has no Dependabot; there `pre-commit autoupdate --freeze` is run by hand, monthly and before each release (`docs/developer.md`). A hook repo whose newest tag would turn `just check` red, or would downgrade, is held at its current tag's commit with the reason in a comment beside the rev.
   - zizmor runs from its pre-commit hook with `args: [--persona=auditor]` and no severity floor, so `secrets-outside-env` and `anonymous-definition` gate `just check`. `.github/zizmor.yml` disables no audit and configures only `unpinned-uses`. A finding the design accepts is suppressed only per line with `# zizmor: ignore[<audit>]` citing the AD/ADR (example: `use-trusted-publishing` on each `twine upload` step, citing AD-11); every other finding is fixed.
 
 ### AD-6 — Same YAML on GitHub, Gitea and act; ref-free checkout; no `env.ACT` [ADOPTED]
@@ -163,13 +167,13 @@ to a destination only when that destination is fully configured on the forge run
   The release `tags:` input is exactly:
 
   ```text
-  type=raw,value=${{ needs.build.outputs.image-version }}
+  type=raw,value=${{ needs.build.outputs.image-version }},priority=1000
   type=semver,pattern={{major}}.{{minor}},value=${{ needs.build.outputs.image-version }}
   type=semver,pattern={{major}},value=${{ needs.build.outputs.image-version }},enable=${{ !startsWith(needs.build.outputs.image-version, '0.') }}
   type=raw,value=latest
   ```
 
-  So `v0.3.0` writes `0.3.0`, `0.3`, `latest`, and `v1.2.3` writes `1.2.3`, `1.2`, `1`, `latest` with no workflow change. The `workflows-major-tag-gated` pygrep hook refuses a major-only pattern line without `enable=` (it checks presence, not the expression). Existing `:0` tags from the retired pipeline stay frozen and are not deleted. No floating git tags (`v1`, `v1.4`) are created.
+  So `v0.3.0` writes `0.3.0`, `0.3`, `latest`, and `v1.2.3` writes `1.2.3`, `1.2`, `1`, `latest` with no workflow change. The `workflows-major-tag-gated` pygrep hook refuses a major-only pattern line without `enable=` (it checks presence, not the expression). The action labels the image (`org.opencontainers.image.version`) from its highest-priority tag and `type=semver` (900) outranks `type=raw` (200), so the `image-version` raw line in both workflows carries `priority=1000` (BL-E014-075, ADR-0046 item 14); without it 0.3.0 is labelled `0.3`. The `workflows-version-label-priority` pygrep hook refuses that line without `,priority=1000`; coverage limit: it does not check that no other tag ties or outranks it (held by review and the release dry run's label check). Existing `:0` tags from the retired pipeline stay frozen and are not deleted. No floating git tags (`v1`, `v1.4`) are created.
 
 ### AD-9 — Configuration-gated destinations, one forge per release [ADOPTED]
 
@@ -181,7 +185,7 @@ to a destination only when that destination is fully configured on the forge run
   - Each publish job's first step, **Destination configuration**, has no `if:`, always exits 0, writes no `$GITHUB_OUTPUT`/`$GITHUB_ENV`, and only reads the flags plus per-input presence booleans (`HAS_<NAME>`); it holds no conjunction of its own. Per destination it owns: **enabled** (`PUBLISH_<DEST>` true) prints one plain `<Destination> enabled` line; **partial** (`ANY_<DEST>` true, `PUBLISH_<DEST>` false) prints exactly one `::warning title=<job>::` naming every missing `secrets.NAME` / `vars.NAME` and where to set it (GitHub: the job's environment; Gitea: repository Actions secrets/variables) or how to disable it; **unconfigured** prints nothing. It never prints a secret's value or length. Single-input destinations are never partial.
   - The two Gitea destinations are independent: each is judged by its own variables. `PUBLISH_GITEA_TOKEN` or `PUBLISH_GITEA_USERNAME` set with none of `PYPI_URL`, `REGISTRY`, `IMAGE` set is one "Gitea shared inputs" warning, reported by `publish-package` only (`ANY_GITEA_SHARED`).
   - No secret or variable name starts with `GITEA_` or `GITHUB_`. No step is handed the ambient token for publishing; checkout uses it read-only without persisting it, and the artifact actions use the runner's own token.
-  - **One release run per tag.** All destinations of a release publish from one forge's run, all-GitHub or all-Gitea. Every `PUBLISH_*` secret lives on that forge only; the other forge holds none, so a mirrored run there is silent and publishes nothing. The forge release is created on the publishing forge. An all-Gitea release can publish to every destination: when Gitea is the publishing forge it holds the PyPI, TestPyPI, GHCR and Docker Hub tokens as well as its own (maintainer decision 2026-10-11). Not mechanically enforced: the per-release checklist compares secret names on both forges.
+  - **One release run per tag.** All destinations of a release publish from one forge's run, all-GitHub or all-Gitea. Every `PUBLISH_*` secret and variable lives on that forge only; the other forge holds none, so a mirrored run there is silent and publishes nothing (a `PUBLISH_*` variable left there alone sets an `ANY_*` intent flag and warns on every run). The forge release is created on the publishing forge. An all-Gitea release can publish to every destination: when Gitea is the publishing forge it holds the PyPI, TestPyPI, GHCR and Docker Hub tokens as well as its own (maintainer decision 2026-10-11). Not mechanically enforced: the per-release checklist compares secret names on both forges.
   - On GitHub, secrets live in the job's environment (AD-13); variables stay at repository level or in the environment. Gitea and act ignore `environment:` and read repository/organisation secrets and variables under the same names.
 
   | Destination | dev | release | Flag (job) | Required to enable | Intent inputs (`ANY_*`) |
@@ -217,9 +221,9 @@ to a destination only when that destination is fully configured on the forge run
 - **Rule:**
   - Each enabled index gets one step, gated on its own flag (AD-9). The step runs `twine upload --non-interactive --repository-url <index>` with `TWINE_USERNAME`/`TWINE_PASSWORD` from that index's credentials (`__token__` for TestPyPI and PyPI). `pypa/gh-action-pypi-publish` is not used: it requires `GITHUB_WORKFLOW_REF`, which Gitea and act do not set, and upstream declined the fix.
   - TestPyPI and PyPI steps pass `--skip-existing` and upload `dist/*`. twine refuses `--skip-existing` for any other index, so the Gitea step asks `/api/v1/packages/<owner>/pypi/<name>/<version>/files` which files Gitea already holds: 200 compares and uploads only the missing ones, 404 uploads all, any other status fails the step.
-  - That lookup sends its `Authorization` header on stdin (`printf 'Authorization: token %s\n' "$TWINE_PASSWORD" | curl … -H @- …`), never on argv. The `workflows-no-auth-header-argv` pygrep hook refuses a literal `-H`/`--header` `authorization:` flag in workflow files; it does not see a header assembled in a variable or passed by `--config`/`-K`.
+  - That lookup sends its `Authorization` header on stdin (`printf 'Authorization: token %s\n' "$TWINE_PASSWORD" | curl … -H @- …`), never on argv. The `workflows-no-auth-header-argv` pygrep hook refuses a literal `-H`/`--header` `authorization:` flag in any quoting (`-H "…"`, `-H'…'`, `-H $'…'`, `--header=…`) in every YAML file under `.github/`, case-insensitive. Coverage limit: flag and value on the same line only; a value on the next line after a `\` continuation, a header assembled in a variable, one passed through curl's `--config`/`-K` file, and other credential flags (`-u`/`--user`, `--oauth2-bearer`) are not matched.
   - `twine` is declared once, in the optional Poetry group `publish`; publish jobs run `poetry install --only publish --no-root`. Locally, `poetry install --with publish`.
-  - Poetry itself is installed everywhere in CI with `pip install --require-hashes -r .github/requirements/poetry.txt`, generated (never hand-edited) from `.github/requirements/poetry.in` by `pipx run --spec 'pip-tools==7.5.3' pip-compile --generate-hashes --allow-unsafe --output-file .github/requirements/poetry.txt .github/requirements/poetry.in`. This file is the one bootstrap-only exception to ADR-0001: it installs Poetry and nothing else; application, dev and publish dependencies stay in `poetry.lock`. Updates: Dependabot `pip` on `/.github/requirements` if its PRs keep the hashes, otherwise the maintainer regenerates it when bumping Poetry.
+  - Poetry itself is installed everywhere in CI with `pip install --require-hashes -r .github/requirements/poetry.txt`, generated (never hand-edited) from `.github/requirements/poetry.in` by the command in its header (`pipx run --python 3.14 --spec 'pip-tools==7.6.2' pip-compile --generate-hashes --output-file .github/requirements/poetry.txt .github/requirements/poetry.in`). This file is the one bootstrap-only exception to ADR-0001 (ADR-0046): it installs Poetry and nothing else; application, dev and publish dependencies stay in `poetry.lock`. Updates: Dependabot `pip` on `/.github/requirements` on GitHub; if a Dependabot PR drops the `--hash=` lines or fails `pip install --require-hashes`, the entry is removed and the maintainer regenerates the file when bumping Poetry (always manual on Gitea).
 
 ### AD-12 — Release [ADOPTED]
 
@@ -243,7 +247,7 @@ to a destination only when that destination is fully configured on the forge run
 
 - **Binds:** `dev.yaml`, `release.yaml`
 - **Prevents:** an older dev run moving `dev` after a newer one; two releases racing on `latest`.
-- **Rule:** `dev.yaml` declares `concurrency: { group: dev, cancel-in-progress: true }`. `release.yaml` declares `concurrency: { group: release, cancel-in-progress: false }`: at most one release runs and one waits; a newer tag cancels the waiting one, which must then be re-run. The comment in `release.yaml` and the walkthrough say exactly this. No per-ref release group.
+- **Rule:** `dev.yaml` declares `concurrency: { group: dev, cancel-in-progress: true }`. `release.yaml` declares `concurrency: { group: release, cancel-in-progress: false }`: at most one release runs and one waits; a running release is never cancelled. GitHub keeps one pending run per group, so a newer tag cancels the waiting release, which published nothing. It is re-run (`gh run rerun <run-id>`) only while no newer tag has released — a later re-run would re-point `latest` and `X.Y` backwards; otherwise it stays unreleased and the next patch is cut. The comment in `release.yaml` and the walkthrough say exactly this. A per-ref group is rejected (two releases would race on `latest`); `queue: max` is revisited when actionlint accepts it (ADR-0046 item 11).
 
 ### AD-15 — Dev never publishes a release version [ADOPTED]
 
@@ -262,7 +266,7 @@ to a destination only when that destination is fully configured on the forge run
 
   | Recipe | Does |
   | --- | --- |
-  | `just install` | `poetry install` |
+  | `just install` | `poetry sync --all-groups` (ADR-0042) |
   | `just check` | AD-3 |
   | `just build` | clean `dist/`, then `poetry build` |
   | `just image` | build and load the image from `dist/` per AD-17 |
@@ -307,7 +311,7 @@ to a destination only when that destination is fully configured on the forge run
 | Artifact | one artifact `dist`, always downloaded with `path: dist/`, holding exactly one `.whl` and one `.tar.gz` |
 | Hand-off | `needs.build.outputs.version` (PEP 440), `image-version` (SemVer), `wheel-sha256`, `sdist-sha256` only |
 | Secrets and variables | `PUBLISH_<DESTINATION>_<FIELD>`, upper snake case, as in AD-9; intent flags `ANY_<DEST>`; presence booleans `HAS_<NAME>` |
-| Conditionals | Allowed forms only: AD-9's single-flag `if: env.PUBLISH_X == 'true'` on steps (the `release` job gates each step, since a job-level `if:` cannot read `env`); the AD-12 validity check; the unconditional Destination configuration step; and the metadata `enable=` attribute of AD-8's major-tag line. Flags (conjunctions and disjunctions of presence tests) and image names are computed in job `env`, never inline in `if:` |
+| Conditionals | No `if:` reads `secrets` or `vars` (enforced by the `workflows-if-no-secrets-vars` hook, dot and index form; a multi-line `if: >-` is checked on its first line only, and "exactly one flag" is held by review). Allowed forms only: AD-9's single-flag `if: env.PUBLISH_X == 'true'` on steps (the `release` job gates each step, since a job-level `if:` cannot read `env`); the AD-12 validity check; the unconditional Destination configuration step; and the metadata `enable=` attribute of AD-8's major-tag line. Flags (conjunctions and disjunctions of presence tests) and image names are computed in job `env`, never inline in `if:` |
 | Publish-job step order | AD-18 |
 | Environments | GitHub `dev` (policy Branch `main`) on `dev.yaml` `publish-package`/`publish-image`; `release` (policy Tag `v*`) on `release.yaml` `publish-package`/`publish-image`/`release`; plain string form, no `url:`; none on `validate-tag` or `build` (a reusable-workflow caller cannot set one, and `build` holds no secret) |
 | Shared publish logic | edited in `dev.yaml` and `release.yaml` in the same commit (AD-1) |
@@ -337,13 +341,16 @@ to a destination only when that destination is fully configured on the forge run
 | docker/build-push-action | v7.4.0 `c3c9e263c25d99ce0380d002d59b67737d91b0dc` |
 | Python (CI) | 3.14 |
 | Poetry | 2.4.2 (hash-locked bootstrap, AD-11) |
-| pip-tools (`pip-compile`, bootstrap generator) | 7.5.3 |
+| pip-tools (`pip-compile`, bootstrap generator) | 7.6.2 (`pipx run --python 3.14`) |
 | poetry-dynamic-versioning | 1.10.0 |
 | dunamai | 1.26.2 |
 | twine | 7.0.0 (`publish` group) |
 | semver (`pysemver`) | 3.1.0 |
-| mypy | 2.3.1 (locked; hook rev on the same major) |
-| pip-audit, deptry | locked in `poetry.lock` (dev group, `repo: local` hooks) |
+| mypy | 2.4.0 (locked; `mirrors-mypy` hook v2.4.0, same major) |
+| pip-audit, deptry | `^2.10.1`, `^0.25.1`; dev group, locked in `poetry.lock`; `repo: local` hooks, not `--freeze`'d |
+| import-linter | 2.15 (`additional_dependencies` of the `import-linter` hook; product AD-13) |
+| shellcheck-py | v0.11.0.1-1 (SHA-frozen) |
+| nick-fields/retry | v4.0.0 `ad984534de44a9489a53aefd81eb77f87c70dc60` (`build` job only; no credentials there) |
 | pre-commit-hooks | v6.0.0 (SHA-frozen) |
 | ruff (`ruff-pre-commit`) | v0.16.5 (SHA-frozen) |
 | actionlint | v1.7.12 (SHA-frozen) |
@@ -365,7 +372,7 @@ Hook rows give the tag a `# frozen:` comment names; `pre-commit autoupdate --fre
     poetry.in       # AD-11: poetry==<Stack version>
     poetry.txt      # AD-11: generated with hashes; bootstrap-only exception to ADR-0001
   zizmor.yml        # AD-5 hash-pin policy
-  dependabot.yml    # github-actions, pip (/ and /.github/requirements), docker, pre-commit if GA; cooldowns;
+  dependabot.yml    # github-actions, pip (/ and /.github/requirements), docker, pre-commit; cooldowns;
                     # artifact-action majors act cannot run are ignored
 .pre-commit-config.yaml   # AD-3: the one hook list, SHA-frozen
 pyproject.toml            # AD-7 versioning config; AD-11 `publish` group; AD-3 [tool.deptry]
@@ -381,7 +388,7 @@ docs/upgrading.md         # AD-12: operator upgrade notes (no CHANGELOG)
  indexes:     Gitea PyPI index (dev+rel) | TestPyPI (dev) | PyPI (rel)
  registries:  GHCR | Gitea container registry | Docker Hub (dev+rel)
  enabled:     a destination publishes iff its token AND all its variables are set (AD-9)
- per release: one forge's run publishes everything; the other forge holds no PUBLISH_* secret
+ per release: one forge's run publishes everything; the other forge holds no PUBLISH_* secret or variable
  local act:   no secrets -> nothing publishes, nothing warns
 ```
 
@@ -402,21 +409,22 @@ docs/upgrading.md         # AD-12: operator upgrade notes (no CHANGELOG)
 - 0010: release credential per AD-9 and AD-13.
 - 0012: tags per AD-8.
 
-**ADRs carried forward:** 0004, 0018 and 0028, plus 0033's rule as restated by ADR-0037: the repository adds no path exemption to secret scanning (gitleaks' default allowlist is inherited). ADR-0036, 0038 and 0039 are folded into the Rules above. The E014 amendments (configuration gating, hash hand-off, Poetry bootstrap exception, one forge per release, zero-warning release rule, step order, 0.x major tag) and the accepted publish duplication are recorded in the ADRs E014-S02-003 writes.
+**ADRs carried forward:** 0004, 0018 and 0028, plus 0033's rule as restated by ADR-0037: the repository adds no path exemption to secret scanning (gitleaks' default allowlist is inherited). ADR-0036, 0038 and 0039 are folded into the Rules above. The E014 amendments (configuration gating, hash hand-off, Poetry bootstrap exception, one forge per release, zero-warning release rule, step order, 0.x major tag) are recorded in ADR-0046, and the accepted publish duplication in ADR-0047.
 
 ## Deferred
 
-- **SBOM and `provenance: mode=max`.** `docker/build-push-action`'s `sbom` and `provenance` inputs are BuildKit attestations and need no OIDC. They are deferred until after 0.3.0 because Gitea registry acceptance and `act` behaviour are unverified. Whether current images carry the default `mode=min` provenance has not been inspected. Revisit with the backlog item E014-S02-003 files.
+- **SBOM and `provenance: mode=max`.** `docker/build-push-action`'s `sbom` and `provenance` inputs are BuildKit attestations and need no OIDC. Inspected 2026-10-11 (E014-S02-003, `docker buildx imagetools inspect …/traefik-certificate-exporter:dev --format '{{json .Provenance}}'` on the Gitea `dev` image, version `0.2.1-dev.13`; no workflow sets a `provenance` input, so this is `docker/build-push-action`'s default): the Gitea registry holds a BuildKit SLSA provenance attestation per platform (`linux/amd64`, `linux/arm64`), and it already includes `internalParameters.buildConfig` and `buildkit_metadata.layers` (fields BuildKit emits only in `mode=max`) and the full `github_event_payload`, which is therefore published with the image. `{{json .SBOM}}` is empty: the image has no SBOM. Still deferred until after 0.3.0: `sbom: true` (Gitea registry acceptance of an SBOM attestation and `act` behaviour are unverified) and setting the provenance mode explicitly. Revisit with BL-E014-073, which also weighs the published event payload.
 - **Image vulnerability scanning.** No scanner is bound. Revisit when a consumer requires it.
 - **Forge settings are documentation unless configured** (checklist in `docs/ci/pipeline-walkthrough.md` §"Forge settings the maintainer applies"). Required, not deferred: GitHub environments `dev`/`release` with their policies; a `main` ruleset (no deletion, no force push, pull request with ≥ 1 approval, stale approvals dismissed, last-push approval, required check `build / build`, bypass the Repository admin role only) and a protected Gitea `main` (maintainer-only merge allowlist, required approval, the `build` status check); tag protection on `v*` on both forges (GitHub ruleset `release-tags`, Gitea protected tag, maintainer only); GitHub Actions `default_workflow_permissions: read` and `can_approve_pull_request_reviews: false`; GitHub secret scanning and push protection enabled; no repository-level `PUBLISH_*` secret on GitHub. Only `secrets-outside-env` and `anonymous-definition` are checked from the repository. The admin bypass actor, and anyone who can approve, can still land code on `main`.
 - **One forge per release and zero partial-configuration warnings** are checklist items, not checks (AD-9, AD-12).
 - **Live certification.** The release path (`validate-tag` on a forge, PyPI, GHCR, Docker Hub, the forge release, `X.Y`/`latest`, the `release` environment policy) and the Gitea `act_runner` are unproven on any forge until E014-S02-005; TestPyPI and the private-CA path are unexercised. Proven so far: GitHub PR/dev builds, local `act`, and a Gitea dev publish run from local `act` (E013-S02-001).
 - **Artifact action majors.** Under `act` 0.2.89, upload-artifact v6+ fails at upload (`Error unauthorized`, signature padding, nektos/act #6114) and v7 also sends an unknown `mime_type` (#6022); verified 2026-10-09 with a two-job upload/download matrix (v4.6.2/v4.3.0 and v5.0.0/v6.0.0 pass; v6.0.0 with v6.0.0/v7.0.0 fail). Dependabot ignores those majors until an `act` release ships PR #6174, then revisit.
 - **`queue: max` for release concurrency.** actionlint v1.7.12 rejects it. Revisit when actionlint accepts it.
-- **SHA pins for `LiquidLogicLabs/*` actions** (BL-E013-022/029), **locking Poetry's plugin transitive dependencies** and Poetry inside the Dockerfile builder (BL-E013-033), and **local composite actions** for the shared publish logic stay open.
+- **SHA pins for `LiquidLogicLabs/*` actions** (BL-E013-022/029), **locking Poetry's plugin transitive dependencies** and Poetry inside the Dockerfile builder (BL-E013-033), and **local composite actions** for the shared publish logic (ADR-0047) stay open.
 - **`.dockerignore`** (review F-19) is undecided.
 
 ## Changelog
 
 - 2026-10-11: consolidated to a clean 0.3.0 target state from `.memlog.md` (through 2026-10-11), ADR-0028, 0033 (as amended), 0035, 0036, 0037, 0038, 0039, E014-S01-007, E014-S02-001, E014-S02-002, E014-S02-005, `review-all-epics-2026-10-10/review-cicd.md` and `research-2026-10-10-release-0.3.0.md`.
+- 2026-10-11 E014-S02-003 routing (post-merge deltas only, one `.memlog.md` line each): AD-2 install is `poetry sync --all-groups` and the pre-pull is `nick-fields/retry` with a fixed 30 s wait plus buildx `driver: docker` (F-06, AG-14); AD-3 `pip-audit` bullet carries ADR-0042's wording and the hook list names every pygrep guard, `pip-audit-bootstrap` and `import-linter`; AD-5 Dependabot ecosystems as configured and the LLL hook's coverage limit; AD-11 pip-tools command from the file header; AD-14 re-run wording (BL-E013-036); AD-16 `just install`; Conventions Conditionals cite `workflows-if-no-secrets-vars`; Stack versions; `companions` gain ADR-0042, 0046, 0047; Deferred SBOM/provenance states the inspection result.
 - 2026-10-11 baseline cross-check (`epic-014/plan-review/review-baseline-consistency.md`): `target: '0.3.0'`; AD-3 required hooks gain `shellcheck` and `s6-no-raw-settings-env` (E014-S01-005, product AD-12) and the Deferred ShellCheck item is removed; E014-S01-005 added to `sources`; GitHub secret scanning and push protection added to the forge-settings list; AD-13 already reads "only when Gitea is the publishing forge (AD-9)".

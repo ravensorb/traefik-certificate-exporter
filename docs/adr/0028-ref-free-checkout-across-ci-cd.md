@@ -1,6 +1,7 @@
 # ADR-0028: Ref-free checkout across all CI/CD workflows
 
 - **Status:** Accepted
+- **Amended by:** ADR-0046 (re-anchored to CI spine AD-6; see the amendment at the end)
 - **Date:** 2026-10-08
 - **Deciders:** Maintainer + architecture gate
 - **Epic:** (origin) Epic E012, Story 3 — fix local `act-build.sh` checkout/mount strategy
@@ -156,6 +157,16 @@ Architecture spine updates: CI-AR2 amended (generalized, not weakened); CI-AR33 
   contains a checkout step invokes `git fetch`/`git checkout`/`git reset --hard` against anything
   other than a path already present in the working tree — so a future change cannot silently
   reintroduce the original failure mode through an indirect route (CI-AR42).
+
+## Amendment 2026-10-11 — re-anchored to CI spine AD-6 (ADR-0046)
+
+The CI-AR rules this ADR amends and adds (CI-AR2, CI-AR42–CI-AR46) belong to the retired
+2026-08-31 spine, and the workflows and `docker/act-build.sh` it names were removed by
+ADR-0035. The decision itself is unchanged and binds through the CI/CD spine
+(`_bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md`)
+AD-6: no checkout supplies `ref:` or `repository:`, no later step re-pins identity by another
+route, and the `workflows-ref-free-checkout` pygrep hook in `.pre-commit-config.yaml`
+enforces the key. Read the CI-AR references above as history.
 
 ## Diagram
 

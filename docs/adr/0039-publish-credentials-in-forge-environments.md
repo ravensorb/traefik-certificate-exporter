@@ -1,6 +1,8 @@
 # ADR-0039: Publish credentials live in forge environments
 
 - **Status:** Accepted
+- **Amended by:** ADR-0046 (2026-10-11) -- a release may run fully from Gitea; see
+  "Amendment 2026-10-11 — release may run fully from Gitea" below
 - **Date:** 2026-10-09
 - **Deciders:** Maintainer + architecture gate (E013, story E013-S02-002)
 - **Epic:** E013
@@ -159,3 +161,35 @@ What the forges offer (verified 2026-10-09):
 - Gitea gains environment-scoped secrets or honours `jobs.<id>.environment`; or
 - either forge exposes environment, ruleset or branch-protection state to a workflow
   without a forge-specific API call, so it can be checked mechanically.
+
+## Amendment 2026-10-11 — release may run fully from Gitea
+
+Maintainer decision 2026-10-11 (option 2; last entry of the CI spine `.memlog.md`), recorded
+by ADR-0046. It supersedes Decision 6's "store only Gitea-destination secrets in Gitea".
+
+- **One forge per release.** All destinations of a release publish from one forge's run,
+  all-GitHub or all-Gitea. Each destination's secrets live on that forge only (CI spine
+  AD-9).
+- **When Gitea is the publishing forge** it holds the PyPI, TestPyPI, GHCR and Docker Hub
+  tokens as well as its own, as repository-level secrets, because Gitea ignores
+  `environment:` (CI spine AD-13).
+- **Required mitigations** (CI spine AD-13):
+  - `main` and `v*` tags are protected, with push and tag creation limited to trusted
+    accounts;
+  - every token is scoped to this project only;
+  - every token is rotated after any untrusted push.
+- **Accepted residual risk.** A trusted account's branch workflow on Gitea can read the
+  tokens. Nothing in Gitea prevents it.
+- On GitHub nothing changes: `PUBLISH_*` secrets live in the `dev` or `release` environment
+  and never at repository level.
+
+### Consequences
+
+- **Single-forge secrets rule.** The forge that does not run the release holds no
+  `PUBLISH_*` secret or variable, so a mirrored tag run there is silent and publishes nothing
+  (a variable left there alone sets an `ANY_*` intent flag and warns on every run). This is
+  not mechanically enforced. The per-release checklist in `docs/ci/pipeline-walkthrough.md`
+  compares secret names on both forges.
+- A Gitea-run release concentrates every destination's token in one store that any branch
+  workflow can read. The mitigations above narrow who can push such a workflow; they do not
+  isolate the tokens from it.

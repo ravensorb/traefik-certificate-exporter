@@ -1,6 +1,6 @@
 # ADR-0026: `AcmeCertificateFileHandler` owns a None-safe `shutdown()`/`cancel()` method
 
-- **Status:** Proposed
+- **Status:** Accepted (implemented by E011-S01-004; status corrected 2026-10-11 by E014-S02-003)
 - **Date:** 2026-10-06
 - **Deciders:** Maintainer (ravensorb)
 - **Epic:** E011

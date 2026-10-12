@@ -1,6 +1,8 @@
 # ADR-0040: Exported-artifact paths come from one shared helper, keyed by the parsed store
 
 - **Status:** Accepted
+- **Amended by:** ADR-0045 (§3, E014-S01-006: a certificate or resolver whose rebuild fails
+  keeps its previous recorded paths; the index is keyed `(resolverName, name)`)
 - **Date:** 2026-10-11
 - **Deciders:** E014 epic architecture gate (l3io-arch-review + bmad-agent-architect)
 - **Epic:** E014
@@ -71,7 +73,8 @@ Option C.
    `resolverInPathName` is true and `resolverName` is a non-empty string, and adds the
    `name` directory only when `flat` is false. It reads no settings object and touches no
    filesystem.
-2. **The writer uses it.** `__exportCertificate` takes every target file name from
+2. **The writer uses it.** `__exportDomain` (named `__exportCertificate` when this ADR was
+   written) takes every target file name from
    `_artifact_paths`, and its directory (for `mkdir`, the stale-temp sweep and the
    `_is_contained_within` check) from the parent of those paths. No other code in `src/`
    joins `outputPath`, a resolver name and a domain name.
@@ -87,6 +90,14 @@ Option C.
    build are not recorded. A file-level failure (missing, empty, invalid JSON) leaves the
    previous entry for that file in place, so a half-written store does not drop
    containers from candidacy. A dry run records the same paths it would write.
+
+   *Amended by E014-S01-006 (ADR-0045 §3, BL-E014-020):* each store file's entry is keyed
+   `(resolverName, name) → paths` rather than `name → set[Path]`; `artifactMtime(name)`
+   unions every entry with that name. A certificate whose rebuild fails and a resolver that
+   fails as a whole keep their previous paths (RV-1), and the index is published by single
+   assignment of a new mapping so the deferred-restart thread reads a consistent snapshot
+   (AG-13). The sentence above that says failing domains "are not recorded" is superseded
+   by this.
 5. **The reader reads the record.** `artifactMtime(domain)` returns the newest
    `os.stat(...).st_mtime` over the union of recorded paths for `domain` across every
    store file in the index, or `None` when there are none or none exists on disk. An

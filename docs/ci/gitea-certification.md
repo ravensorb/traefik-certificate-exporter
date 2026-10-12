@@ -299,5 +299,5 @@ or review; only walking it against a real pinned tuple does.
   and `enable_status_check` true with the `build` job's pull-request context, whose exact
   name is read from a real Gitea pull request (checklist: `docs/ci/pipeline-walkthrough.md` §"Branch protection on main").
 - `dev.yaml` after `environment: dev` was added (ADR-0039): the next Gitea `dev.yaml` run
-  behaves as before, since Gitea ignores `environment:`; every destination whose Gitea
-  secret is set still publishes.
+  behaves as before, since Gitea ignores `environment:`; every destination whose token
+  secret and every required variable are set on Gitea (CI spine AD-9) still publishes.

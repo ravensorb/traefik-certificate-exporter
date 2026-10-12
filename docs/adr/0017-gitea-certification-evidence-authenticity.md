@@ -1,6 +1,7 @@
 # ADR-0017: Authenticate Gitea certification evidence with retained API exports
 
-- **Status:** Superseded by scope (2026-10-06)
+- **Status:** Superseded by ADR-0035 (2026-10-08; the E009 scope change of 2026-10-06 below
+  retired it first, and ADR-0035 replaced the pipeline it governed)
 - **Scope note (2026-10-06):** Epic E009 was rescoped to drop live-Gitea-runner certification;
   there is no staging certification report gating migration, so the evidence-authenticity
   mechanism this ADR defines has no current consumer. The validator/schema built in

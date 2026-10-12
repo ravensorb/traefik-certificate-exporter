@@ -160,19 +160,15 @@ This is a **public** repository — treat GitHub-facing surfaces as product, not
 - **Commit hygiene** — no debug prints of real domains/paths/credentials in example commits
   or fixtures added for tests (backlog item #5); sample data must be synthetic.
 
-## 10. Pre-commit hooks (wired in `.pre-commit-config.yaml`)
+## 10. Pre-commit hooks
 
-Validated against each tool's current release as of this writing (§8 in practice):
-
-| Hook | Source | Guards |
-|---|---|---|
-| `check-toml`, `check-yaml`, `end-of-file-fixer`, `trailing-whitespace`, `mixed-line-ending`, `detect-private-key` | `pre-commit/pre-commit-hooks` v6.0.0 | Basic file hygiene; `detect-private-key` is a direct backstop for §9 given this tool's domain |
-| `poetry-lock` (local) | repo-local | §2 lockfile-in-sync check — previously mis-declared under `pre-commit/pre-commit-hooks` (that repo doesn't ship this hook id, so it would never resolve); moved to a `repo: local` block |
-| `ruff-check` / `ruff-format` | `astral-sh/ruff-pre-commit` v0.16.5 | §1 lint/format, replacing the disabled `black`/`isort` hooks |
-| `gitleaks` | `gitleaks/gitleaks` v8.30.1 | §9 secret scanning |
-| `actionlint` | `rhysd/actionlint` v1.7.12 | §7 GitHub Actions workflow validation — this class of tool would have caught the broken `build.yaml` wiring ([review finding #4](../_bmad-output/implementation-artifacts/review-report.md)) before it was committed |
-
-Not yet added: a `mypy`/`pyright` hook (needs a ruff-clean baseline first, per §1).
+[`.pre-commit-config.yaml`](../.pre-commit-config.yaml) is the one list of hooks (CI/CD spine
+AD-3). This section does not copy it, because a copied table drifts from the file and then
+describes hooks that do not run. `just check` and `build.yaml` both run
+`pre-commit run --all-files`; its output, one line per hook with `Passed`, `Failed` or
+`Skipped`, is the evidence of what runs and what it examined. Most hooks carry a comment in
+`.pre-commit-config.yaml` stating what they guard; every `repo: local` pygrep guard's comment
+also states what it does not match.
 
 ## 11. Defect provenance belongs in the comment, and this is a deliberate deviation
 

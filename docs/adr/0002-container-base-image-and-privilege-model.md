@@ -1,6 +1,8 @@
 # ADR-0002: linuxserver.io base image and PUID/PGID privilege model
 
 - **Status:** Accepted (existing practice, recorded retroactively)
+- **Amended by:** ADR-0030 (the service keeps root unless the ACME store is proven readable by
+  the service account; the base image and PUID/PGID model are unchanged)
 - **Date:** 2026-08-30
 - **Deciders:** Maintainer (ravensorb)
 - **Principle(s) in tension:** Docker overlay (non-root runtime, minimal/pinned base images), Core §7/§8

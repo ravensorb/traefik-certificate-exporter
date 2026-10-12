@@ -1,0 +1,18 @@
+review: _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/arch-drift-review.md
+findings:
+  SD-02-1:
+    severity: BLOCKER
+    title: "The new test globs `.github/workflows/*.y*ml`, `yaml.safe_load`s each file, and asserts the metadata `tags:` priorities. It also keeps its own copy of the action's `DefaultPriorities` table (`:23-32`). AD-4 says \"No repository code parses workflows\" and \"a test that polices workflows, pins or the supply chain is not [a product test]\". No ADR records an exception. The change sits in no S02-001..006 story's Files in scope: the closure notes only *file* BL-E014-075 (`release-0.3.0-evidence.md:227,271`)."
+    disposition: resolved-in-code
+    spec:
+    adr:
+    commit:
+    issue:
+  SD-02-2:
+    severity: MAJOR
+    title: Both workflows now write `type=raw,value=${{ needs.build.outputs.image-version }},priority=1000`. AD-8 states "The release `tags:` input is exactly:" and gives the raw line without `priority`. ADR-0046 (items 1-13) does not mention BL-E014-075 either. The spine therefore prescribes the tag list that produced the `0.3` label defect, so the next edit made "to match the spine" reintroduces it.
+    disposition: spec-updated
+    spec: _bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md#ad-8--image-tags-one-writer-per-tag-adopted
+    adr: docs/adr/0046-e014-pipeline-amendments.md
+    commit:
+    issue:

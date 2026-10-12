@@ -1,6 +1,10 @@
 # ADR-0025: Keep a lenient import-time `globalArgs`; add a separate strict parse called only from `main()`
 
 - **Status:** Accepted (implemented E011-S01-003, 2026-10-06)
+- **Amended:** 2026-10-11 (E014-S01-008) -- the strict parse is `parse_known_args()` plus
+  `globalArgParser.error()` with `Did you mean` suggestions; Decision and Consequences below
+  carry the current text; the 2026-10-06 text called `globalArgParser.parse_args()`
+  (argparse's strict form)
 - **Date:** 2026-10-06
 - **Deciders:** Maintainer (ravensorb)
 - **Epic:** E011
@@ -38,9 +42,13 @@ only on a flag typo.
 `globalArgs, _ = globalArgParser.parse_known_args()` line untouched — this is what makes
 `app.py`'s `from .libs.cli_args import globalArgs` safe at import time, and what every
 existing test that imports either module already depends on. A new function
-`parse_args_strict() -> argparse.Namespace` is added to `cli_args.py`, calling
-`globalArgParser.parse_args()` (argparse's strict form, which calls `sys.exit(2)` with a
-usage message on any unrecognized argument). `app.py`'s `main()` calls
+`parse_args_strict() -> argparse.Namespace` is added to `cli_args.py`. It
+calls `globalArgParser.parse_known_args()` and, if any token is left over, dash or not,
+calls `globalArgParser.error()`, which exits 2 with the usage line and
+`unrecognized arguments: <tokens>`. For each leftover `-`-token with a close match among the
+registered option strings, a `Did you mean '<flag>'?` line is added, computed by
+`libs/suggest.nearest_name`, the helper the env-name suggestions also use. The message
+always ends with `Try '--help' for full usage.` (E014-S01-008). `app.py`'s `main()` calls
 `globalArgs = parse_args_strict()` as its very first statement, rebinding the
 module-level `globalArgs` name inside `app`'s own namespace (the one `main()` reads
 from for `logginglevel`, `configfile`, etc.) to the strict-parsed result — so production
@@ -54,9 +62,9 @@ value remains solely a safe default for any consumer that imports without callin
   Production (`main()`) hard-fails on an unrecognized flag, closing BL-E001-006.
   Import-only consumers (pytest, a REPL, an embedding host) keep succeeding exactly as
   today, closing the regression the story's own Security section warns against.
-- Negative / trade-offs accepted: `parse_known_args()` and `parse_args()` both run
-  argparse's parsing logic once each in the `main()` path — negligible cost (parsing a
-  short argv), accepted rather than engineering a single-parse mechanism that would
-  complicate the import-time/strict-time split for no measurable benefit.
+- Negative / trade-offs accepted: `parse_known_args()` runs twice in the `main()` path, once
+  at import and once in `parse_args_strict()`. The cost is negligible (a short argv), and
+  accepting it avoids a single-parse mechanism that would complicate the
+  import-time/strict-time split.
 - Follow-ups / exit plan: none — this is the complete, final mechanism for both paths;
   no non-GA/preview capability is involved.

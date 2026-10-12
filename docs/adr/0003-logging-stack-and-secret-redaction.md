@@ -1,6 +1,8 @@
 # ADR-0003: Logging stack and secret-redaction policy
 
-- **Status:** Proposed
+- **Status:** Accepted (implemented in E004 and E010; status corrected 2026-10-11 by E014-S02-003,
+  review-coherence CO-08)
+- **Amended by:** ADR-0023 (per-pass correlation id on every record)
 - **Date:** 2026-08-30
 - **Deciders:** Maintainer (ravensorb)
 - **Principle(s) in tension:** Core §9 unified structured logging (correlation, no secrets/PII in logs)

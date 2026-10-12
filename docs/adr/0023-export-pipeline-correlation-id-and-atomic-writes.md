@@ -1,6 +1,6 @@
 # ADR-0023: Per-drain correlation ID and atomic certificate writes
 
-- **Status:** Proposed
+- **Status:** Accepted (implemented by E011-S01-004; status corrected 2026-10-11 by E014-S02-003)
 - **Date:** 2026-10-06
 - **Deciders:** Maintainer (ravensorb), via Epic E011 Sprint S01 (Story E011-S01-004)
 - **Amended by:** ADR-0043 (Decision 3: atomicity stays per file; a domain's file set is built before the first replace, and unchanged files are not rewritten)

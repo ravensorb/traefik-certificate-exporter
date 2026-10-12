@@ -3,7 +3,7 @@ next:
   '011': 42
   '012': 14
   '013': 44
-  '014': 61
+  '014': 104
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -170,16 +170,6 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-001.md
-- key: BL-E011-006
-  epic: '011'
-  sprint: '01'
-  title: "Coverage-check staged-file behaviour deliberately diverges from the story's literal edge-case AC (kind: claim)"
-  source: code-review (E011-S01-002)
-  source_phase: code-review
-  source_ref: E011-S01-002
-  severity: Low
-  status: backlog
-  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-002.md
 - key: BL-E011-007
   epic: '011'
   sprint: '01'
@@ -210,42 +200,6 @@ backlog:
   severity: Low
   status: backlog
   description: The real-material export test exercises the flat layout only; the per-domain directory branch and its writes are covered by unit-level tests but not end to end. See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/review-E011-S01-004.md section 6.
-- key: BL-E011-013
-  epic: '011'
-  sprint: '01'
-  title: 'Vendored agent-instruction trees: 2,222 files verified against nothing (AI-poisoning foothold)'
-  source: redteam (RT-006)
-  source_phase: redteam
-  source_ref: RT-006
-  severity: Medium
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
-  story: E012-S01-002
-  scheduled_at: '2026-10-07T12:05:20Z'
-- key: BL-E011-014
-  epic: '011'
-  sprint: '01'
-  title: Third-party GitHub Actions pinned to mutable tags in publish jobs holding secrets
-  source: redteam (RT-007)
-  source_phase: redteam
-  source_ref: RT-007
-  severity: Medium
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
-  story: E012-S01-002
-  scheduled_at: '2026-10-07T12:05:20Z'
-- key: BL-E011-015
-  epic: '011'
-  sprint: '01'
-  title: Secret scanner excludes the vendored trees, leaving an uncovered commit path for credentials
-  source: redteam (RT-008)
-  source_phase: redteam
-  source_ref: RT-008
-  severity: Medium
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
-  story: E012-S01-002
-  scheduled_at: '2026-10-07T12:05:20Z'
 - key: BL-E011-017
   epic: '011'
   sprint: '01'
@@ -256,30 +210,6 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/redteam-report.md
-- key: BL-E011-020
-  epic: '011'
-  sprint: '01'
-  title: Untracked-file gate fails on any scratch file, incentivising git add of unintended files
-  source: adversarial (AD-08)
-  source_phase: adversarial
-  source_ref: AD-08
-  severity: Medium
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
-  story: E012-S01-002
-  scheduled_at: '2026-10-07T12:05:20Z'
-- key: BL-E011-021
-  epic: '011'
-  sprint: '01'
-  title: Vendored-integrity gates hash ~4,700 files per commit and assert hand-maintained counts
-  source: adversarial (AD-09)
-  source_phase: adversarial
-  source_ref: AD-09
-  severity: Medium
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/adversarial-review.md
-  story: E012-S01-002
-  scheduled_at: '2026-10-07T12:05:20Z'
 - key: BL-E011-022
   epic: '011'
   sprint: '01'
@@ -370,54 +300,6 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md
-- key: BL-E011-033
-  epic: '011'
-  sprint: '01'
-  title: Redacting a list collapses it to a scalar, destroying its count/scheme signal
-  source: ux-review (UX-002)
-  source_phase: ux-review
-  source_ref: UX-002
-  severity: Medium
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
-  story: E012-S01-004
-  scheduled_at: '2026-10-07T12:05:29Z'
-- key: BL-E011-034
-  epic: '011'
-  sprint: '01'
-  title: Unrecognised-flag failure names no near-match and never points at --help
-  source: ux-review (UX-003)
-  source_phase: ux-review
-  source_ref: UX-003
-  severity: Medium
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
-  story: E012-S01-004
-  scheduled_at: '2026-10-07T12:05:29Z'
-- key: BL-E011-035
-  epic: '011'
-  sprint: '01'
-  title: Usage block, now shown on every typo, leaks internal config paths as metavars
-  source: ux-review (UX-004)
-  source_phase: ux-review
-  source_ref: UX-004
-  severity: Medium
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
-  story: E012-S01-004
-  scheduled_at: '2026-10-07T12:05:29Z'
-- key: BL-E011-036
-  epic: '011'
-  sprint: '01'
-  title: Active-settings dump is one unwrapped 400-character JSON line
-  source: ux-review (UX-006)
-  source_phase: ux-review
-  source_ref: UX-006
-  severity: Medium
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/ux-review.md
-  story: E012-S01-004
-  scheduled_at: '2026-10-07T12:05:29Z'
 - key: BL-E011-037
   epic: '011'
   sprint: '01'
@@ -468,30 +350,10 @@ backlog:
   kind: spec-change
   ref: df8411965e8cc8ee4d2eb1138a50f7e379bdbe57
   description: 'Confirm or reject: /l3io-doctor triage. Spec: _bmad-output/planning-artifacts/architecture/architecture-traefik-certificate-exporter-2026-08-30/ARCHITECTURE-SPINE.md#ad-3--logging-structured-file-output-secrets-never-logged. From: _bmad-output/implementation-artifacts/epic-011/sprint-01/closure/arch-drift-review.md.'
-- key: BL-E012-003
-  epic: '012'
-  sprint: ''
-  title: Story E012-S01-001's s6 run-script privilege-drop conditional has no automated test path (manual/documented verification only)
-  source: arch-gate (l3io-arch-review)
-  source_phase: arch-gate
-  source_ref: l3io-arch-review
-  severity: Low
-  status: backlog
-  description: See _bmad-output/implementation-artifacts/epic-012/arch/arch-gate-review.md (consolidated MINOR findings)
 - key: BL-E012-005
   epic: '012'
   sprint: ''
   title: No epic-012 planning artifact (epic definition, sprint plan, or story-sequencing doc) exists under _bmad-output/planning-artifacts — absence of a sequencing doc is what let Story 2/Story 3 file-overlap (AG-2) go undetected until the arch gate
-  source: arch-gate (bmad-agent-architect)
-  source_phase: arch-gate
-  source_ref: bmad-agent-architect
-  severity: Low
-  status: backlog
-  description: See _bmad-output/implementation-artifacts/epic-012/arch/arch-gate-review.md (consolidated MINOR findings)
-- key: BL-E012-006
-  epic: '012'
-  sprint: ''
-  title: "ADR-0028 is dated the same day as this review and already Status: Accepted via a prior architecture-gate pass, yet Story 3's classification desync (AG-1) survived that same pass uncorrected — worth confirming earlier gate passes actually check story-doc/state sync, not just design content"
   source: arch-gate (bmad-agent-architect)
   source_phase: arch-gate
   source_ref: bmad-agent-architect
@@ -508,18 +370,6 @@ backlog:
   severity: Low
   status: backlog
   description: Review finding 9. logging.yaml's RotatingFileHandler uses a relative filename resolved against the root-owned WORKDIR /config, so the abc account gets PermissionError inside dictConfig and silently falls back to console logging. Needs a writable log location (e.g. a chowned /logs volume) or an explicit documented restriction. See _bmad-output/implementation-artifacts/epic-012/sprint-01/closure/review-E012-S01-001.md section 9.
-- key: BL-E012-013
-  epic: '012'
-  sprint: '01'
-  title: CI-AR44 overstates where verify-build.yaml's self-discovered source-sha flows
-  source: code-review (E012-S01-003)
-  source_phase: code-review
-  source_ref: E012-S01-003
-  severity: Low
-  status: backlog
-  kind: spec-proposal
-  ref: _bmad-output/implementation-artifacts/epic-012/sprint-01/closure/review-E012-S01-003.md
-  description: "CI-AR44 says the self-discovered source-sha is threaded into publish-image.yaml's source-sha input and every expected-source-sha argument. The story's technical AC narrows this to evidence/build-manifest.json only, which is what was implemented: source-integrity declares outputs.source-sha but nothing consumes it, and dev.yaml/release.yaml still pass needs.plan.outputs.source-sha to publish-image. Behaviourally safe (all three values are github.sha; divergence fails closed in verified-bundle). Either thread the output through workflow_call.outputs or amend CI-AR44 and drop the unused job output. See review LOW-1."
 - key: BL-E013-002
   epic: '013'
   sprint: ''
@@ -552,30 +402,6 @@ backlog:
   kind: spec-proposal
   ref: _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/notes-E013-S01-005.md
   description: For the architect (spine edits are out of E013-S01-005's scope). (1) AD-7 should state that every Poetry command that activates poetry-dynamic-versioning (anything other than poetry run) needs a full-history, tagged checkout, and that the AD-17 Dockerfile builder (ADR-0036) is the only sanctioned POETRY_DYNAMIC_VERSIONING_BYPASS site; E013-S01-005 removed the bypass from both Install twine steps. (2) AD-12 says the release job gates each of its steps on PUBLISH_RELEASE, but its CA import is gated on PUBLISH_CA because a step tests exactly one flag (AD-9, AD-18); release.yaml now carries a comment saying so. (3) AD-18 says the CA import is the first step, but in publish-package and publish-image (dev.yaml and release.yaml) the Version guard precedes it.
-- key: BL-E013-020
-  epic: '013'
-  sprint: '01'
-  title: Pre-commit hook revs are mutable tags running in the build job; no Dependabot pre-commit ecosystem (also AR-05)
-  source: redteam (RT-E013-03)
-  source_phase: redteam
-  source_ref: RT-E013-03
-  severity: Medium
-  status: scheduled
-  description: Needs maintainer decision (changes a recorded design decision); not implemented in closure. Related to BL-E013-001. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md
-  story: E014-S02-001
-  scheduled_at: '2026-10-10T22:27:36Z'
-- key: BL-E013-021
-  epic: '013'
-  sprint: '01'
-  title: WHEEL_SHA256 compares downloaded wheel with itself; build-time hash not carried across jobs
-  source: redteam (RT-E013-04)
-  source_phase: redteam
-  source_ref: RT-E013-04
-  severity: Medium
-  status: scheduled
-  description: 'Upload-before-third-party-action half fixed by AR-02. Remaining: export wheel-sha256 as build.yaml output and sha256sum -c in publish jobs; needs act/live verification (E013-S02-001). See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md'
-  story: E014-S02-001
-  scheduled_at: '2026-10-10T22:27:36Z'
 - key: BL-E013-022
   epic: '013'
   sprint: '01'
@@ -596,28 +422,6 @@ backlog:
   severity: Medium
   status: backlog
   description: Needs maintainer decision (changes a recorded design decision); not implemented in closure. Requires runner topology decision and fork-PR approval setting recorded in docs/ci/gitea-runners.md. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md
-- key: BL-E013-024
-  epic: '013'
-  sprint: '01'
-  title: Poetry installed without hashes; credentialed publish jobs install whole dev group before twine
-  source: adversarial (AR-06)
-  source_phase: adversarial
-  source_ref: AR-06
-  severity: Medium
-  status: scheduled
-  description: Needs maintainer decision (changes a recorded design decision); not implemented in closure. Changes AD-11 mechanism. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/adversarial-review.md
-  story: E014-S02-001
-  scheduled_at: '2026-10-10T22:27:36Z'
-- key: BL-E013-025
-  epic: '013'
-  sprint: '01'
-  title: dev/release publish jobs duplicated (~150 lines); trade-off not recorded
-  source: arch-drift (SD-01-7)
-  source_phase: arch-drift
-  source_ref: SD-01-7
-  severity: Low
-  status: backlog
-  description: See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/arch-drift-review.md
 - key: BL-E013-026
   epic: '013'
   sprint: '01'
@@ -698,16 +502,6 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md
-- key: BL-E013-034
-  epic: '013'
-  sprint: '01'
-  title: zizmor gate runs default persona; secrets-outside-env never fails CI
-  source: redteam (RT-E013-09)
-  source_phase: redteam
-  source_ref: RT-E013-09
-  severity: Low
-  status: backlog
-  description: Do after RT-E013-01. See _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/redteam-report.md
 - key: BL-E013-035
   epic: '013'
   sprint: '01'
@@ -732,44 +526,10 @@ backlog:
   kind: spec-proposal
   ref: _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/arch-drift-review.md
   description: Spec-proposal for AD-14.
-- key: BL-E013-037
-  epic: '013'
-  sprint: '01'
-  title: validate-tag checks form only; tag placement/ordering not validated server-side
-  source: arch-drift (SD-01-6)
-  source_phase: arch-drift
-  source_ref: SD-01-6
-  severity: Low
-  status: backlog
-  kind: spec-proposal
-  ref: _bmad-output/implementation-artifacts/epic-013/sprint-01/closure/arch-drift-review.md
-  description: Spec-proposal for AD-12; resolve together with RT-E013-02.
-- key: BL-E013-038
-  epic: '013'
-  sprint: '02'
-  title: "F-03: operational.md 'delete the secret to stop publishing' ignores that shared tokens live in both GitHub environments"
-  source: code-review (E013-S02-002)
-  source_phase: code-review
-  source_ref: E013-S02-002
-  severity: Low
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-013/sprint-02/closure/review-E013-S02-002.md
-  story: E014-S02-003
-  scheduled_at: '2026-10-10T22:27:38Z'
 - key: BL-E013-039
   epic: '013'
   sprint: '02'
   title: 'F-04: walkthrough bypass note implies a collaborator on a user-owned repository can hold the admin role'
-  source: code-review (E013-S02-002)
-  source_phase: code-review
-  source_ref: E013-S02-002
-  severity: Low
-  status: backlog
-  description: See _bmad-output/implementation-artifacts/epic-013/sprint-02/closure/review-E013-S02-002.md
-- key: BL-E013-040
-  epic: '013'
-  sprint: '02'
-  title: 'F-05: ADR-0039 missing from docs/architecture.md section 6 ADR index and from the spine companions list'
   source: code-review (E013-S02-002)
   source_phase: code-review
   source_ref: E013-S02-002
@@ -826,16 +586,6 @@ backlog:
   severity: Low
   status: backlog
   description: Arch-gate re-validation; see _bmad-output/implementation-artifacts/epic-014/arch/ (AG-13). Carried into the story file as a dev note.
-- key: BL-E014-009
-  epic: '014'
-  sprint: '02'
-  title: 'E014-S02-003: CI spine AD-2 step 2 (L91) and AD-16 just-install row (L265) still say plain poetry install; route ADR-0042 text'
-  source: arch-gate (AG-14)
-  source_phase: arch-gate
-  source_ref: AG-14
-  severity: Low
-  status: backlog
-  description: Arch-gate re-validation; see _bmad-output/implementation-artifacts/epic-014/arch/ (AG-14). Carried into the story file as a dev note.
 - key: BL-E014-010
   epic: '014'
   sprint: '01'
@@ -1066,16 +816,6 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/adversarial-review.md
-- key: BL-E014-035
-  epic: '014'
-  sprint: '01'
-  title: ADR-0040 names a removed writer method and a superseded recording rule
-  source: arch-drift (SD-01-3)
-  source_phase: arch-drift
-  source_ref: SD-01-3
-  severity: Low
-  status: backlog
-  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/arch-drift-review.md
 - key: BL-E014-036
   epic: '014'
   sprint: '01'
@@ -1103,16 +843,6 @@ backlog:
   source: arch-drift (SD-01-7)
   source_phase: arch-drift
   source_ref: SD-01-7
-  severity: Low
-  status: backlog
-  description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/arch-drift-review.md
-- key: BL-E014-039
-  epic: '014'
-  sprint: '01'
-  title: Restart/deferred-restart flow has no diagram
-  source: arch-drift (SD-01-8)
-  source_phase: arch-drift
-  source_ref: SD-01-8
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/arch-drift-review.md
@@ -1326,3 +1056,418 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/redteam-report.md
+- key: BL-E014-061
+  epic: '014'
+  sprint: '02'
+  title: workflows-pip-install-from-requirements accepts a compliant hashed install followed by a second -r outside .github/requirements/ (regex is ADR-0042 verbatim; fix via S02-003)
+  source: code-review (E014-S02-001)
+  source_phase: code-review
+  source_ref: E014-S02-001
+  severity: Low
+  status: backlog
+  description: R4. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/review-E014-S02-001.md
+- key: BL-E014-062
+  epic: '014'
+  sprint: '02'
+  title: Verify dist hashes step body is duplicated in five workflow steps with no check keeping the copies identical
+  source: code-review (E014-S02-001)
+  source_phase: code-review
+  source_ref: E014-S02-001
+  severity: Low
+  status: backlog
+  description: R5. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/review-E014-S02-001.md
+- key: BL-E014-063
+  epic: '014'
+  sprint: '02'
+  title: Legacy-settings warning detects legacy secrets only; legacy variables (DOCKER_IMAGENAME, PACKAGE_REPO, DOCKERHUB_REPOSITORY, ...) are not reported
+  source: code-review (E014-S02-002)
+  source_phase: code-review
+  source_ref: E014-S02-002
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/review-E014-S02-002.md F-08
+- key: BL-E014-064
+  epic: '014'
+  sprint: '02'
+  title: operational.md states the fixed NFR-7 seed bug as current and mis-cites the backlog item
+  source: review-product.md m1
+  severity: Low
+  status: backlog
+  description: 'docs/operational.md:100-104 still describes the seed as a known bug (fixed in init run:32-35); :108 cites backlog item #15 where metrics is #21. See _bmad-output/implementation-artifacts/review-all-epics-2026-10-10/review-product.md m1.'
+- key: BL-E014-065
+  epic: '014'
+  sprint: '02'
+  title: postexportcommand is logged verbatim at ERROR and in the DEBUG settings dump (NFR-1 spirit)
+  source: review-product.md m4
+  severity: Low
+  status: backlog
+  description: The settings.postexportcommand field is not in SECRET_CONFIG_KEYS; post_export.py logs it whole. Log argv[0] only or add the key to the registry. See _bmad-output/implementation-artifacts/review-all-epics-2026-10-10/review-product.md m4.
+- key: BL-E014-066
+  epic: '014'
+  sprint: '02'
+  title: Symlink-safety claim covers the leaf only; a swapped parent directory is followed by the temp file and os.replace
+  source: review-product.md m5
+  severity: Low
+  status: backlog
+  description: certificate_exporter.py _is_contained_within checks before writes; open the output dir O_DIRECTORY|O_NOFOLLOW and write via dir_fd, or narrow the docstring. See _bmad-output/implementation-artifacts/review-all-epics-2026-10-10/review-product.md m5.
+- key: BL-E014-067
+  epic: '014'
+  sprint: '02'
+  title: 'disable_existing_loggers: True silences apprise and urllib3, so notification failure detail is never emitted (NFR-6)'
+  source: review-product.md m7
+  severity: Low
+  status: backlog
+  description: logging.yaml disables loggers imported before dictConfig; notify.py comment claiming Apprise logs specifics itself is false. Related to but not covered by BL-E011-017 (which is about third-party loggers opened at DEBUG). See _bmad-output/implementation-artifacts/review-all-epics-2026-10-10/review-product.md m7.
+- key: BL-E014-068
+  epic: '014'
+  sprint: '02'
+  title: No HEALTHCHECK or liveness signal, and the deferral is not ADR-recorded
+  source: review-product.md m10
+  severity: Low
+  status: backlog
+  description: docker/Dockerfile has no HEALTHCHECK; PRD defers it but no ADR records the deferral. Record an ADR or add a heartbeat-file HEALTHCHECK. See _bmad-output/implementation-artifacts/review-all-epics-2026-10-10/review-product.md m10.
+- key: BL-E014-069
+  epic: '014'
+  sprint: '02'
+  title: s6 run scripts omit set -euo pipefail without a recorded rationale at the top
+  source: review-product.md m11
+  severity: Low
+  status: backlog
+  description: init run and svc run use with-contenv bash without strict mode, deliberately for the fail-safe-to-root flow; add a one-line rationale to each script. See _bmad-output/implementation-artifacts/review-all-epics-2026-10-10/review-product.md m11.
+- key: BL-E014-070
+  epic: '014'
+  sprint: '02'
+  title: audit-issues exits 4 on 15 legacy open items carrying status 'resolved' (1f, report only)
+  source: dev-loop (E014-S02-004)
+  source_phase: dev-loop
+  source_ref: E014-S02-004
+  severity: Low
+  status: backlog
+  description: BL-E001-004, BL-E001-005, BL-E002-001, BL-E007-001, BL-E008-001..007, BL-E008-010..013 sit in issues.yaml with status 'resolved' (pre-3.0 schema); present at HEAD 6e230db. Moving each to issues-resolved.yaml needs a resolution judgement per item. Blocks E014-S02-004 AC 7 (audit-issues exit 0). See closure/notes-E014-S02-004.md.
+- key: BL-E014-071
+  epic: '014'
+  sprint: '02'
+  title: 'Delete the stale remote branch release-please--branches--main left after closing PR #7'
+  source: code-review (E014-S02-004)
+  source_phase: code-review
+  source_ref: E014-S02-004
+  severity: Low
+  status: backlog
+  description: 'Kept because this run was not allowed to delete remote branches. Maintainer action: git push origin --delete release-please--branches--main. See closure/review-E014-S02-004.md L-1.'
+- key: BL-E014-072
+  epic: '014'
+  sprint: '02'
+  title: Extract orchestration (watch handler + export/hook/notify/restart pass) and I/O (_atomic_write*) modules out of certificate_exporter.py
+  source: E014-S02-003
+  severity: Low
+  status: backlog
+  ref: docs/adr/0048-exporter-module-layering.md
+  description: 'Planned work recorded by ADR-0048 (review M7). Revisit condition: the next feature that touches the pass sequence; that change does the extraction first and amends ADR-0048 and product spine AD-13 (import-linter libs-layers).'
+- key: BL-E014-073
+  epic: '014'
+  sprint: '02'
+  title: 'Evaluate enabling explicit sbom: true and provenance: mode=max on publish-image after 0.3.0'
+  source: E014-S02-003
+  severity: Low
+  status: backlog
+  ref: _bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md
+  description: BL-E013-035 follow-up. Inspection 2026-10-11 of the Gitea :dev image (0.2.1-dev.13) shows a BuildKit SLSA provenance attestation per platform with buildConfig, layers and github_event_payload, and no SBOM. Verify Gitea registry acceptance and act 0.2.89 behaviour, decide whether the embedded event payload is acceptable, then set the inputs explicitly (CI spine Deferred).
+- key: BL-E014-074
+  epic: '014'
+  sprint: '02'
+  title: pm-status has no writer to repair adr-register.yaml (mis-slugged reservations 1-2, no entries for 0003-0014/0028, slug arch-gate x12, 0034 gap)
+  source: E014-S02-003
+  severity: Low
+  status: backlog
+  ref: _bmad-output/implementation-artifacts/state/adr-register.yaml
+  description: CO-10. State must not be hand-edited, so the register was left as is; docs/architecture.md section 6 explains ADR-0034 as a skipped number. Needs an l3io-doctor/pm-status register-repair capability (back-fill slugs, record 0034 as void with a reason).
+- key: BL-E014-075
+  epic: '014'
+  sprint: '02'
+  title: Release image label org.opencontainers.image.version is 0.3, not 0.3.0 (metadata action takes the first sorted tag)
+  source: verification (E014-S02-005)
+  source_phase: verification
+  source_ref: E014-S02-005
+  severity: High
+  status: backlog
+  description: "Act dry run of release.yaml (E014-S02-005 AC 5): LiquidLogicLabs/git-action-docker-metadata@v6 reports 'Docker image version 0.3' and the pushed manifest's org.opencontainers.image.version label is 0.3. E014-S02-007 AC 8 requires 0.3.0. Likely fix: pass the version explicitly to the metadata action (or a labels: override org.opencontainers.image.version=${{ needs.build.outputs.image-version }}) in release.yaml publish-image (and check dev.yaml). Fix before tagging. Evidence: _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/release-0.3.0-evidence.md AC 5."
+- key: BL-E014-076
+  epic: '014'
+  sprint: '02'
+  title: E014-S02-005 Verification row 5 host-side seed check cannot pass on a correct image (init chowns /config to abc 0700)
+  source: verification (E014-S02-005)
+  source_phase: verification
+  source_ref: E014-S02-005
+  severity: Low
+  status: backlog
+  description: Row 5's 'test -s $C/config.yaml' runs as the host user; the seeded dir is abc-owned 0700, so the command exits 1 on correct behaviour (recorded with exit 1). Check inside a container and run in run-once mode (BL-E014-003). See closure/release-0.3.0-evidence.md AC 3 row 5.
+- key: BL-E014-077
+  epic: '014'
+  sprint: '02'
+  title: Partly configured release run stays green; ADR-0046 zero-warning rule is checklist-only
+  source: adversarial (AR-2)
+  source_phase: adversarial
+  source_ref: AR-2
+  severity: Medium
+  status: backlog
+  description: 'Deferred from closure fix-in-place: making the partial warning fail release.yaml contradicts CI AD-9 (Destination configuration always exits 0, ADOPTED); needs a maintainer decision and an ADR amendment. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/adversarial-review.md.'
+- key: BL-E014-078
+  epic: '014'
+  sprint: '02'
+  title: latest (and X.Y) can move backwards on an older or re-run tag; guard is prose only
+  source: adversarial (AR-3)
+  source_phase: adversarial
+  source_ref: AR-3
+  severity: Medium
+  status: backlog
+  description: Also redteam RT-4 (Low). Gate type=raw,value=latest on the tag being the highest v-tag; release-workflow design change deferred to after 0.3.0. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/adversarial-review.md.
+- key: BL-E014-079
+  epic: '014'
+  sprint: '02'
+  title: docker/Dockerfile builder stage installs poetry from PyPI without hashes
+  source: adversarial (AR-4)
+  source_phase: adversarial
+  source_ref: AR-4
+  severity: Medium
+  status: backlog
+  description: ADR-0046 item 1 wording corrected in closure; the unhashed install itself (Dockerfile:29-30) remains. Install from .github/requirements/poetry.txt with --require-hashes or equivalent. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/adversarial-review.md.
+- key: BL-E014-080
+  epic: '014'
+  sprint: '02'
+  title: Five copies of Destination configuration and Verify dist hashes have no drift check
+  source: adversarial (AR-5)
+  source_phase: adversarial
+  source_ref: AR-5
+  severity: Medium
+  status: backlog
+  description: Also arch-drift SD-02-6 (Minor). A pytest would violate CI AD-4; use a pygrep/standard-tool check or a composite action, and record Verify dist hashes in ADR-0047. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/adversarial-review.md.
+- key: BL-E014-081
+  epic: '014'
+  sprint: '02'
+  title: Poetry plugin closure (poetry-dynamic-versioning and deps) fetched unhashed in the process that runs twine upload with the token
+  source: redteam (RT-1)
+  source_phase: redteam
+  source_ref: RT-1
+  severity: Medium
+  status: backlog
+  description: AD-11 and workflow comments (dev.yaml:177, release.yaml:227) overstate closure. Add the plugin to poetry.in and invoke twine directly. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/redteam-report.md.
+- key: BL-E014-082
+  epic: '014'
+  sprint: '02'
+  title: Re-run safety paths accept an already-present package file by name only; a pre-planted artifact passes as a release
+  source: redteam (RT-2)
+  source_phase: redteam
+  source_ref: RT-2
+  severity: Medium
+  status: backlog
+  description: Compare the index-held digests against build wheel-sha256/sdist-sha256 and fail on mismatch (Gitea files check and PyPI --skip-existing). See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/redteam-report.md.
+- key: BL-E014-083
+  epic: '014'
+  sprint: '02'
+  title: 'Gitea-publishes-everything option: gitea-runners.md contradicts it, ADR-0039:156 cites resolved BL-E013-024, shared PR runner not isolated'
+  source: redteam (RT-3)
+  source_phase: redteam
+  source_ref: RT-3
+  severity: Medium
+  status: backlog
+  description: Not a 0.3.0 blocker (GitHub publishes 0.3.0). See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/redteam-report.md.
+- key: BL-E014-084
+  epic: '014'
+  sprint: '02'
+  title: Gitea shared inputs warning says set all four variables, then calls them alternatives
+  source: ux-review (UX-1)
+  source_phase: ux-review
+  source_ref: UX-1
+  severity: Medium
+  status: backlog
+  description: dev.yaml:56,89,99; release.yaml:108,151. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/ux-review.md.
+- key: BL-E014-085
+  epic: '014'
+  sprint: '02'
+  title: operational.md stop-publishing advice for GHCR/Docker Hub still leaves a partial-destination warning
+  source: ux-review (UX-2)
+  source_phase: ux-review
+  source_ref: UX-2
+  severity: Medium
+  status: backlog
+  description: docs/operational.md:560-567. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/ux-review.md.
+- key: BL-E014-086
+  epic: '014'
+  sprint: '02'
+  title: operational.md partial-destination cases omit USERNAME variables and misstate the Gitea token-only case
+  source: ux-review (UX-3)
+  source_phase: ux-review
+  source_ref: UX-3
+  severity: Medium
+  status: backlog
+  description: docs/operational.md:471-473. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/ux-review.md.
+- key: BL-E014-087
+  epic: '014'
+  sprint: '02'
+  title: upgrading.md lacks a publishing-migration section for 0.2.x maintainers (secret renames, environments)
+  source: ux-review (UX-4)
+  source_phase: ux-review
+  source_ref: UX-4
+  severity: Medium
+  status: backlog
+  description: docs/upgrading.md. See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/ux-review.md.
+- key: BL-E014-088
+  epic: '014'
+  sprint: '02'
+  title: Dist hash check binds contents not file names; unverified name flows into outputs, build-args and API URL
+  source: adversarial (AR-6)
+  source_phase: adversarial
+  source_ref: AR-6
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/adversarial-review.md.
+- key: BL-E014-089
+  epic: '014'
+  sprint: '02'
+  title: zizmor.yml says the hook enforces @vN without stating its coverage limit
+  source: adversarial (AR-8)
+  source_phase: adversarial
+  source_ref: AR-8
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/adversarial-review.md.
+- key: BL-E014-090
+  epic: '014'
+  sprint: '02'
+  title: workflows-if-no-secrets-vars misses whole-context use (toJSON(secrets)); limit not stated
+  source: adversarial (AR-9)
+  source_phase: adversarial
+  source_ref: AR-9
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/adversarial-review.md.
+- key: BL-E014-091
+  epic: '014'
+  sprint: '02'
+  title: ruff v0.16.5 hold is prose only; Dependabot pre-commit ecosystem will propose the held bump weekly
+  source: adversarial (AR-10)
+  source_phase: adversarial
+  source_ref: AR-10
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/adversarial-review.md.
+- key: BL-E014-092
+  epic: '014'
+  sprint: '02'
+  title: mypy hook major bump v1.14.1 to v2.4.0 landed inside the freeze-revs change
+  source: adversarial (AR-11)
+  source_phase: adversarial
+  source_ref: AR-11
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/adversarial-review.md.
+- key: BL-E014-093
+  epic: '014'
+  sprint: '02'
+  title: .gitea/workflows/ is outside every workflow gate
+  source: redteam (RT-5)
+  source_phase: redteam
+  source_ref: RT-5
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/redteam-report.md.
+- key: BL-E014-094
+  epic: '014'
+  sprint: '02'
+  title: Gitea token sent to a URL from an unvalidated variable with no HTTPS restriction
+  source: redteam (RT-6)
+  source_phase: redteam
+  source_ref: RT-6
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/redteam-report.md.
+- key: BL-E014-095
+  epic: '014'
+  sprint: '02'
+  title: docs/developer.md lost the Prepare and publish a release heading
+  source: arch-drift (SD-02-3)
+  source_phase: arch-drift
+  source_ref: SD-02-3
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/arch-drift-review.md.
+- key: BL-E014-096
+  epic: '014'
+  sprint: '02'
+  title: AD-9 says Destination configuration always exits 0 but it exits 1 on an undefined flag
+  source: arch-drift (SD-02-4)
+  source_phase: arch-drift
+  source_ref: SD-02-4
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/arch-drift-review.md.
+- key: BL-E014-097
+  epic: '014'
+  sprint: '02'
+  title: AD-10 says every image step tests PUBLISH_IMAGE; checkout/download/hash verify now run unconditionally
+  source: arch-drift (SD-02-5)
+  source_phase: arch-drift
+  source_ref: SD-02-5
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/arch-drift-review.md.
+- key: BL-E014-098
+  epic: '014'
+  sprint: '02'
+  title: Poetry 2.4.2 written in five places kept in step by hand; Dependabot bumps only poetry.in
+  source: arch-drift (SD-02-7)
+  source_phase: arch-drift
+  source_ref: SD-02-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/arch-drift-review.md.
+- key: BL-E014-099
+  epic: '014'
+  sprint: '02'
+  title: Legacy-settings warning promises a replacement that one entry lacks
+  source: ux-review (UX-5)
+  source_phase: ux-review
+  source_ref: UX-5
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/ux-review.md.
+- key: BL-E014-100
+  epic: '014'
+  sprint: '02'
+  title: Unclear whether the zero-destination-warnings checklist covers the legacy-settings warning
+  source: ux-review (UX-6)
+  source_phase: ux-review
+  source_ref: UX-6
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/ux-review.md.
+- key: BL-E014-101
+  epic: '014'
+  sprint: '02'
+  title: Pipeline walkthrough table abbreviates variable names the warnings print in full
+  source: ux-review (UX-7)
+  source_phase: ux-review
+  source_ref: UX-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/ux-review.md.
+- key: BL-E014-102
+  epic: '014'
+  sprint: '02'
+  title: Minor wording in the partial-destination warning
+  source: ux-review (UX-8)
+  source_phase: ux-review
+  source_ref: UX-8
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/ux-review.md.
+- key: BL-E014-103
+  epic: '014'
+  sprint: '02'
+  title: Base-image pre-pull log omits attempt number and delay (S02-006 Observability)
+  source: ux-review (UX-9)
+  source_phase: ux-review
+  source_ref: UX-9
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/ux-review.md.

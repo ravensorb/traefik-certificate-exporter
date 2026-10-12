@@ -62,6 +62,13 @@ options:
                         If specified. certificates that match domains in this list will be ignored
 ```
 
+Settings come from four layers, and for every setting the order is
+`CLI > env > config file > defaults`: a CLI flag beats a `TRAEFIK_CERTIFICATE_EXPORTER_*`
+environment variable, which beats the config file, which beats the packaged default. In the
+image this makes the environment the run-mode switch: the image sets
+`TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=true`, so `watchforchanges: false` in
+`/config/config.yaml` alone does not select run-once ([docker/README.md](docker/README.md#run-once)).
+
 Argument parsing is strict: an unrecognised flag (or a stray positional argument) exits
 immediately with **code 2**, naming the closest valid flag when there is one
 (`Did you mean '--data-path'?`) and pointing at `--help`. This happens before logging is
@@ -164,14 +171,25 @@ See [docs/operational.md](docs/operational.md#tracing-one-export-pass-correlatio
   dev build (`X.Y.Z.devN` for the package, `X.Y.Z-dev.N` and `dev` for the image).
 - **Python package:** PyPI (releases), TestPyPI (dev builds) and the Gitea package index.
 - **Image:** GitHub Container Registry, Docker Hub and the Gitea container registry,
-  built for `amd64` and `arm64`. `latest` and `X.Y.Z` / `X.Y` / `X` follow releases;
+  built for `amd64` and `arm64`. `latest` and `X.Y.Z` / `X.Y` follow releases (and `X`
+  from 1.0.0 on; no bare `0` tag is written);
   `dev` follows `main`.
-- Each destination is enabled by its own `PUBLISH_*` secret, so a fork or a mirror
-  publishes only where it has been configured to. The one shared secret is
-  `PUBLISH_GITEA_TOKEN`: the Gitea package index and the Gitea container registry both
-  use it, so neither can be enabled without the other.
+- A destination is enabled only when its `PUBLISH_*` token secret and every `PUBLISH_*`
+  variable it needs are set, so a fork or a mirror publishes only where it has been
+  configured to. A partly configured destination is skipped with one warning naming what
+  is missing; an unconfigured one is silent. The Gitea package index and the Gitea
+  container registry share `PUBLISH_GITEA_TOKEN` but can be enabled separately.
+- **Where the publish secrets live.** One forge's run publishes a whole release. On GitHub
+  the `PUBLISH_*` secrets live in the `dev` or `release` environment, never at repository
+  level ([ADR-0039](docs/adr/0039-publish-credentials-in-forge-environments.md)). On Gitea
+  they are repository-level secrets, present only when Gitea is the publishing forge, with
+  the mitigations of CI spine AD-13: protected `main` and `v*` tags, project-scoped tokens,
+  rotation after any untrusted push. The forge settings to apply are the checklist in
+  [docs/ci/pipeline-walkthrough.md](docs/ci/pipeline-walkthrough.md#forge-settings-the-maintainer-applies).
 
 How the pipeline works, and how to set it up: [docs/ci/pipeline-walkthrough.md](docs/ci/pipeline-walkthrough.md).
+
+Upgrading from an earlier release (what changes in each version and what to do about it): [docs/upgrading.md](docs/upgrading.md).
 
 ## Credits
 

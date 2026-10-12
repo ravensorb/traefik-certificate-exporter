@@ -30,3 +30,23 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+
+  # SHA-frozen pre-commit hook revs (BL-E013-020, AD-5). Dependabot resolves the latest tag
+  # and rewrites both the SHA and its `# frozen:` comment. GitHub only; Gitea updates them
+  # by hand (docs/developer.md).
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+
+  # Hash-locked Poetry bootstrap (BL-E013-024, ADR-0042). If a PR here drops the --hash
+  # lines or fails `pip install --require-hashes`, remove this entry and regenerate the file
+  # by hand (docs/developer.md).
+  - package-ecosystem: "pip"
+    directory: "/.github/requirements"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7

@@ -61,7 +61,8 @@ docker pull ravensorb/traefik-certificate-exporter:latest
 With `-e TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=false` (or any YAML false
 spelling, such as `no` or `False`) the container runs one export pass and then **exits**. The
 mode is resolved once at start-up by the installed package, with the same precedence the
-exporter uses, so the service and the exporter cannot disagree about it.
+exporter uses for every setting (`CLI > env > config file > defaults`), so the service and the
+exporter cannot disagree about it.
 
 Use the environment variable, not the config file, to select run-once in the image: the image
 sets `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=true` as an environment default, and

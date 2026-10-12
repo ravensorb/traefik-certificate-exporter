@@ -19,7 +19,10 @@ Install the Poetry-managed project and development tools:
 just install
 ```
 
-No generated requirements file or separately maintained dependency list is used.
+Every group in `poetry.lock` is installed, the optional `publish` group (`twine`) included,
+so `twine` is available locally and audited by the `pip-audit` hook (ADR-0042). The one
+package set outside `poetry.lock` is the CI-only Poetry bootstrap file described under
+[Keep pinned tools current](#keep-pinned-tools-current).
 
 ## Verification topology
 
@@ -110,7 +113,47 @@ against it. The concrete paths follow the gitleaks version, the locked plugin ve
 the venv's interpreter, so a gitleaks upgrade, a plugin-lock bump or a different interpreter
 can change them; a change that alters the set must update both records in the same change.
 
-## Prepare and publish a release
+## Keep pinned tools current
+
+**Pre-commit hooks.** Every remote hook `rev` in `.pre-commit-config.yaml` is a commit SHA
+with a `# frozen: vX.Y.Z` comment, written by `pre-commit autoupdate --freeze`; the
+`precommit-revs-frozen` hook fails on any other form (BL-E013-020). On GitHub, Dependabot's
+`pre-commit` ecosystem proposes the updates weekly. Gitea has no Dependabot, so there, and
+whenever a release is prepared, update them by hand:
+
+```bash
+poetry run pre-commit autoupdate --freeze
+just check
+```
+
+`autoupdate` takes the newest tag reachable from each upstream's default branch, which can
+be older than the current rev (gitleaks v8.30.1 is not on its default branch). Hold such a
+repo at its current tag by writing that tag's commit, from
+`git ls-remote <repo> 'refs/tags/<tag>^{}'` (or `refs/tags/<tag>` for a lightweight tag),
+as `rev: <sha>  # frozen: <tag>`. A gitleaks rev change also re-checks the inherited
+allowlist above (ADR-0037).
+
+**Poetry bootstrap for CI.** The workflows install Poetry with
+`pip install --require-hashes -r .github/requirements/poetry.txt`; the
+`workflows-pip-install-from-requirements` hook rejects any other workflow `pip install`, and
+the `pip-audit-bootstrap` hook audits the file (ADR-0042). It is a bootstrap-only exception
+to ADR-0001: it installs Poetry and nothing else. It is generated from
+`.github/requirements/poetry.in`, never edited by hand. To bump Poetry, edit the pin in
+`poetry.in`, then regenerate from the repository root (the variable makes pip-compile write
+this exact command into the file's header):
+
+```bash
+export CUSTOM_COMPILE_COMMAND="pipx run --python 3.14 --spec 'pip-tools==7.6.2' pip-compile --generate-hashes --output-file .github/requirements/poetry.txt .github/requirements/poetry.in"
+eval "$CUSTOM_COMPILE_COMMAND"
+```
+
+`--python 3.14` is the interpreter the workflows install; pip-compile writes no environment
+markers, so the file resolves for that interpreter only and is regenerated when the
+workflows' Python changes. On GitHub, Dependabot's `pip` ecosystem on
+`/.github/requirements` proposes updates weekly. If one of its PRs drops the `--hash=` lines
+or fails `pip install --require-hashes`, close it, remove that Dependabot entry, and update
+by hand with the command above. On Gitea the update is always by hand.
+
 
 ```bash
 git switch main && git pull

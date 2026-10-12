@@ -1,6 +1,7 @@
 # ADR-0016: Split Gitea tuple preflight evidence from final certification evidence
 
-- **Status:** Superseded by scope (2026-10-06)
+- **Status:** Superseded by ADR-0035 (2026-10-08; the E009 scope change of 2026-10-06 below
+  retired it first, and ADR-0035 replaced the pipeline it governed)
 - **Scope note (2026-10-06):** Epic E009 was rescoped to drop live-Gitea-runner certification
   entirely; there is no Story 9.2 live certification matrix for this decision to sequence
   evidence ahead of. Retained for historical record only. Originally-filed follow-up

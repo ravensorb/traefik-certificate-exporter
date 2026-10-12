@@ -1,4 +1,4 @@
-next: 46
+next: 49
 reserved:
 - number: 1
   slug: action-pin-policy
@@ -124,3 +124,15 @@ reserved:
   slug: restart-policy-only-on-change-defer-not-drop
   epic: E014
   reserved_at: '2026-10-11T18:18:54Z'
+- number: 46
+  slug: e014-pipeline-amendments
+  epic: E014
+  reserved_at: '2026-10-12T01:51:12Z'
+- number: 47
+  slug: dev-release-publish-duplication
+  epic: E014
+  reserved_at: '2026-10-12T01:51:12Z'
+- number: 48
+  slug: exporter-module-layering
+  epic: E014
+  reserved_at: '2026-10-12T01:51:13Z'

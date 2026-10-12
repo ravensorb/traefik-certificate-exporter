@@ -1,7 +1,9 @@
 name: dev
 
-# Push to main publishes a dev build (AD-1). Every destination is enabled only by its
-# PUBLISH_*_TOKEN secret (AD-9); with none set, the run succeeds and publishes nothing.
+# Push to main publishes a dev build (AD-1). A destination is enabled only when its
+# PUBLISH_*_TOKEN secret and every PUBLISH_* variable it needs are set (AD-9); a partly
+# configured one is skipped with one warning, an unconfigured one silently. With nothing
+# set, the run succeeds and publishes nothing.
 on:
   push:
     branches: [main]
@@ -30,12 +32,82 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # Destination flags (AD-9).
+    # Destination flags: a destination is enabled iff its token and every variable it needs
+    # are non-empty; ANY_* is true when any of its own inputs is set (AD-9).
     env:
       PUBLISH_CA: ${{ secrets.PUBLISH_CA_CERTIFICATE != '' }}
-      PUBLISH_GITEA: ${{ secrets.PUBLISH_GITEA_TOKEN != '' }}
+      PUBLISH_GITEA_PYPI: ${{ secrets.PUBLISH_GITEA_TOKEN != '' && vars.PUBLISH_GITEA_USERNAME != '' && vars.PUBLISH_GITEA_PYPI_URL != '' }}
+      ANY_GITEA_PYPI: ${{ vars.PUBLISH_GITEA_PYPI_URL != '' }}
+      ANY_GITEA_SHARED: ${{ (secrets.PUBLISH_GITEA_TOKEN != '' || vars.PUBLISH_GITEA_USERNAME != '') && vars.PUBLISH_GITEA_PYPI_URL == '' && vars.PUBLISH_GITEA_REGISTRY == '' && vars.PUBLISH_GITEA_IMAGE == '' }}
       PUBLISH_TESTPYPI: ${{ secrets.PUBLISH_TESTPYPI_TOKEN != '' }}
     steps:
+      # Classify each destination from the job-env flags: enabled (one log line), partial
+      # (one ::warning::), or unconfigured (silent) (AD-9). It holds no gating rule: the HAS_*
+      # presence booleans only name what is missing, and no secret value reaches this step.
+      # A list name with no matching flag or HAS_* key is an edit error and fails the step.
+      - name: Destination configuration
+        env:
+          JOB: publish-package
+          ENVIRONMENT: dev
+          # <Destination>|<PUBLISH flag>|<ANY flag>|<required inputs>|<own inputs>|<hint>
+          DESTINATIONS: |
+            Gitea package index|PUBLISH_GITEA_PYPI|ANY_GITEA_PYPI|secrets.PUBLISH_GITEA_TOKEN vars.PUBLISH_GITEA_USERNAME vars.PUBLISH_GITEA_PYPI_URL|vars.PUBLISH_GITEA_PYPI_URL|
+            TestPyPI|PUBLISH_TESTPYPI||secrets.PUBLISH_TESTPYPI_TOKEN|secrets.PUBLISH_TESTPYPI_TOKEN|
+            Gitea shared inputs||ANY_GITEA_SHARED|secrets.PUBLISH_GITEA_TOKEN vars.PUBLISH_GITEA_USERNAME vars.PUBLISH_GITEA_PYPI_URL vars.PUBLISH_GITEA_REGISTRY vars.PUBLISH_GITEA_IMAGE|secrets.PUBLISH_GITEA_TOKEN vars.PUBLISH_GITEA_USERNAME|These are alternatives: vars.PUBLISH_GITEA_PYPI_URL enables the Gitea package index, vars.PUBLISH_GITEA_REGISTRY with vars.PUBLISH_GITEA_IMAGE the Gitea container registry; each also needs secrets.PUBLISH_GITEA_TOKEN and vars.PUBLISH_GITEA_USERNAME.
+          # <legacy name>|<replacement, or empty when there is none>
+          LEGACY: |
+            secrets.DOCKERHUB_TOKEN|secrets.PUBLISH_DOCKERHUB_TOKEN
+            secrets.DOCKERHUB_USERNAME|vars.PUBLISH_DOCKERHUB_USERNAME
+            secrets.PYPI_TOKEN|secrets.PUBLISH_PYPI_TOKEN
+            secrets.PYPI_USERNAME|
+            secrets.FORGE_PACKAGE_TOKEN|secrets.PUBLISH_GITEA_TOKEN
+            secrets.REGISTRY_USERNAME|vars.PUBLISH_GITEA_USERNAME
+            secrets.REGISTRY_PASSWORD|secrets.PUBLISH_GITEA_TOKEN
+            secrets.CI_CA_CERTIFICATE|secrets.PUBLISH_CA_CERTIFICATE
+            secrets.GITEA_PACKAGE_INDEX_CA_CERTIFICATE|secrets.PUBLISH_CA_CERTIFICATE
+            secrets.GITEA_FORGE_API_CA_CERTIFICATE|secrets.PUBLISH_CA_CERTIFICATE
+          HAS_PUBLISH_GITEA_TOKEN: ${{ secrets.PUBLISH_GITEA_TOKEN != '' }}
+          HAS_PUBLISH_GITEA_USERNAME: ${{ vars.PUBLISH_GITEA_USERNAME != '' }}
+          HAS_PUBLISH_GITEA_PYPI_URL: ${{ vars.PUBLISH_GITEA_PYPI_URL != '' }}
+          HAS_PUBLISH_TESTPYPI_TOKEN: ${{ secrets.PUBLISH_TESTPYPI_TOKEN != '' }}
+          HAS_PUBLISH_GITEA_REGISTRY: ${{ vars.PUBLISH_GITEA_REGISTRY != '' }}
+          HAS_PUBLISH_GITEA_IMAGE: ${{ vars.PUBLISH_GITEA_IMAGE != '' }}
+          HAS_DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+          HAS_DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME != '' }}
+          HAS_PYPI_TOKEN: ${{ secrets.PYPI_TOKEN != '' }}
+          HAS_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME != '' }}
+          HAS_FORGE_PACKAGE_TOKEN: ${{ secrets.FORGE_PACKAGE_TOKEN != '' }}
+          HAS_REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME != '' }}
+          HAS_REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD != '' }}
+          HAS_CI_CA_CERTIFICATE: ${{ secrets.CI_CA_CERTIFICATE != '' }}
+          HAS_GITEA_PACKAGE_INDEX_CA_CERTIFICATE: ${{ secrets.GITEA_PACKAGE_INDEX_CA_CERTIFICATE != '' }}
+          HAS_GITEA_FORGE_API_CA_CERTIFICATE: ${{ secrets.GITEA_FORGE_API_CA_CERTIFICATE != '' }}
+        run: |
+          defined() { [ -n "${!1+x}" ] || { echo "::error title=$JOB::Destination configuration: $1 is not defined (list edit error)"; exit 1; }; }
+          has() { local v="HAS_${1#*.}"; defined "$v"; [ "${!v}" = true ]; }
+          join() { local IFS=,; local s="$*"; echo "${s//,/, }"; }
+          where="Set them as $ENVIRONMENT environment secrets/variables (GitHub) or repository Actions secrets/variables (Gitea)"
+          while IFS='|' read -r dest publish any inputs own hint; do
+            [ -n "$dest" ] || continue
+            for flag in $publish $any; do defined "$flag"; done
+            if [ -n "$publish" ] && [ "${!publish}" = true ]; then
+              echo "$dest enabled"
+            elif [ -n "$any" ] && [ "${!any}" = true ]; then
+              missing=(); set_own=()
+              for input in $inputs; do has "$input" || missing+=("$input"); done
+              for input in $own; do if has "$input"; then set_own+=("$input"); fi; done
+              echo "::warning title=$JOB::$dest partially configured, skipped: missing $(join "${missing[@]}"). $where, or unset $(join "${set_own[@]}") to disable it.${hint:+ $hint}"
+            fi
+          done <<< "$DESTINATIONS"
+          found=()
+          while IFS='|' read -r old new; do
+            [ -n "$old" ] || continue
+            if has "$old"; then found+=("$old (${new:+now }${new:-no replacement})"); fi
+          done <<< "$LEGACY"
+          if (( ${#found[@]} )); then
+            echo "::warning title=$JOB::Legacy settings found, no longer read: $(join "${found[@]}"). Move each value to its replacement (docs/ci/pipeline-walkthrough.md, \"Where things are published\"), then delete the legacy name."
+          fi
+
       # Dev publishes only a .dev version (AD-15).
       - name: Version guard
         env:
@@ -45,14 +117,6 @@ jobs:
             *.dev*) ;;
             *) echo "refusing to publish non-dev version $VERSION" >&2; exit 1 ;;
           esac
-
-      # Private CA for runner and twine (AD-18).
-      - uses: LiquidLogicLabs/git-action-ca-certificate-import@v3
-        id: ca
-        if: env.PUBLISH_CA == 'true'
-        with:
-          certificate: ${{ secrets.PUBLISH_CA_CERTIFICATE }}
-          generate-buildkit: true
 
       # Ref-free (AD-6); before download, which checkout would otherwise clean.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,19 +130,60 @@ jobs:
           name: dist
           path: dist/
 
+      # The dist is byte-identical to what build hashed (AD-17, BL-E013-021); before the CA
+      # import and every login or upload, so a tampered artifact meets no credential (AD-18).
+      - name: Verify dist hashes
+        id: verify
+        env:
+          WHEEL_SHA256: ${{ needs.build.outputs.wheel-sha256 }}
+          SDIST_SHA256: ${{ needs.build.outputs.sdist-sha256 }}
+        run: |
+          shopt -s nullglob dotglob
+          wheels=(dist/*.whl)
+          sdists=(dist/*.tar.gz)
+          entries=(dist/*)
+          # Uploads send dist/*, so nothing beside the two hashed files may be there.
+          if (( ${#wheels[@]} != 1 || ${#sdists[@]} != 1 || ${#entries[@]} != 2 )); then
+            echo >&2 "verify: dist/ must hold exactly one wheel and one sdist and nothing else, found ${#entries[@]} entries:"
+            ls -la dist >&2
+            exit 1
+          fi
+          bad=0
+          for output in wheel-sha256 sdist-sha256; do
+            var="${output%%-*}"; var="${var^^}_SHA256"
+            if ! [[ "${!var}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo >&2 "verify: needs.build.outputs.${output} is not a 64-hex SHA-256: '${!var}'"
+              bad=1
+            fi
+          done
+          (( bad == 0 )) || exit 1
+          echo "${wheels[0]}: expected $WHEEL_SHA256 computed $(sha256sum "${wheels[0]}" | cut -d' ' -f1)"
+          echo "${sdists[0]}: expected $SDIST_SHA256 computed $(sha256sum "${sdists[0]}" | cut -d' ' -f1)"
+          printf '%s  %s\n' "$WHEEL_SHA256" "${wheels[0]}" "$SDIST_SHA256" "${sdists[0]}" | sha256sum -c -
+          echo "wheel-path=${wheels[0]}" >> "$GITHUB_OUTPUT"
+
+      # Private CA for runner and twine (AD-18).
+      - uses: LiquidLogicLabs/git-action-ca-certificate-import@v3
+        id: ca
+        if: env.PUBLISH_CA == 'true'
+        with:
+          certificate: ${{ secrets.PUBLISH_CA_CERTIFICATE }}
+          generate-buildkit: true
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
 
-      # Locked twine from the dev group (AD-11). Strict versioning resolves from this job's
-      # full-history, tagged checkout (AD-7); the uploaded version is the dist wheel's (AD-2).
+      # Hash-checked Poetry, then only the locked publish group -- twine, no dev toolchain
+      # beside the token (AD-11). Strict versioning resolves from this job's full-history,
+      # tagged checkout (AD-7); the uploaded version is the dist wheel's (AD-2).
       - name: Install twine
-        run: |
-          python -m pip install "poetry==2.4.2"
-          poetry install --only dev --no-root
+        run: | # zizmor: ignore[use-trusted-publishing] AD-11: installs the publish group, uploads nothing
+          python -m pip install --require-hashes -r .github/requirements/poetry.txt
+          poetry install --only publish --no-root
 
       - name: Upload to Gitea
-        if: env.PUBLISH_GITEA == 'true'
+        if: env.PUBLISH_GITEA_PYPI == 'true'
         env:
           REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
           REPOSITORY_URL: ${{ vars.PUBLISH_GITEA_PYPI_URL }}
@@ -96,7 +201,9 @@ jobs:
           name="${wheel%%-*}"
           name="${name//_/-}"
           files_url="$base/api/v1/packages/$owner/pypi/$name/$VERSION/files"
-          code="$(curl -sS -o existing.json -w '%{http_code}' -H "Authorization: token $TWINE_PASSWORD" "$files_url")"
+          # F-09 / AD-11: the header goes to curl on stdin (`@-`), never on argv, where `ps`
+          # and /proc/<pid>/cmdline would show it; printf is a bash builtin, so it is not exec'd.
+          code="$(printf 'Authorization: token %s\n' "$TWINE_PASSWORD" | curl -sS -o existing.json -w '%{http_code}' -H @- "$files_url")"
           case "$code" in
             200) ;;
             404) echo '[]' > existing.json ;;
@@ -131,17 +238,72 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # Destination flags (AD-9) and the one combined flag plus enabled image names (AD-10).
+    # Destination flags (AD-9: token and every variable non-empty; ANY_* = any own input set),
+    # the one combined flag, and the image names of enabled registries only (AD-10).
     env:
       PUBLISH_CA: ${{ secrets.PUBLISH_CA_CERTIFICATE != '' }}
-      PUBLISH_GHCR: ${{ secrets.PUBLISH_GHCR_TOKEN != '' }}
-      PUBLISH_GITEA: ${{ secrets.PUBLISH_GITEA_TOKEN != '' }}
-      PUBLISH_DOCKERHUB: ${{ secrets.PUBLISH_DOCKERHUB_TOKEN != '' }}
-      PUBLISH_IMAGE: ${{ secrets.PUBLISH_GHCR_TOKEN != '' || secrets.PUBLISH_GITEA_TOKEN != '' || secrets.PUBLISH_DOCKERHUB_TOKEN != '' }}
-      GHCR_IMAGE: ${{ secrets.PUBLISH_GHCR_TOKEN != '' && vars.PUBLISH_GHCR_IMAGE || '' }}
-      GITEA_IMAGE: ${{ secrets.PUBLISH_GITEA_TOKEN != '' && vars.PUBLISH_GITEA_IMAGE || '' }}
-      DOCKERHUB_IMAGE: ${{ secrets.PUBLISH_DOCKERHUB_TOKEN != '' && vars.PUBLISH_DOCKERHUB_IMAGE || '' }}
+      PUBLISH_GHCR: ${{ secrets.PUBLISH_GHCR_TOKEN != '' && vars.PUBLISH_GHCR_USERNAME != '' && vars.PUBLISH_GHCR_IMAGE != '' }}
+      ANY_GHCR: ${{ secrets.PUBLISH_GHCR_TOKEN != '' || vars.PUBLISH_GHCR_USERNAME != '' || vars.PUBLISH_GHCR_IMAGE != '' }}
+      PUBLISH_GITEA: ${{ secrets.PUBLISH_GITEA_TOKEN != '' && vars.PUBLISH_GITEA_USERNAME != '' && vars.PUBLISH_GITEA_REGISTRY != '' && vars.PUBLISH_GITEA_IMAGE != '' }}
+      ANY_GITEA: ${{ vars.PUBLISH_GITEA_REGISTRY != '' || vars.PUBLISH_GITEA_IMAGE != '' }}
+      PUBLISH_DOCKERHUB: ${{ secrets.PUBLISH_DOCKERHUB_TOKEN != '' && vars.PUBLISH_DOCKERHUB_USERNAME != '' && vars.PUBLISH_DOCKERHUB_IMAGE != '' }}
+      ANY_DOCKERHUB: ${{ secrets.PUBLISH_DOCKERHUB_TOKEN != '' || vars.PUBLISH_DOCKERHUB_USERNAME != '' || vars.PUBLISH_DOCKERHUB_IMAGE != '' }}
+      PUBLISH_IMAGE: ${{ (secrets.PUBLISH_GHCR_TOKEN != '' && vars.PUBLISH_GHCR_USERNAME != '' && vars.PUBLISH_GHCR_IMAGE != '') || (secrets.PUBLISH_GITEA_TOKEN != '' && vars.PUBLISH_GITEA_USERNAME != '' && vars.PUBLISH_GITEA_REGISTRY != '' && vars.PUBLISH_GITEA_IMAGE != '') || (secrets.PUBLISH_DOCKERHUB_TOKEN != '' && vars.PUBLISH_DOCKERHUB_USERNAME != '' && vars.PUBLISH_DOCKERHUB_IMAGE != '') }}
+      GHCR_IMAGE: ${{ secrets.PUBLISH_GHCR_TOKEN != '' && vars.PUBLISH_GHCR_USERNAME != '' && vars.PUBLISH_GHCR_IMAGE != '' && vars.PUBLISH_GHCR_IMAGE || '' }}
+      GITEA_IMAGE: ${{ secrets.PUBLISH_GITEA_TOKEN != '' && vars.PUBLISH_GITEA_USERNAME != '' && vars.PUBLISH_GITEA_REGISTRY != '' && vars.PUBLISH_GITEA_IMAGE != '' && vars.PUBLISH_GITEA_IMAGE || '' }}
+      DOCKERHUB_IMAGE: ${{ secrets.PUBLISH_DOCKERHUB_TOKEN != '' && vars.PUBLISH_DOCKERHUB_USERNAME != '' && vars.PUBLISH_DOCKERHUB_IMAGE != '' && vars.PUBLISH_DOCKERHUB_IMAGE || '' }}
     steps:
+      # Classify each destination from the job-env flags: enabled (one log line), partial
+      # (one ::warning::), or unconfigured (silent) (AD-9). It holds no gating rule: the HAS_*
+      # presence booleans only name what is missing, and no secret value reaches this step.
+      # A list name with no matching flag or HAS_* key is an edit error and fails the step.
+      - name: Destination configuration
+        env:
+          JOB: publish-image
+          ENVIRONMENT: dev
+          # <Destination>|<PUBLISH flag>|<ANY flag>|<required inputs>|<own inputs>|<hint>
+          DESTINATIONS: |
+            GHCR|PUBLISH_GHCR|ANY_GHCR|secrets.PUBLISH_GHCR_TOKEN vars.PUBLISH_GHCR_USERNAME vars.PUBLISH_GHCR_IMAGE|secrets.PUBLISH_GHCR_TOKEN vars.PUBLISH_GHCR_USERNAME vars.PUBLISH_GHCR_IMAGE|
+            Gitea container registry|PUBLISH_GITEA|ANY_GITEA|secrets.PUBLISH_GITEA_TOKEN vars.PUBLISH_GITEA_USERNAME vars.PUBLISH_GITEA_REGISTRY vars.PUBLISH_GITEA_IMAGE|vars.PUBLISH_GITEA_REGISTRY vars.PUBLISH_GITEA_IMAGE|
+            Docker Hub|PUBLISH_DOCKERHUB|ANY_DOCKERHUB|secrets.PUBLISH_DOCKERHUB_TOKEN vars.PUBLISH_DOCKERHUB_USERNAME vars.PUBLISH_DOCKERHUB_IMAGE|secrets.PUBLISH_DOCKERHUB_TOKEN vars.PUBLISH_DOCKERHUB_USERNAME vars.PUBLISH_DOCKERHUB_IMAGE|
+          # <legacy name>|<replacement, or empty when there is none>
+          LEGACY: ""
+          HAS_PUBLISH_GHCR_TOKEN: ${{ secrets.PUBLISH_GHCR_TOKEN != '' }}
+          HAS_PUBLISH_GHCR_USERNAME: ${{ vars.PUBLISH_GHCR_USERNAME != '' }}
+          HAS_PUBLISH_GHCR_IMAGE: ${{ vars.PUBLISH_GHCR_IMAGE != '' }}
+          HAS_PUBLISH_GITEA_TOKEN: ${{ secrets.PUBLISH_GITEA_TOKEN != '' }}
+          HAS_PUBLISH_GITEA_USERNAME: ${{ vars.PUBLISH_GITEA_USERNAME != '' }}
+          HAS_PUBLISH_GITEA_REGISTRY: ${{ vars.PUBLISH_GITEA_REGISTRY != '' }}
+          HAS_PUBLISH_GITEA_IMAGE: ${{ vars.PUBLISH_GITEA_IMAGE != '' }}
+          HAS_PUBLISH_DOCKERHUB_TOKEN: ${{ secrets.PUBLISH_DOCKERHUB_TOKEN != '' }}
+          HAS_PUBLISH_DOCKERHUB_USERNAME: ${{ vars.PUBLISH_DOCKERHUB_USERNAME != '' }}
+          HAS_PUBLISH_DOCKERHUB_IMAGE: ${{ vars.PUBLISH_DOCKERHUB_IMAGE != '' }}
+        run: |
+          defined() { [ -n "${!1+x}" ] || { echo "::error title=$JOB::Destination configuration: $1 is not defined (list edit error)"; exit 1; }; }
+          has() { local v="HAS_${1#*.}"; defined "$v"; [ "${!v}" = true ]; }
+          join() { local IFS=,; local s="$*"; echo "${s//,/, }"; }
+          where="Set them as $ENVIRONMENT environment secrets/variables (GitHub) or repository Actions secrets/variables (Gitea)"
+          while IFS='|' read -r dest publish any inputs own hint; do
+            [ -n "$dest" ] || continue
+            for flag in $publish $any; do defined "$flag"; done
+            if [ -n "$publish" ] && [ "${!publish}" = true ]; then
+              echo "$dest enabled"
+            elif [ -n "$any" ] && [ "${!any}" = true ]; then
+              missing=(); set_own=()
+              for input in $inputs; do has "$input" || missing+=("$input"); done
+              for input in $own; do if has "$input"; then set_own+=("$input"); fi; done
+              echo "::warning title=$JOB::$dest partially configured, skipped: missing $(join "${missing[@]}"). $where, or unset $(join "${set_own[@]}") to disable it.${hint:+ $hint}"
+            fi
+          done <<< "$DESTINATIONS"
+          found=()
+          while IFS='|' read -r old new; do
+            [ -n "$old" ] || continue
+            if has "$old"; then found+=("$old (${new:+now }${new:-no replacement})"); fi
+          done <<< "$LEGACY"
+          if (( ${#found[@]} )); then
+            echo "::warning title=$JOB::Legacy settings found, no longer read: $(join "${found[@]}"). Move each value to its replacement (docs/ci/pipeline-walkthrough.md, \"Where things are published\"), then delete the legacy name."
+          fi
+
       # Dev publishes only a .dev version (AD-15).
       - name: Version guard
         env:
@@ -152,6 +314,50 @@ jobs:
             *) echo "refusing to publish non-dev version $VERSION" >&2; exit 1 ;;
           esac
 
+      # Build context for docker/Dockerfile; ref-free (AD-6). Unconditional, like the download
+      # and the hash check after it: they touch no credential, and a run with no registry
+      # enabled still refuses a tampered dist (AD-17).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: dist
+          path: dist/
+
+      # The dist is byte-identical to what build hashed (AD-17, BL-E013-021); before the CA
+      # import and every login or upload, so a tampered artifact meets no credential (AD-18).
+      - name: Verify dist hashes
+        id: verify
+        env:
+          WHEEL_SHA256: ${{ needs.build.outputs.wheel-sha256 }}
+          SDIST_SHA256: ${{ needs.build.outputs.sdist-sha256 }}
+        run: |
+          shopt -s nullglob dotglob
+          wheels=(dist/*.whl)
+          sdists=(dist/*.tar.gz)
+          entries=(dist/*)
+          # Uploads send dist/*, so nothing beside the two hashed files may be there.
+          if (( ${#wheels[@]} != 1 || ${#sdists[@]} != 1 || ${#entries[@]} != 2 )); then
+            echo >&2 "verify: dist/ must hold exactly one wheel and one sdist and nothing else, found ${#entries[@]} entries:"
+            ls -la dist >&2
+            exit 1
+          fi
+          bad=0
+          for output in wheel-sha256 sdist-sha256; do
+            var="${output%%-*}"; var="${var^^}_SHA256"
+            if ! [[ "${!var}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo >&2 "verify: needs.build.outputs.${output} is not a 64-hex SHA-256: '${!var}'"
+              bad=1
+            fi
+          done
+          (( bad == 0 )) || exit 1
+          echo "${wheels[0]}: expected $WHEEL_SHA256 computed $(sha256sum "${wheels[0]}" | cut -d' ' -f1)"
+          echo "${sdists[0]}: expected $SDIST_SHA256 computed $(sha256sum "${sdists[0]}" | cut -d' ' -f1)"
+          printf '%s  %s\n' "$WHEEL_SHA256" "${wheels[0]}" "$SDIST_SHA256" "${sdists[0]}" | sha256sum -c -
+          echo "wheel-path=${wheels[0]}" >> "$GITHUB_OUTPUT"
+
       # Private CA for runner and BuildKit (AD-18).
       - uses: LiquidLogicLabs/git-action-ca-certificate-import@v3
         id: ca
@@ -159,56 +365,6 @@ jobs:
         with:
           certificate: ${{ secrets.PUBLISH_CA_CERTIFICATE }}
           generate-buildkit: true
-
-      # An enabled registry needs its image and registry variables, before any login (AD-10).
-      - name: Registry configuration guard
-        if: env.PUBLISH_IMAGE == 'true'
-        env:
-          GITEA_REGISTRY: ${{ vars.PUBLISH_GITEA_REGISTRY }}
-        run: |
-          missing=0
-          for registry in GHCR GITEA DOCKERHUB; do
-            flag="PUBLISH_${registry}"
-            image="${registry}_IMAGE"
-            if [ "${!flag}" = "true" ] && [ -z "${!image}" ]; then
-              echo "publish-image: ${registry} is enabled by PUBLISH_${registry}_TOKEN but vars.PUBLISH_${registry}_IMAGE is empty" >&2
-              missing=1
-            fi
-          done
-          if [ "$PUBLISH_GITEA" = "true" ] && [ -z "$GITEA_REGISTRY" ]; then
-            echo "publish-image: GITEA is enabled by PUBLISH_GITEA_TOKEN but vars.PUBLISH_GITEA_REGISTRY is empty" >&2
-            missing=1
-          fi
-          exit "$missing"
-
-      # Build context for docker/Dockerfile; ref-free (AD-6).
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: env.PUBLISH_IMAGE == 'true'
-        with:
-          persist-credentials: false
-
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
-        if: env.PUBLISH_IMAGE == 'true'
-        with:
-          name: dist
-          path: dist/
-
-      - name: Locate wheel
-        id: wheel
-        if: env.PUBLISH_IMAGE == 'true'
-        run: |
-          shopt -s nullglob
-          wheels=(dist/*.whl)
-          if (( ${#wheels[@]} != 1 )); then
-            echo >&2 "publish-image: dist/ must hold exactly one wheel, found ${#wheels[@]}"
-            exit 1
-          fi
-          sha256="$(sha256sum "${wheels[0]}" | cut -d' ' -f1)"
-          echo "wheel=${wheels[0]} sha256=$sha256"
-          {
-            echo "path=${wheels[0]}"
-            echo "sha256=$sha256"
-          } >> "$GITHUB_OUTPUT"
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         if: env.PUBLISH_GHCR == 'true'
@@ -231,6 +387,8 @@ jobs:
           password: ${{ secrets.PUBLISH_DOCKERHUB_TOKEN }}
 
       # Dev tag set (AD-8); blank image lines (disabled registries) are dropped.
+      # priority=1000 makes the image-version tag the source of the
+      # org.opencontainers.image.version label explicitly, not by input order (BL-E014-075).
       - uses: LiquidLogicLabs/git-action-docker-metadata@v6
         id: meta
         if: env.PUBLISH_IMAGE == 'true'
@@ -241,7 +399,7 @@ jobs:
             ${{ env.DOCKERHUB_IMAGE }}
           flavor: latest=false
           tags: |
-            type=raw,value=${{ needs.build.outputs.image-version }}
+            type=raw,value=${{ needs.build.outputs.image-version }},priority=1000
             type=sha
             type=raw,value=dev
 
@@ -270,8 +428,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             POETRY_VERSION=2.4.2
-            WHEEL_PATH=${{ steps.wheel.outputs.path }}
-            WHEEL_SHA256=${{ steps.wheel.outputs.sha256 }}
+            WHEEL_PATH=${{ steps.verify.outputs.wheel-path }}
+            WHEEL_SHA256=${{ needs.build.outputs.wheel-sha256 }}
             VERSION=${{ needs.build.outputs.image-version }}
             REVISION=${{ github.sha }}
 

@@ -3,8 +3,8 @@ epic: 'E014'
 sprint: 'S02'
 title: Release 0.3.0
 classification: standard
-status: backlog
-updated_at: '2026-10-11T16:04:19Z'
+status: done
+updated_at: '2026-10-12T03:23:45Z'
 depends_on:
 - 'E014-S02-003'
 - 'E014-S02-004'
@@ -15,21 +15,93 @@ depends_on:
 - 'E014-S01-010'
 - 'E014-S02-006'
 estimate:
-  man_hours: 10.58
-  hitl_hours: 0.05
-  elapsed_hours: 0.75
-  cost: 5.91
+  man_hours: 10.53
+  hitl_hours: 0.01
+  elapsed_hours: 0.39
+  cost: 5.51
   model: claude-opus-5
-  fix_factor: 2.8333
+  fix_factor: 2.6165
   scope_ratios:
-    man_hours: 0.6225
-    hitl_hours: 0.0541
-    elapsed_hours: 0.1315
-    tokens_k: 1.8087
+    man_hours: 0.6707
+    hitl_hours: 0.0057
+    elapsed_hours: 0.0737
+    tokens_k: 1.6797
   confidence: low
   tokens_k:
-    total: 7248
+    total: 7064
     input: 0
-    output: 12
-    cache_write: 347
-    cache_read: 6889
+    output: 11
+    cache_write: 297
+    cache_read: 6756
+completion_evidence:
+  test_runs:
+  - command: pm-status show --epic E014 --sprint 01; show --epic E014 --sprint 02; show --epic E013 --sprint 02 (row 1)
+    exit_code: 0
+  - command: grep -n -i 'one forge' ARCHITECTURE-SPINE.md (CI spine, row 2)
+    exit_code: 0
+  - command: just image && docker image inspect traefik-certificate-exporter:local --format '{{.Id}}' (row 3)
+    exit_code: 0
+  - command: TCE_DOCKER_INTEGRATION=1 poetry run pytest -m integration -v -rs (row 4)
+    exit_code: 0
+  - command: 'row 5 as written: docker run --rm -v $C:/config traefik-certificate-exporter:local; test -s $C/config.yaml (host-side test)'
+    exit_code: 1
+  - command: 'row 5 run-once (BL-E014-003): timeout 180 docker run --rm -e TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=false -v $C:/config traefik-certificate-exporter:local; test -s /c/config.yaml inside a container'
+    exit_code: 0
+  - command: docker buildx build --platform linux/arm64 ... -t traefik-certificate-exporter:arm64 . && docker run --rm --platform linux/arm64 --entrypoint traefik-certificate-exporter traefik-certificate-exporter:arm64 --help (row 6)
+    exit_code: 0
+  - command: venv 3.10; venv 3.14 (row 7)
+    exit_code: 0
+  - command: poetry run pytest -q tests/test_settings_surface.py::test_upgrading_lists_every_legacy_name (row 8)
+    exit_code: 0
+  - command: 'row 8 plants (changed row, dropped row, missing end marker): ! poetry run pytest -q tests/test_settings_surface.py::test_upgrading_lists_every_legacy_name'
+    exit_code: 0
+  - command: 'row 12 (local throwaway Gitea, BL-E014-004): clone && actrun push -W .github/workflows/dev.yaml -s PUBLISH_GITEA_TOKEN --var PUBLISH_GITEA_USERNAME=ravensorb --var PUBLISH_GITEA_PYPI_URL=http://localhost:3300/api/packages/ravensorb/pypi --var PUBLISH_GITEA_REGISTRY=localhost:3300 --var PUBLISH_GITEA_IMAGE=localhost:3300/ravensorb/traefik-certificate-exporter-test'
+    exit_code: 1
+  - command: 'row 12 (local throwaway Gitea, BL-E014-004): clone && actrun push -W .github/workflows/dev.yaml -s PUBLISH_GITEA_TOKEN --var PUBLISH_GITEA_USERNAME=ravensorb --var PUBLISH_GITEA_PYPI_URL=http://localhost:3300/api/packages/ravensorb/pypi --var PUBLISH_GITEA_REGISTRY=localhost:3300 --var PUBLISH_GITEA_IMAGE=localhost:3300/ravensorb/traefik-certificate-exporter-test'
+    exit_code: 1
+  - command: 'row 12 (local throwaway Gitea, BL-E014-004): clone && actrun push -W .github/workflows/dev.yaml -s PUBLISH_GITEA_TOKEN --var PUBLISH_GITEA_USERNAME=ravensorb --var PUBLISH_GITEA_PYPI_URL=http://localhost:3300/api/packages/ravensorb/pypi --var PUBLISH_GITEA_REGISTRY=localhost:3300 --var PUBLISH_GITEA_IMAGE=localhost:3300/ravensorb/traefik-certificate-exporter-test'
+    exit_code: 0
+  - command: "row 12 check: test \"$(grep -c 'partially configured' act-dev.log)\" = 0"
+    exit_code: 0
+  - command: 'row 13 dry run (local throwaway Gitea): clone && tag v0.3.0 && actrun push -W .github/workflows/release.yaml -e tag.json(default_branch main) -s PUBLISH_GITEA_TOKEN --var PUBLISH_GITEA_USERNAME=ravensorb --var PUBLISH_GITEA_REGISTRY=localhost:3300 --var PUBLISH_GITEA_IMAGE=localhost:3300/ravensorb/traefik-certificate-exporter-test'
+    exit_code: 0
+  - command: "row 13 check: test \"$(grep -c 'partially configured' act-release.log)\" = 0 && ! docker buildx imagetools inspect localhost:3300/ravensorb/traefik-certificate-exporter-test:0"
+    exit_code: 0
+  - command: 'row 14 clean-up: DELETE every container version (204 each) and both pypi versions; final package count 0; throwaway Gitea container removed'
+    exit_code: 0
+  - command: 'row 9: grep upgrading.md links, section heading and every required item'
+    exit_code: 0
+  - command: "row 11: grep -n -i -E 'one forge|zero destination warnings' docs/ci/pipeline-walkthrough.md"
+    exit_code: 0
+  - command: "row 19: grep -F 'CLI > env > config file' && ! grep -F 'from any source' && grep WATCHFORCHANGES docs/upgrading.md"
+    exit_code: 0
+  - command: just check (row 17)
+    exit_code: 0
+  - command: 'row 10: notes | wc -l (47) <= cross-read rows (62)'
+    exit_code: 0
+  - command: 'row 15: checklist item count 20 == E014-S02-007 count 20; ! grep placeholders'
+    exit_code: 0
+  - command: "row 16: grep -nE '^## ' evidence (AC 1-6 + cross-read table)"
+    exit_code: 0
+  - command: 'row 18: every closure notes file with a release-notes section cited >=1 in the cross-read table; execution-notes.md cited'
+    exit_code: 0
+  - command: poetry run pytest -q tests/test_settings_surface.py (fix iteration 1)
+    exit_code: 0
+  - command: poetry run pre-commit run --files <story files> (fix iteration 1)
+    exit_code: 0
+  tests_passing: false
+  fix_iterations: 1
+  files_changed: 6
+actual:
+  elapsed_hours: 1.35
+  man_hours: 14
+  hitl_hours: 0
+  tokens_k:
+    total: 16403.81
+    input: 0.232
+    output: 8.806
+    cache_write: 1074.09
+    cache_read: 15320.678
+  cost: 14.59
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-12T03:23:45Z'

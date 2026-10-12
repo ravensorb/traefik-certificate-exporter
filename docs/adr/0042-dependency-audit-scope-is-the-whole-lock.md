@@ -154,6 +154,16 @@ Replacement wording for E014-S02-003 (carried verbatim in the notes files):
     by frozen SHAs (AD-3, AD-5), not audited by pip-audit.
   - The guard is a regex over workflow text. A `pip install` written through a variable,
     or split across lines with `\`, is not matched.
+  - Lock entries gated by an environment marker that excludes the interpreter/platform the
+    hook runs on (e.g. `pywin32`, `tzdata` on win32; `exceptiongroup`, `tomli` on 3.10; CI
+    on 3.14 also skips `backports-tarfile`, `importlib-metadata`) are never installed and
+    so never audited (BL-E014-023). Added 2026-10-11 (E014-S01-007).
 - **Revisit when** Poetry can write a PEP 751 `pylock.toml` that `pip-audit --locked`
   reads. Auditing the lock text directly would then remove the dependence on the venv
-  being synced, and option D replaces option E.
+  being synced, and option D replaces option E. This also closes the marker gap.
+
+## Amendment 2026-10-11 — `--aliases on` (E014-S01-007)
+
+Both pip-audit entries also carry `--aliases on`, so the output names GHSA/CVE IDs beside
+pip-audit's primary PYSEC ID; it changes neither scope nor exit status. The marker gap is
+listed under "Not covered, stated" above.

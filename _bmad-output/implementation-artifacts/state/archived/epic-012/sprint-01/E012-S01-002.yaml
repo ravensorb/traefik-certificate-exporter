@@ -2,7 +2,7 @@ key: 'E012-S01-002'
 epic: 'E012'
 sprint: 'S01'
 title: CI & supply-chain integrity
-status: in-progress
+status: done
 classification: standard
 resolves: [BL-E011-013, BL-E011-014, BL-E011-015, BL-E011-020, BL-E011-021]
 estimate:
@@ -23,6 +23,8 @@ estimate:
     output: 17
     cache_write: 101
     cache_read: 169
-updated_at: '2026-10-08T14:08:01Z'
+updated_at: '2026-10-12T01:39:22Z'
 depends_on:
 - 'E012-S01-003'
+completion_evidence:
+  blocks_seen: 1

@@ -82,6 +82,15 @@ repos:
         language: pygrep
         entry: '^\s+(ref|repository):'
         files: ^\.github/workflows/.*\.ya?ml$
+      # AD-9 / E014-S02-002: a step or job `if:` never reads `secrets` or `vars` (dot or
+      # index form, quoted or bare key); presence rules live once, in job `env`. Coverage
+      # limits: a multi-line `if: >-` block is checked on its first line only, and the hook
+      # does not check that an `if:` tests exactly one flag (that is held by review).
+      - id: workflows-if-no-secrets-vars
+        name: No workflow if tests secrets or vars directly (AD-9)
+        language: pygrep
+        entry: '^\s*(?:-\s+)?["'']?if["'']?\s*:.*\b(secrets|vars)\s*[.\[]'
+        files: ^\.github/workflows/.*\.ya?ml$
       # AD-6 / guidelines §7: no workflow depends on the ACT env var.
       - id: workflows-no-act-env
         name: No workflow references ACT (guidelines §7)
@@ -97,9 +106,80 @@ repos:
         language: pygrep
         entry: 'TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_'
         files: ^docker/root/
+      # BL-E013-020 / AD-5: every remote repo's rev is a 40-hex commit SHA written by
+      # `pre-commit autoupdate --freeze` (`rev: <sha>  # frozen: vX.Y.Z`), so a moved upstream
+      # tag cannot change code that runs in the job that builds the published dist.
+      # Coverage limit: block-style `rev:` lines in this file only, indented or as the first
+      # key of a list item (`- rev:`); a flow-style `{repo: ..., rev: ...}` mapping is not
+      # matched. `repo: local` hooks have no rev and
+      # are pinned through poetry.lock or additional_dependencies instead (C-10).
+      - id: precommit-revs-frozen
+        name: Every pre-commit rev is a frozen commit SHA (BL-E013-020)
+        language: pygrep
+        entry: '^\s*(?:-\s+)?rev:\s+(?![0-9a-f]{40}\b)'
+        files: ^\.pre-commit-config\.yaml$
+      # ADR-0042 / BL-E013-024: a workflow installs with pip only from a hashed requirements
+      # file under .github/requirements/, so the pip-audit-bootstrap glob above sees every
+      # package set CI bootstraps outside poetry.lock. Coverage limit: the literal text
+      # `pip install` in workflow files (comments included); `pip3 install`, `uv pip` or an
+      # install inside a called script or action is not matched.
+      - id: workflows-pip-install-from-requirements
+        name: Workflow pip installs are hashed, from .github/requirements/ (ADR-0042)
+        language: pygrep
+        entry: 'pip install(?! --require-hashes -r \.github/requirements/[^/\s]+\.txt\b)'
+        files: ^\.github/workflows/.*\.ya?ml$
+      # AD-5 / F-07: a LiquidLogicLabs/* action is referenced at a bare major tag `@vN`
+      # (optionally quoted, optionally followed by a comment); zizmor's `ref-pin` accepts any
+      # ref, `@main` included, so this hook is the enforcement. The owner matches
+      # case-insensitively, the `v` does not (`@V6` fails); scope is every YAML file under
+      # .github/, so a composite action.yml there is covered too.
+      # Coverage limit: block-style `uses:` lines (indented or `- uses:`) with the value on
+      # the same line; a flow-style `{uses: ...}` mapping, a quoted `"uses":` key, a folded or
+      # next-line value, or a reference built by a called script is not matched.
+      - id: workflows-lll-major-tag
+        name: LiquidLogicLabs actions are pinned to a major tag @vN (AD-5)
+        language: pygrep
+        entry: '^\s*(?:-\s+)?uses:\s*(["'']?)(?i:liquidlogiclabs)/(?![^@\s"''#]+@v\d+\1(?:\s+#.*)?\s*$)'
+        files: ^\.github/.*\.ya?ml$
+      # AD-11 / F-09: no Authorization header on a command line (argv is readable from `ps`
+      # and /proc/<pid>/cmdline on the runner; log masking does not hide it). Send it on
+      # stdin instead: `printf 'Authorization: token %s\n' "$T" | curl -H @- ...`.
+      # Case-insensitive; catches `-H "..."`, `-H'...'`, `-H $'...'`, `-H " ..."`,
+      # `--header '...'` and `--header=...`.
+      # Coverage limit: a header flag and its value on the same line only -- a value on the
+      # next line after a `\` continuation, a header assembled in a variable, or one passed
+      # through curl's `--config`/`-K` file is not matched; nor are other credential flags
+      # (`-u`/`--user`, `--oauth2-bearer`).
+      - id: workflows-no-auth-header-argv
+        name: No Authorization header on a command line (F-09, AD-11)
+        language: pygrep
+        entry: '(?i)(-H|--header)[=\s]*\$?["'']?\s*authorization:'
+        files: ^\.github/.*\.ya?ml$
+      # AD-8 / F-11: a metadata `pattern={{major}}` tag line (not `{{major}}.{{minor}}`)
+      # (a literal prefix such as `v{{major}}` included) carries an `enable=` attribute, so
+      # no bare `:0` tag is written while major is 0.
+      # Coverage limit: it checks that `enable=` is present on the line, not what the
+      # expression evaluates to; the act metadata probe (E014-S02-006 notes) is that evidence.
+      - id: workflows-major-tag-gated
+        name: Bare major image tag is gated by enable= (F-11, AD-8)
+        language: pygrep
+        entry: '^(?!.*\benable=).*pattern=[^,{]*\{\{\s*major\s*\}\}(?![.\w])'
+        files: ^\.github/.*\.ya?ml$
+      # AD-8 / BL-E014-075: the metadata action takes org.opencontainers.image.version from
+      # the highest-priority tag, and type=semver (900) outranks type=raw (200), so the
+      # full-version raw tag line carries `priority=1000` or 0.3.0 is labelled `0.3`.
+      # Coverage limit: it checks that the image-version raw line ends in `,priority=1000`; it
+      # does not check that no other tag ties or outranks it (a `type=schedule` line, default
+      # 1000, or an explicit priority >= 1000 elsewhere) -- that is held by review and by the
+      # act release dry run's label check (release-0.3.0-evidence.md).
+      - id: workflows-version-label-priority
+        name: Full-version image tag sets the version label (BL-E014-075, AD-8)
+        language: pygrep
+        entry: 'type=raw,value=\$\{\{\s*needs\.build\.outputs\.image-version\s*\}\}(?!,priority=1000\s*$)'
+        files: ^\.github/.*\.ya?ml$
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
     hooks:
       - id: check-toml
       - id: check-yaml
@@ -107,7 +187,9 @@ repos:
       - id: mixed-line-ending
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.5
+    # Held at v0.16.5: v0.17.0 autofixes 9 new findings in src/ and tests/, a code change
+    # outside BL-E013-020; the bump is its own change.
+    rev: 1f1e8bf348ff38fc88619a38d3ca4d9c56abea49  # frozen: v0.16.5
     hooks:
       # Python only, on every ruff hook. Upstream's ruff-format declares
       # `types_or: [python, pyi, jupyter, markdown]`, so it rewrites Python code fences
@@ -122,7 +204,9 @@ repos:
         types_or: [python, pyi]
 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.1
+    # Held at v8.30.1: `autoupdate --freeze` picks the newest tag reachable from upstream's
+    # default branch, which is v8.30.0 -- a downgrade (v8.30.1 is not on that branch).
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1
     hooks:
       # `entry` is overridden, not `args`: upstream puts the whole invocation in entry as
       # `gitleaks git --pre-commit --redact --staged --verbose`, which scans the *index*.
@@ -156,7 +240,7 @@ repos:
         types_or: [shell, executable]
 
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.12
+    rev: 914e7df21a07ef503a81201c76d2b11c789d3fca  # frozen: v1.7.12
     hooks:
       - id: actionlint
 
@@ -167,14 +251,14 @@ repos:
   # `# zizmor: ignore[<audit>]` citing an AD/ADR (ADR-0036 §4), never by a severity floor
   # or a persona change.
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.30.1
+    rev: fa412071e4f5d44d44f9e365f4676f9df92456a2  # frozen: v1.30.1
     hooks:
       - id: zizmor
         args: [--persona=auditor]
 
   # Type gate for all of src/. [tool.mypy] in pyproject.toml holds its settings.
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.14.1
+    rev: 2834ec6639549dd6796205c8f011dedcd587288b  # frozen: v2.4.0
     hooks:
       - id: mypy
         files: ^src/
