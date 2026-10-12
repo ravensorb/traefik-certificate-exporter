@@ -1,0 +1,27 @@
+key: 'E015-S01-001'
+epic: 'E015'
+sprint: 'S01'
+title: 'Close the /config root-escalation: the service account must not control what runs as root'
+status: backlog
+classification: complex
+resolves: [BL-E014-119]
+estimate:
+  man_hours: 17.11
+  hitl_hours: 0.09
+  elapsed_hours: 0.97
+  cost: 2.95
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.1405
+    hitl_hours: 0.1094
+    elapsed_hours: 0.1946
+    tokens_k: 1.0
+  tokens_k:
+    total: 3701
+    input: 0
+    output: 5
+    cache_write: 170
+    cache_read: 3526
+  confidence: medium
+updated_at: '2026-10-12T22:14:34Z'

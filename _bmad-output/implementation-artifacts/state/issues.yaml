@@ -4,6 +4,7 @@ next:
   '012': 14
   '013': 45
   '014': 123
+  '015': 2
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -1469,8 +1470,10 @@ backlog:
   source_phase: live-host-test
   source_ref: rwusdckrls6-2026-10-12
   severity: Medium
-  status: backlog
+  status: scheduled
   description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
+  story: E015-S01-003
+  scheduled_at: '2026-10-12T21:39:34Z'
 - key: BL-E014-106
   epic: '014'
   sprint: '02'
@@ -1479,8 +1482,10 @@ backlog:
   source_phase: live-host-test
   source_ref: rwusdckrls6-2026-10-12
   severity: Medium
-  status: backlog
+  status: scheduled
   description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
+  story: E015-S01-002
+  scheduled_at: '2026-10-12T21:39:30Z'
 - key: BL-E014-107
   epic: '014'
   sprint: '02'
@@ -1489,8 +1494,10 @@ backlog:
   source_phase: live-host-test
   source_ref: rwusdckrls6-2026-10-12
   severity: Low
-  status: backlog
+  status: scheduled
   description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
+  story: E015-S01-004
+  scheduled_at: '2026-10-12T21:39:38Z'
 - key: BL-E014-108
   epic: '014'
   sprint: '02'
@@ -1499,8 +1506,10 @@ backlog:
   source_phase: release
   source_ref: v0.3.0-run-38281339396
   severity: Medium
-  status: backlog
+  status: scheduled
   description: 'Seen in the v0.3.0 release run log. Only affects runs with PUBLISH_CA_CERTIFICATE set (not used today). Fix: rename the input to buildkitd-config in dev.yaml and release.yaml; add a check (actionlint does not validate action inputs).'
+  story: E015-S02-001
+  scheduled_at: '2026-10-12T21:39:44Z'
 - key: BL-E013-044
   epic: '013'
   sprint: '02'
@@ -1619,8 +1628,10 @@ backlog:
   source_phase: epic-redteam
   source_ref: RT-1
   severity: High
-  status: backlog
+  status: scheduled
   description: 'See _bmad-output/implementation-artifacts/epic-014/epic-closure/redteam-report.md. Deferred to E015 (0.3.1) per epic-closure directive: only BLOCKER/CRITICAL fixed at E014 closure; 0.3.0 released. Not ADR-accepted.'
+  story: E015-S01-001
+  scheduled_at: '2026-10-12T21:39:26Z'
 - key: BL-E014-120
   epic: '014'
   sprint: "''"
@@ -1651,3 +1662,13 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-014/epic-closure/redteam-report.md
+- key: BL-E015-001
+  epic: '015'
+  sprint: '01'
+  title: docs/operational.md:422-426 'Known limitation' says a relative file-log path resolves against /config; the service cwd is its s6 service directory (/run/s6-rc:s6-rc-init:.../servicedirs/svc-traefik-certificate-exporter)
+  source: planning (E015-S01-001)
+  source_phase: planning
+  source_ref: E015-S01-001
+  severity: Low
+  status: backlog
+  description: Found while elaborating E015-S01-001 (readlink /proc/<pid>/cwd on 0.3.0). Out of scope there (non-goal). See _bmad-output/planning-artifacts/research/research-2026-10-12-release-0.3.1.md section 1.

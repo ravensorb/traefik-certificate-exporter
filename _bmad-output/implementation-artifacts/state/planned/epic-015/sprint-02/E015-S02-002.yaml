@@ -1,0 +1,28 @@
+key: 'E015-S02-002'
+epic: 'E015'
+sprint: 'S02'
+title: One build per release to every configured registry; GHCR and forge-release decision (spec proposal BL-E014-111 / AD-1)
+classification: standard
+status: backlog
+updated_at: '2026-10-12T22:14:36Z'
+depends_on:
+- 'E015-S02-001'
+estimate:
+  man_hours: 9.99
+  hitl_hours: 0.16
+  elapsed_hours: 1.15
+  tokens_k:
+    total: 12688
+    input: 0
+    output: 18
+    cache_write: 582
+    cache_read: 12088
+  cost: 10.13
+  model: claude-opus-5
+  fix_factor: 2.7416
+  scope_ratios:
+    man_hours: 0.6072
+    hitl_hours: 0.166
+    elapsed_hours: 0.21
+    tokens_k: 3.1244
+  confidence: medium

@@ -1,0 +1,28 @@
+key: 'E015'
+title: '0.3.1: container privilege fix, export performance, one-build releases'
+goal: 'Ship 0.3.1: close the /config root-escalation (RT-1), make export passes fast on RSA-4096 stores without weakening change detection, catch renamed store files and very old env names, and publish every release from one build to every configured registry.'
+status: backlog
+updated_at: '2026-10-12T22:14:38Z'
+estimate:
+  man_hours_low: 172.72
+  man_hours_high: 196.48
+  hitl_hours_low: 1.98
+  hitl_hours_high: 2.3
+  elapsed_hours_low: 16.82
+  elapsed_hours_high: 19.99
+  tokens_k_min: 107962
+  tokens_k_max: 122684
+  closure_ratios:
+    man_hours: 1.0098
+    hitl_hours: 0.9897
+    elapsed_hours: 1.3103
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0.0
+    hitl_hours: 0.1053
+    elapsed_hours: 0.0687
+    tokens_k: 0
+  cost_low: 86.18
+  cost_high: 97.95
+  model: claude-opus-5
+  confidence: medium

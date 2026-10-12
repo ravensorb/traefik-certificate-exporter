@@ -1,0 +1,50 @@
+generated: "2026-10-12T22:16:00Z"
+plan_version: 1
+readiness: amber
+stories_elaborated: 8
+total_epics_in_scope: 2          # E013 (active, all stories done, read-only context) + E015 (planned)
+
+phases:
+  - phase: 1
+    parallel: false
+    epics: ["E015"]
+    dependencies: []
+    estimate:
+      estimates_as_of: "2026-10-12T22:14:00Z"
+      wall_clock_hours_low: 16.82
+      wall_clock_hours_high: 19.99
+      man_hours_low: 172.72
+      man_hours_high: 196.48
+      hitl_hours_low: 1.98
+      hitl_hours_high: 2.3
+      tokens_k_min: 107962
+      tokens_k_max: 122684
+      cost_low: 86.18
+      cost_high: 97.95
+      confidence: medium
+
+# Story order inside E015 (from story depends_on; informational — l3io-execute reads state):
+#   wave 1: E015-S01-001, E015-S02-001
+#   wave 2: E015-S01-002 (<- S01-001), E015-S02-002 (<- S02-001), E015-S02-003 (<- S02-001)
+#   wave 3: E015-S01-003 (<- S01-002), E015-S01-004 (<- S01-002)
+#   wave 4: E015-S02-004 (<- all seven; HITL release + production upgrade)
+# Caveat: S02-004's hitl estimate (0.16 h, calibrated band) understates the planned maintainer
+# time (~3-4.5 h release + production upgrade) and S02-002 carries ~1.5-2 h of maintainer forge
+# work (maintainer-decisions.md MD-10..MD-13). Not hand-edited into state.
+
+readiness_detail:
+  - key: E015
+    status: amber
+    gaps:
+      - "8 stories were generator stubs (graded amber, not red; see readiness-report.md) - all elaborated in step 03"
+      - "E015-S02-002, -003, -004 had no estimate block - written by step-estimate in this run"
+      - "18 maintainer decisions open (epic-015/maintainer-decisions.md); stories proceed on the recommendations"
+  - key: E013
+    status: green
+    gaps:
+      - "active, all 9 stories done; epic closure not yet run (E014 retrospective A8); no planning needed"
+
+arch_gate_summary:
+  ran: false
+  reviewers: []
+  findings: []
