@@ -1,17 +1,17 @@
 {
-  "version": "3.4.4",
+  "version": "3.4.5",
   "generated_from": "skills/<skill>/",
   "files": {
     "SKILL.md": "0ab32e2df5418540ea5074110fde1965fc0c5b04fb0814175b7a30e3f406c84e",
     "assets/agent-instructions.md": "6f31741b68015da8c2b13c7f1d68539111686f3b99b8aa78e7c29f79ec7b5d38",
     "assets/module-help.csv": "81b70e8fb0682da95076568efcf6a897ddc473bcea7d2c5120c4282ceb1e15e2",
     "assets/module-setup.md": "8567ae5c4dc40f7393bc3925e196d7f0579fd69d970985b4cfb8fb5e7df4671a",
-    "assets/module.yaml": "9028f22a1cedb6c0b6f97f7c33f4195e1d9db1f3f8466dcaec82d9ef4823e0e5",
+    "assets/module.yaml": "11f8c5ecddb752e031f6bff90eeb784d7f88597c7c2815e96f43a69b691b60c2",
     "customize.toml": "b8ec30cc768d25a2264dabadbf8147eda86f6b4a2e55257ed7087efd855dc9cc",
     "references/config-resolution.md": "153baa1edb1ca9eb49fc391c546a79b1fe4260dac1c1bad27abbcbcd3726994a",
     "scripts/merge-config.py": "22f51eed631c64134d352c236917e0a98ec5b5fe5d0810394f4615905c6ef7dc",
     "scripts/merge-help-csv.py": "44cae89d74a247395cc851970e28b65605e958efa04b632209f9bd5ecbc70d69",
-    "scripts/pm-status.py": "3f5c7a966b702f53f0563ae1a3f132dfb8adc297aee79bb773a5262aa2903db4",
+    "scripts/pm-status.py": "bb82cbfc47cb3ee69d8840f8ed2a1d36606efdc2e6cc375887f6c75ccbfb95ef",
     "scripts/write-module-config.py": "fdc0e81cda51221599907b9023a096b0570e096b7d921fb0c1db2050afa7a80f"
   }
 }

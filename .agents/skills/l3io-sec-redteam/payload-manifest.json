@@ -1,5 +1,5 @@
 {
-  "version": "3.4.4",
+  "version": "3.4.5",
   "generated_from": "skills/<skill>/",
   "files": {
     "SKILL.md": "b1b453783db9d1e9da19a0815968add40b2a868b8db4e75e1f5a39f0c5b628c1",
@@ -12,9 +12,9 @@
     "assets/agent-instructions.md": "6f31741b68015da8c2b13c7f1d68539111686f3b99b8aa78e7c29f79ec7b5d38",
     "assets/module-help.csv": "7f7bf7b17dbbdd843b5bb7d75bd0083731b5b05046b3e5c75fd3139c6145715f",
     "assets/module-setup.md": "8567ae5c4dc40f7393bc3925e196d7f0579fd69d970985b4cfb8fb5e7df4671a",
-    "assets/module.yaml": "f42794dec1c98ceecf354b70c72af94b49cf9c0cc7f51b321b5483ec315c1aa6",
+    "assets/module.yaml": "bfcbe144bd48dc68880c23f4d0990ba80d92d99b22c8a7449b201baf20f6f6bf",
     "customize.toml": "1d52f68b9b96f3b47f4fc8a3a470a6425a5efba018e0456e64d79d50ac6b854a",
-    "module.yaml": "f42794dec1c98ceecf354b70c72af94b49cf9c0cc7f51b321b5483ec315c1aa6",
+    "module.yaml": "bfcbe144bd48dc68880c23f4d0990ba80d92d99b22c8a7449b201baf20f6f6bf",
     "references/config-resolution.md": "153baa1edb1ca9eb49fc391c546a79b1fe4260dac1c1bad27abbcbcd3726994a",
     "references/findings-report.md": "1c178ff6298c649606052613185838effab861ebbcd820840529ddd0691a5a37",
     "references/first-breath.md": "b68a98be7127faf95b2eecd4651f009f45581d464c220c67fab03575c10366e5",

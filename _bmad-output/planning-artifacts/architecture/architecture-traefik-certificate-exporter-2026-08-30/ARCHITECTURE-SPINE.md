@@ -140,8 +140,12 @@ graph TD
     packaged default. After all sources are merged, `SettingsManager.loadFromFile` reads each
     such key's confuse `resolve()` pairs; when the winning pair comes from a file source (a
     confuse source with a filename that is not the packaged default: the config file and the
-    confuse user config), the value is withheld and the first non-file pair is applied
-    instead. A `.env` file is a file source for these keys: in root mode a variable that
+    confuse user config), the value is withheld by removing that key from every file source
+    in confuse's own source list (`RootView.sources`), never by `set()`, which would add a
+    filename-less overlay indistinguishable from the command line. confuse's `resolve()`
+    then yields the next admissible source with its real source object, so `sourceOf`
+    reports `environment`, `command line` or `default` accurately (verified against confuse
+    2.3.0, E015-S01-001). A `.env` file is a file source for these keys: in root mode a variable that
     `load_dotenv` newly adds for an environment-only key is removed; a variable the real
     environment already held is kept. Each withheld key gives one start-up ERROR naming the
     setting, the file and the `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_*` name to use, never the
@@ -212,7 +216,7 @@ graph TD
   (variable, sanitized value, allowed set) and `INFO`, never an exit, and one INFO line at
   start-up names the effective level and its source (`cli`, `env`, `default`). The `LOGGING_*` env family is read before settings load and
   has no config-file key. Start-up also logs, after `Output Path`, one INFO
-  `Post-export command: <set|not set> (source: <environment|command line|configuration file '<path>'>), runs as uid <euid>`
+  `Post-export command: <set|not set> (source: <environment|command line|configuration file '<path>'|default>), runs as uid <euid>`
   (`n/a` without `os.geteuid`; the command is never logged) and one INFO
   `RSA key validation: on` or `RSA key validation: off (…)` (not a WARNING: the operator chose
   it); the root-mode withholding ERROR (AD-2) names setting and file, never the value. Every record carries `correlation_id`: one UUID4 per export pass,

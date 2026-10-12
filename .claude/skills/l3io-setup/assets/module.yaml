@@ -1,7 +1,7 @@
 code: l3io-pm
 name: "LiquidLogicLabs PM"
 description: "PM orchestration for LiquidLogicLabs delivery teams — dependency-aware phased planning, full epic and sprint execution, closure quality gates, progress reporting, and GitHub Issues sync."
-module_version: 3.4.4
+module_version: 3.4.5
 default_selected: false
 # Required LiquidLogicLabs modules that must be installed alongside l3io-pm.
 # BMad's installer schema captures this field into `moduleInfo.dependencies` at

@@ -103,7 +103,7 @@ tests first.
 
 - **Decision:** (a) `postexportcommand` and `outputpath` only. `restartcontainers`, `appriseurls` and `datapath` stay any-source (bounded Docker API use, egress only, read only). E015-S01-002's `validatekeys` is any-source.
 - **Status:** accepted 2026-10-12.
-- **Lives in:** PRD FR-18, FR-19; product spine AD-2 (trust-class table), AD-6; E015-S01-001 (AC 1), E015-S01-002 (classifies `validatekeys`).
+- **Lives in:** PRD FR-18, FR-19; product spine AD-2 (trust-class table), AD-6; E015-S01-001 (AC 1), E015-S01-002 (AC 16a classifies `validatekeys` as any-source).
 
 ### MD-22 — Opt-in for a hook that must run as root (E015-S01-001)
 

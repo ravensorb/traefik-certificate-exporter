@@ -75,9 +75,13 @@ Installed library versions the stories rely on (from `poetry.lock` / `.venv`): c
 - `pip-audit`, PyPI/OSV lookups and image pulls need network access. ghcr.io may rate-limit
   anonymous pulls (HTTP 429); retry, do not log in.
 - Registry digest lookups: `docker buildx imagetools inspect --format '{{json .Manifest.Digest}}' <ref>`
-  prints **no trailing newline**. Follow every lookup with `echo` before piping into
-  `sort -u`/`wc -l`, or several digests collapse into one line and the check cannot fail
-  (E014-S02-007 row 15 had exactly this defect; research §7).
+  prints **no trailing newline**, and a failed lookup prints **nothing**. Piping several lookups
+  into `sort -u`/`grep -c .` therefore collapses several digests into one line, and an empty
+  line from a failed lookup is not counted, so the check cannot fail (E014-S02-007 row 15;
+  validation V-01). Use the `dig`/`onedigest` functions of E015-S02-002/-004 (CI spine AD-12):
+  one line per lookup, `MISSING <ref>` for a failed or empty lookup, and a pass only when the
+  ref count equals the expected count, nothing is `MISSING` and one digest remains. Prove them
+  once with a real and a nonexistent image before relying on them.
 
 ## Live host: rwusdckrls6 (production "docker 6")
 
@@ -165,17 +169,32 @@ per run, recorded in the story's notes.
 - ADR numbers: reserve with
   `uv run -q _bmad/scripts/pm-status.py adr-reserve --state-root _bmad-output/implementation-artifacts/state --epic E015 --slug <slug> --count 1 --adr-dir docs/adr`;
   never pick one by listing the directory.
-- E015 has no dedicated docs/spine story. Each story drafts its spine/ADR text in its notes file
-  (`<sprint>/closure/notes-<story>.md`, section `## Spine/ADR amendments`) and applies it in the
-  same change, as its story says; spine Changelog lines are appended, never rewritten.
+- E015 has no dedicated docs/spine story. Since the 2026-10-12 consolidation the PRD and both
+  spines already state the 0.3.1 target. Each story checks the spine text against what it ships,
+  records the check and any deviation (with exact replacement text) in its notes file
+  (`<sprint>/closure/notes-<story>.md`, section `## Spine/ADR amendments`), applies only a
+  deviation, and replaces "ADR to be written by E015-S0x-00y" with the number it reserves;
+  spine Changelog lines are appended, never rewritten. A story that writes or amends an ADR
+  updates its row in `docs/architecture.md` §6 in the same change.
+- Shared files edited by parallel stories: `docs/upgrading.md` `## 0.3.0 → 0.3.1` (E015-S01-001
+  owns the heading; S01-002 and S02-002 add `###` subsections) and
+  `docs/ci/pipeline-walkthrough.md` (S02-001 first; then S02-002 and S02-003 in parallel, in
+  different sections). Whichever story merges second rebases and keeps both edits.
 - Each story's `## Verification` section is the definition of done: run every command listed,
   record the output (or its tail) in the notes file, and record every run with
   `pm-status add-test-run`.
 
 ## Evidence rules (carried from E014; retrospective actions A2, A3, A5)
 
-- **Never record a command that cannot exit 0 on correct code.** "No output" greps are recorded
-  as `! grep -q …`; counts as `test "$(grep -c …)" = N`. Test each such wrapper once against a
+- **Never record a command that cannot exit 0 on correct code, or that cannot fail on the
+  defect.** "No output" greps are recorded as `! grep -q …`, never `grep -c` expecting `0`
+  (`grep -c` exits 1 when it counts zero); counts as `test "$(grep -c …)" = N`. A row is one
+  `&&` chain: no `;` between checks (only the last status is recorded); no `cmd | tee log`
+  whose status is `tee`'s (use the story's `actrun`, which returns `PIPESTATUS[0]`, or redirect
+  to a file); no `! (…) | tee` (it negates `tee`); listings go to a file before they are
+  checked, so a failing `gh`/`curl`/`ssh` fails the row; with `set -o pipefail`, never pipe
+  into `grep -q` or `head` (SIGPIPE turns a match into a failure); clean-up is its own row,
+  never a trailing `rm -rf` that masks the result. Test each such wrapper once against a
   planted violation and say so in the notes.
 - `pm-status add-test-run` has no expected-failure mode (`--expect-exit` does not exist in
   v3.4.4). Record fail-first runs and expected-failure probes in the notes only, or as the real
