@@ -612,13 +612,13 @@ platformdirs==4.13.0 \
     #   findpython
     #   poetry
     #   virtualenv
-poetry==2.4.2 \
-    --hash=sha256:a506d6ff7fcc54a3472b2618145b8e4a1ef8d76d52836d41b813fa1b36083a08 \
-    --hash=sha256:e547fa69196fc109ee0900e233222732b08b8732c4345252a34d68968c0498f2
-    # via -r .github/requirements/poetry.in
-poetry-core==2.4.0 \
-    --hash=sha256:4305848477da00272bebd3f615bbec87f64bd117cdb858ab660b626a06a9d96c \
-    --hash=sha256:4e8c7496cf797998ffc493f2e23eba4b038c894c08eadacdcdf688945de6b43a
+poetry==2.5.1 \
+    --hash=sha256:19fbd566efced512be58989a756aa1333cdc9b6aabb4fc84fd1ec9d29ee74874 \
+    --hash=sha256:3f7910abc667ce0c33a67e306baf017acdec1c8eeec4aa64d176e530d8338a61
+    # via -r poetry.in
+poetry-core==2.5.0 \
+    --hash=sha256:81d04c9253b19d0604718268d781867c8f7b2128e5b25bbf1e84141eec6b89c4 \
+    --hash=sha256:98ee465b66f7e14bb9fbe68fb5e00d0cff184f036993ec94610ae4b5612f3add
     # via poetry
 pycparser==3.11 \
     --hash=sha256:51d5a8ba2be0bbe440b99d2112604c95bbbc3c2748a64260186c541e1729cd80 \

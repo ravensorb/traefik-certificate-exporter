@@ -7,4 +7,4 @@
 #   eval "$CUSTOM_COMPILE_COMMAND"
 # --python 3.14 is the interpreter every workflow's setup-python installs; pip-compile writes
 # no environment markers, so the file resolves for that interpreter only.
-poetry==2.4.2
+poetry==2.5.1
