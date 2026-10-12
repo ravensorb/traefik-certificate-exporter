@@ -1,0 +1,46 @@
+key: 'E014'
+title: Epic 014 — 0.3.0 release readiness
+goal: 'Ship 0.3.0: make restart, PKCS12, ACME parsing and settings actually work; harden the CI supply chain and destination gating; repair the decision record; close E012; release 0.3.0 from protected tags.'
+status: done
+updated_at: '2026-10-12T21:06:26Z'
+estimate:
+  man_hours_low: 305.76
+  man_hours_high: 334.8
+  hitl_hours_low: 1.23
+  hitl_hours_high: 1.43
+  elapsed_hours_low: 19.86
+  elapsed_hours_high: 24.37
+  tokens_k_min: 149766
+  tokens_k_max: 170188
+  closure_ratios:
+    man_hours: 0.676
+    hitl_hours: 0.9897
+    elapsed_hours: 1.6664
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0.0
+    hitl_hours: 0.1053
+    elapsed_hours: 0.0687
+    tokens_k: 0
+  cost_low: 116.65
+  cost_high: 132.54
+  model: claude-opus-5
+  confidence: medium
+actual:
+  elapsed_hours: 9.71
+  man_hours: 230
+  hitl_hours: 0.1
+  tokens_k:
+    total: 202906.09
+    input: 3.598
+    output: 227.413
+    cache_write: 9069.54
+    cache_read: 193605.537
+  cost: 159.19
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-12T21:05:28Z'
+closed:
+  date: '2026-10-12'
+retrospective:
+  summary: 'E014 delivered all 17 stories across two sprints and shipped 0.3.0 to PyPI, Docker Hub (0.3.0/0.3/latest) and Gitea, from GitHub release run 38281339396 and a local-act Gitea publish; a live-host test against production ACME data produced the same certificates as 0.2.0. The recurring weakness was evidence quality, not product quality: five done stories carry tests_passing false because of how runs are recorded, flat estimates did not distinguish stories, and the sprint-01 action for a pm-status expected-failure mode was still open at epic end. Epic closure found the release topology departed from CI spine AD-9/AD-10 (two image digests for 0.3.0, no GHCR, no forge release) and a HIGH privilege-drop gap on /config (RT-1); both are deferred to E015 0.3.1 with BL-E014-105..108. Accepted with open items.'
+  learnings: "- Keep tests_passing meaningful: pm-status needs an expected-failure mode (5 of 17 done stories read as failing).\n- Run every story verification row against the tree before committing the story; broken rows became permanent red evidence.\n- Check the spine's adopted mechanisms before writing a guard (first BL-E014-075 guard was a forbidden pytest).\n- End-to-end dry runs and a live-host parallel test found defects unit gates could not; also verify the release lands from one run with one digest (AD-1).\n- Flat per-story estimates hid 0.27x-5.4x elapsed variance; ADR-bearing and act/forge dry-run stories need their own weighting."

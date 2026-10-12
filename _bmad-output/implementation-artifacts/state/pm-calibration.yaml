@@ -298,6 +298,7 @@ closure:
       - 0.0401
       - 7.8
       - 0.3919
+      - 0.0773
     hitl_hours:
       samples:
       - 0.5128
@@ -315,6 +316,10 @@ closure:
       - 0.1692
       - 1.9628
       - 0.435
+      - 1.995
+    tokens_k:
+      samples:
+      - 0.7407
 fix:
   simple:
     clean:

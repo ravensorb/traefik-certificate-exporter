@@ -3,7 +3,7 @@ next:
   '011': 42
   '012': 14
   '013': 45
-  '014': 109
+  '014': 123
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -1511,3 +1511,143 @@ backlog:
   severity: Low
   status: backlog
   description: "E013-S02-001 closed on GitHub-hosted runs (dev 38246616295, release 38281339396) and Gitea publishing proven from local act 0.2.89 (epic-013/sprint-02/closure/notes-E013-S02-001.md, epic-014/sprint-02/closure/gitea-live-publish-2026-10-12.md). Not proven: the same three workflows executed by an act_runner registered on the Gitea 1.27+ instance, including upload/download-artifact v5/v6 on that runner. When run, record run URLs and update ADR-0035 Status to drop 'live forge verification pending'."
+- key: BL-E014-109
+  epic: '014'
+  sprint: ''
+  title: 'Spec change: Both workflows now write `type=raw,value=${{ needs.build.outputs.image-version }},priority=1000`. AD-8 states "The release `tags:` input is exactly:" and gives the raw line without `priority`. ADR-0046 (items 1-13) does not mention BL-E014-075 either. The spine therefore prescribes the tag list that produced the `0.3` label defect, so the next edit made "to match the spine" reintroduces it.'
+  source: spec-sync (SD-02-2)
+  severity: Medium
+  status: backlog
+  kind: spec-change
+  ref: df7b4bf1014be8a6dcd88ffd48d9d642d7f5ef23
+  description: 'Confirm or reject: /l3io-doctor triage. Spec: _bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md#ad-8--image-tags-one-writer-per-tag-adopted. From: _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/arch-drift-review.md.'
+- key: BL-E014-110
+  epic: '014'
+  sprint: ''
+  title: 'Spec change: Link ADR-0042 from _bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md#ad-3--local-and-ci-gates-are-one-hook-list-adopted'
+  source: spec-sync (ADR-0042)
+  severity: Low
+  status: backlog
+  kind: spec-change
+  ref: 2c1353085eb96b0c174f853482c7b15f4f897846
+  description: 'Confirm or reject: /l3io-doctor triage. Spec: _bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md#ad-3--local-and-ci-gates-are-one-hook-list-adopted. From: docs/adr/0042-dependency-audit-scope-is-the-whole-lock.md.'
+- key: BL-E014-111
+  epic: '014'
+  sprint: ''
+  title: "Spec proposal: **Evidence, verified live on 2026-10-12.** `git.ravenwolf.org/…:0.3.0` resolves to `sha256:244015fe…` with label `org.opencontainers.image.revision=c7394e26…` on amd64 and arm64. `docker.io/ravensorb/…:0.3.0` resolves to `sha256:e3be0498…` with revision `046016b3…`. `ghcr.io/…:0.3.0` is not found, and `gh release view v0.3.0` reports \"release not found\". The real `v0.3.0` tag (`git cat-file -p v0.3.0`) points at `046016b`. The Gitea artifacts were therefore published, by the evidence file's own account, from \"a tag [that] exists only in the deleted clone\", using the maintainer's admin token from a local process environment rather than a forge `release` environment. GitHub run 38281339396 then published PyPI and Docker Hub only. The wheel and sdist hashes match across PyPI and Gitea (`6f8dd26a…`, `39fbc9c4…`) because the build is reproducible. The image is not equal: one version now has two digests, which is the split \"topology B\" that E014-S02-007 decision 1 (`:54`) rejected because \"it would build the image and the packages twice and break AD-10's one digest\". The story's AC 6 (six `enabled` lines), AC 8 (one digest across nine lookups) and AC 9 (a forge release with the wheel and sdist) are unmet. The story is nevertheless `status: done`, its completion evidence records only Docker Hub, and no ADR, spine Changelog line or backlog item records the reduced scope or the out-of-band Gitea publish."
+  source: spec-sync (AD-1)
+  severity: Medium
+  status: backlog
+  kind: spec-proposal
+  ref: _bmad-output/implementation-artifacts/epic-014/epic-closure/spec-proposals/AD-1.md
+  description: 'Confirm or reject: /l3io-doctor triage. Spec: _bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md#ad-9--configuration-gated-destinations-one-forge-per-release-adopted. From: _bmad-output/implementation-artifacts/epic-014/epic-closure/arch-drift-review.md.'
+- key: BL-E014-112
+  epic: '014'
+  sprint: ''
+  title: "Spec proposal: The `import-linter` hook was added at the sprint-01 closure (SD-01-1 fix), after ADR-0042 had defined the audit scope. It declares `additional_dependencies: [import-linter==2.15]`. That pins one package. Its requirements on PyPI are `click>=6`, `grimp>=3.17`, `rich>=14.2.0` and `typing-extensions>=3.10`, and pre-commit resolves them fresh, unhashed and unaudited at environment install. The `mirrors-mypy` hook resolves mypy's own dependencies the same way. These environments are installed and executed in `build.yaml`'s `build` job (`pre-commit run --all-files`, `:62-63`), the same job that runs `poetry build` and uploads `dist` (`:68-71`). The `v0.3.0` release run shows this: `Initializing environment for local:import-linter==2.15` at 17:01:14Z in `build / build`. ADR-0042's \"Not covered, stated\" list says hook environments \"are pinned by frozen SHAs (AD-3, AD-5)\". That is true for the hook repositories but false for their PyPI closures. The `precommit-revs-frozen` comment claims local hooks are pinned through `additional_dependencies`. ADR-0046 item 6 and the S02-003 spine pass restated the frozen-rev rationale without covering this hook. It is not in the backlog."
+  source: spec-sync (AD-2)
+  severity: Medium
+  status: backlog
+  kind: spec-proposal
+  ref: _bmad-output/implementation-artifacts/epic-014/epic-closure/spec-proposals/AD-2.md
+  description: 'Confirm or reject: /l3io-doctor triage. Spec: _bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md#ad-3--local-and-ci-gates-are-one-hook-list-adopted. From: _bmad-output/implementation-artifacts/epic-014/epic-closure/arch-drift-review.md.'
+- key: BL-E014-113
+  epic: '014'
+  sprint: "''"
+  title: latest-tag gate (c7394e2) has no ADR-0046 item; 'AR-3' citations in release.yaml/.pre-commit-config.yaml collide with arch-gate AR-3
+  source: epic-arch-review (AD-3)
+  source_phase: epic-arch-review
+  source_ref: AD-3
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/epic-closure/arch-drift-review.md
+- key: BL-E014-114
+  epic: '014'
+  sprint: "''"
+  title: CI spine AD-3 hand-kept required-hook list omits workflows-latest-tag-gated; Conventions 'Conditionals' row outdated for latest enable=
+  source: epic-arch-review (AD-4)
+  source_phase: epic-arch-review
+  source_ref: AD-4
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/epic-closure/arch-drift-review.md
+- key: BL-E014-115
+  epic: '014'
+  sprint: "''"
+  title: Bare-major image tag X has no highest-in-major gate like latest; a patch on an older minor would move it backwards once major >= 1
+  source: epic-arch-review (AD-5)
+  source_phase: epic-arch-review
+  source_ref: AD-5
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/epic-closure/arch-drift-review.md
+- key: BL-E014-116
+  epic: '014'
+  sprint: "''"
+  title: ADR-0035 status and CI spine 'Live certification' paragraph still say live verification pending
+  source: epic-arch-review (AD-6)
+  source_phase: epic-arch-review
+  source_ref: AD-6
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/epic-closure/arch-drift-review.md
+- key: BL-E014-117
+  epic: '014'
+  sprint: "''"
+  title: docs/architecture.md C4 context/container diagrams describe pre-E014 code (missing handler, post_export, notify, legacy_settings, Apprise, hook)
+  source: epic-arch-review (AD-7)
+  source_phase: epic-arch-review
+  source_ref: AD-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/epic-closure/arch-drift-review.md
+- key: BL-E014-118
+  epic: '014'
+  sprint: "''"
+  title: ADR-0047/0048 lack Options considered; ADR-0043 lacks revisit condition; import-linter dependency choice unrecorded
+  source: epic-arch-review (AD-8)
+  source_phase: epic-arch-review
+  source_ref: AD-8
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/epic-closure/arch-drift-review.md
+- key: BL-E014-119
+  epic: '014'
+  sprint: "''"
+  title: Base image init (lsiown abc:abc /config) gives /config to PUID account, contradicting ADR-0030; PUID account can rewrite config so next root-mode start runs its hook as root
+  source: epic-redteam (RT-1)
+  source_phase: epic-redteam
+  source_ref: RT-1
+  severity: High
+  status: backlog
+  description: 'See _bmad-output/implementation-artifacts/epic-014/epic-closure/redteam-report.md. Deferred to E015 (0.3.1) per epic-closure directive: only BLOCKER/CRITICAL fixed at E014 closure; 0.3.0 released. Not ADR-accepted.'
+- key: BL-E014-120
+  epic: '014'
+  sprint: "''"
+  title: Gitea 0.3.0 published from workstation act run with instance-admin token; split across two forges against ADR-0039; image revision c7394e2 != v0.3.0 tag 046016b; rotate token
+  source: epic-redteam (RT-2)
+  source_phase: epic-redteam
+  source_ref: RT-2
+  severity: Medium
+  status: backlog
+  description: 'See _bmad-output/implementation-artifacts/epic-014/epic-closure/redteam-report.md. Related: arch AD-1 / BL-E014-111. Deferred to E015 per epic-closure directive.'
+- key: BL-E014-121
+  epic: '014'
+  sprint: "''"
+  title: Post-export hook inherits full exporter environment incl. PKCS12 passphrase and Apprise URLs (post_export.py:81)
+  source: epic-redteam (RT-3)
+  source_phase: epic-redteam
+  source_ref: RT-3
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/epic-closure/redteam-report.md
+- key: BL-E014-122
+  epic: '014'
+  sprint: "''"
+  title: --pkcs12-passphrase and --post-export-command accept secrets on argv with no help-text warning
+  source: epic-redteam (RT-4)
+  source_phase: epic-redteam
+  source_ref: RT-4
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-014/epic-closure/redteam-report.md

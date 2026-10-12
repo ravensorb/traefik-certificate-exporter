@@ -1,0 +1,24 @@
+review: _bmad-output/implementation-artifacts/epic-014/epic-closure/arch-drift-review.md
+findings:
+  AD-1:
+    severity: MAJOR
+    title: "**Evidence, verified live on 2026-10-12.** `git.ravenwolf.org/…:0.3.0` resolves to `sha256:244015fe…` with label `org.opencontainers.image.revision=c7394e26…` on amd64 and arm64. `docker.io/ravensorb/…:0.3.0` resolves to `sha256:e3be0498…` with revision `046016b3…`. `ghcr.io/…:0.3.0` is not found, and `gh release view v0.3.0` reports \"release not found\". The real `v0.3.0` tag (`git cat-file -p v0.3.0`) points at `046016b`. The Gitea artifacts were therefore published, by the evidence file's own account, from \"a tag [that] exists only in the deleted clone\", using the maintainer's admin token from a local process environment rather than a forge `release` environment. GitHub run 38281339396 then published PyPI and Docker Hub only. The wheel and sdist hashes match across PyPI and Gitea (`6f8dd26a…`, `39fbc9c4…`) because the build is reproducible. The image is not equal: one version now has two digests, which is the split \"topology B\" that E014-S02-007 decision 1 (`:54`) rejected because \"it would build the image and the packages twice and break AD-10's one digest\". The story's AC 6 (six `enabled` lines), AC 8 (one digest across nine lookups) and AC 9 (a forge release with the wheel and sdist) are unmet. The story is nevertheless `status: done`, its completion evidence records only Docker Hub, and no ADR, spine Changelog line or backlog item records the reduced scope or the out-of-band Gitea publish."
+    disposition: spec-proposal
+    spec: _bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md#ad-9--configuration-gated-destinations-one-forge-per-release-adopted
+    adr:
+    commit:
+    issue: BL-E014-111
+    proposal: _bmad-output/implementation-artifacts/epic-014/epic-closure/spec-proposals/AD-1.md
+  AD-2:
+    severity: MAJOR
+    title: "The `import-linter` hook was added at the sprint-01 closure (SD-01-1 fix), after ADR-0042 had defined the audit scope. It declares `additional_dependencies: [import-linter==2.15]`. That pins one package. Its requirements on PyPI are `click>=6`, `grimp>=3.17`, `rich>=14.2.0` and `typing-extensions>=3.10`, and pre-commit resolves them fresh, unhashed and unaudited at environment install. The `mirrors-mypy` hook resolves mypy's own dependencies the same way. These environments are installed and executed in `build.yaml`'s `build` job (`pre-commit run --all-files`, `:62-63`), the same job that runs `poetry build` and uploads `dist` (`:68-71`). The `v0.3.0` release run shows this: `Initializing environment for local:import-linter==2.15` at 17:01:14Z in `build / build`. ADR-0042's \"Not covered, stated\" list says hook environments \"are pinned by frozen SHAs (AD-3, AD-5)\". That is true for the hook repositories but false for their PyPI closures. The `precommit-revs-frozen` comment claims local hooks are pinned through `additional_dependencies`. ADR-0046 item 6 and the S02-003 spine pass restated the frozen-rev rationale without covering this hook. It is not in the backlog."
+    disposition: spec-proposal
+    spec: _bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md#ad-3--local-and-ci-gates-are-one-hook-list-adopted
+    adr:
+    commit:
+    issue: BL-E014-112
+    proposal: _bmad-output/implementation-artifacts/epic-014/epic-closure/spec-proposals/AD-2.md
+adr_links:
+  ADR-0042:
+    commit: 2c1353085eb96b0c174f853482c7b15f4f897846
+    issue: BL-E014-110

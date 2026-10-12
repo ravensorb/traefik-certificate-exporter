@@ -14,5 +14,5 @@ findings:
     disposition: spec-updated
     spec: _bmad-output/planning-artifacts/architecture/architecture-ci-cd-pipeline-2026-10-08/ARCHITECTURE-SPINE.md#ad-8--image-tags-one-writer-per-tag-adopted
     adr: docs/adr/0046-e014-pipeline-amendments.md
-    commit:
-    issue:
+    commit: df7b4bf1014be8a6dcd88ffd48d9d642d7f5ef23
+    issue: BL-E014-109
