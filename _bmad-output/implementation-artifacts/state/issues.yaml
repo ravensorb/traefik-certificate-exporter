@@ -4,7 +4,7 @@ next:
   '012': 14
   '013': 45
   '014': 123
-  '015': 4
+  '015': 6
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -1692,3 +1692,23 @@ backlog:
   severity: Low
   status: backlog
   description: Found re-elaborating E015-S01-001 under the 2026-10-12 LSIO constraint (operators keep editing config.yaml as PUID). Rename-based editors work today; in-place editors fail. Harmless to hand to abc once E015-S01-001's root-mode env-only rule lands. maintainer-decisions MD-23.
+- key: BL-E015-004
+  epic: '015'
+  sprint: ''
+  title: "privilege-decision.sh: emit the 'store is writable' note in root mode too"
+  source: arch-gate (AR-1)
+  source_phase: arch-gate
+  source_ref: AR-1
+  severity: Low
+  status: backlog
+  description: "Residual of AG-1, recorded in ADR-0049. In root mode privilege-decision.sh returns at row 2 (settings.restartcontainers true, docker/root/usr/local/lib/traefik-certificate-exporter/privilege-decision.sh:86-93) before the writable-store note is computed (:117-130), so a root-mode start never reports that the ACME store or its directory is writable by PUID. A PUID-writable store lets that account forge acme.json, which a file-forced root exporter writes over /certs before restarting labelled containers. /data:ro is now documented as required in both modes (E015-S01-001), but nothing tells the operator when it is missing in root mode. Fix: compute the note before the row returns and emit it in root mode as a separate line. Keep the 'exactly one WARNING' invariant of tests/test_s6_privilege_drop.py (the note is its own line, appended as in the existing root WARNING case). This is an s6 script change, outside E015-S01-001's non-goals; LinuxServer init and /config ownership stay untouched."
+- key: BL-E015-005
+  epic: '015'
+  sprint: ''
+  title: 'release.yaml publish-image: docker logout of every registry before git-action-docker-test'
+  source: arch-gate (AG-5)
+  source_phase: arch-gate
+  source_ref: AG-5
+  severity: Low
+  status: backlog
+  description: "Accepted residual recorded by E015-S02-002's ADR. publish-image logs in to Docker Hub, GHCR and Gitea (.github/workflows/release.yaml:432-446), writing the classic write:packages PAT (account-wide) and the per-user Gitea write:package token to the job's Docker config, then runs LiquidLogicLabs/git-action-docker-metadata@v6 (:459) and git-action-docker-test@v2 (:505) at mutable major tags (binding LiquidLogicLabs rule, CI AD-5), which can read that config. Every published image is publicly pullable, so the test step needs no login. Fix: a step that runs docker logout for every configured registry after the push and before git-action-docker-test (and, if feasible, move the metadata step before the logins). Prove with a release run under act that the test step still passes and that ~/.docker/config.json holds no auths when it starts. Workflow change, outside E015-S02-002's 'no workflow change' non-goal."

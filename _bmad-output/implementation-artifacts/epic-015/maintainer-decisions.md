@@ -42,7 +42,7 @@ tests first.
 | MD-18 | Version 0.3.1 via `just release patch` | Accepted 2026-10-12 | PRD header; CI AD-7, AD-16; E015-S02-004 |
 | MD-19 | Close RT-1 by environment/CLI-only root-sensitive settings (option b) | Accepted 2026-10-12 | PRD FR-10, FR-18; product AD-2, AD-6, AD-12, Conventions; E015-S01-001 |
 | MD-20 | File-sourced root-sensitive value: ignore with one ERROR, keep exporting | Accepted 2026-10-12 | PRD FR-18, NFR-2; product AD-2, Conventions (errors); E015-S01-001 |
-| MD-21 | Environment-only when root: `postexportcommand`, `outputpath` only | Accepted 2026-10-12 | PRD FR-18, FR-19; product AD-2 (trust-class table), AD-6; E015-S01-001, E015-S01-002 |
+| MD-21 | Environment-only when root: `postexportcommand`, `outputpath`, `datapath`; `filespec` a validated file-name glob in every mode; `/data:ro` in both modes | Accepted 2026-10-12; extended 2026-10-12 (arch gate AG-1) | PRD FR-10, FR-11, FR-18, FR-19; product AD-2 (trust-class table), AD-6; [ADR-0049](../../../docs/adr/0049-root-mode-trust-covers-hook-output-and-store-location.md); E015-S01-001, E015-S01-002 |
 | MD-22 | Root hook opt-in is setting it in the environment/CLI; no new flag | Accepted 2026-10-12 | PRD FR-12, FR-18, §5; product AD-2, AD-9; E015-S01-001 |
 | MD-23 | Venv under `/app` and seeded config owner are separate backlog items | Accepted 2026-10-12 | PRD §6; product AD-4, AD-12, Deferred; BL-E015-002, BL-E015-003; E015-S01-001 non-goals |
 
@@ -91,7 +91,7 @@ tests first.
 - **Decision:** (b) when running as root, take the root-sensitive settings from the environment/CLI only and ignore their values from `config.yaml`, the confuse user config and `.env` files, with a declared trust class for every setting in `config_default.yaml` (`ROOT_SETTING_TRUST`), tests that every key is classified, that every file the loader opens is covered and that the hook is the package's only process-spawn site, and an image test that replays RT-1. Rejected: (a) run the hook as `abc` (breaks root hooks that read `0600 root` keys or the socket; a root opt-in would still come from the environment); (c) split a root reader from an `abc` worker (no LinuxServer precedent; new IPC).
 - **Status:** accepted 2026-10-12.
 - **Precedence:** this is a trust rule, not a precedence change. CLI > env > config file > defaults holds for every setting; in root mode a file is simply not an admissible source for the two environment-only keys, and the key resolves by the same order over the remaining sources.
-- **Lives in:** PRD FR-10 (reconciliation), FR-18; product spine AD-2 ("Root-mode settings trust", "Trust classes"), AD-6, AD-12 (init resolver), Conventions (state); E015-S01-001; ADR to be written by E015-S01-001.
+- **Lives in:** PRD FR-10 (reconciliation), FR-18; product spine AD-2 ("Root-mode settings trust", "Trust classes"), AD-6, AD-12 (init resolver), Conventions (state); E015-S01-001; [ADR-0049](../../../docs/adr/0049-root-mode-trust-covers-hook-output-and-store-location.md) (written at the arch gate 2026-10-12; E015-S01-001 implements it). The spawn-site guard is [ADR-0050](../../../docs/adr/0050-spawn-site-guard-uses-ruff-banned-api.md) (ruff `TID251` banned-api replaces the planned `ast` scan; arch gate AG-2).
 
 ### MD-20 — What happens to a file-sourced root-sensitive value in root mode (E015-S01-001)
 
@@ -101,9 +101,16 @@ tests first.
 
 ### MD-21 — Which settings are environment-only when running as root (E015-S01-001)
 
-- **Decision:** (a) `postexportcommand` and `outputpath` only. `restartcontainers`, `appriseurls` and `datapath` stay any-source (bounded Docker API use, egress only, read only). E015-S01-002's `validatekeys` is any-source.
-- **Status:** accepted 2026-10-12.
-- **Lives in:** PRD FR-18, FR-19; product spine AD-2 (trust-class table), AD-6; E015-S01-001 (AC 1), E015-S01-002 (AC 16a classifies `validatekeys` as any-source).
+- **Decision as first accepted (2026-10-12):** (a) `postexportcommand` and `outputpath` only. `restartcontainers`, `appriseurls` and `datapath` stay any-source (bounded Docker API use, egress only, read only). E015-S01-002's `validatekeys` is any-source.
+- **Extended 2026-10-12 by the maintainer ("Yes" to the AG-1 fix of the epic architecture gate, `arch/arch-gate-review.md` and `arch/arch-gate-review-architect.md`).** "Read only" was false as a rationale: a `filespec` from a `PUID`-writable file was joined to `datapath` with no containment check, so an absolute or `..` value pointed a file-forced root exporter at a store the `PUID` account forged, and root wrote its keys and certificates over `/certs` and restarted the labelled containers. The decision now is:
+  1. **`filespec` is a plain file-name glob in every mode.** It is validated once at settings load by checking the pattern text, not resolved paths. Empty values, `/` or `\`, exactly `.` or `..`, and absolute values (or a drive) are rejected with one ERROR naming the setting and its source, and the packaged default `*.json` is used. The export pass, the watcher and the init resolver (`init-…-config/run:85-88`) all read this one validated value. It needs a release-note bullet and updated `--file-spec` help text and `README.md`. `filespec` stays any-source.
+  2. **`datapath` is environment/CLI-only in root mode**, exactly like `postexportcommand` and `outputpath`. A file-sourced value is ignored with one ERROR. The image is unaffected (`DATAPATH` comes from `ENV`); PyPI root runs bear the same cost as for `outputpath`.
+  3. **`/data:ro` is required in both modes.** Residual risk recorded: a `PUID`-writable store directory still gives the same reach (AR-1). Low backlog item BL-E015-004: `privilege-decision.sh` emits its "store is writable" note in root mode too.
+  4. The class rule becomes "a setting whose value root executes, writes to, or trusts as the source of what it writes is environment-only when root, unless it is validated at load so that it cannot leave an environment-only path". The remaining `any-source` rationales are reviewed claims, not checked; the last row reads "availability only, no read/write/execute reach" (AG-6).
+  - The binding LinuxServer rule holds: no Dockerfile, s6 or `/config` ownership change.
+  - `restartcontainers`, `appriseurls` and `validatekeys` stay any-source, as first decided.
+- **Status:** accepted 2026-10-12; extended 2026-10-12 (AG-1).
+- **Lives in:** PRD FR-10, FR-11, FR-18, FR-19, §6 (AR-1); product spine AD-2 (trust-class table, class rule, `/data:ro`, residual risks), AD-6, Conventions (state, errors), Deferred; [ADR-0049](../../../docs/adr/0049-root-mode-trust-covers-hook-output-and-store-location.md); E015-S01-001 (AC 1, AC 1a, AC 7 (v)), E015-S01-002 (AC 16a classifies `validatekeys` as any-source).
 
 ### MD-22 — Opt-in for a hook that must run as root (E015-S01-001)
 

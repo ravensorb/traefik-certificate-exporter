@@ -1180,3 +1180,11 @@
 {"cause": "cli", "epic": "015", "event": "issue_opened", "key": "BL-E015-001", "session": "l3io-plan-20261012T213915Z-718702", "severity": "Low", "ts": "2026-10-12T22:12:40Z"}
 {"cause": "cli", "epic": "015", "event": "issue_opened", "key": "BL-E015-002", "session": "l3io-plan-20261012T213915Z-718702", "severity": "Medium", "ts": "2026-10-12T22:38:29Z"}
 {"cause": "cli", "epic": "015", "event": "issue_opened", "key": "BL-E015-003", "session": "l3io-plan-20261012T213915Z-718702", "severity": "Low", "ts": "2026-10-12T22:38:30Z"}
+{"agent": "l3io-arch-review", "epic": "E015", "event": "dispatch_open", "session": "l3io-pm-20261012T233739Z-884dad", "ts": "2026-10-12T23:37:46Z"}
+{"agent": "l3io-arch-review", "epic": "E015", "event": "dispatch_close", "session": "l3io-pm-20261012T233739Z-884dad", "ts": "2026-10-12T23:45:18Z"}
+{"agent": "bmad-agent-architect", "epic": "E015", "event": "dispatch_open", "session": "l3io-pm-20261012T233739Z-884dad", "ts": "2026-10-12T23:45:18Z"}
+{"agent": "bmad-agent-architect", "epic": "E015", "event": "dispatch_close", "session": "l3io-pm-20261012T233739Z-884dad", "ts": "2026-10-12T23:50:58Z"}
+{"agent": "adr-arch-gate", "epic": "E015", "event": "dispatch_open", "session": "l3io-pm-20261012T233739Z-884dad", "ts": "2026-10-13T00:07:25Z"}
+{"cause": "cli", "epic": "015", "event": "issue_opened", "key": "BL-E015-004", "session": null, "severity": "Low", "ts": "2026-10-13T00:22:15Z"}
+{"cause": "cli", "epic": "015", "event": "issue_opened", "key": "BL-E015-005", "session": null, "severity": "Low", "ts": "2026-10-13T00:22:16Z"}
+{"agent": "adr-arch-gate", "epic": "E015", "event": "dispatch_close", "session": "l3io-pm-20261012T233739Z-884dad", "ts": "2026-10-13T00:24:23Z"}

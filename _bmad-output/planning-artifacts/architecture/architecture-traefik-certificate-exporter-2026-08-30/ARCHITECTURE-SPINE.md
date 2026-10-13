@@ -13,7 +13,7 @@ binds: [FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, FR-1
 sources:
   - .memlog.md
   - _bmad-output/planning-artifacts/prds/prd-traefik-certificate-exporter-2026-08-30/prd.md
-  - docs/adr/0001, 0002, 0003, 0004, 0013, 0014, 0023, 0024, 0025, 0026, 0027, 0030, 0040, 0042, 0043, 0044, 0045, 0046, 0048
+  - docs/adr/0001, 0002, 0003, 0004, 0013, 0014, 0023, 0024, 0025, 0026, 0027, 0030, 0040, 0042, 0043, 0044, 0045, 0046, 0048, 0049, 0050
   - _bmad-output/implementation-artifacts/epic-015/maintainer-decisions.md (MD-06..MD-23 accepted 2026-10-12; MD-01..MD-05 withdrawn)
   - _bmad-output/implementation-artifacts/epic-015/sprint-01/stories/E015-S01-001..004.md
   - _bmad-output/planning-artifacts/research/research-2026-10-12-release-0.3.1.md (§1-§4)
@@ -107,13 +107,15 @@ graph TD
 ### AD-2 — Container base image, privilege model and root-mode settings trust [ADOPTED]
 
 - **Binds:** `docker/Dockerfile`, `docker/root/` (init, service, `privilege-decision.sh`),
-  `libs/settings.py` (`ROOT_SETTING_TRUST`, root-mode withholding, `sourceOf`), `app.py`
-  (hook-source line), `tests/test_settings_surface.py`, `tests/libs/test_settings.py`,
+  `libs/settings.py` (`ROOT_SETTING_TRUST`, root-mode withholding, `filespec` validation,
+  `sourceOf`), `app.py` (hook-source line), `pyproject.toml` (ruff `TID251` banned-api),
+  `tests/test_settings_surface.py`, `tests/libs/test_settings.py`,
   `tests/libs/test_post_export.py`, `tests/test_container_root_trust.py`, deployment docs
 - **Prevents:** a bespoke init/permission scheme; breaking LinuxServer's ownership
   conventions; an exporter that drops privileges and then cannot read its own ACME store; a
   root decision taken by a second settings parser; a file writable by the service account
-  choosing what a root process executes or where it writes
+  choosing what a root process executes, where it writes, or which store it trusts as the
+  source of what it writes
 - **Rule:**
   - **Base and LinuxServer conventions.** Base on `ghcr.io/linuxserver/baseimage-alpine`
     (s6-overlay, `PUID`/`PGID`), on a supported Alpine line, `FROM` pinned by digest via
@@ -133,8 +135,10 @@ graph TD
     (run Traefik as the `PUID`/`PGID` user). The decision is taken once per container start,
     lives in the sourced helper `privilege-decision.sh`, and is executed by tests. When
     dropping: ownership walk is `find … -xdev ! -type l -exec chown -h` (never `chown -R`), and
-    a tmpfs `HOME` owned by `abc`. Unprivileged mode requires `/data` mounted `:ro`; start-up
-    logs one line when the store is writable by `abc`. No setting exists to force either mode.
+    a tmpfs `HOME` owned by `abc`. Both modes require `/data` mounted `:ro`: in either mode the
+    store and its directory must not be writable by `PUID` (ADR-0049, AR-1). Start-up logs one
+    line when the store is writable by `abc`, today only when no earlier row decided (row 2,
+    `restartcontainers`, returns first; BL-E015-004, Deferred). No setting exists to force either mode.
   - **Root-mode settings trust.** A process whose euid is 0 takes every
     `environment-only-when-root` setting only from the environment, the command line or the
     packaged default. After all sources are merged, `SettingsManager.loadFromFile` reads each
@@ -154,6 +158,13 @@ graph TD
     through the same `loadFromFile`, so the `outputpath` init chowns in dropped mode never
     comes from a file. This is a trust rule over admissible sources, not a change to the
     precedence of AD-6.
+  - **`filespec` is a file-name glob inside `datapath`, in every mode.** Validated once in
+    `SettingsManager.loadFromFile` on the pattern text, for every source and every euid: an
+    empty value, a `/` or `\` (every platform), exactly `.` or `..`, an absolute value or a
+    drive is rejected with one ERROR naming `settings.filespec` and its source (never the
+    value), and the packaged default `*.json` is used. The export pass, the watcher and the
+    init resolver all read this one validated value, so no s6 script changes. A caller that
+    constructs `Settings` directly is trusted and not validated.
   - **Trust classes.** `ROOT_SETTING_TRUST` in `libs/settings.py`, beside
     `SECRET_CONFIG_KEYS`, maps every leaf key path of `config_default.yaml` to one class:
 
@@ -161,37 +172,50 @@ graph TD
     | --- | --- | --- |
     | `environment-only-when-root` | `postexportcommand` | root executes it |
     | `environment-only-when-root` | `outputpath` | root writes there; init chowns under it in dropped mode |
-    | `any-source` | `datapath`, `filespec` | read and JSON-parsed only |
+    | `environment-only-when-root` | `datapath` | root trusts the store it reads there as the source of what it writes |
+    | `any-source` | `filespec` | validated at load as a file-name glob, so it cannot leave `datapath` |
     | `any-source` | `traefikresolverid`, `resolverinpathname`, `flat`, `domains.include`, `domains.exclude` | path components whitelisted, containment checked |
     | `any-source` | `restartcontainers` | `docker.py` only pings, lists by label, gets and restarts labelled containers; endpoint from `DOCKER_HOST` only |
     | `any-source` | `appriseurls` | network egress only; Apprise loads no plugins and reads no local attachment |
-    | `any-source` | `pkcs12passphrase`, `dryrun`, `watchforchanges`, `runatstart`, `watchinterval`, `validatekeys` | no privilege effect |
+    | `any-source` | `pkcs12passphrase`, `dryrun`, `watchforchanges`, `runatstart`, `watchinterval`, `validatekeys` | availability only, no read/write/execute reach |
 
-    The class rule: a setting whose value root executes or writes to is environment-only
-    when root. Logging configuration is already environment-only (the `LOGGING_*` family has
+    The class rule: a setting whose value root executes, writes to, or trusts as the source
+    of what it writes is environment-only when root, unless it is validated at load so that
+    it cannot leave an environment-only path (ADR-0049). Logging configuration is already environment-only (the `LOGGING_*` family has
     no file key, AD-3). Enforcement, scope derived from the source of truth: a surface test
     derives the leaf set from `config_default.yaml` and fails on an unclassified leaf, a
     non-leaf entry or an unknown class, and a companion test proves it reports a planted
     leaf; a loader test records every file the loader opens (config file, confuse user config,
-    cwd and module `.env`) and proves a root load ignores the hook from each; a test walks the
-    installed package with `rglob` and `ast` and asserts that `libs/post_export.py` `_run` is
-    the only process-spawn site, with a planted call reported; an opt-in image test replays
+    cwd and module `.env`) and proves a root load ignores the hook from each; unit tests reject
+    each invalid `filespec` form and withhold a file-sourced `datapath` as root; ruff `TID251`
+    banned-api makes `libs/post_export.py` the only process-spawn site (ADR-0050: the
+    spawn-capable `os` names are derived from `dir(os)` and checked against the banned table,
+    and a planted `os.posix_spawn` and literal `subprocess.run` fail the hook; dynamic access
+    through `getattr`/`importlib`/`__import__` is not covered); an opt-in image test replays
     RT-1 (a `PUID` rename of `config.yaml` carrying `restartcontainers: true` and a hook) and
-    proves the hook does not run, that an environment hook still runs as root, that a
+    proves the hook does not run, replays the forged-store attack (a `PUID`-written
+    `/config/forged.json` named by `filespec` in `config.yaml`) and proves the genuine
+    `/certs` key is untouched, and proves that an environment hook still runs as root, that a
     `config.yaml` hook runs as `PUID` in dropped mode, and that `/config` stays
-    `PUID`-owned and editable.
+    `PUID`-owned and editable. **Not mechanically checked:** the `any-source` rationales in
+    the table are reviewed claims; no test proves an `any-source` key cannot change what root
+    executes or where or what it writes. Review trigger: a new key, or a change to how an
+    existing key is used in `certificate_exporter.py`, `docker.py`, `notify.py` or the init
+    resolver.
   - **Hook opt-in.** Setting the hook in the environment or on the command line is the opt-in
     for a root hook; it runs with the exporter's uid. There is no flag to re-admit a
     file-sourced root hook and the hook is never re-run as `abc` by a root exporter. A dropped
     exporter runs a `config.yaml` hook as `abc`.
-  - **Residual risks, documented not enforced:** an environment-set root hook that runs a
-    program or script stored in `/config`; `…_LOGGING_CFGFILE` pointed into `/config`; Docker
-    mods and `/custom-cont-init.d`; the venv under the `abc`-owned `/app` (BL-E015-002,
-    Deferred).
+  - **Residual risks, documented not enforced:** a `PUID`-writable store directory in root
+    mode gives the same reach as a file-chosen store (AR-1; `/data:ro` required in both
+    modes); an environment-set root hook that runs a program or script stored in `/config`;
+    `…_LOGGING_CFGFILE` pointed into `/config`; Docker mods and `/custom-cont-init.d`; the venv
+    under the `abc`-owned `/app` (BL-E015-002, Deferred).
 
-  — ADR-0002, ADR-0030 (amended by E015-S01-001), ADR to be written by E015-S01-001 (root
-  takes hook and output path from the environment only), maintainer decisions MD-19 to MD-23
-  (2026-10-12), E015-S01-001.
+  — ADR-0002, ADR-0030 (amended by E015-S01-001 to point to ADR-0049), ADR-0049 (root-mode
+  settings trust: hook, output path and store location), ADR-0050 (spawn-site guard),
+  maintainer decisions MD-19 to MD-23 (2026-10-12; MD-21 extended 2026-10-12 by the AG-1
+  resolution), E015-S01-001.
 
 ### AD-3 — Logging: structured, correlated, secrets never logged [ADOPTED]
 
@@ -260,8 +284,10 @@ graph TD
   names are `TRAEFIK_CERTIFICATE_EXPORTER_` + the key path joined by `_` (confuse `EnvSource`
   rule; lists via indexed keys `…_<n>`, never comma-splitting except the existing domain
   lists). Precedence is `CLI > env > config file > packaged default` for every setting; the
-  root-mode trust rule (AD-2) removes file sources from the admissible set for two keys when
-  the euid is 0 and does not reorder the rest. A boolean opt-out flag uses
+  root-mode trust rule (AD-2) removes file sources from the admissible set for three keys
+  (`postexportcommand`, `outputpath`, `datapath`) when the euid is 0 and does not reorder the
+  rest. `settings.filespec` is validated at load as a file-name glob in every mode; an invalid
+  value from any source falls back to the packaged default with one ERROR (ADR-0049). A boolean opt-out flag uses
   `action="store_const"`, `const=False`, `default=None`, so an absent flag never overrides env
   or file (`--no-validate-keys` → `settings.validatekeys`). Tests derive the dest set, the
   documented env names (scope from git pathspecs) and
@@ -324,7 +350,8 @@ graph TD
 
 - **Binds:** `libs/certificate_exporter.py` (`PemToPfxConverter`, `__exportDomain`,
   `_atomic_write*`, `artifactMtime`, `_load_private_key`, `_serialize_pkcs12`,
-  `_pfx_fingerprint_path`, `_pfx_fingerprint`, `_pfx_state`, `_passphrase_matches`),
+  `_pfx_fingerprint_path`, `_pfx_fingerprint`, `_pfx_state`, `_passphrase_matches`,
+  `_scrypt_verifies`),
   `config_default.yaml` (`validatekeys`)
 - **Prevents:** half-rotated domains; truncated files; broken PFX when a passphrase is set;
   "changed" signals and mtimes moving when nothing changed; an unchanged pass that re-validates
@@ -371,7 +398,10 @@ graph TD
     `key_sha256`, `certificates_sha256` (ordered list) and `passphrase`: `null`, or
     `kdf: scrypt` with `n` 16384, `r` 8, `p` 1, a random 16-byte `salt` per file written and
     the 32-byte `digest`, both base64. Verification uses cryptography's `Scrypt.verify`
-    behind a `functools.lru_cache` (one derive per file per process). It holds no passphrase
+    in `_scrypt_verifies(passphrase, salt, n, r, p, digest)`, a `functools.lru_cache` keyed
+    only on those hashable values (one derive per file per process); the uncached
+    `_passphrase_matches(passphrase, record)` validates the record's `kdf` and field types
+    first and returns false for anything unknown (AG-3). It holds no passphrase
     and no key bytes. A file that is absent, not a regular file, too permissive after the
     in-place tighten, larger than 64 KiB, not valid UTF-8 JSON, or of an unknown `format`,
     `version` or field type is unusable; that is never an error and never logged above DEBUG.
@@ -547,8 +577,8 @@ graph TD
 | Naming (code) | `libs/docker.py`, `certificate_exporter.py` classes use `camelCase` methods; module-level private helpers are `_snake_case`; tests for `libs/x.py` live in `tests/libs/test_x.py`; repository-wide checks live at `tests/` top level |
 | Data & formats — artifacts | Per-domain layout `privkey.pem/cert.pem/chain.pem/fullchain.pem/cert.pfx`; flat layout `<name>.key/.crt/.chain.pem/.fullchain.pem/.pfx` (flat `.crt` holds the full chain); both under `<output>/<resolver>/` when `resolverinpathname` is true and the store is resolver-wrapped, directly under `<output>/` otherwise; paths come only from `_artifact_paths` (ADR-0040); beside each `.pfx` its fingerprint file `cert.pfx.fingerprint.json` / `<name>.pfx.fingerprint.json`, path only from `_pfx_fingerprint_path`, not an artifact (AD-8, AD-10); `fullchain.pem` is the store bytes unchanged; SANs are logged, not exported |
 | Data & formats — signals | The changed-domain list is the only change signal; restarts read artifact mtimes vs container `StartedAt`; the files are the state, and the fingerprint files decide only whether a `.pfx` is current (AD-8, AD-10) |
-| State & cross-cutting | Precedence CLI > env > config file > packaged default (`confuse`), for every setting (BL-E014-017); in root mode `postexportcommand` and `outputpath` admit no file source, which is a trust rule, not a precedence change (AD-2); global singletons (`globalLogger`, `globalArgs`, `globalSettingsMgr`) for cross-cutting concerns, no DI; secrets per AD-3 |
-| Errors | Per-certificate and per-resolver failures log one ERROR and continue; consumer (hook, notify, restart) failures never abort a pass; a withheld root-mode setting logs one ERROR per start and continues; start-up misconfiguration (missing data path, unknown flag) fails loudly |
+| State & cross-cutting | Precedence CLI > env > config file > packaged default (`confuse`), for every setting (BL-E014-017); in root mode `postexportcommand`, `outputpath` and `datapath` admit no file source, which is a trust rule, not a precedence change (AD-2, ADR-0049); `filespec` is a validated file-name glob in every mode; global singletons (`globalLogger`, `globalArgs`, `globalSettingsMgr`) for cross-cutting concerns, no DI; secrets per AD-3 |
+| Errors | Per-certificate and per-resolver failures log one ERROR and continue; consumer (hook, notify, restart) failures never abort a pass; a withheld root-mode setting or a rejected `filespec` logs one ERROR per start and continues; start-up misconfiguration (missing data path, unknown flag) fails loudly |
 | Testing | pytest only; real integration seams opt-in via `@pytest.mark.integration` and `TCE_DOCKER_INTEGRATION=1`; image tests target `${TCE_IMAGE:-traefik-certificate-exporter:local}`; fixtures use synthetic domains and the shared `real_chain()` / `real_rsa4096_chain()` generators; load counts by `monkeypatch` spies, not a custom harness; a guard is proven by a planted violation that attacks its scope |
 | Repository framing | "Not maintained by us" framing of vendored `.agents/`/`.claude/` trees lives only in `.github/CODEOWNERS` (ADR-0027) |
 
@@ -637,7 +667,7 @@ graph LR
 | FR-15 restart trigger (artifact mtime vs `StartedAt`) | `libs/docker.py`, `artifactMtime` | AD-10 |
 | FR-16 legacy (incl. pre-confuse) and unknown setting names | `libs/legacy_settings.py`, `libs/suggest.py` | AD-6 |
 | FR-17 release publishing to configured destinations | `.github/workflows/*`, `justfile` | AD-5 → CI spine AD-8, AD-9, AD-10, AD-12, AD-13, AD-16 |
-| FR-18 root-mode settings trust | `libs/settings.py` (`ROOT_SETTING_TRUST`), `app.py`, `libs/post_export.py` | AD-2, AD-3, AD-6 |
+| FR-18 root-mode settings trust | `libs/settings.py` (`ROOT_SETTING_TRUST`, `filespec` validation), `app.py`, `libs/post_export.py`, `pyproject.toml` (ruff `TID251`) | AD-2, AD-3, AD-6 |
 | FR-19 optional RSA key validation | `config_default.yaml`, `libs/cli_args.py`, `libs/certificate_exporter.py` (`_load_private_key`) | AD-8, AD-6 |
 | NFR-1 no secret leakage | `libs/settings.py`, `libs/post_export.py`, `logging_utils.py`, fingerprint file | AD-3, AD-8 |
 | NFR-2 loud misconfiguration | `app.py`, `libs/cli_args.py`, `libs/legacy_settings.py`, `libs/settings.py` | AD-2, AD-6, Conventions (errors) |
@@ -661,8 +691,14 @@ graph LR
   convention so in-place editors work.
 - **Root-mode residual risks** — an environment-set root hook running a script from `/config`,
   `LOGGING_CFGFILE` in `/config`, Docker mods and `/custom-cont-init.d`; documented, not
-  enforced (AD-2). Revisit if LinuxServer ships a supported way to keep `/config` out of the
-  `PUID` account's reach, or the exporter stops needing root.
+  enforced (AD-2, ADR-0049). Revisit if LinuxServer ships a supported way to keep `/config`
+  out of the `PUID` account's reach, or the exporter stops needing root.
+- **`PUID`-writable store in root mode** (AR-1, ADR-0049) — if `/data` is writable by `PUID`,
+  that account can forge the store a file-forced root exporter writes over `/certs`. `/data:ro`
+  is required in both modes (documented, not enforced). `privilege-decision.sh` row 2
+  (`restartcontainers`) returns before the writable-store note is computed, so a root start
+  does not report a writable store: BL-E015-004 (Low) emits the note in root mode too (an s6
+  script change, outside E015; keep the "exactly one WARNING" invariant).
 - **Stale fingerprint and artifact removal** when a domain leaves the store or a store is
   renamed away — the exporter never deletes files.
 - **watchdog 7.x** (`full_match` breaks `*.json` on absolute paths) — excluded by `^6.0`; the
@@ -697,3 +733,4 @@ graph LR
 - Consolidated 2026-10-11 from ADR-0001, ADR-0002, ADR-0003, ADR-0004 (with ADR-0008), ADR-0013 (via ADR-0014), ADR-0014, ADR-0023, ADR-0024, ADR-0025, ADR-0026, ADR-0027, ADR-0030 (incl. 2026-10-10 privilege decision); memlog entries "spine authored" (2026-08-30), "AD-4 mechanism poetry install --only main", "restart only on change" (2026-10-11); E014 stories E014-S01-001 to E014-S01-008; review-product.md (2026-10-10) AD table, M7, M8.
 - 2026-10-11 E014-S02-003 decision-record repair and baseline cross-check: S01-001..010 deltas routed into AD-3, AD-6, AD-7, AD-8, AD-9, AD-10, AD-12, Conventions, Stack and the Capability map; AD-13 states the enforced `import-linter` layer order; `CLI > env > config file > defaults` for every setting (BL-E014-017).
 - 2026-10-12 consolidated to a clean 0.3.1 target state (E015), no amendment layering. Sources: E015-S01-001..004 and E015-S02-003, maintainer decisions MD-06..MD-23 accepted 2026-10-12 (MD-01..MD-05 withdrawn), research brief 2026-10-12 §1-§4, E014 red-team RT-1. AD-2 states the kept LinuxServer conventions (`/config` `PUID`-owned) and the root-mode settings trust rule with its trust-class table; AD-3 the hook-source and RSA-validation start-up lines; AD-6 the trust class per key, the opt-out flag convention and the pre-confuse legacy names; AD-8 lazy key loading, `validatekeys` and the `.pfx` fingerprint file contract; AD-10 the fingerprint file is not an artifact; AD-11 the trigger events including rename; AD-12 the init resolver under the trust rule; AD-1/AD-13/Stack hook tools in the Poetry dev group; Conventions, Capability map (FR-18, FR-19, NFR-8 to NFR-10) and Deferred (BL-E015-002 open risk, BL-E015-003) updated. ADRs not yet written are named by the E015 story that writes them.
+- 2026-10-12 E015 epic architecture gate (AG-1, AG-2, AG-6, AR-1; maintainer decision 2026-10-12 extending MD-21): AD-2 class rule covers the store root trusts; `datapath` environment-only when root; `filespec` a validated file-name glob in every mode; `any-source` rationales stated as reviewed claims ("availability only"); `/data:ro` required in both modes; spawn-site guard is ruff `TID251` (ADR-0050); AD-6, Conventions and Deferred (AR-1) follow; ADR-0049 replaces "ADR to be written by E015-S01-001"; AD-8 splits the cached scrypt verify from the record check (AG-3).

@@ -1,4 +1,4 @@
-next: 49
+next: 51
 reserved:
 - number: 1
   slug: action-pin-policy
@@ -136,3 +136,11 @@ reserved:
   slug: exporter-module-layering
   epic: E014
   reserved_at: '2026-10-12T01:51:13Z'
+- number: 49
+  slug: arch-gate
+  epic: E015
+  reserved_at: '2026-10-13T00:07:25Z'
+- number: 50
+  slug: arch-gate
+  epic: E015
+  reserved_at: '2026-10-13T00:07:25Z'
