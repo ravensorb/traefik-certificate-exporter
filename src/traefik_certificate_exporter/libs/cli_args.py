@@ -46,7 +46,10 @@ globalArgParser.add_argument(
     default=None,
     type=str,
     metavar="GLOB",
-    help="file that contains the traefik certificates",
+    help=(
+        "file-name glob of the ACME store inside the data path (no directory part); "
+        "default `*.json`"
+    ),
 )
 globalArgParser.add_argument(
     "-o",
@@ -119,6 +122,17 @@ globalArgParser.add_argument(
         "(readable by Windows 10 1709+/Server 2019+, OpenSSL 3, current macOS). The .pfx "
         "always includes the intermediates. Empty or unset: unencrypted."
     ),
+)
+globalArgParser.add_argument(
+    "--no-validate-keys",
+    action="store_const",
+    const=False,
+    dest="settings.validatekeys",
+    default=None,
+    help="If specified, skip RSA private-key validation when a .pfx is built "
+    "(~0.5 s per RSA-4096 key). Only when the ACME store is written by your own "
+    "Traefik: the keys are then trusted, not checked. The key/certificate match is "
+    "always checked.",
 )
 globalArgParser.add_argument(
     "--post-export-command",

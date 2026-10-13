@@ -12,9 +12,10 @@ from pathlib import Path
 import confuse
 import importlib_resources
 import jsonpickle
+from confuse.util import build_dict
 from dotenv import load_dotenv
 
-from .legacy_settings import check_setting_names
+from .legacy_settings import check_setting_names, find_legacy_settings
 from .logging_utils import globalLogger
 from .object import ObjectBase
 
@@ -43,6 +44,126 @@ SECRET_CONFIG_KEYS: tuple[tuple[str, ...], ...] = (
     # `Authorization` header, a webhook token -- in its arguments. Declared so both dumps
     # mask it; the hook's own log lines name only the program (ADR-0045).
     ("settings", "postexportcommand"),
+)
+
+# The one place a setting's root-mode trust class is declared (ADR-0049). When the process
+# runs as root, an `environment-only-when-root` key is taken only from the environment, the
+# command line or the packaged default: a value from a configuration file or a `.env` file
+# is withheld with one ERROR, because the account that owns `/config` (LinuxServer's PUID)
+# must not choose what root runs, where root writes, or which store root trusts as the
+# source of what it writes. Every leaf of `config_default.yaml` has an entry;
+# `tests/test_settings_surface.py` fails on a missing, extra or unknown one.
+#
+# The `any-source` rationales below are REVIEWED CLAIMS, not mechanically checked: no test
+# proves that an `any-source` key cannot change what root executes or where or what it
+# writes. Review this map when a key is added, or when how an existing key is used changes
+# in `certificate_exporter.py`, `docker.py`, `notify.py` or the init resolver
+# (`init-traefik-certificate-exporter-config/run`) (ADR-0049, "What is and is not
+# mechanically checked").
+ROOT_TRUST_ENVIRONMENT_ONLY = "environment-only-when-root"
+ROOT_TRUST_ANY_SOURCE = "any-source"
+ROOT_SETTING_TRUST: dict[tuple[str, ...], str] = {
+    # Root executes it.
+    ("settings", "postexportcommand"): ROOT_TRUST_ENVIRONMENT_ONLY,
+    # Root writes there; init chowns everything under it in dropped mode.
+    ("settings", "outputpath"): ROOT_TRUST_ENVIRONMENT_ONLY,
+    # Root trusts the store it reads there as the source of the keys it writes (AG-1).
+    ("settings", "datapath"): ROOT_TRUST_ENVIRONMENT_ONLY,
+    # Validated as a file-name glob at load (AC 1a, ADR-0049, AG-1).
+    ("settings", "filespec"): ROOT_TRUST_ANY_SOURCE,
+    # Path component, whitelisted; output containment checked.
+    ("settings", "traefikresolverid"): ROOT_TRUST_ANY_SOURCE,
+    # Path layout only; components whitelisted, output containment checked.
+    ("settings", "resolverinpathname"): ROOT_TRUST_ANY_SOURCE,
+    # Path layout only; components whitelisted, output containment checked.
+    ("settings", "flat"): ROOT_TRUST_ANY_SOURCE,
+    # Availability only, no read/write/execute reach.
+    ("settings", "dryrun"): ROOT_TRUST_ANY_SOURCE,
+    # Bounded Docker API: ping, list by label, get, restart; endpoint from DOCKER_HOST.
+    ("settings", "restartcontainers"): ROOT_TRUST_ANY_SOURCE,
+    # Domain filter; path components whitelisted, output containment checked.
+    ("settings", "domains", "include"): ROOT_TRUST_ANY_SOURCE,
+    # Domain filter; path components whitelisted, output containment checked.
+    ("settings", "domains", "exclude"): ROOT_TRUST_ANY_SOURCE,
+    # Availability only, no read/write/execute reach.
+    ("settings", "watchforchanges"): ROOT_TRUST_ANY_SOURCE,
+    # Availability only, no read/write/execute reach.
+    ("settings", "runatstart"): ROOT_TRUST_ANY_SOURCE,
+    # Availability only, no read/write/execute reach.
+    ("settings", "watchinterval"): ROOT_TRUST_ANY_SOURCE,
+    # Availability only, no read/write/execute reach (changes the .pfx passphrase).
+    ("settings", "pkcs12passphrase"): ROOT_TRUST_ANY_SOURCE,
+    # Availability only, no read/write/execute reach: it changes how a store's keys are checked, never what root executes, where it writes or which store it reads.
+    ("settings", "validatekeys"): ROOT_TRUST_ANY_SOURCE,
+    # Network egress only: Apprise loads no plugins and reads no local attachment.
+    ("settings", "appriseurls"): ROOT_TRUST_ANY_SOURCE,
+}
+
+# The environment prefix confuse's `set_env` reads, and the one `_env_name` derives from.
+_ENV_PREFIX = "TRAEFIK_CERTIFICATE_EXPORTER_"
+
+
+def _env_name(keyPath: tuple[str, ...]) -> str:
+    """The environment variable confuse's `set_env(prefix=_ENV_PREFIX, sep="_")` maps to
+    `keyPath`: `("settings", "outputpath")` -> `..._SETTINGS_OUTPUTPATH`."""
+    return _ENV_PREFIX + "_".join(keyPath).upper()
+
+
+def _env_key_path(name: str) -> tuple[str, ...] | None:
+    """The config key path confuse's `set_env(prefix=_ENV_PREFIX, sep="_")` assigns the
+    environment variable `name`, or None when the name lacks the prefix (compared
+    case-insensitively). Derived with confuse's own `build_dict`, the splitter
+    `EnvSource.load` applies to the lower-cased tail, not a re-implementation of it:
+    `..._SETTINGS_APPRISEURLS_0` -> `("settings", "appriseurls", "0")`. Turning an
+    all-integer level into a list (`EnvSource._convert_dict_lists`) is left to the caller,
+    which decides per key whether an index is admissible."""
+    if not name.upper().startswith(_ENV_PREFIX):
+        return None
+    node: object = build_dict(
+        {name[len(_ENV_PREFIX) :].lower(): None}, sep="_", keep_none=True
+    )
+    path: list[str] = []
+    while isinstance(node, dict) and len(node) == 1:
+        ((segment, node),) = node.items()
+        path.append(segment)
+    return tuple(path)
+
+
+def _is_file_source(source) -> bool:
+    """A confuse source read from a file that is not the packaged default: the config
+    file or the confuse user config (ADR-0049 Decision 3)."""
+    return getattr(source, "filename", None) is not None and not getattr(
+        source, "default", False
+    )
+
+
+def _is_root() -> bool:
+    """The root-mode trust rule is active only for euid 0, and never without `geteuid`."""
+    return hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+def _is_legacy_env_name(name: str) -> bool:
+    """Whether `name` is a legacy environment name (`legacy_settings`' one table)."""
+    return any(f.kind == "legacy" for f in find_legacy_settings({name: ""}, None))
+
+
+def _is_file_name_glob(value: str) -> bool:
+    """Is `value` a file-name glob that cannot leave the directory it is joined to?
+
+    Checks the pattern text only, never resolved paths: `glob` cannot synthesise `..`, and
+    a `realpath` containment check would reject legitimate symlinked stores (ADR-0049
+    Decision 5). Both separators are refused on every platform.
+    """
+    if not value or "/" in value or "\\" in value or value in (".", ".."):
+        return False
+    return not os.path.isabs(value) and not os.path.splitdrive(value)[0]
+
+
+_ROOT_WITHHELD_MESSAGE = (
+    "Ignoring settings.{key} from {origin}: this process runs as root, and a file can be "
+    "rewritten by an account that must not choose what root runs, where it writes, or "
+    "which store it trusts. Using the {fallback} value instead. Set {env} in the "
+    "container's environment, or pass the command-line flag (ADR-0049)."
 )
 
 # Backstop only -- see above. Retained because it catches an undeclared field, and because
@@ -207,6 +328,7 @@ class Settings:
     pkcs12Passphrase: str | None
     postExportCommand: str | None
     appriseUrls: list
+    validateKeys: bool
 
     def __init__(
         self,
@@ -225,6 +347,7 @@ class Settings:
         pkcs12Passphrase: str | None,
         postExportCommand: str | None = None,
         appriseUrls: list | None = None,
+        validateKeys: bool = True,
     ) -> None:
         """
         Initialize the class with the provided parameters.
@@ -246,6 +369,9 @@ class Settings:
             appriseUrls (list): Apprise destination URLs notified after a pass.
             postExportCommand (str | None): Shell-like command line run after a
                 successful export pass, or None to disable (default).
+            validateKeys (bool): Validate RSA private keys when a .pfx is built
+                (default). False skips the check for keys from a trusted store; the
+                key/certificate match is still checked (ADR-0051).
 
         Returns:
             None
@@ -267,6 +393,7 @@ class Settings:
         self.pkcs12Passphrase = pkcs12Passphrase
         self.postExportCommand = postExportCommand
         self.appriseUrls = appriseUrls or []
+        self.validateKeys = validateKeys
 
 
 #######################################################################
@@ -326,24 +453,38 @@ class SettingsManager(ObjectBase):
         # Docker-first, so env vars (the standard vehicle for per-deployment overrides in
         # containerized deploys) must outrank a static/mounted config file, matching
         # CLI > env var > config file > packaged default.
+        # `.env` values withheld in root mode, reported once every source is merged.
+        self._withheldDotenv: list[tuple[tuple[str, ...], Path]] = []
+        # Other `.env` variable names removed in root mode, per file (names only).
+        self._removedDotenv: list[tuple[Path, list[str]]] = []
+        # Legacy names removed from a `.env` in root mode, reported by the legacy check.
+        self._legacyDotenv: list[str] = []
+        isRoot = _is_root()
+
         if os.path.exists(self.modulePath.joinpath(".env")):
             self.__logger.debug("Loading Configuration from Module Environment File")
             _warn_if_group_or_world_writable(
                 self.__logger, self.modulePath.joinpath(".env")
             )
-            load_dotenv(self.modulePath.joinpath(".env"))
+            if isRoot:
+                self._loadDotenvAsRoot(self.modulePath.joinpath(".env"))
+            else:
+                load_dotenv(self.modulePath.joinpath(".env"))
 
         if os.path.exists(Path(os.getcwd(), ".env")):
             self.__logger.debug("Loading Configuration from Local Environment File")
             _warn_if_group_or_world_writable(self.__logger, Path(os.getcwd(), ".env"))
-            load_dotenv(Path(os.getcwd(), ".env"))
+            if isRoot:
+                self._loadDotenvAsRoot(Path(os.getcwd(), ".env"))
+            else:
+                load_dotenv(Path(os.getcwd(), ".env"))
 
         if os.path.exists(fileName):
             self.__logger.debug(f"Loading Configuration from File: '{fileName}'")
             _warn_if_group_or_world_writable(self.__logger, Path(fileName))
             self._config.set_file(fileName)
 
-        self._config.set_env(prefix="TRAEFIK_CERTIFICATE_EXPORTER_", sep="_")
+        self._config.set_env(prefix=_ENV_PREFIX, sep="_")
 
         if cmdLineArgs is not None:
             self.__logger.debug("Loading Configuration from Command Line")
@@ -362,10 +503,17 @@ class SettingsManager(ObjectBase):
             f"User Configuration Path: {self._config.user_config_path()}"
         )
 
+        # Every source is merged, so the winning source of each key is known (ADR-0049).
+        if isRoot:
+            self._withholdFileSourcedRootSettings()
+
         # Every source is now located (the .env files are in os.environ, the config file
         # is known), so legacy and misspelled names can be reported before the first pass.
+        # A legacy name a root-mode `.env` added was removed again, but it is reported here
+        # with its replacement rather than in the root-mode ERROR (E015-S01-004). Names
+        # only: the check never reads a value.
         check_setting_names(
-            os.environ,
+            {**os.environ, **dict.fromkeys(self._legacyDotenv, "")},
             fileName if os.path.exists(fileName) else None,
             self.__logger,
         )
@@ -398,7 +546,7 @@ class SettingsManager(ObjectBase):
 
         self.settings = Settings(
             dataPath=self._config["settings"]["datapath"].as_str(),  # type: ignore
-            fileSpec=self._config["settings"]["filespec"].as_str(),  # type: ignore
+            fileSpec=self._validatedFileSpec(),
             outputPath=self._config["settings"]["outputpath"].as_str(),  # type: ignore
             resolverInPathName=self._config["settings"]["resolverinpathname"].get(bool),  # type: ignore
             flat=self._config["settings"]["flat"].get(bool),  # type: ignore
@@ -420,9 +568,169 @@ class SettingsManager(ObjectBase):
             appriseUrls=_parse_apprise_urls(
                 self._config["settings"]["appriseurls"].get(confuse.Optional(list))  # type: ignore
             ),
+            validateKeys=self._config["settings"]["validatekeys"].get(bool),  # type: ignore
         )
 
         self._dump_settings()
+
+    def sourceOf(self, keyPath: tuple[str, ...]) -> str:
+        """Where the effective value of `keyPath` comes from: `environment`,
+        `command line`, `configuration file '<path>'` or `default`.
+
+        Classifies the first pair of confuse's own `resolve()`. "command line" is exact
+        only because nothing in this loader adds a filename-less source except `set_args`
+        (confuse's `set()` inserts one); withholding removes a file's entry rather than
+        overlaying a value for the same reason.
+        """
+        view: confuse.ConfigView = self._config
+        for segment in keyPath:
+            view = view[segment]
+        first = next(iter(view.resolve()), None)
+        if first is None:
+            return "default"
+        source = first[1]
+        if isinstance(source, confuse.EnvSource):
+            return "environment"
+        if source.default:
+            return "default"
+        if source.filename is not None:
+            return f"configuration file '{source.filename}'"
+        return "command line"
+
+    def _loadDotenvAsRoot(self, path: Path) -> None:
+        """`load_dotenv`, keeping only the variables of `any-source` settings that it newly
+        added (ADR-0049 Decision 4, amended 2026-10-12). Every other name it added -- an
+        environment-only setting, a logging key, `LD_PRELOAD`, `DOCKER_HOST`, anything --
+        is removed again, because root's environment is inherited by the hook root runs.
+        A variable the real environment already held is untouched, because `load_dotenv`
+        does not override. Names are compared case-insensitively. `interpolate=False`
+        (AR-1/RT-2, closure 2026-10-12): a `${VAR}` in a value stays literal, so a file the
+        service account writes cannot copy root's environment into an admitted value."""
+        before = set(os.environ)
+        load_dotenv(path, interpolate=False)
+        environmentOnly = {
+            _env_name(keyPath): keyPath
+            for keyPath, trust in ROOT_SETTING_TRUST.items()
+            if trust == ROOT_TRUST_ENVIRONMENT_ONLY
+        }
+        removed: list[str] = []
+        for name in sorted(set(os.environ) - before):
+            if self._isAnySourceEnvName(name):
+                continue
+            del os.environ[name]
+            keyPath = environmentOnly.get(name.upper())
+            if keyPath is not None:
+                self._withheldDotenv.append((keyPath, path))
+            elif _is_legacy_env_name(name):
+                # It sets nothing in any mode; moving it to the container's environment,
+                # as the ERROR below advises, would not help. The legacy warning names
+                # the replacement instead.
+                self._legacyDotenv.append(name)
+            else:
+                removed.append(name)
+        if removed:
+            self._removedDotenv.append((path, removed))
+
+    def _isAnySourceEnvName(self, name: str) -> bool:
+        """Whether confuse's `EnvSource` maps `name` onto an `any-source` setting (F9,
+        review E015-S01-001): the setting's own name, or -- for a setting whose packaged
+        default is a list -- that name plus `_<digits>`, the indexed form confuse turns
+        into a list element and `config_default.yaml` documents for `appriseurls`.
+        Anything deeper (`..._APPRISEURLS_0_X`) or an index under a scalar setting is not
+        admitted."""
+        keyPath = _env_key_path(name)
+        if not keyPath:
+            return False
+        if ROOT_SETTING_TRUST.get(keyPath) == ROOT_TRUST_ANY_SOURCE:
+            return True
+        parent, index = keyPath[:-1], keyPath[-1]
+        if ROOT_SETTING_TRUST.get(parent) != ROOT_TRUST_ANY_SOURCE:
+            return False
+        if not (index.isascii() and index.isdigit()):
+            return False
+        return isinstance(self._packagedDefault(parent), list)
+
+    def _packagedDefault(self, keyPath: tuple[str, ...]) -> object:
+        """The value of `keyPath` in the packaged `config_default.yaml` source, or None."""
+        for source in self._config.sources:
+            if not source.default:
+                continue
+            node: object = source
+            for segment in keyPath:
+                node = node.get(segment) if isinstance(node, dict) else None
+            return node
+        return None
+
+    def _withholdFileSourcedRootSettings(self) -> None:
+        """Remove every environment-only key whose winning source is a file from every
+        file source, so confuse resolves the next admissible source (ADR-0049 Decision 3).
+
+        Never `view.set(...)`: that inserts a filename-less source indistinguishable from
+        the command line, and `sourceOf` would misreport the fallback.
+        """
+        for keyPath, trust in ROOT_SETTING_TRUST.items():
+            if trust != ROOT_TRUST_ENVIRONMENT_ONLY:
+                continue
+            view: confuse.ConfigView = self._config
+            for segment in keyPath:
+                view = view[segment]
+            try:
+                winner = next(iter(view.resolve()), None)
+            except confuse.ConfigError:
+                # A malformed tree; the Settings build below reports it as before.
+                continue
+            if winner is None or not _is_file_source(winner[1]):
+                continue
+            origin = f"configuration file '{winner[1].filename}'"
+            for source in self._config.sources:
+                if not _is_file_source(source):
+                    continue
+                node: object = source
+                for segment in keyPath[:-1]:
+                    node = node.get(segment) if isinstance(node, dict) else None
+                if isinstance(node, dict):
+                    node.pop(keyPath[-1], None)
+            self._logWithheld(keyPath, origin)
+
+        # After the file entries are gone, so each names its real fallback source.
+        for keyPath, path in self._withheldDotenv:
+            self._logWithheld(keyPath, f".env file '{path}'")
+        for path, names in self._removedDotenv:
+            self.__logger.error(
+                f"Ignoring {len(names)} variable(s) from .env file '{path}': this process "
+                "runs as root, and a .env file may set only settings that cannot change "
+                "what root runs, where it writes, or which store it trusts. Removed: "
+                f"{', '.join(names)}. Set them in the container's environment instead "
+                "(ADR-0049)."
+            )
+
+    def _logWithheld(self, keyPath: tuple[str, ...], origin: str) -> None:
+        fallback = self.sourceOf(keyPath)
+        self.__logger.error(
+            _ROOT_WITHHELD_MESSAGE.format(
+                key=".".join(keyPath[1:]),
+                origin=origin,
+                fallback=fallback,
+                env=_env_name(keyPath),
+            )
+        )
+
+    def _validatedFileSpec(self) -> str:
+        """`settings.filespec`, or the packaged default if it is not a file-name glob
+        (ADR-0049 Decision 5). Every source, every euid; the value is never logged."""
+        keyPath = ("settings", "filespec")
+        value = self._config["settings"]["filespec"].as_str()
+        if _is_file_name_glob(value):  # type: ignore[arg-type]
+            return value  # type: ignore[return-value]
+        default = next(s for s in self._config.sources if s.default)["settings"][
+            "filespec"
+        ]
+        self.__logger.error(
+            f"Ignoring settings.filespec from {self.sourceOf(keyPath)}: it must be a "
+            "file-name glob inside settings.datapath (no directory separator, no '..', "
+            f"not absolute). Using the default '{default}' instead (ADR-0049)."
+        )
+        return default
 
     def _mark_present_secrets(self):
         """Mark every declared secret path that actually HOLDS a value.
@@ -437,7 +745,7 @@ class SettingsManager(ObjectBase):
         Leaving an empty path unmarked makes both sinks render absence identically.
         """
         for config_key in SECRET_CONFIG_KEYS:
-            view = self._config
+            view: confuse.ConfigView = self._config
             for segment in config_key:
                 view = view[segment]
             try:

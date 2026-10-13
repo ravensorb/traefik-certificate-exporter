@@ -285,3 +285,11 @@ def test_every_value_taking_action_has_dotless_metavar():
 def test_help_contains_no_settings_paths():
     assert "SETTINGS." not in globalArgParser.format_help()
     assert "SETTINGS." not in globalArgParser.format_usage()
+
+
+def test_no_validate_keys_flag_sets_false():
+    flagged = globalArgParser.parse_args(["--no-validate-keys"])
+    absent = globalArgParser.parse_args([])
+
+    assert getattr(flagged, "settings.validatekeys") is False
+    assert getattr(absent, "settings.validatekeys") is None

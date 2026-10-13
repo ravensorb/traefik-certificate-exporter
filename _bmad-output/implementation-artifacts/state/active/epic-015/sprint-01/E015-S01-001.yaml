@@ -1,0 +1,117 @@
+key: 'E015-S01-001'
+epic: 'E015'
+sprint: 'S01'
+title: 'Close the /config root-escalation: the service account must not control what runs as root'
+status: done
+classification: complex
+resolves: [BL-E014-119]
+estimate:
+  man_hours: 17.11
+  hitl_hours: 0.09
+  elapsed_hours: 0.97
+  cost: 2.95
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.1405
+    hitl_hours: 0.1094
+    elapsed_hours: 0.1946
+    tokens_k: 1.0
+  tokens_k:
+    total: 3701
+    input: 0
+    output: 5
+    cache_write: 170
+    cache_read: 3526
+  confidence: medium
+updated_at: '2026-10-13T01:43:56Z'
+completion_evidence:
+  test_runs:
+  - command: "grep -qE '^ROOT_SETTING_TRUST: ' src/traefik_certificate_exporter/libs/settings.py && grep -qE '\\(\"settings\", \"datapath\"\\): ROOT_TRUST_ENVIRONMENT_ONLY' src/traefik_certificate_exporter/libs/settings.py && grep -qE '\\(\"settings\", \"filespec\"\\): ROOT_TRUST_ANY_SOURCE' src/traefik_certificate_exporter/libs/settings.py && grep -q 'def _is_file_name_glob' src/traefik_certificate_exporter/libs/settings.py"
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_settings.py -k 'root_ignores or root_takes or root_keeps or root_withholding or non_root_takes or source_of or every_file_the_loader_reads or file_spec'
+    exit_code: 0
+  - command: poetry run pytest -q tests/test_settings_surface.py::test_every_default_setting_has_a_root_trust_class tests/test_settings_surface.py::test_root_trust_classification_reports_a_planted_unclassified_key tests/libs/test_post_export.py::test_every_spawn_capable_name_is_banned_for_ruff tests/libs/test_post_export.py::test_the_banned_name_check_reports_a_planted_gap tests/libs/test_post_export.py::test_tid251_is_suppressed_only_at_the_post_export_import tests/test_app.py::test_start_up_logs_the_post_export_command_source_and_uid
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_settings.py tests/libs/test_settings_precedence.py tests/libs/test_post_export.py tests/test_settings_surface.py tests/test_s6_privilege_drop.py tests/test_s6_run_mode.py tests/test_app.py
+    exit_code: 0
+  - command: "! grep -q 'init-adduser' docker/Dockerfile && test \"$(ls docker/root/etc/s6-overlay/s6-rc.d/init-adduser)\" = branding"
+    exit_code: 0
+  - command: "! grep -q 'deliberately \\*\\*not\\*\\* chowned' docs/adr/0030-conditional-privilege-drop.md && ! grep -q 'deliberately stays root-owned' docs/operational.md && ! grep -q 'be root-owned and must not be world-writable' docs/operational.md && ! grep -qE 'under the root-owned$\\|against the root-owned' docs/adr/0030-conditional-privilege-drop.md docs/operational.md"
+    exit_code: 0
+  - command: grep -q 'init-adduser' docs/adr/0030-conditional-privilege-drop.md && grep -q 'init-adduser' docs/operational.md && grep -q 'init-adduser' docker/README.md
+    exit_code: 0
+  - command: a=docs/adr/0049-root-mode-trust-covers-hook-output-and-store-location.md && b=docs/adr/0050-spawn-site-guard-uses-ruff-banned-api.md && test -f "$a" && test -f "$b" && ! grep -q 'E015-S01-001 (planned)' "$a" "$b" && grep -q 'ADR-0049' docs/adr/0030-conditional-privilege-drop.md && grep -F '[0030](adr/0030-' docs/architecture.md | grep -q '0049' && grep -q '^## 0.3.0 → 0.3.1' docs/upgrading.md
+    exit_code: 0
+  - command: poetry run pytest -q tests/test_s6_privilege_drop.py::test_init_resolver_never_globs_outside_the_data_path
+    exit_code: 0
+  - command: grep -qi 'file-name glob' src/traefik_certificate_exporter/libs/cli_args.py && grep -qi 'file-name glob' README.md && u=$(mktemp) && awk '/^## 0.3.0 → 0.3.1/{f=1} /^## 0.2.0 → 0.3.0/{f=0} f' docs/upgrading.md > "$u" && grep -q 'filespec' "$u" && grep -q 'datapath' "$u" && grep -qi 'both modes' docs/operational.md && grep -qi 'both modes' docker/README.md
+    exit_code: 1
+  - command: grep -qi 'file-name glob' src/traefik_certificate_exporter/libs/cli_args.py && grep -qi 'file-name glob' README.md && u=$(mktemp) && awk '/^## 0.3.0 → 0.3.1/{f=1} /^## 0.2.0 → 0.3.0/{f=0} f' docs/upgrading.md > "$u" && grep -q 'filespec' "$u" && grep -q 'datapath' "$u" && grep -qi 'both modes' docs/operational.md && grep -qi 'both modes' docker/README.md
+    exit_code: 0
+  - command: r=$PWD && d=$(mktemp -d) && git clone -q "$r" "$d/c" && cp "$r/pyproject.toml" "$d/c/pyproject.toml" && printf 'import os\nimport subprocess\n\n\ndef _planted():\n    os.posix_spawn("/bin/sh", ["sh"], {})\n    subprocess.run(["/bin/sh", "-c", "id"], check=False)\n' > "$d/c/src/traefik_certificate_exporter/libs/planted_spawn.py" && { (cd "$d/c" && "$r/.venv/bin/pre-commit" run ruff-check --files src/traefik_certificate_exporter/libs/planted_spawn.py) > "$d/out" 2>&1; test $? -ne 0; } && grep -qE 'TID251 .os\.posix_spawn. is banned' "$d/out" && grep -qE 'TID251 .subprocess. is banned' "$d/out"
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 TCE_IMAGE=traefik-certificate-exporter:local poetry run pytest -q -m integration -rs tests/test_container_root_trust.py::test_rt1_replay_cannot_make_the_root_exporter_run_a_service_account_hook
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 TCE_IMAGE=traefik-certificate-exporter:local poetry run pytest -q -m integration -rs tests/test_container_root_trust.py::test_config_stays_puid_owned_and_editable_by_the_puid_account
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 TCE_IMAGE=traefik-certificate-exporter:local poetry run pytest -q -m integration -rs tests/test_container_root_trust.py::test_a_forged_store_named_by_a_config_file_filespec_is_not_exported_by_root
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 TCE_IMAGE=traefik-certificate-exporter:local poetry run pytest -q -m integration -rs tests/test_container_root_trust.py tests/test_container_run_once.py tests/test_container_restart.py tests/test_container_pkcs12.py
+    exit_code: 0
+  - command: just check
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 TCE_IMAGE=traefik-certificate-exporter:local poetry run pytest -q -m integration -rs tests/test_container_root_trust.py::test_rt1_replay_cannot_make_the_root_exporter_run_a_service_account_hook
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 TCE_IMAGE=traefik-certificate-exporter:local poetry run pytest -q -m integration -rs tests/test_container_root_trust.py::test_config_stays_puid_owned_and_editable_by_the_puid_account
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 TCE_IMAGE=traefik-certificate-exporter:local poetry run pytest -q -m integration -rs tests/test_container_root_trust.py::test_a_forged_store_named_by_a_config_file_filespec_is_not_exported_by_root
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 TCE_IMAGE=traefik-certificate-exporter:local poetry run pytest -q -m integration -rs tests/test_container_root_trust.py tests/test_container_run_once.py tests/test_container_restart.py tests/test_container_pkcs12.py
+    exit_code: 0
+  - command: just check
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_settings.py tests/libs/test_post_export.py tests/test_settings_surface.py
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_settings.py -k 'root_ignores or root_takes or root_keeps or root_withholding or non_root_takes or source_of or every_file_the_loader_reads or file_spec'
+    exit_code: 0
+  - command: poetry run pytest -q tests/test_settings_surface.py::test_every_default_setting_has_a_root_trust_class tests/test_settings_surface.py::test_root_trust_classification_reports_a_planted_unclassified_key tests/libs/test_post_export.py::test_every_spawn_capable_name_is_banned_for_ruff tests/libs/test_post_export.py::test_the_banned_name_check_reports_a_planted_gap tests/libs/test_post_export.py::test_tid251_is_suppressed_only_at_the_post_export_import tests/test_app.py::test_start_up_logs_the_post_export_command_source_and_uid
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_settings.py tests/libs/test_settings_precedence.py tests/libs/test_post_export.py tests/test_settings_surface.py tests/test_s6_privilege_drop.py tests/test_s6_run_mode.py tests/test_app.py
+    exit_code: 0
+  - command: r=$PWD && d=$(mktemp -d) && git clone -q "$r" "$d/c" && cp "$r/pyproject.toml" "$d/c/pyproject.toml" && printf 'import os\nimport subprocess\n\n\ndef _planted():\n    os.posix_spawn("/bin/sh", ["sh"], {})\n    subprocess.run(["/bin/sh", "-c", "id"], check=False)\n' > "$d/c/src/traefik_certificate_exporter/libs/planted_spawn.py" && { (cd "$d/c" && "$r/.venv/bin/pre-commit" run ruff-check --files src/traefik_certificate_exporter/libs/planted_spawn.py) > "$d/out" 2>&1; test $? -ne 0; } && grep -qE 'TID251 .os\.posix_spawn. is banned' "$d/out" && grep -qE 'TID251 .subprocess. is banned' "$d/out"
+    exit_code: 0
+  - command: poetry run pre-commit run --files tests/test_container_root_trust.py
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 TCE_IMAGE=traefik-certificate-exporter:local poetry run pytest -q -m integration -rs tests/test_container_root_trust.py tests/test_container_run_once.py tests/test_container_restart.py tests/test_container_pkcs12.py
+    exit_code: 0
+  - command: just check
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_settings.py tests/libs/test_post_export.py tests/test_settings_surface.py
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_settings.py -k 'root_ignores or root_takes or root_keeps or root_withholding or non_root_takes or source_of or every_file_the_loader_reads or file_spec'
+    exit_code: 0
+  - command: poetry run pytest -q tests/test_settings_surface.py::test_every_default_setting_has_a_root_trust_class tests/test_settings_surface.py::test_root_trust_classification_reports_a_planted_unclassified_key tests/libs/test_post_export.py::test_every_spawn_capable_name_is_banned_for_ruff tests/libs/test_post_export.py::test_the_banned_name_check_reports_a_planted_gap tests/libs/test_post_export.py::test_tid251_is_suppressed_only_at_the_post_export_import tests/test_app.py::test_start_up_logs_the_post_export_command_source_and_uid
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_settings.py tests/libs/test_settings_precedence.py tests/libs/test_post_export.py tests/test_settings_surface.py tests/test_s6_privilege_drop.py tests/test_s6_run_mode.py tests/test_app.py
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 TCE_IMAGE=traefik-certificate-exporter:local poetry run pytest -q -m integration -rs tests/test_container_root_trust.py tests/test_container_run_once.py tests/test_container_restart.py tests/test_container_pkcs12.py
+    exit_code: 0
+  - command: just check
+    exit_code: 0
+  tests_passing: true
+  fix_iterations: 2
+  files_changed: 23
+actual:
+  elapsed_hours: 1.3
+  man_hours: 24
+  hitl_hours: 0
+  tokens_k:
+    total: 29222.06
+    input: 0.526
+    output: 25.103
+    cache_write: 1246.338
+    cache_read: 27950.093
+  cost: 22.39
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-13T01:43:52Z'

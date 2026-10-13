@@ -1,8 +1,12 @@
+_lock:
+  session_id: l3io-pm-20261012T233739Z-884dad
+  claimed_at: '2026-10-13T02:39:24Z'
+  ttl_minutes: 240
 key: 'E015'
 title: '0.3.1: container privilege fix, export performance, one-build releases'
 goal: 'Ship 0.3.1: close the /config root-escalation (RT-1), make export passes fast on RSA-4096 stores without weakening change detection, catch renamed store files and very old env names, and publish every release from one build to every configured registry.'
-status: backlog
-updated_at: '2026-10-12T22:14:38Z'
+status: in-progress
+updated_at: '2026-10-13T00:26:14Z'
 estimate:
   man_hours_low: 172.72
   man_hours_high: 196.48

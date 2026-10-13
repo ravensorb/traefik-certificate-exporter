@@ -3,9 +3,15 @@
 Both properties here were found by the Epic 10 architecture gate as defects in shipping
 code, and neither had a test. They are asserted by driving the real handler, because what
 matters is the interaction between `handleEvent`'s lock and `doTheWork`'s exit paths.
+
+Renames (E015-S01-003) are driven through `handler.dispatch` with real watchdog event
+classes and through real observers, because watchdog dispatches a moved event when EITHER
+path matches and the handler must tell "renamed onto a store", "renamed away from one" and
+"renamed between two" apart itself.
 """
 
 import logging
+import os
 import threading
 import time
 import uuid
@@ -13,6 +19,15 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from watchdog.events import (
+    DirMovedEvent,
+    FileClosedEvent,
+    FileCreatedEvent,
+    FileModifiedEvent,
+    FileMovedEvent,
+)
+from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
 
 from traefik_certificate_exporter.libs import certificate_exporter
 from traefik_certificate_exporter.libs.certificate_exporter import (
@@ -713,3 +728,295 @@ def test_cancel_never_claims_cancelled_for_a_drain_that_actually_ran(monkeypatch
 
     assert sawCancelled, "the cancel-before-fire ordering never occurred; test is inert"
     assert sawRan, "the drain-already-ran ordering never occurred; test is inert"
+
+
+###########################################################################################
+# E015-S01-003: a store replaced by rename. watchdog's `PatternMatchingEventHandler`
+# dispatches a moved event when EITHER path matches, so every test below delivers real
+# event classes through `handler.dispatch` -- calling `on_moved` directly would skip the
+# pattern filtering that is half of what is under test.
+
+
+def _drained(handler):
+    """Stop the real debounce timer, if one was armed, and drain on this thread."""
+    if handler.timer is not None:
+        handler.timer.cancel()
+    handler.doTheWork(handler.correlationId)
+
+
+def _exported(exporter):
+    return [c.args[0] for c in exporter.exportCertificatesForFile.call_args_list]
+
+
+def test_rename_onto_watched_name_queues_the_destination():
+    exporter = MagicMock()
+    exporter.exportCertificatesForFile.return_value = []
+    handler = _handler(exporter)
+
+    handler.dispatch(FileMovedEvent("/data/acme.json.tmp", "/data/acme.json"))
+
+    assert handler.pendingPaths == {"/data/acme.json"}
+    assert handler.isWaiting is True
+    _drained(handler)
+    assert _exported(exporter) == ["/data/acme.json"]
+
+
+def test_rename_away_from_watched_name_exports_nothing(caplog):
+    exporter = MagicMock()
+    handler = _handler(exporter)
+
+    with caplog.at_level(logging.INFO):
+        handler.dispatch(FileMovedEvent("/data/acme.json", "/data/acme.json.bak"))
+
+    assert handler.pendingPaths == set()
+    assert handler.isWaiting is False
+    assert handler.timer is None, "a rename away armed a drain"
+    renamed = [r for r in caplog.records if "was renamed to" in r.getMessage()]
+    assert len(renamed) == 1 and renamed[0].levelno == logging.INFO, caplog.messages
+    assert "/data/acme.json.bak" in renamed[0].getMessage()
+    assert renamed[0].correlation_id == "-"
+    handler.doTheWork()
+    exporter.exportCertificatesForFile.assert_not_called()
+
+
+def test_rename_away_leaves_an_open_window_for_its_other_paths(caplog):
+    exporter = MagicMock()
+    exporter.exportCertificatesForFile.return_value = []
+    handler = _handler(exporter)
+
+    handler.dispatch(FileModifiedEvent("/data/other.json"))
+    handler.dispatch(FileModifiedEvent("/data/acme.json"))
+    window = handler.correlationId
+    timer = handler.timer
+    with caplog.at_level(logging.INFO):
+        handler.dispatch(FileMovedEvent("/data/acme.json", "/data/acme.json.bak"))
+
+    assert handler.pendingPaths == {"/data/other.json"}
+    assert handler.isWaiting is True and handler.timer is timer
+    renamed = [r for r in caplog.records if "was renamed to" in r.getMessage()]
+    assert renamed and renamed[0].correlation_id == window
+    _drained(handler)
+    assert _exported(exporter) == ["/data/other.json"]
+
+
+def test_rename_between_watched_names_queues_only_the_destination():
+    exporter = MagicMock()
+    exporter.exportCertificatesForFile.return_value = []
+    handler = _handler(exporter)
+
+    handler.dispatch(FileModifiedEvent("/data/a.json"))
+    handler.dispatch(FileMovedEvent("/data/a.json", "/data/b.json"))
+
+    assert handler.pendingPaths == {"/data/b.json"}
+    _drained(handler)
+    assert _exported(exporter) == ["/data/b.json"]
+
+
+def test_matching_temp_file_renamed_onto_store_exports_only_the_store():
+    """The probe's worst row: a `*.json` temporary file is queued by its own `created`,
+    then renamed onto the store. Exporting the vanished temporary name logs a spurious
+    `File not found` ERROR and the store itself was never exported."""
+    exporter = MagicMock()
+    exporter.exportCertificatesForFile.return_value = []
+    handler = _handler(exporter)
+
+    handler.dispatch(FileCreatedEvent("/data/tmpXYZ.json"))
+    handler.dispatch(FileModifiedEvent("/data/tmpXYZ.json"))
+    handler.dispatch(FileMovedEvent("/data/tmpXYZ.json", "/data/acme.json"))
+    _drained(handler)
+
+    assert _exported(exporter) == ["/data/acme.json"]
+
+
+def test_editor_style_save_exports_the_store_once():
+    """vim: a `4913` probe file, the original renamed to `acme.json~`, a new `acme.json`
+    written. The rename away drops the store from the window; the `created` re-queues it."""
+    exporter = MagicMock()
+    exporter.exportCertificatesForFile.return_value = []
+    handler = _handler(exporter)
+
+    for event in (
+        FileCreatedEvent("/data/4913"),
+        FileModifiedEvent("/data/acme.json"),
+        FileMovedEvent("/data/acme.json", "/data/acme.json~"),
+        FileCreatedEvent("/data/acme.json"),
+        FileModifiedEvent("/data/acme.json"),
+        FileClosedEvent("/data/acme.json"),
+    ):
+        handler.dispatch(event)
+    _drained(handler)
+
+    assert _exported(exporter) == ["/data/acme.json"]
+
+
+def test_moved_directory_event_is_ignored():
+    exporter = MagicMock()
+    handler = _handler(exporter)
+
+    handler.dispatch(DirMovedEvent("/data/old.json", "/data/new.json"))
+
+    assert handler.pendingPaths == set()
+    assert handler.isWaiting is False
+    assert handler.timer is None
+
+
+def test_rename_destination_honours_case_insensitive_pattern():
+    exporter = MagicMock()
+    handler = _handler(exporter)
+
+    handler.dispatch(FileMovedEvent("/data/x.tmp", "/data/ACME.JSON"))
+    if handler.timer is not None:
+        handler.timer.cancel()
+
+    assert handler.pendingPaths == {"/data/ACME.JSON"}
+
+
+def test_rename_after_cancel_arms_nothing(caplog):
+    exporter = MagicMock()
+    exporter.exportCertificatesForFile.return_value = ["example.com"]
+    handler = _handler(exporter)
+
+    handler.dispatch(FileModifiedEvent("/data/acme.json"))
+    _drained(handler)
+    handler.cancel()
+    timerAtShutdown = handler.timer
+
+    with caplog.at_level(logging.DEBUG):
+        handler.dispatch(FileMovedEvent("/data/acme.json.tmp", "/data/acme.json"))
+
+    assert handler.isWaiting is False
+    assert handler.pendingPaths == set()
+    assert handler.timer is timerAtShutdown, "shutdown was followed by a drain thread"
+
+
+def test_renamed_store_with_unchanged_content_runs_no_hook(caplog):
+    exporter = MagicMock()
+    exporter.exportCertificatesForFile.return_value = []
+    handler = _handler(
+        exporter,
+        postExportCommand="/usr/local/bin/reload-proxy --now",
+        appriseUrls=["json://hook.example.test/"],
+    )
+    hook, notify = MagicMock(), MagicMock()
+    with (
+        caplog.at_level(logging.INFO),
+        patch.object(certificate_exporter, "run_post_export_command", hook),
+        patch.object(certificate_exporter, "send_export_notifications", notify),
+    ):
+        handler.dispatch(FileMovedEvent("/data/acme.json.tmp", "/data/acme.json"))
+        _drained(handler)
+
+    assert _exported(exporter) == ["/data/acme.json"]
+    hook.assert_not_called()
+    notify.assert_not_called()
+    assert caplog.messages.count(certificate_exporter.NO_CHANGE_MESSAGE) == 1
+
+
+###########################################################################################
+# Real observers: the production path with nothing mocked below watchdog. `Observer` is
+# inotify on Linux (the image); `PollingObserver` is what watchdog falls back to when
+# inotify is unavailable, and it reports a replacement as delete + create instead.
+
+
+@pytest.fixture(
+    params=[Observer, lambda: PollingObserver(timeout=0.1)],
+    ids=["inotify", "polling"],
+)
+def make_observer(request):
+    return request.param
+
+
+class _Recorder:
+    """Exporter stand-in: records every path and signals when `target` is exported."""
+
+    def __init__(self, target: str):
+        self.target = target
+        self.paths: list[str] = []
+        self.arrived = threading.Event()
+
+    def __call__(self, path):
+        self.paths.append(os.fsdecode(path))
+        if os.fsdecode(path) == self.target:
+            self.arrived.set()
+        return []
+
+
+def _watch(make_observer, data, recorder):
+    exporter = MagicMock()
+    exporter.exportCertificatesForFile.side_effect = recorder
+    handler = _handler(exporter)
+    observer = make_observer()
+    observer.schedule(handler, str(data), recursive=False)
+    observer.start()
+    return handler, observer
+
+
+def _stop(handler, observer):
+    observer.stop()
+    observer.join(5)
+    handler.cancel()
+
+
+def test_real_observer_detects_store_replaced_by_rename(
+    make_observer, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(certificate_exporter, "WATCH_DEBOUNCE_SECONDS", 0.05)
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "acme.json").write_text("{}")
+    (data / "other.json").write_text("{}")
+    recorder = _Recorder(str(data / "acme.json"))
+    handler, observer = _watch(make_observer, data, recorder)
+    try:
+        (data / "acme.json.tmp").write_text('{"new": true}')
+        os.replace(data / "acme.json.tmp", data / "acme.json")
+
+        assert recorder.arrived.wait(5), (
+            f"rename onto the store missed: {recorder.paths}"
+        )
+        assert str(data / "other.json") not in recorder.paths
+        assert str(data / "acme.json.tmp") not in recorder.paths
+    finally:
+        _stop(handler, observer)
+
+
+def test_real_observer_detects_store_moved_in_from_another_directory(
+    make_observer, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(certificate_exporter, "WATCH_DEBOUNCE_SECONDS", 0.05)
+    data = tmp_path / "data"
+    staging = tmp_path / "staging"
+    data.mkdir()
+    staging.mkdir()
+    (data / "acme.json").write_text("{}")
+    recorder = _Recorder(str(data / "acme.json"))
+    handler, observer = _watch(make_observer, data, recorder)
+    try:
+        (staging / "acme.json").write_text('{"new": true}')
+        os.replace(staging / "acme.json", data / "acme.json")
+
+        assert recorder.arrived.wait(5), f"move-in missed: {recorder.paths}"
+    finally:
+        _stop(handler, observer)
+
+
+def test_real_observer_ignores_store_renamed_away(make_observer, tmp_path, monkeypatch):
+    monkeypatch.setattr(certificate_exporter, "WATCH_DEBOUNCE_SECONDS", 0.05)
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "acme.json").write_text("{}")
+    (data / "other.json").write_text("{}")
+    recorder = _Recorder(str(data / "other.json"))
+    handler, observer = _watch(make_observer, data, recorder)
+    try:
+        os.replace(data / "acme.json", data / "acme.json.bak")
+        # The sentinel replaces a fixed sleep: once its export arrives, the rename (which
+        # happened first) has been dispatched too.
+        with open(data / "other.json", "a") as f:
+            f.write(" ")
+
+        assert recorder.arrived.wait(5), f"sentinel never exported: {recorder.paths}"
+        assert str(data / "acme.json") not in recorder.paths
+        assert str(data / "acme.json.bak") not in recorder.paths
+    finally:
+        _stop(handler, observer)

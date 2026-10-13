@@ -107,7 +107,11 @@ def _run_main_until_interrupt(monkeypatch, handler):
     monkeypatch.setattr(
         app,
         "globalSettingsMgr",
-        SimpleNamespace(loadFromFile=lambda **kwargs: None, settings=settings),
+        SimpleNamespace(
+            loadFromFile=lambda **kwargs: None,
+            settings=settings,
+            sourceOf=lambda keyPath: "default",
+        ),
     )
     monkeypatch.setattr(app, "require_existing_path", lambda *a, **k: None)
     monkeypatch.setattr(app, "AcmeCertificateExporter", lambda **kwargs: MagicMock())
@@ -332,7 +336,11 @@ def _run_once_with_restarts(
     monkeypatch.setattr(
         app,
         "globalSettingsMgr",
-        SimpleNamespace(loadFromFile=lambda **kwargs: None, settings=settings),
+        SimpleNamespace(
+            loadFromFile=lambda **kwargs: None,
+            settings=settings,
+            sourceOf=lambda keyPath: "default",
+        ),
     )
     monkeypatch.setattr(app, "require_existing_path", lambda *a, **k: None)
     monkeypatch.setattr(app, "AcmeCertificateExporter", lambda **kwargs: exporter)
@@ -412,7 +420,11 @@ def test_nothing_to_do_logs_one_warning(monkeypatch, caplog):
     monkeypatch.setattr(
         app,
         "globalSettingsMgr",
-        SimpleNamespace(loadFromFile=lambda **kwargs: None, settings=settings),
+        SimpleNamespace(
+            loadFromFile=lambda **kwargs: None,
+            settings=settings,
+            sourceOf=lambda keyPath: "default",
+        ),
     )
     monkeypatch.setattr(app, "require_existing_path", lambda *a, **k: None)
     monkeypatch.setattr(app, "AcmeCertificateExporter", lambda **kwargs: exporter)
@@ -445,7 +457,11 @@ def _run_with_manager(monkeypatch, *, runAtStart, watchForChanges, exportError=N
     monkeypatch.setattr(
         app,
         "globalSettingsMgr",
-        SimpleNamespace(loadFromFile=lambda **kwargs: None, settings=settings),
+        SimpleNamespace(
+            loadFromFile=lambda **kwargs: None,
+            settings=settings,
+            sourceOf=lambda keyPath: "default",
+        ),
     )
     monkeypatch.setattr(app, "require_existing_path", lambda *a, **k: None)
     monkeypatch.setattr(app, "AcmeCertificateExporter", lambda **kwargs: exporter)
@@ -508,7 +524,11 @@ def _patch_run_environment(monkeypatch, settings, exporter=None):
     monkeypatch.setattr(
         app,
         "globalSettingsMgr",
-        SimpleNamespace(loadFromFile=lambda **kwargs: None, settings=settings),
+        SimpleNamespace(
+            loadFromFile=lambda **kwargs: None,
+            settings=settings,
+            sourceOf=lambda keyPath: "default",
+        ),
     )
     monkeypatch.setattr(app, "require_existing_path", lambda *a, **k: None)
     if exporter is not None:
@@ -757,3 +777,105 @@ def test_effective_log_level_and_source_logged_at_info(
     _run_main_for_log_level(monkeypatch, cli_level, env_value)
 
     assert expected in emitted, emitted
+
+
+# ---------------------------------------------------------------------------
+# E015-S01-001 AC 4 (ADR-0049): one start-up INFO line says whether a post-export command
+# is set, where it came from and which uid runs it -- never the command itself.
+# ---------------------------------------------------------------------------
+
+
+def test_start_up_logs_the_post_export_command_source_and_uid(
+    monkeypatch, caplog, tmp_path
+):
+    from argparse import Namespace
+
+    from traefik_certificate_exporter.libs.settings import SettingsManager
+
+    hookEnv = "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_POSTEXPORTCOMMAND"
+    command = "/usr/local/bin/reload --token s3cr3t-hook-token"
+    configFile = tmp_path / "config.yaml"
+    configFile.write_text(f'settings:\n  postexportcommand: "{command}"\n')
+    cases = [
+        # (euid, hook in the environment?, expected line)
+        (0, True, "Post-export command: set (source: environment), runs as uid 0"),
+        (0, False, "Post-export command: not set (source: default), runs as uid 0"),
+        (
+            1000,
+            False,
+            (
+                f"Post-export command: set (source: configuration file '{configFile}'), "
+                "runs as uid 1000"
+            ),
+        ),
+    ]
+
+    for name in list(os.environ):
+        if name.startswith("TRAEFIK_CERTIFICATE_EXPORTER_"):
+            monkeypatch.delenv(name)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH", str(tmp_path))
+    monkeypatch.setattr(app, "DockerManager", lambda **kwargs: MagicMock())
+
+    for euid, fromEnv, expected in cases:
+        if fromEnv:
+            monkeypatch.setenv(hookEnv, command)
+        else:
+            monkeypatch.delenv(hookEnv, raising=False)
+        monkeypatch.setattr(app.os, "geteuid", lambda euid=euid: euid, raising=False)
+        manager = SettingsManager()
+        manager.modulePath = tmp_path / "module"
+        monkeypatch.setattr(app, "globalSettingsMgr", manager)
+        monkeypatch.setattr(app, "globalArgs", Namespace(configfile=str(configFile)))
+
+        caplog.clear()
+        with caplog.at_level(logging.INFO):
+            app._run(logging.getLogger("test_app"))
+
+        lines = [
+            r.getMessage()
+            for r in caplog.records
+            if r.getMessage().startswith("Post-export command:")
+        ]
+        assert lines == [expected], (euid, fromEnv, lines)
+        assert r"s3cr3t-hook-token" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "validateKeys, line",
+    [
+        (True, "RSA key validation: on"),
+        (
+            False,
+            (
+                "RSA key validation: off (settings.validatekeys=false: keys are "
+                "trusted, not checked)"
+            ),
+        ),
+    ],
+    ids=["on", "off"],
+)
+def test_startup_logs_rsa_key_validation_setting(
+    monkeypatch, caplog, validateKeys, line
+):
+    settings = _make_settings(dataPath="/data", outputPath="/certs")
+    settings.runAtStart = True
+    settings.validateKeys = validateKeys
+    exporter = MagicMock()
+    exporter.exportCertificates.return_value = []
+    _patch_run_environment(monkeypatch, settings, exporter)
+    monkeypatch.setattr(app, "DockerManager", lambda **kwargs: MagicMock())
+    _record_hook_and_notifications(monkeypatch)
+
+    with caplog.at_level(logging.INFO):
+        app._run(logging.getLogger("test_app"))
+
+    messages = [r.getMessage() for r in caplog.records]
+    matching = [
+        r for r in caplog.records if r.getMessage().startswith("RSA key validation:")
+    ]
+    assert [r.getMessage() for r in matching] == [line]
+    assert matching[0].levelno == logging.INFO
+    assert messages.index(line) == messages.index("Output Path: /certs") + 1

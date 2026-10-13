@@ -11,7 +11,7 @@
   departing is a recorded decision); global rule 3 (state what a guard covers where the rule
   lives); global rule 4 (a hand-kept list must be derived or checked against its source of
   truth); Core §7 dependency selection
-- **Implemented by:** E015-S01-001 (planned), AC 5.
+- **Implemented by:** E015-S01-001 (merged 2026-10-12), AC 5.
 - **Records:** arch-gate finding AG-2 and the architect's ruff comparison
   (`_bmad-output/implementation-artifacts/epic-015/arch/arch-gate-review.md`,
   `arch-gate-review-architect.md`).
@@ -138,3 +138,88 @@ Stated here and in a comment beside the banned-api table:
 - a second legitimate spawn site is needed (it must be a new decision: ADR-0049 assumes one);
   or
 - the derived-name test is ever skipped or deselected in CI.
+
+## Amendment (2026-10-12) — E015-S01-001
+
+Code review findings F2 and F3 (`_bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-001.md`).
+
+- **Modules added to the banned table, banned whole:** `posix`, `nt`, `_posixsubprocess`,
+  `asyncio.subprocess`, `concurrent.futures.process`, `ctypes` and `webbrowser`. Each reaches
+  a spawn primitive without naming an `os` function or a banned module: `os` re-exports its
+  primitives from `posix` (`nt` on Windows), `_posixsubprocess` is `subprocess`'s back end,
+  `asyncio.subprocess` and `concurrent.futures.process` are submodules the existing
+  `asyncio.create_subprocess_*` / `concurrent.futures.ProcessPoolExecutor` entries do not
+  match on import, `ctypes` reaches libc `system`/`fork`/`exec`, and `webbrowser` spawns a
+  browser. None is imported under `src/`.
+- **The derived-name test takes its scope from `dir(posix)` (`dir(nt)` where present) as
+  well as `dir(os)`**, requires `os.<name>` for every spawn-shaped name in either, and
+  requires every module above. A planted platform-module name is reported.
+- **Attribute calls on runtime objects are not statically resolvable:**
+  `loop.subprocess_exec` / `loop.subprocess_shell` on an event loop, and a method on a
+  `ctypes.CDLL` object. ruff resolves imports, not the type of a value; the module bans catch
+  the import of `ctypes` and `asyncio.subprocess`, not a loop method. Review is the only check.
+- **Suppressions.** The suppression test asks ruff which TID251 reports a comment
+  suppresses, rather than matching comment spellings (F10): it runs the dev group's ruff
+  (pinned to the pre-commit hook's version; a test fails if the two differ) as
+  `ruff check --config pyproject.toml --select TID251 --ignore-noqa` over the installed
+  package directory, and asserts that the only report is `libs/post_export.py`'s
+  `import subprocess` line. `--ignore-noqa` disregards every suppression comment ruff honours
+  -- line-level `noqa`, file-level `ruff: noqa` / `flake8: noqa`, and the range form
+  `ruff: disable[...]` -- so the gate's clean run plus this test leave no comment-suppressed
+  TID251 report under the package directory. A copy of the package with a planted
+  `# noqa: TID251`, `# ruff: noqa: TID251` and `# ruff: disable[TID251]` spawn is reported
+  for each. ruff's `PGH004` (blanket-noqa) is also selected. A further test reads
+  `pyproject.toml` and fails if `per-file-ignores` / `extend-per-file-ignores` maps TID251
+  (or a prefix: `TID`, `TID2`, `TID25`) to anything but `tests/**`, or if `ignore` /
+  `extend-ignore` at `[tool.ruff]` or `[tool.ruff.lint]` holds it; each check has a planted
+  violation. Still not checked: a ruff `exclude` / `extend-exclude`, a second ruff
+  configuration file, a CLI `--ignore`, the `ALL` selector in an ignore list, and a
+  suppression outside the package directory.
+
+This replaces the Coverage-limit bullet "a blanket `# noqa` (no code) is not caught" and
+extends "Dynamic access is not covered" with the runtime-object case; the comment beside the
+banned-api table in `pyproject.toml` states the same limits.
+
+## Amendment (2026-10-12) — sprint closure
+
+Findings AR-2 and AR-3 (`_bmad-output/implementation-artifacts/epic-015/sprint-01/closure/adversarial-review.md`).
+
+- **Decision 4's parenthetical is superseded.** "ruff is a pre-commit hook, not a dev
+  dependency" is no longer true: `ruff==0.16.5` is in the Poetry dev group, pinned to the
+  pre-commit hook's version, and `tests/libs/test_post_export.py` fails if the two differ.
+  The rule's reach is therefore also proven by pytest (the suppression test runs that ruff
+  over a copy of the package with planted violations), not only by the Verification row.
+  Decision 4 is otherwise unchanged.
+- **Re-export of the admitted import (AR-2) is now banned.**
+  `traefik_certificate_exporter.libs.post_export.subprocess` is in the banned table. ruff
+  0.16.5 resolves `from .post_export import subprocess`, `from . import post_export` followed
+  by `post_export.subprocess.<x>`, and the absolute forms to that name (verified). The
+  suppression test plants these forms in a copy of the package and requires a report for
+  each. **Still not caught:** another module's `subprocess` or `os` attribute
+  (`imaplib.subprocess.Popen`, `socketserver.os.fork`, a dependency's; verified unreported),
+  and `getattr` / `vars` / `sys.modules` access. Review is the only check for those.
+- **Stdlib code that spawns internally (AR-3).** Banned whole: `platform` (`architecture`,
+  `processor`, `platform` and `uname().processor` run a subprocess, verified with an audit
+  hook), `pydoc` (its pagers), `_pyrepl.pager`, `mailcap`, `pipes`, `distutils`, `ensurepip`,
+  `venv`, `asyncio.base_subprocess`, `asyncio.windows_utils`, `_osx_support`, `_aix_support`,
+  `_bootsubprocess`. Banned by name, because the package uses other names from the module
+  (`uuid.uuid4`) or the rest of the module does not spawn: `imaplib.IMAP4_stream`,
+  `uuid.getnode`, `uuid.uuid1`, `uuid.uuid6`, `http.server.CGIHTTPRequestHandler`,
+  `socketserver.ForkingMixIn` / `ForkingTCPServer` / `ForkingUDPServer` /
+  `ForkingUnixStreamServer` / `ForkingUnixDatagramServer`. None is used under `src/`.
+  `tests/libs/test_post_export.py` requires each of these names in the table, and derives
+  the set of stdlib modules that can spawn by AST-scanning the runner's stdlib sources
+  (modules that import `subprocess` / `_posixsubprocess` or use an `os.<spawn>` attribute);
+  it fails on any such module that is not banned whole (or through a parent), has no named
+  entry, and is not in its reviewed list (`os`, `asyncio`: derived names;
+  `asyncio.base_events` / `events` / `unix_events`: the event-loop runtime-object gap). A
+  planted module and a removed `imaplib` entry are reported.
+- **What the stdlib check does not prove.** It proves each spawning MODULE is accounted for,
+  not that every spawning FUNCTION in a partially banned module (`imaplib`, `uuid`,
+  `socketserver`, `http.server`) is banned: that selection is review. The scan only sees a
+  direct `subprocess` import or `os.<spawn>` attribute; a module that spawns through another
+  module's call is not found. The builtin `help()` reaches the `pydoc` pager and is not
+  caught. The scan runs on the runner's Python, so a module present only on another
+  supported version is checked only where a runner has that version.
+
+The Coverage-limit comment beside the banned-api table in `pyproject.toml` states the same.

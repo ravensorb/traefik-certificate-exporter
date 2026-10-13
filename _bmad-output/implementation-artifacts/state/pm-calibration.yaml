@@ -88,6 +88,8 @@ scope:
       - 0.2551
       - 0.0431
       - 0.4945
+      - 0.1051
+      - 0.1752
       models_seen:
       - claude-opus-5
     man_hours:
@@ -128,6 +130,8 @@ scope:
       - 0.8917
       - 0.3443
       - 0.5
+      - 1.3331
+      - 1.6664
       models_seen:
       - claude-opus-5
     hitl_hours:
@@ -168,6 +172,8 @@ scope:
       - 0.0
       - 0.0975
       - 0.7457
+      - 0.0
+      - 0.0
       models_seen:
       - claude-opus-5
     tokens_k:
@@ -194,6 +200,8 @@ scope:
       - 4.2058
       - 5.9069
       - 1.3758
+      - 4.5128
+      - 5.4137
       models_seen:
       - claude-opus-5
   complex:
@@ -211,6 +219,8 @@ scope:
       - 0.0701
       - 0.2844
       - 0.1323
+      - 0.2608
+      - 0.0903
       models_seen:
       - claude-opus-5
     man_hours:
@@ -227,6 +237,8 @@ scope:
       - 1.067
       - 1.2004
       - 0.9997
+      - 1.5998
+      - 1.5998
       models_seen:
       - claude-opus-5
     hitl_hours:
@@ -240,11 +252,15 @@ scope:
       - 0.0
       - 0.1762
       - 0.0
+      - 0.0
+      - 0.0
       models_seen:
       - claude-opus-5
     tokens_k:
       samples:
       - 3.5725
+      - 7.3306
+      - 3.2011
       models_seen:
       - claude-opus-5
 closure:
@@ -261,6 +277,7 @@ closure:
       - 8.6811
       - 0.7556
       - 0.381
+      - 0.8113
     hitl_hours:
       samples:
       - 0.625
@@ -286,6 +303,7 @@ closure:
     tokens_k:
       samples:
       - 1.8769
+      - 3.2512
   epic:
     elapsed_hours:
       samples:
@@ -330,15 +348,15 @@ fix:
       samples: 1
   standard:
     clean:
-      mean_man_hours: 3.4286
-      samples: 7
+      mean_man_hours: 4.6667
+      samples: 9
     reworked:
       mean_man_hours: 9.3999
       samples: 25
   complex:
     reworked:
-      mean_man_hours: 20.7143
-      samples: 7
+      mean_man_hours: 21.4444
+      samples: 9
     clean:
       mean_man_hours: 12.0
       samples: 1
@@ -351,8 +369,10 @@ orchestration:
       - 0.2125
       - 0.1176
       - 0.7212
+      - 0.0433
     man_hours:
       samples:
+      - 0.0
       - 0.0
       - 0.0
       - 0.0
@@ -366,6 +386,7 @@ orchestration:
     tokens_k:
       samples:
       - 0.1824
+      - 0.2649
   epic:
     elapsed_hours:
       samples:
@@ -508,4 +529,24 @@ token_mix:
     output: 0.0017
     cache_write: 0.0424
     cache_read: 0.9559
+    model: claude-opus-5
+  - input: 0.0
+    output: 0.0008
+    cache_write: 0.0372
+    cache_read: 0.9619
+    model: claude-opus-5
+  - input: 0.0
+    output: 0.0015
+    cache_write: 0.041
+    cache_read: 0.9576
+    model: claude-opus-5
+  - input: 0.0
+    output: 0.0028
+    cache_write: 0.0664
+    cache_read: 0.9308
+    model: claude-opus-5
+  - input: 0.0
+    output: 0.0023
+    cache_write: 0.0466
+    cache_read: 0.9511
     model: claude-opus-5

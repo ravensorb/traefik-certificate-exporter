@@ -4,7 +4,7 @@ from typing import NamedTuple
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import NameOID
 
 
@@ -14,7 +14,8 @@ def _b64(data: str | bytes) -> str:
 
 
 class RealChain(NamedTuple):
-    """Genuine key material: an EC P-256 leaf issued by an intermediate under a root.
+    """Genuine key material: a leaf (EC P-256 unless built otherwise) issued by an
+    intermediate under a root.
 
     `fullchain_pem` is what Traefik stores: the leaf, then the intermediate, each in
     `Encoding.PEM` form (64-column base64, `\\n` line endings -- the same bytes Go's
@@ -66,7 +67,7 @@ def _pem(cert: x509.Certificate) -> bytes:
     return cert.public_bytes(serialization.Encoding.PEM)
 
 
-def _build(days: int = 30) -> RealChain:
+def _build(days: int = 30, leafKey=None) -> RealChain:
     rootKey = ec.generate_private_key(ec.SECP256R1())
     root = _Issuer(rootKey, _name("Test Root CA"))
 
@@ -75,7 +76,8 @@ def _build(days: int = 30) -> RealChain:
     intermediate = _issue(intermediateName, intermediateKey.public_key(), root, ca=True)
     issuer = _Issuer(intermediateKey, intermediateName)
 
-    leafKey = ec.generate_private_key(ec.SECP256R1())
+    if leafKey is None:
+        leafKey = ec.generate_private_key(ec.SECP256R1())
     leaf = _issue(
         _name(_LEAF_COMMON_NAME), leafKey.public_key(), issuer, ca=False, days=days
     )
@@ -98,6 +100,21 @@ def real_chain() -> RealChain:
     if "chain" not in _CACHE:
         _CACHE["chain"] = _build()
     return _CACHE["chain"]
+
+
+def real_rsa4096_chain() -> RealChain:
+    """The session's chain with an RSA-4096 leaf key (PKCS8 PEM) under an EC intermediate
+    and root, generated once (a few seconds).
+
+    Production keys are RSA-4096: Traefik's default `keyType` is `RSA4096`. RSA private-key
+    validation costs ~0.5 s per load of such a key, and the EC fixtures hid that cost --
+    which is how BL-E014-106 (74 s first pass, 108 s unchanged pass) went unnoticed.
+    """
+    if "rsa4096" not in _CACHE:
+        _CACHE["rsa4096"] = _build(
+            leafKey=rsa.generate_private_key(public_exponent=65537, key_size=4096)
+        )
+    return _CACHE["rsa4096"]
 
 
 def real_chain_expiring_in(days: int) -> RealChain:

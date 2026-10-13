@@ -1,5 +1,7 @@
 from argparse import Namespace
 
+import pytest
+
 from traefik_certificate_exporter.libs.settings import SettingsManager
 
 
@@ -69,3 +71,30 @@ def test_pkcs12_passphrase_cli_flag_populates_settings(tmp_path, monkeypatch):
     )
 
     assert manager.settings.pkcs12Passphrase == "from-cli-flag"
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [("default", True), ("file", False), ("env", False), ("cli", False)],
+)
+def test_validatekeys_precedence(tmp_path, monkeypatch, source, expected):
+    """CLI > env > config file > packaged default; each layer below the winner says
+    the opposite, so a layer that is ignored or wins wrongly flips the result."""
+    envName = "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_VALIDATEKEYS"
+    monkeypatch.delenv(envName, raising=False)
+    configFile = tmp_path / "config.yaml"
+    cli = {}
+    if source == "file":
+        configFile.write_text("settings:\n  validatekeys: false\n")
+    elif source == "env":
+        configFile.write_text("settings:\n  validatekeys: true\n")
+        monkeypatch.setenv(envName, "false")
+    elif source == "cli":
+        configFile.write_text("settings:\n  validatekeys: true\n")
+        monkeypatch.setenv(envName, "true")
+        cli = {"settings.validatekeys": False}
+    manager = SettingsManager()
+
+    manager.loadFromFile(fileName=str(configFile), cmdLineArgs=_namespace(**cli))
+
+    assert manager.settings.validateKeys is expected

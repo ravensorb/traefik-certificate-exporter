@@ -1,5 +1,6 @@
 import base64
 import datetime
+import hashlib
 import json
 import logging
 import os
@@ -36,6 +37,7 @@ from ..fixtures.acme_fixtures import (
     acme_v17_single_store,
     real_chain,
     real_chain_expiring_in,
+    real_rsa4096_chain,
 )
 
 
@@ -322,6 +324,7 @@ def test_a_real_export_writes_every_artifact_atomically(tmp_path):
         "flat.example.test.fullchain.pem",
         "flat.example.test.key",
         "flat.example.test.pfx",
+        "flat.example.test.pfx.fingerprint.json",
     ]
     assert all(p.stat().st_size > 0 for p in outputPath.iterdir())
 
@@ -701,6 +704,8 @@ _DEFAULT_ARTIFACTS = (
     "fullchain.pem",
     "cert.pfx",
 )
+# The `.pfx` fingerprint sidecar (ADR-0051): written beside the `.pfx`, never an artifact.
+_SIDECAR = "cert.pfx.fingerprint.json"
 
 
 def _v2_store(*certificates: dict) -> dict:
@@ -891,7 +896,7 @@ def test_malformed_domain_leaves_existing_files_byte_identical(tmp_path, caplog)
     for domain, before in seeded.items():
         assert _snapshot(outputPath / domain) == before, domain
     assert sorted(p.name for p in (outputPath / "good.example.test").iterdir()) == (
-        sorted(_DEFAULT_ARTIFACTS)
+        sorted((*_DEFAULT_ARTIFACTS, _SIDECAR))
     )
     messages = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
     assert any(
@@ -949,7 +954,7 @@ def test_one_byte_change_reports_only_that_domain(tmp_path):
     assert _snapshot(outputPath / "stays.example.test") == stays
     after = _snapshot(outputPath / "moves.example.test")
     rewritten = sorted(name for name in after if after[name] != moves[name])
-    assert rewritten == ["cert.pem", "cert.pfx", "fullchain.pem"]
+    assert rewritten == ["cert.pem", "cert.pfx", _SIDECAR, "fullchain.pem"]
 
 
 def test_deleted_output_file_is_rewritten_and_reported(tmp_path):
@@ -982,7 +987,10 @@ def test_changed_passphrase_rewrites_only_the_pfx(tmp_path):
 
         assert names == ["rekey.example.test"], passphrase
         after = _snapshot(directory)
-        assert sorted(n for n in after if after[n] != before[n]) == ["cert.pfx"]
+        assert sorted(n for n in after if after[n] != before[n]) == [
+            "cert.pfx",
+            _SIDECAR,
+        ]
         pkcs12.load_key_and_certificates(
             (directory / "cert.pfx").read_bytes(), passphrase.encode()
         )
@@ -1049,7 +1057,7 @@ def test_write_failure_mid_set_reports_domain_with_error(tmp_path, monkeypatch, 
     names, _ = _export(tmp_path, _v2_store(acme_v2_certificate("partial.example.test")))
     assert names == ["partial.example.test"]
     assert sorted(p.name for p in (outputPath / "partial.example.test").iterdir()) == (
-        sorted(_DEFAULT_ARTIFACTS)
+        sorted((*_DEFAULT_ARTIFACTS, _SIDECAR))
     )
 
 
@@ -1650,7 +1658,10 @@ def test_artifact_mtime_finds_every_layout(tmp_path, resolverInPathName, flat):
         flat=flat,
         resolverInPathName=resolverInPathName,
     )
-    assert _files(outputPath) == sorted(written)
+    # Plus the `.pfx` fingerprint sidecar, which is not an artifact (ADR-0051).
+    sidecar = certificate_exporter._pfx_fingerprint_path(written[4])
+    assert _files(outputPath) == sorted([*written, sidecar])
+    os.utime(sidecar, (1_800_000_000, 1_800_000_000))
     for offset, path in enumerate(written):
         os.utime(path, (1_700_000_000 + offset, 1_700_000_000 + offset))
     assert exporter.artifactMtime("a.example.test") == 1_700_000_000 + 4
@@ -1674,8 +1685,11 @@ def test_artifact_mtime_unwrapped_store_default_settings(tmp_path, store):
     directory = outputPath / "u.example.test"
     files = _files(outputPath)
     assert files and all(p.parent == directory for p in files)
+    # The `.pfx` fingerprint sidecar is not an artifact (ADR-0051).
+    artifacts = [p for p in files if p.name != _SIDECAR]
+    assert len(artifacts) == len(files) - 1 == 5
     assert exporter.artifactMtime("u.example.test") == max(
-        p.stat().st_mtime for p in files
+        p.stat().st_mtime for p in artifacts
     )
 
 
@@ -1873,3 +1887,543 @@ def test_failed_rebuild_keeps_previous_artifact_paths(tmp_path):
         exporter.exportCertificatesForFile(fixture)
 
     assert {d: exporter.artifactMtime(d) for d in before} == before
+
+
+# ---------------------------------------------------------------------------
+# Fast export on RSA-4096 stores (E015-S01-002, ADR-0051): `settings.validatekeys` and
+# the `.pfx` fingerprint sidecar. The load counts are the gate; wall time is asserted only
+# relative to another pass in the same test (AG-4).
+# ---------------------------------------------------------------------------
+
+_RSA_DOMAINS = tuple(f"rsa{i}.example.test" for i in range(5))
+
+
+def _rsa4096_store() -> dict:
+    chain = real_rsa4096_chain()
+    return _v2_store(*(acme_v2_certificate(d, chain) for d in _RSA_DOMAINS))
+
+
+def _spy_loads(monkeypatch) -> dict[str, list]:
+    """Record every key load and every PKCS#12 load the exporter makes, and delegate."""
+    calls: dict[str, list] = {"key": [], "pkcs12": []}
+    realKey = certificate_exporter.serialization.load_pem_private_key
+    realPkcs12 = certificate_exporter.pkcs12.load_key_and_certificates
+
+    def key(*args, **kwargs):
+        calls["key"].append((args, kwargs))
+        return realKey(*args, **kwargs)
+
+    def bundle(*args, **kwargs):
+        calls["pkcs12"].append((args, kwargs))
+        return realPkcs12(*args, **kwargs)
+
+    monkeypatch.setattr(certificate_exporter.serialization, "load_pem_private_key", key)
+    monkeypatch.setattr(
+        certificate_exporter.pkcs12, "load_key_and_certificates", bundle
+    )
+    return calls
+
+
+def _timed_export(tmp_path, store: dict, **overrides):
+    start = time.perf_counter()
+    names, outputPath = _export(tmp_path, store, **overrides)
+    return names, outputPath, time.perf_counter() - start
+
+
+def _artifacts_only(snapshot: dict) -> dict:
+    return {k: v for k, v in snapshot.items() if k != _SIDECAR}
+
+
+def _sidecar_of(directory: Path) -> Path:
+    return directory / _SIDECAR
+
+
+@pytest.mark.parametrize("passphrase", [None, "s3cret"], ids=["plain", "passphrase"])
+def test_unchanged_rsa4096_pass_loads_no_key_and_no_pfx(
+    tmp_path, monkeypatch, passphrase
+):
+    store = _rsa4096_store()
+    names, outputPath, firstPass = _timed_export(
+        tmp_path, store, pkcs12Passphrase=passphrase
+    )
+    assert names == list(_RSA_DOMAINS)
+    before = {d: _snapshot(outputPath / d) for d in _RSA_DOMAINS}
+    calls = _spy_loads(monkeypatch)
+
+    names, _, unchangedPass = _timed_export(
+        tmp_path, store, pkcs12Passphrase=passphrase
+    )
+
+    assert names == []
+    assert len(calls["key"]) == 0
+    assert len(calls["pkcs12"]) == 0
+    assert {d: _snapshot(outputPath / d) for d in _RSA_DOMAINS} == before
+    assert all(_SIDECAR in before[d] for d in _RSA_DOMAINS)
+    assert unchangedPass < firstPass / 4, (unchangedPass, firstPass)
+
+
+@pytest.mark.parametrize("validateKeys", [True, False], ids=["validate", "skip"])
+def test_first_rsa4096_pass_loads_each_key_once(tmp_path, monkeypatch, validateKeys):
+    store = _rsa4096_store()
+    baseline = None
+    if not validateKeys:
+        _, _, baseline = _timed_export(tmp_path / "validating", store)
+    calls = _spy_loads(monkeypatch)
+
+    names, _, elapsed = _timed_export(
+        tmp_path / "measured", store, validateKeys=validateKeys
+    )
+
+    assert names == list(_RSA_DOMAINS)
+    assert len(calls["key"]) == 5
+    assert [kw.get("unsafe_skip_rsa_key_validation") for _a, kw in calls["key"]] == [
+        not validateKeys
+    ] * 5
+    if baseline is not None:
+        assert elapsed < baseline / 2, (elapsed, baseline)
+
+
+def test_passphrase_check_is_cached_on_hashable_values_only():
+    chain = real_chain()
+    certs = x509.load_pem_x509_certificates(chain.fullchain_pem)
+    record = certificate_exporter._pfx_fingerprint(
+        b"pfx bytes", chain.key_pem, certs, "s3cret"
+    )["passphrase"]
+    verifies = certificate_exporter._scrypt_verifies
+    verifies.cache_clear()
+
+    assert certificate_exporter._passphrase_matches(b"s3cret", record) is True
+    first = verifies.cache_info()
+    assert certificate_exporter._passphrase_matches(b"s3cret", record) is True
+    second = verifies.cache_info()
+    assert (second.hits, second.misses) == (first.hits + 1, first.misses)
+    assert certificate_exporter._passphrase_matches(b"other", record) is False
+
+    size = verifies.cache_info().currsize
+    shortSalt = base64.b64encode(b"x" * 8).decode("ascii")
+    for malformed in (
+        {**record, "kdf": "pbkdf2"},
+        {**record, "n": "16384"},
+        {**record, "n": True},
+        {**record, "p": 0},
+        {**record, "salt": shortSalt},
+        {**record, "digest": "not base64!"},
+        {k: v for k, v in record.items() if k != "r"},
+        "scrypt",
+        None,
+    ):
+        assert (
+            certificate_exporter._passphrase_matches(b"s3cret", malformed) is False
+        ), malformed
+    assert verifies.cache_info().currsize == size
+
+
+@pytest.mark.parametrize("validateKeys", [True, False], ids=["validate", "skip"])
+def test_mismatched_key_and_certificate_is_refused_in_both_validation_modes(
+    tmp_path, caplog, validateKeys
+):
+    chain = real_chain()
+    store = _v2_store(acme_v2_certificate("mismatch.example.test", chain))
+    _, outputPath = _export(tmp_path, store, validateKeys=validateKeys)
+    directory = outputPath / "mismatch.example.test"
+    before = _snapshot(directory)
+    foreignKey = real_chain_expiring_in(5).key_pem
+    mismatched = _v2_store(
+        acme_v2_certificate("mismatch.example.test", chain._replace(key_pem=foreignKey))
+    )
+
+    with caplog.at_level(logging.ERROR):
+        names, _ = _export(tmp_path, mismatched, validateKeys=validateKeys)
+
+    assert names == []
+    assert _snapshot(directory) == before
+    errors = _messages(caplog, logging.ERROR)
+    assert len(errors) == 1, errors
+    assert "mismatch.example.test" in errors[0] and "pkcs12" in errors[0]
+
+
+def test_passphrase_change_is_detected_from_the_sidecar_alone(tmp_path, monkeypatch):
+    store = _v2_store(acme_v2_certificate("phrase.example.test"))
+    _, outputPath = _export(tmp_path, store)
+    directory = outputPath / "phrase.example.test"
+    calls = _spy_loads(monkeypatch)
+
+    for passphrase in ("s3cret", "other", None):
+        before = _snapshot(directory)
+        calls["pkcs12"].clear()
+
+        names, _ = _export(tmp_path, store, pkcs12Passphrase=passphrase)
+
+        assert calls["pkcs12"] == [], passphrase
+        assert names == ["phrase.example.test"], passphrase
+        after = _snapshot(directory)
+        assert sorted(n for n in after if after[n] != before[n]) == [
+            "cert.pfx",
+            _SIDECAR,
+        ]
+        key, _, _ = pkcs12.load_key_and_certificates(
+            (directory / "cert.pfx").read_bytes(),
+            passphrase.encode() if passphrase else None,
+        )
+        assert key is not None
+
+
+@pytest.mark.parametrize("damage", ["truncated", "flipped", "deleted"])
+def test_damaged_pfx_is_rebuilt_and_reported(tmp_path, damage):
+    """Regression guard: content compare already catches each of these (E015-S01-002)."""
+    chain = real_chain()
+    store = _v2_store(acme_v2_certificate("damaged.example.test"))
+    _, outputPath = _export(tmp_path, store, pkcs12Passphrase="s3cret")
+    directory = outputPath / "damaged.example.test"
+    before = _snapshot(directory)
+    pfxPath = directory / "cert.pfx"
+    if damage == "truncated":
+        pfxPath.write_bytes(b"")
+    elif damage == "flipped":
+        data = bytearray(pfxPath.read_bytes())
+        data[len(data) // 2] ^= 0x01
+        pfxPath.write_bytes(bytes(data))
+    else:
+        pfxPath.unlink()
+
+    names, _ = _export(tmp_path, store, pkcs12Passphrase="s3cret")
+
+    assert names == ["damaged.example.test"]
+    after = _snapshot(directory)
+    pems = [n for n in _DEFAULT_ARTIFACTS if n.endswith(".pem")]
+    assert {n: after[n] for n in pems} == {n: before[n] for n in pems}
+    key, leaf, cas = pkcs12.load_key_and_certificates(pfxPath.read_bytes(), b"s3cret")
+    assert key is not None and leaf is not None
+    assert _key_der(key) == _key_der(
+        serialization.load_pem_private_key(chain.key_pem, None)
+    )
+    assert [_der(leaf), *(_der(c) for c in cas)] == [
+        _der(c) for c in x509.load_pem_x509_certificates(chain.fullchain_pem)
+    ]
+    assert _export(tmp_path, store, pkcs12Passphrase="s3cret")[0] == []
+
+
+def test_upgrade_from_0_3_0_output_verifies_once_and_rewrites_nothing(
+    tmp_path, monkeypatch
+):
+    domains = ("up1.example.test", "up2.example.test")
+    store = _v2_store(*(acme_v2_certificate(d) for d in domains))
+    _, outputPath = _export(tmp_path, store, pkcs12Passphrase="s3cret")
+    for sidecar in outputPath.rglob("*.fingerprint.json"):
+        sidecar.unlink()  # what 0.3.0 left behind: the five artifacts, no sidecar
+    before = {d: _snapshot(outputPath / d) for d in domains}
+    calls = _spy_loads(monkeypatch)
+
+    names, _ = _export(tmp_path, store, pkcs12Passphrase="s3cret")
+
+    assert names == []
+    for d in domains:
+        after = _snapshot(outputPath / d)
+        assert _artifacts_only(after) == before[d], d
+        assert _SIDECAR in after, d
+    assert calls["pkcs12"], "the upgrade pass verifies each .pfx by content"
+
+    calls["pkcs12"].clear()
+    calls["key"].clear()
+    settled = {d: _snapshot(outputPath / d) for d in domains}
+    assert _export(tmp_path, store, pkcs12Passphrase="s3cret")[0] == []
+    assert calls["pkcs12"] == []
+    assert calls["key"] == []
+    assert {d: _snapshot(outputPath / d) for d in domains} == settled
+
+
+@pytest.mark.parametrize("kind", ["garbage", "unknown-version", "oversize", "symlink"])
+def test_unusable_sidecar_falls_back_to_content_verification(
+    tmp_path, monkeypatch, kind
+):
+    store = _v2_store(acme_v2_certificate("unusable.example.test"))
+    _, outputPath = _export(tmp_path, store)
+    directory = outputPath / "unusable.example.test"
+    sidecar = _sidecar_of(directory)
+    valid = sidecar.read_bytes()
+    elsewhere = tmp_path / "elsewhere.json"
+    if kind == "garbage":
+        sidecar.write_bytes(b"not json {")
+    elif kind == "unknown-version":
+        sidecar.write_bytes(
+            (json.dumps({**json.loads(valid), "version": 99}) + "\n").encode()
+        )
+    elif kind == "oversize":
+        sidecar.write_bytes(valid + b" " * (64 * 1024))  # still valid JSON
+    else:
+        elsewhere.write_bytes(valid)
+        sidecar.unlink()
+        sidecar.symlink_to(elsewhere)
+    artifacts = _artifacts_only(_snapshot(directory))
+    calls = _spy_loads(monkeypatch)
+
+    names, _ = _export(tmp_path, store)
+
+    assert names == []
+    assert _artifacts_only(_snapshot(directory)) == artifacts
+    assert len(calls["pkcs12"]) >= 1, "the verify path loads the .pfx"
+    info = sidecar.lstat()
+    assert stat.S_ISREG(info.st_mode)
+    assert info.st_mode & 0o777 == 0o600
+    pfxHash = hashlib.sha256((directory / "cert.pfx").read_bytes()).hexdigest()
+    assert json.loads(sidecar.read_bytes())["pfx_sha256"] == pfxHash
+    if kind == "symlink":
+        assert elsewhere.read_bytes() == valid
+
+
+def test_stale_sidecar_after_a_crash_is_repaired_without_reporting(
+    tmp_path, monkeypatch
+):
+    chain = real_chain()
+    _, outputPath = _export(
+        tmp_path, _v2_store(acme_v2_certificate("crash.example.test", chain))
+    )
+    directory = outputPath / "crash.example.test"
+    staleSidecar = _sidecar_of(directory).read_bytes()
+    renewed = _v2_store(
+        acme_v2_certificate("crash.example.test", _one_byte_changed(chain))
+    )
+    assert _export(tmp_path, renewed)[0] == ["crash.example.test"]
+    # The crash: the new `.pfx` was written, its sidecar was not.
+    _sidecar_of(directory).write_bytes(staleSidecar)
+    os.chmod(_sidecar_of(directory), 0o600)
+    artifacts = _artifacts_only(_snapshot(directory))
+
+    assert _export(tmp_path, renewed)[0] == []
+
+    assert _artifacts_only(_snapshot(directory)) == artifacts
+    repaired = json.loads(_sidecar_of(directory).read_bytes())
+    pfxHash = hashlib.sha256((directory / "cert.pfx").read_bytes()).hexdigest()
+    assert repaired["pfx_sha256"] == pfxHash
+    calls = _spy_loads(monkeypatch)
+    assert _export(tmp_path, renewed)[0] == []
+    assert calls["pkcs12"] == []
+
+
+@pytest.mark.parametrize("resolverInPathName, flat", _LAYOUTS)
+def test_sidecar_is_written_0600_beside_the_pfx_in_every_layout(
+    tmp_path, resolverInPathName, flat
+):
+    exporter, fixture, outputPath = _lookup_env(
+        tmp_path,
+        {"le": _resolver(acme_v2_certificate("a.example.test"))},
+        resolverInPathName=resolverInPathName,
+        flat=flat,
+    )
+    exporter.exportCertificatesForFile(fixture)
+
+    paths = certificate_exporter._artifact_paths(
+        outputPath,
+        "le",
+        "a.example.test",
+        flat=flat,
+        resolverInPathName=resolverInPathName,
+    )
+    pfxPath = paths[4]
+    sidecar = pfxPath.with_name(pfxPath.name + ".fingerprint.json")
+    assert certificate_exporter._pfx_fingerprint_path(pfxPath) == sidecar
+    assert _files(outputPath) == sorted([*paths, sidecar])
+    info = sidecar.lstat()
+    assert stat.S_ISREG(info.st_mode)
+    assert info.st_mode & 0o777 == 0o600
+
+
+def test_sidecar_holds_no_secret(tmp_path):
+    chain = real_chain()
+    passphrase = "correct-horse-battery-staple"
+    _, outputPath = _export(
+        tmp_path,
+        _v2_store(acme_v2_certificate("secret.example.test", chain)),
+        pkcs12Passphrase=passphrase,
+    )
+    directory = outputPath / "secret.example.test"
+    raw = _sidecar_of(directory).read_bytes()
+    keyDer = _key_der(serialization.load_pem_private_key(chain.key_pem, None))
+    keyBody = b"".join(
+        line for line in chain.key_pem.splitlines() if not line.startswith(b"-----")
+    )
+
+    for secret in (
+        passphrase.encode(),
+        chain.key_pem,
+        keyBody,
+        keyBody[:48],
+        keyDer,
+        keyDer.hex().encode(),
+        base64.b64encode(keyDer),
+        base64.b64encode(chain.key_pem),
+    ):
+        assert secret not in raw
+    record = json.loads(raw)
+    assert raw.endswith(b"\n")
+    assert raw == (json.dumps(record, sort_keys=True) + "\n").encode()
+    assert record["format"] == "traefik-certificate-exporter/pfx-fingerprint"
+    assert record["version"] == 1
+    assert record["passphrase"]["kdf"] == "scrypt"
+    assert record["key_sha256"] == hashlib.sha256(chain.key_pem).hexdigest()
+    assert record["certificates_sha256"] == [
+        c.fingerprint(hashes.SHA256()).hex()
+        for c in x509.load_pem_x509_certificates(chain.fullchain_pem)
+    ]
+    assert (
+        record["pfx_sha256"]
+        == hashlib.sha256((directory / "cert.pfx").read_bytes()).hexdigest()
+    )
+
+
+def test_sidecar_does_not_move_artifact_mtime(tmp_path):
+    exporter, fixture, outputPath = _lookup_env(
+        tmp_path, {"le": _resolver(acme_v2_certificate("a.example.test"))}
+    )
+    exporter.exportCertificatesForFile(fixture)
+    directory = outputPath / "a.example.test"
+    for name in _DEFAULT_ARTIFACTS:
+        os.utime(directory / name, (1_700_000_000, 1_700_000_000))
+    os.utime(_sidecar_of(directory), (1_800_000_000, 1_800_000_000))
+
+    assert exporter.artifactMtime("a.example.test") == 1_700_000_000
+
+    # Writing only a sidecar never makes a domain "changed".
+    _sidecar_of(directory).unlink()
+    assert exporter.exportCertificatesForFile(fixture) == []
+    assert _sidecar_of(directory).exists()
+    assert exporter.artifactMtime("a.example.test") == 1_700_000_000
+
+
+def test_dry_run_writes_no_sidecar(tmp_path):
+    store = _v2_store(acme_v2_certificate("drysc.example.test"))
+    _, outputPath = _export(tmp_path, store)
+    directory = outputPath / "drysc.example.test"
+    _sidecar_of(directory).unlink(missing_ok=True)
+    before = _snapshot(directory)
+
+    assert _export(tmp_path, store, dryRun=True)[0] == []
+    assert _snapshot(directory) == before
+
+    assert _export(tmp_path, store)[0] == []
+    assert _sidecar_of(directory).exists()
+
+
+def test_pkcs12_debug_details_do_not_reload_the_bundle(tmp_path, monkeypatch, caplog):
+    calls = _spy_loads(monkeypatch)
+
+    with caplog.at_level(logging.DEBUG, logger=certificate_exporter.globalLogger.name):
+        names, _ = _export(
+            tmp_path,
+            _v2_store(acme_v2_certificate("debug.example.test")),
+            pkcs12Passphrase="s3cret",
+        )
+
+    assert names == ["debug.example.test"]
+    assert calls["pkcs12"] == []
+    debug = _messages(caplog, logging.DEBUG)
+    assert any(m.startswith("Created PKCS12 file:") for m in debug), debug
+    assert any("Subject:" in m and "leaf.example.test" in m for m in debug)
+    assert "  Intermediates: 1" in debug
+
+
+# ---------------------------------------------------------------------------
+# Sprint closure 2026-10-12, RT-1: the in-place policy tighten must not follow a symlink
+# swapped in between the check and the chmod. The window is injected deterministically:
+# `os.lstat` is wrapped so the planted regular file becomes a symlink to a victim right
+# after it is examined. Every caller that tightens in place is driven.
+# ---------------------------------------------------------------------------
+def _tighten_callers():
+    chain = real_chain()
+    certs = x509.load_pem_x509_certificates(chain.fullchain_pem)
+    return {
+        "file_differs": lambda p: certificate_exporter._file_differs(
+            p, b"data", mode=0o600
+        ),
+        "pfx_differs": lambda p: certificate_exporter._pfx_differs(
+            p, serialization.load_pem_private_key(chain.key_pem, None), certs, None
+        ),
+        "read_pfx_fingerprint": lambda p: certificate_exporter._read_pfx_fingerprint(
+            p, False
+        ),
+        "pfx_state": lambda p: certificate_exporter._pfx_state(
+            p, chain.key_pem, certs, None, False
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    "caller", ["file_differs", "pfx_differs", "read_pfx_fingerprint", "pfx_state"]
+)
+def test_policy_tighten_does_not_follow_a_symlink_swapped_in_after_lstat(
+    tmp_path, monkeypatch, caller
+):
+    call = _tighten_callers()[caller]
+    victim = tmp_path / "victim"
+    victim.write_bytes(b"root-only")
+    victim.chmod(0o640)
+    planted = tmp_path / "cert.pfx.fingerprint.json"
+    planted.write_bytes(b"{}")
+    planted.chmod(0o004)  # wider than 0600 in a bit the policy removes
+    realLstat = os.lstat
+    swapped: list[bool] = []
+
+    def swappingLstat(path, *args, **kwargs):
+        info = realLstat(path, *args, **kwargs)
+        if not swapped and os.fspath(path) == os.fspath(planted):
+            swapped.append(True)
+            os.unlink(planted)
+            os.symlink(victim, planted)
+        return info
+
+    monkeypatch.setattr(certificate_exporter.os, "lstat", swappingLstat)
+
+    call(planted)
+
+    assert swapped, "the swap window was never reached"
+    assert stat.S_IMODE(realLstat(victim).st_mode) == 0o640
+    assert victim.read_bytes() == b"root-only"
+
+
+# ---------------------------------------------------------------------------
+# Sprint closure 2026-10-12, AR-4: the sidecar records the PKCS12 build recipe, so a
+# change to `_serialize_pkcs12` reaches every existing `.pfx` once.
+# ---------------------------------------------------------------------------
+# Pin of `_serialize_pkcs12`'s source per recipe value. A change to that function fails
+# this test until it is either recorded as a new recipe (bump `_PFX_BUILD_RECIPE`, add its
+# pin) or the pin is updated for a change that does not alter the bundle built.
+_PFX_BUILD_RECIPE_SOURCE_SHA256 = {
+    1: "58b571a3accb9eafd4761d762f7f7b4ab065cb8d36c5d60e01db50180c1cb56e",
+}
+
+
+def test_pfx_build_recipe_is_pinned_to_the_serializer_source():
+    import inspect
+
+    source = inspect.getsource(certificate_exporter._serialize_pkcs12)
+    assert (
+        hashlib.sha256(source.encode()).hexdigest()
+        == _PFX_BUILD_RECIPE_SOURCE_SHA256[certificate_exporter._PFX_BUILD_RECIPE]
+    ), "_serialize_pkcs12 changed: bump _PFX_BUILD_RECIPE or re-pin (ADR-0051)"
+
+
+@pytest.mark.parametrize("kind", ["absent", "older"])
+def test_sidecar_with_another_build_recipe_rebuilds_the_pfx_once(
+    tmp_path, monkeypatch, kind
+):
+    domain = "recipe.example.test"
+    store = _v2_store(acme_v2_certificate(domain))
+    _, outputPath = _export(tmp_path, store)
+    sidecar = _sidecar_of(outputPath / domain)
+    record = json.loads(sidecar.read_bytes())
+    assert record["builder"] == certificate_exporter._PFX_BUILD_RECIPE
+    if kind == "absent":
+        del record["builder"]
+    else:
+        record["builder"] = certificate_exporter._PFX_BUILD_RECIPE - 1
+    sidecar.write_bytes((json.dumps(record, sort_keys=True) + "\n").encode())
+    pfxBefore = (outputPath / domain / "cert.pfx").stat().st_ino
+
+    names, _ = _export(tmp_path, store)
+
+    assert names == [domain]
+    assert (outputPath / domain / "cert.pfx").stat().st_ino != pfxBefore
+    rewritten = json.loads(sidecar.read_bytes())
+    assert rewritten["builder"] == certificate_exporter._PFX_BUILD_RECIPE
+    names, _ = _export(tmp_path, store)
+    assert names == []

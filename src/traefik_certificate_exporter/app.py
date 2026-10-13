@@ -175,6 +175,21 @@ def _run(logger) -> None:
     logger.info(f"Data Path: {settings.dataPath}")
     logger.info(f"File Spec: {settings.fileSpec}")
     logger.info(f"Output Path: {settings.outputPath}")
+    logger.info(
+        "RSA key validation: on"
+        if settings.validateKeys
+        else "RSA key validation: off (settings.validatekeys=false: keys are trusted, "
+        "not checked)"
+    )
+    # Where the hook came from and which uid runs it -- never the command, a declared
+    # secret (ADR-0045). A root process takes it only from the environment or the command
+    # line (ADR-0049).
+    hookState = "set" if settings.postExportCommand else "not set"
+    hookSource = globalSettingsMgr.sourceOf(("settings", "postexportcommand"))
+    euid = os.geteuid() if hasattr(os, "geteuid") else "n/a"
+    logger.info(
+        f"Post-export command: {hookState} (source: {hookSource}), runs as uid {euid}"
+    )
 
     dockerManager = DockerManager(settings=settings)
     # Every exit path below -- a normal return, an exception, an interrupt -- cancels the

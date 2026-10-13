@@ -1,9 +1,16 @@
 """Start-up detection of legacy and misspelled setting names (FR-16, product AD-6).
 
-Policy: a legacy name is warned about and ignored. There are no aliases -- the names in
-`LEGACY_SETTING_NAMES` never worked, so nobody depends on them, and an alias would be a
-compatibility contract (it would need an ADR). The warnings carry the name only, never the
-value: `..._NOTIFY_*` held Apprise URLs with embedded tokens.
+Policy: a legacy name is warned about and ignored, with no aliases (AD-6, C-16b); an alias
+would be a compatibility contract and would need an ADR. Two kinds of name are listed:
+
+- prefixed names the docs and samples once used that never set anything;
+- the pre-confuse environment names of the 0.0.x image (v0.0.2 - v0.0.9.2). Those did
+  work there -- its start script turned them into CLI flags -- and have been silently
+  ignored since v0.0.10.0. They lie outside `ENV_PREFIX` and are matched exactly and
+  case-sensitively, like the shell expansions that read them.
+
+The warnings carry the name only, never the value: `..._NOTIFY_*` held Apprise URLs with
+embedded tokens.
 
 tce-settings-scan: legacy-names-listed
 This marker lets this file quote legacy names. `tests/test_settings_surface.py` keeps it
@@ -80,11 +87,15 @@ _NO_CONFIG_FILE_ENV = (
     "the container always reads /config/config.yaml; outside the container pass "
     "-c/--config-file on the command line"
 )
+_TEST_VERSION_HINT = (
+    "it only printed the 0.0.x image's command line; nothing replaces it"
+)
 
 # The single legacy -> replacement table, written as full literals so the file quotes the
-# names it lists (the stale-marker check reads them). Derived from the names the docs and samples
-# historically used (`git log -p HEAD` over the documentation scan scope);
-# `test_legacy_map_covers_documented_names` fails if a documented name is missing.
+# names it lists (the stale-marker check reads them). Derived from `git log -p HEAD` over
+# the documentation scan scope and over the 0.0.x translator script (the start script that
+# turned environment names into CLI flags). `test_legacy_map_covers_documented_names` and
+# `test_legacy_map_covers_preconfuse_env_names` fail if a derived name is missing.
 LEGACY_SETTING_NAMES: tuple[LegacyName, ...] = (
     LegacyName(
         "env", "TRAEFIK_CERTIFICATE_EXPORTER_CONFIG_FILE", None, _NO_CONFIG_FILE_ENV
@@ -167,6 +178,45 @@ LEGACY_SETTING_NAMES: tuple[LegacyName, ...] = (
         "TRAEFIK_CERTIFICATE_EXPORTER_NOTIFY_*",
         "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_APPRISEURLS_<n>",
     ),
+    # The 0.0.x image's environment names (pre-confuse; exact, case-sensitive match).
+    LegacyName(
+        "env",
+        "TRAEFIK_FILESPEC",
+        "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FILESPEC",
+    ),
+    LegacyName(
+        "env",
+        "TRAEFIK_RESOLVERID",
+        "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_TRAEFIKRESOLVERID",
+    ),
+    # Spelled as the 0.0.x image read it ("IN OUTPUT PATH NAME"); not a typo to correct.
+    LegacyName(
+        "env",
+        "TRAEFIK_RESOLVERID_INOUTPUTPATHNAME",
+        "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESOLVERINPATHNAME",
+    ),
+    LegacyName("env", "DRYRUN", "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DRYRUN"),
+    LegacyName("env", "FLAT", "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FLAT"),
+    LegacyName(
+        "env",
+        "RESTART_CONTAINERS",
+        "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESTARTCONTAINERS",
+    ),
+    LegacyName(
+        "env",
+        "DOMAINS_INCLUDE",
+        "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_INCLUDE",
+    ),
+    LegacyName(
+        "env",
+        "DOMAINS_EXCLUDE",
+        "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_EXCLUDE",
+    ),
+    LegacyName(
+        "env", "RUN_AT_START", "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RUNATSTART"
+    ),
+    LegacyName("env", "CONFIG_FILE", None, _NO_CONFIG_FILE_ENV),
+    LegacyName("env", "TEST_VERSION", None, _TEST_VERSION_HINT),
     LegacyName("config", "settings.restartcontainer", "settings.restartcontainers"),
 )
 
@@ -253,6 +303,20 @@ def _legacy_entry(source: str, name: str) -> LegacyName | None:
     )
 
 
+def _preconfuse_entry(name: str) -> LegacyName | None:
+    """The env row a name outside `ENV_PREFIX` equals exactly (case-sensitive), if any."""
+    return next(
+        (
+            e
+            for e in LEGACY_SETTING_NAMES
+            if e.source == "env"
+            and not e.name.startswith(ENV_PREFIX)
+            and e.name == name
+        ),
+        None,
+    )
+
+
 def _nearest_env_name(name: str) -> str | None:
     """The nearest valid env name, compared without the shared prefix: 29 common
     characters would make every name "close" to every other (`..._FOO` would match
@@ -280,10 +344,19 @@ def find_legacy_settings(
 ) -> list[Finding]:
     """One finding per legacy or unknown name, environment first. Pure; reads only names.
 
-    Unknown config-file keys are not reported (non-goal): only legacy config keys are.
+    Unknown config-file keys are not reported (non-goal): only legacy config keys are. A
+    name outside `ENV_PREFIX` is either an exact pre-confuse row or nothing: it is never
+    unknown, so unrelated variables (Traefik's own `TRAEFIK_*`, `TZ`, ...) are not echoed.
     """
     findings: list[Finding] = []
-    for name in sorted(n for n in environ if n.startswith(ENV_PREFIX)):
+    for name in sorted(environ):
+        if not name.startswith(ENV_PREFIX):
+            entry = _preconfuse_entry(name)
+            if entry is not None:
+                findings.append(
+                    Finding("legacy", "env", name, entry.replacement, entry.hint)
+                )
+            continue
         entry = _legacy_entry("env", _canonical(name))
         if entry is not None:
             findings.append(

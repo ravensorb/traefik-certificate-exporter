@@ -4,7 +4,7 @@
 
 [![Github Tags](https://img.shields.io/github/v/tag/ravensorb/traefik-certificate-exporter?logo=github&logoColor=white)](https://github.com/ravensorb/traefik-certificate-exporter) [![PyPi Version](https://img.shields.io/pypi/v/traefik-certificate-exporter?color=g&label=pypi%20package&logo=pypi&logoColor=white)](https://pypi.org/project/traefik-certificate-exporter/) [![Docker](https://badgen.net/badge/icon/docker?icon=docker&label)](https://hub.docker.com/r/ravensorb/traefik-certificate-exporter)
 
-This tool can be used to extract acme certificates (ex: lets encrupt) from traefik json files. The tool is design to watch for changes to a folder for any files that match a filespec (defaults to *,json however can be set to a specific file name) and when changes are detected it will process the file and extract any certificates that are in it to the specified output path
+This tool can be used to extract acme certificates (ex: lets encrupt) from traefik json files. The tool is design to watch for changes to a folder for any files that match a filespec (defaults to *.json; a file name or glob, without a directory part) and when changes are detected it will process the file and extract any certificates that are in it to the specified output path
 
 Supported stores: `acme.json` from any RFC 8555 CA (Let's Encrypt, ZeroSSL, Google Trust Services, step-ca, ...) written by Traefik v1.7, v2 or v3; the shape is detected from the file's keys, not the CA URL, and each resolver is exported independently.
 
@@ -22,7 +22,7 @@ pip install traefik-certificate-exporter
 
 ```bash
 usage: traefik-certificate-exporter [-h] [-c PATH] [-d PATH] [-w] [-fs GLOB] [-o PATH] [--traefik-resolver-id RESOLVER] [--flat] [--restart-container] [--dry-run] [-r] [--include-resolvername-in-outputpath]
-                                    [--pkcs12-passphrase PASSPHRASE] [--post-export-command COMMAND] [-ll LEVEL] [-id [DOMAIN ...] | -xd [DOMAIN ...]]
+                                    [--pkcs12-passphrase PASSPHRASE] [--no-validate-keys] [--post-export-command COMMAND] [-ll LEVEL] [-id [DOMAIN ...] | -xd [DOMAIN ...]]
 
 Extract traefik letsencrypt certificates.
 
@@ -35,7 +35,8 @@ options:
   -w, --watch-for-changes
                         If specified, monitor and watch for changes to acme files
   -fs GLOB, --file-spec GLOB
-                        file that contains the traefik certificates
+                        file-name glob of the ACME store inside the data path
+                        (no directory part); default `*.json`
   -o PATH, --output-path PATH
                         The folder to exports the certificates in to
   --traefik-resolver-id RESOLVER
@@ -50,6 +51,8 @@ options:
   --pkcs12-passphrase PASSPHRASE
                         Passphrase used to encrypt the exported PKCS12 (.pfx) file with AES-256/SHA-256 (readable by Windows 10 1709+/Server 2019+, OpenSSL 3, current macOS). The .pfx always includes the intermediates.
                         Empty or unset: unencrypted.
+  --no-validate-keys    If specified, skip RSA private-key validation when a .pfx is built (~0.5 s per RSA-4096 key). Only when the ACME store is written by your own Traefik: the keys are then trusted, not
+                        checked. The key/certificate match is always checked.
   --post-export-command COMMAND
                         Shell-like command line to run after an export pass, only on change: when at least one domain's exported files changed (no shell involved -- parsed with shlex, run via subprocess with a fixed
                         30s timeout). The changed domain names are exposed to it as a comma-separated TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS environment variable. Treated as a secret: log lines name only its

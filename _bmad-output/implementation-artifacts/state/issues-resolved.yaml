@@ -1450,3 +1450,91 @@ resolved:
   resolved_at: '2026-10-12T10:25:05Z'
   ref: c7394e2
   note: latest gated on highest vX.Y.Z tag; X.Y re-run caveat remains documented (AD-14).
+- key: BL-E014-119
+  epic: '014'
+  sprint: "''"
+  title: Base image init (lsiown abc:abc /config) gives /config to PUID account, contradicting ADR-0030; PUID account can rewrite config so next root-mode start runs its hook as root
+  source: epic-redteam (RT-1)
+  source_phase: epic-redteam
+  source_ref: RT-1
+  severity: High
+  status: resolved
+  description: 'See _bmad-output/implementation-artifacts/epic-014/epic-closure/redteam-report.md. Deferred to E015 (0.3.1) per epic-closure directive: only BLOCKER/CRITICAL fixed at E014 closure; 0.3.0 released. Not ADR-accepted.'
+  story: E015-S01-001
+  scheduled_at: '2026-10-12T21:39:26Z'
+  resolution: fixed
+  resolved_at: '2026-10-13T01:43:57Z'
+  ref: E015-S01-001
+- key: BL-E014-106
+  epic: '014'
+  sprint: '02'
+  title: 'Export pass costs ~1-1.5 s per certificate (74 certs: 74 s first pass, 108 s unchanged pass; a one-domain change re-processes its whole store file, ~36 s for 22 entries); profile PKCS12 build/compare'
+  source: live-host-test (rwusdckrls6-2026-10-12)
+  source_phase: live-host-test
+  source_ref: rwusdckrls6-2026-10-12
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
+  story: E015-S01-002
+  scheduled_at: '2026-10-12T21:39:30Z'
+  resolution: fixed
+  resolved_at: '2026-10-13T02:08:38Z'
+  ref: E015-S01-002
+- key: BL-E014-105
+  epic: '014'
+  sprint: '02'
+  title: 'Watch mode ignores stores replaced by atomic rename (write temp + rename): AcmeCertificateFileHandler handles on_created/on_modified only, no on_moved; Traefik writes in place so production is unaffected, but restores/tools that rename are missed'
+  source: live-host-test (rwusdckrls6-2026-10-12)
+  source_phase: live-host-test
+  source_ref: rwusdckrls6-2026-10-12
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
+  story: E015-S01-003
+  scheduled_at: '2026-10-12T21:39:34Z'
+  resolution: fixed
+  resolved_at: '2026-10-13T02:20:55Z'
+  ref: E015-S01-003
+- key: BL-E014-107
+  epic: '014'
+  sprint: '02'
+  title: Legacy detection misses pre-confuse env names (TRAEFIK_RESOLVERID, TRAEFIK_FILESPEC, TRAEFIK_RESOLVERID_INOUTPUTPATHNAME, ...); production rwusdckrls6 still sets TRAEFIK_RESOLVERID_INOUTPUTPATHNAME=1 and gets no warning
+  source: live-host-test (rwusdckrls6-2026-10-12)
+  source_phase: live-host-test
+  source_ref: rwusdckrls6-2026-10-12
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
+  story: E015-S01-004
+  scheduled_at: '2026-10-12T21:39:38Z'
+  resolution: fixed
+  resolved_at: '2026-10-13T02:39:03Z'
+  ref: E015-S01-004
+- key: BL-E015-009
+  epic: '015'
+  sprint: '01'
+  title: ADR-0049/0050/0030 'merged/Amended 2026-10-13' dates written before merge; confirm or correct at sprint closure
+  source: code-review (E015-S01-001)
+  source_phase: code-review
+  source_ref: E015-S01-001
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-001.md (F7)
+  resolution: fixed
+  resolved_at: '2026-10-13T03:11:56Z'
+  ref: E015-S01-001
+  note: 'Sprint closure 2026-10-12: pre-filled 2026-10-13 dates in ADR-0030/0049/0050, spine, .memlog, docs, pyproject.toml, settings.py, test_post_export.py corrected to 2026-10-12 (local merge date). See epic-015/sprint-01/closure/closure-report.md'
+- key: BL-E015-013
+  epic: '015'
+  sprint: '01'
+  title: Root .env ERROR interpolates PUID-controlled variable names verbatim (newline-bearing key can forge log lines)
+  source: code-review (E015-S01-001)
+  source_phase: code-review
+  source_ref: E015-S01-001
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-001.md (F13)
+  resolution: fixed
+  resolved_at: '2026-10-13T03:11:58Z'
+  ref: E015-S01-001
+  note: 'Closure fix AR-3: stdlib spawning functions banned or listed as reviewed; ADR-0050 closure amendment states remaining limits. See epic-015/sprint-01/closure/closure-fixes.md'

@@ -4,7 +4,7 @@ next:
   '012': 14
   '013': 45
   '014': 123
-  '015': 6
+  '015': 54
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -1462,42 +1462,6 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/local-release-test-2026-10-12.md; CI images unaffected (workflows set labels).
-- key: BL-E014-105
-  epic: '014'
-  sprint: '02'
-  title: 'Watch mode ignores stores replaced by atomic rename (write temp + rename): AcmeCertificateFileHandler handles on_created/on_modified only, no on_moved; Traefik writes in place so production is unaffected, but restores/tools that rename are missed'
-  source: live-host-test (rwusdckrls6-2026-10-12)
-  source_phase: live-host-test
-  source_ref: rwusdckrls6-2026-10-12
-  severity: Medium
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
-  story: E015-S01-003
-  scheduled_at: '2026-10-12T21:39:34Z'
-- key: BL-E014-106
-  epic: '014'
-  sprint: '02'
-  title: 'Export pass costs ~1-1.5 s per certificate (74 certs: 74 s first pass, 108 s unchanged pass; a one-domain change re-processes its whole store file, ~36 s for 22 entries); profile PKCS12 build/compare'
-  source: live-host-test (rwusdckrls6-2026-10-12)
-  source_phase: live-host-test
-  source_ref: rwusdckrls6-2026-10-12
-  severity: Medium
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
-  story: E015-S01-002
-  scheduled_at: '2026-10-12T21:39:30Z'
-- key: BL-E014-107
-  epic: '014'
-  sprint: '02'
-  title: Legacy detection misses pre-confuse env names (TRAEFIK_RESOLVERID, TRAEFIK_FILESPEC, TRAEFIK_RESOLVERID_INOUTPUTPATHNAME, ...); production rwusdckrls6 still sets TRAEFIK_RESOLVERID_INOUTPUTPATHNAME=1 and gets no warning
-  source: live-host-test (rwusdckrls6-2026-10-12)
-  source_phase: live-host-test
-  source_ref: rwusdckrls6-2026-10-12
-  severity: Low
-  status: scheduled
-  description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/live-host-test-rwusdckrls6-2026-10-12.md.
-  story: E015-S01-004
-  scheduled_at: '2026-10-12T21:39:38Z'
 - key: BL-E014-108
   epic: '014'
   sprint: '02'
@@ -1620,18 +1584,6 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-014/epic-closure/arch-drift-review.md
-- key: BL-E014-119
-  epic: '014'
-  sprint: "''"
-  title: Base image init (lsiown abc:abc /config) gives /config to PUID account, contradicting ADR-0030; PUID account can rewrite config so next root-mode start runs its hook as root
-  source: epic-redteam (RT-1)
-  source_phase: epic-redteam
-  source_ref: RT-1
-  severity: High
-  status: scheduled
-  description: 'See _bmad-output/implementation-artifacts/epic-014/epic-closure/redteam-report.md. Deferred to E015 (0.3.1) per epic-closure directive: only BLOCKER/CRITICAL fixed at E014 closure; 0.3.0 released. Not ADR-accepted.'
-  story: E015-S01-001
-  scheduled_at: '2026-10-12T21:39:26Z'
 - key: BL-E014-120
   epic: '014'
   sprint: "''"
@@ -1712,3 +1664,463 @@ backlog:
   severity: Low
   status: backlog
   description: "Accepted residual recorded by E015-S02-002's ADR. publish-image logs in to Docker Hub, GHCR and Gitea (.github/workflows/release.yaml:432-446), writing the classic write:packages PAT (account-wide) and the per-user Gitea write:package token to the job's Docker config, then runs LiquidLogicLabs/git-action-docker-metadata@v6 (:459) and git-action-docker-test@v2 (:505) at mutable major tags (binding LiquidLogicLabs rule, CI AD-5), which can read that config. Every published image is publicly pullable, so the test step needs no login. Fix: a step that runs docker logout for every configured registry after the push and before git-action-docker-test (and, if feasible, move the metadata step before the logins). Prove with a release run under act that the test step still passes and that ~/.docker/config.json holds no auths when it starts. Workflow change, outside E015-S02-002's 'no workflow change' non-goal."
+- key: BL-E015-006
+  epic: '015'
+  sprint: '01'
+  title: Test comment wrongly claims confuse matches a lower-case env prefix (test_settings.py .env case test)
+  source: code-review (E015-S01-001)
+  source_phase: code-review
+  source_ref: E015-S01-001
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-001.md (F4)
+- key: BL-E015-007
+  epic: '015'
+  sprint: '01'
+  title: docs/operational.md writable-store paragraph overstates that root mode logs the writable-store note (see BL-E015-004)
+  source: code-review (E015-S01-001)
+  source_phase: code-review
+  source_ref: E015-S01-001
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-001.md (F5)
+- key: BL-E015-008
+  epic: '015'
+  sprint: '01'
+  title: Root withholding ERROR does not name the PyPI fallback ./certs relative to cwd as the story AC says
+  source: code-review (E015-S01-001)
+  source_phase: code-review
+  source_ref: E015-S01-001
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-001.md (F6)
+- key: BL-E015-010
+  epic: '015'
+  sprint: '01'
+  title: "AC 11 'pass unchanged' contradicted: tests/test_app.py doubles gained a sourceOf stub (no assertion changed)"
+  source: code-review (E015-S01-001)
+  source_phase: code-review
+  source_ref: E015-S01-001
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-001.md (F8)
+- key: BL-E015-011
+  epic: '015'
+  sprint: '01'
+  title: TID251 config-off-switch guard does not treat ruff 'ALL' in per-file-ignores/ignore as disabling the rule
+  source: code-review (E015-S01-001)
+  source_phase: code-review
+  source_ref: E015-S01-001
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-001.md (F11)
+- key: BL-E015-012
+  epic: '015'
+  sprint: '01'
+  title: ADR-0050 amendment bans webbrowser for internal spawning but other stdlib modules that spawn internally are not named as a limit
+  source: code-review (E015-S01-001)
+  source_phase: code-review
+  source_ref: E015-S01-001
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-001.md (F12)
+- key: BL-E015-014
+  epic: '015'
+  sprint: '01'
+  title: 'R2: scrypt passphrase record with non-power-of-two n counts as usable (rebuilds instead of verifying; adds a cache entry)'
+  source: code-review (E015-S01-002)
+  source_phase: code-review
+  source_ref: E015-S01-002
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-002.md
+- key: BL-E015-015
+  epic: '015'
+  sprint: '01'
+  title: 'R3: new domain whose key or pkcs12 build fails leaves an empty directory (mkdir before key load)'
+  source: code-review (E015-S01-002)
+  source_phase: code-review
+  source_ref: E015-S01-002
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-002.md
+- key: BL-E015-016
+  epic: '015'
+  sprint: '01'
+  title: 'R4: per-domain .pfx DEBUG lines can be wrong or missing; dry run warns twice on a too-wide .pfx mode'
+  source: code-review (E015-S01-002)
+  source_phase: code-review
+  source_ref: E015-S01-002
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-002.md
+- key: BL-E015-017
+  epic: '015'
+  sprint: '01'
+  title: 'Watch rename real-observer test: negative assertions depend on drain-thread scheduling (wait for drain before asserting)'
+  source: code-review (E015-S01-003)
+  source_phase: code-review
+  source_ref: E015-S01-003
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-003.md (R1)
+- key: BL-E015-018
+  epic: '015'
+  sprint: '01'
+  title: Watch handler logs unsanitized path in __logEvent and __queuePath shutdown DEBUG line (AD-3 log injection via file name)
+  source: code-review (E015-S01-003)
+  source_phase: code-review
+  source_ref: E015-S01-003
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-003.md (R2)
+- key: BL-E015-019
+  epic: '015'
+  sprint: '01'
+  title: settings.py _is_legacy_env_name runs the full legacy detector (discarding did-you-mean work) and is not guarded against raising, unlike check_setting_names
+  source: code-review (E015-S01-004)
+  source_phase: code-review
+  source_ref: E015-S01-004
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-004.md
+- key: BL-E015-020
+  epic: '015'
+  sprint: '01'
+  title: 'test_settings_surface: the new refusal of a C-quoted translator path is not exercised by any test'
+  source: code-review (E015-S01-004)
+  source_phase: code-review
+  source_ref: E015-S01-004
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-004.md
+- key: BL-E015-021
+  epic: '015'
+  sprint: '01'
+  title: 'test_settings_surface: once committed, the guard file itself matches -G appParams and is scanned as a translator; a quoted ${FOO+x} there would demand a bogus legacy row'
+  source: code-review (E015-S01-004)
+  source_phase: code-review
+  source_ref: E015-S01-004
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-004.md
+- key: BL-E015-022
+  epic: '015'
+  sprint: '01'
+  title: 'test_settings_surface: docs TRAEFIK_* pattern would also pick up a Traefik-native variable if one is ever documented, and the prescribed remedy (add a row) would break AC 2'
+  source: code-review (E015-S01-004)
+  source_phase: code-review
+  source_ref: E015-S01-004
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-004.md
+- key: BL-E015-023
+  epic: '015'
+  sprint: '01'
+  title: 'test_settings_surface: _git_log duplicates the git command and options _history_names builds, so the two can drift'
+  source: code-review (E015-S01-004)
+  source_phase: code-review
+  source_ref: E015-S01-004
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-004.md
+- key: BL-E015-024
+  epic: '015'
+  sprint: '01'
+  title: Tampered .pfx no longer self-repairs while its fingerprint sidecar matches (ADR-0051 trade-off)
+  source: adversarial (AR-5)
+  source_phase: adversarial
+  source_ref: AR-5
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/adversarial-review.md
+- key: BL-E015-025
+  epic: '015'
+  sprint: '01'
+  title: Fingerprint sidecar *.pfx.fingerprint.json interacts with on_moved and default filespec
+  source: adversarial (AR-6)
+  source_phase: adversarial
+  source_ref: AR-6
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/adversarial-review.md
+- key: BL-E015-026
+  epic: '015'
+  sprint: '01'
+  title: 'Pre-confuse legacy rows in legacy_settings.py: detection edge cases'
+  source: adversarial (AR-7)
+  source_phase: adversarial
+  source_ref: AR-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/adversarial-review.md
+- key: BL-E015-027
+  epic: '015'
+  sprint: '01'
+  title: Wall-clock ratio assertions in test_certificate_exporter.py (unchangedPass < firstPass/4, elapsed < baseline/2) are flaky on loaded CI
+  source: adversarial (AR-8)
+  source_phase: adversarial
+  source_ref: AR-8
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/adversarial-review.md
+- key: BL-E015-028
+  epic: '015'
+  sprint: '01'
+  title: Start-up hook line credits .env-sourced values to 'environment' (sourceOf)
+  source: adversarial (AR-9)
+  source_phase: adversarial
+  source_ref: AR-9
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/adversarial-review.md
+- key: BL-E015-029
+  epic: '015'
+  sprint: '01'
+  title: Admitted /config/.env values still reach the root hook environment via os.environ.copy()
+  source: adversarial (AR-10)
+  source_phase: adversarial
+  source_ref: AR-10
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/adversarial-review.md
+- key: BL-E015-030
+  epic: '015'
+  sprint: '01'
+  title: A planted fingerprint sidecar can force a multi-second scrypt derive within the bounded parameters
+  source: adversarial (AR-11)
+  source_phase: adversarial
+  source_ref: AR-11
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/adversarial-review.md
+- key: BL-E015-031
+  epic: '015'
+  sprint: '01'
+  title: No image-level test writes /config/.env (root-mode .env filter unproven on the image)
+  source: adversarial (AR-12)
+  source_phase: adversarial
+  source_ref: AR-12
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/adversarial-review.md
+- key: BL-E015-032
+  epic: '015'
+  sprint: '01'
+  title: appriseurls classed any-source/egress-only but json:// gives arbitrary-request SSRF (e.g. via docker-socket-proxy); maintainer to decide root-mode trust class
+  source: redteam (RT-4)
+  source_phase: redteam
+  source_ref: RT-4
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/redteam-report.md
+- key: BL-E015-033
+  epic: '015'
+  sprint: '01'
+  title: 'RT-1 remainder: writes into a swapped per-domain directory and reads through swapped symlinks (RT-8) still follow links; use dir-fd relative ops'
+  source: redteam (RT-1-r2)
+  source_phase: redteam
+  source_ref: RT-1-r2
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/redteam-report.md
+- key: BL-E015-034
+  epic: '015'
+  sprint: '01'
+  title: Root hook inherits /config as working directory (PUID-writable) so relative hook paths resolve there
+  source: redteam (RT-6)
+  source_phase: redteam
+  source_ref: RT-6
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/redteam-report.md
+- key: BL-E015-035
+  epic: '015'
+  sprint: '01'
+  title: validatekeys can be disabled from a config file in root mode; not purely availability
+  source: redteam (RT-7)
+  source_phase: redteam
+  source_ref: RT-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/redteam-report.md
+- key: BL-E015-036
+  epic: '015'
+  sprint: '01'
+  title: 'Reads follow a swapped-in symlink to /dev/zero or a FIFO: pass can hang or exhaust memory'
+  source: redteam (RT-8)
+  source_phase: redteam
+  source_ref: RT-8
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/redteam-report.md
+- key: BL-E015-037
+  epic: '015'
+  sprint: '01'
+  title: filespec ERROR does not tell the operator how to keep exporting the intended store (datapath via environment)
+  source: ux-review (UX-1)
+  source_phase: ux-review
+  source_ref: UX-1
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/ux-review.md
+- key: BL-E015-038
+  epic: '015'
+  sprint: '01'
+  title: Operator docs use internal term any-source for the root-mode .env rule
+  source: ux-review (UX-2)
+  source_phase: ux-review
+  source_ref: UX-2
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/ux-review.md
+- key: BL-E015-039
+  epic: '015'
+  sprint: '01'
+  title: docker/README.md does not link docs/upgrading.md 0.3.0 -> 0.3.1 action items
+  source: ux-review (UX-3)
+  source_phase: ux-review
+  source_ref: UX-3
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/ux-review.md
+- key: BL-E015-040
+  epic: '015'
+  sprint: '01'
+  title: Root withheld-setting ERROR says 'default value' without naming the value in effect
+  source: ux-review (UX-4)
+  source_phase: ux-review
+  source_ref: UX-4
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/ux-review.md
+- key: BL-E015-041
+  epic: '015'
+  sprint: '01'
+  title: Root withheld-setting ERROR suggests a command-line flag without naming it; unusable in the container
+  source: ux-review (UX-5)
+  source_phase: ux-review
+  source_ref: UX-5
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/ux-review.md
+- key: BL-E015-042
+  epic: '015'
+  sprint: '01'
+  title: docker/README.md /config paragraph mentions the command line, unavailable to container operators
+  source: ux-review (UX-6)
+  source_phase: ux-review
+  source_ref: UX-6
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/ux-review.md
+- key: BL-E015-043
+  epic: '015'
+  sprint: '01'
+  title: Hook INFO line says 'runs as uid 0' when no post-export command is set
+  source: ux-review (UX-7)
+  source_phase: ux-review
+  source_ref: UX-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/ux-review.md
+- key: BL-E015-044
+  epic: '015'
+  sprint: '01'
+  title: Legacy 0.0.x env-name WARNING omits that those names were presence-based
+  source: ux-review (UX-8)
+  source_phase: ux-review
+  source_ref: UX-8
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/ux-review.md
+- key: BL-E015-045
+  epic: '015'
+  sprint: '01'
+  title: Image default config.yaml.sample lacks the validatekeys entry added to config.sample.yml
+  source: ux-review (UX-9)
+  source_phase: ux-review
+  source_ref: UX-9
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/ux-review.md
+- key: BL-E015-046
+  epic: '015'
+  sprint: '01'
+  title: --no-validate-keys help text sentence fragment reads as a precondition
+  source: ux-review (UX-10)
+  source_phase: ux-review
+  source_ref: UX-10
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/ux-review.md
+- key: BL-E015-047
+  epic: '015'
+  sprint: '01'
+  title: settings.py duplicates env-name rules from legacy_settings.py; prefix case-sensitivity already differs
+  source: arch-drift (SD-01-2)
+  source_phase: arch-drift
+  source_ref: SD-01-2
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/arch-drift-review.md
+- key: BL-E015-048
+  epic: '015'
+  sprint: '01'
+  title: Config-tree lookup loop repeated in settings.py (sourceOf, _withholdFileSourcedRootSettings, _mark_present_s...)
+  source: arch-drift (SD-01-3)
+  source_phase: arch-drift
+  source_ref: SD-01-3
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/arch-drift-review.md
+- key: BL-E015-049
+  epic: '015'
+  sprint: '01'
+  title: Spine AD-6 still describes only the three-key root rule, not the .env name filter
+  source: arch-drift (SD-01-4)
+  source_phase: arch-drift
+  source_ref: SD-01-4
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/arch-drift-review.md
+- key: BL-E015-050
+  epic: '015'
+  sprint: '01'
+  title: Comments narrate history or cite review IDs instead of the deciding ADR
+  source: arch-drift (SD-01-6)
+  source_phase: arch-drift
+  source_ref: SD-01-6
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/arch-drift-review.md
+- key: BL-E015-051
+  epic: '015'
+  sprint: '01'
+  title: .pfx read three times on the verify path
+  source: arch-drift (SD-01-7)
+  source_phase: arch-drift
+  source_ref: SD-01-7
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/arch-drift-review.md
+- key: BL-E015-052
+  epic: '015'
+  sprint: '01'
+  title: Maintainer to ratify ADR-0049 amendment (root-mode .env admits only any-source names; deviates from E015-S01-001 AC 3), then update PRD FR-18 to state it
+  source: sprint-closure (ADR-0049-amendment)
+  source_phase: sprint-closure
+  source_ref: ADR-0049-amendment
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/arch-drift-review.md
+- key: BL-E015-053
+  epic: '015'
+  sprint: '01'
+  title: pre-commit mypy hook cannot see confuse types (isolated env + ignore_missing_imports), so confuse-typed errors pass the gate; two slipped through in S01-001
+  source: sprint-closure (mypy-hook)
+  source_phase: sprint-closure
+  source_ref: mypy-hook
+  severity: Medium
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/closure-report.md

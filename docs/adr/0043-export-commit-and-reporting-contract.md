@@ -147,3 +147,20 @@ there by E014-S01-010.
 - Evidence for decision 6: the store-shape tests in
   `tests/libs/test_certificate_exporter.py` (`test_zerossl_v3_store_is_exported` through
   `test_the_entry_that_expires_last_owns_shared_files`).
+
+## Amendment (2026-10-12) — ADR-0051
+
+[ADR-0051](0051-pfx-fingerprint-sidecar.md) replaces Decision 2's PFX bullet on the normal
+path, and with it "There is no fingerprint store". Each `.pfx` has a fingerprint sidecar,
+`<pfx path>.fingerprint.json` (0600, hashes only: the `.pfx` file, the key PEM, the
+certificates, and the passphrase as a salted scrypt hash). The `.pfx` is current when the
+sidecar is usable, its recorded `.pfx` hash equals the file on disk and every input hash and
+the passphrase state match; then nothing is loaded or built. A usable sidecar with an input
+mismatch rebuilds the `.pfx`. A missing `.pfx` is rebuilt. A missing or unusable sidecar, or a
+`.pfx` hash mismatch, runs this ADR's content compare once: current content writes only the
+sidecar and reports nothing; differing or unreadable content rebuilds the `.pfx` and reports
+the domain. The sidecar is never authoritative alone, so this is not option B: a damaged or
+edited `.pfx` still self-heals. The private key is loaded only when the `.pfx` is rebuilt or
+verified, once, with RSA validation controlled by `settings.validatekeys` (default `true`).
+The PEM change test, Decisions 1 and 3-6 and the consequences above are otherwise unchanged;
+the sidecar is not an artifact and never moves the restart mtime (ADR-0045 unchanged).

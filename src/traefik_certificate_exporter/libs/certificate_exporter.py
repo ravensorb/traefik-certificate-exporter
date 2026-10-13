@@ -1,5 +1,7 @@
 import datetime
+import functools
 import glob
+import hashlib
 import json
 import logging
 import os
@@ -8,17 +10,20 @@ import stat
 import tempfile
 import threading
 import time
-from base64 import b64decode
+from base64 import b64decode, b64encode
 from collections.abc import Iterator
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 import watchdog.events
 import watchdog.observers
 from cryptography import x509
-from cryptography.hazmat.primitives import serialization
+from cryptography.exceptions import InvalidKey
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.primitives.serialization import pkcs12
+from watchdog.utils.patterns import match_any_paths
 
 from .docker import DockerManager
 from .logging_utils import (
@@ -268,12 +273,19 @@ def _atomic_write_bytes(target: Path, data: bytes, mode: int | None = None) -> N
 
 
 ###########################################################################################################
-# Build, then compare, then write (ADR-0043). A domain's whole artifact set is built in
-# memory first, so a domain that cannot be exported keeps every file it had. Each built
-# artifact is then compared with the file already on disk and only the ones that differ are
-# replaced: an unchanged artifact keeps its inode and mtime, which the restart rule
-# (newest artifact mtime vs the container's StartedAt) depends on. The files on disk are
-# the only state -- no fingerprint store -- so the answer survives an exporter restart.
+# Build, then compare, then write (ADR-0043, amended by ADR-0051). A domain's artifact set
+# is built in memory before the first write, so a domain that cannot be exported keeps
+# every file it had. The PEMs are compared with the files on disk byte for byte. The `.pfx`
+# cannot be (PKCS12 encryption draws a fresh salt and IV per build), so it is checked
+# against its fingerprint sidecar, `<pfx>.fingerprint.json`: hashes of the `.pfx` file, the
+# key PEM and the certificates, and a salted scrypt hash of the passphrase. The sidecar is
+# never authoritative alone -- "current" requires its recorded `.pfx` hash to equal the file
+# on disk -- and a missing, unusable or mismatched sidecar falls back to the content compare
+# (`_pfx_differs`). The private key is loaded only when the `.pfx` must be rebuilt or
+# verified. Only changed artifacts are replaced: an unchanged artifact keeps its inode and
+# mtime, which the restart rule (newest artifact mtime vs the container's StartedAt)
+# depends on. The sidecar is not an artifact and never moves that mtime. The files on disk
+# are the only state, so the answer survives an exporter restart.
 
 
 def _parse_fullchain(fullchain_pem: bytes) -> list[x509.Certificate]:
@@ -312,6 +324,11 @@ def _breaks_write_policy(path: Path, policyMode: int, dryRun: bool = False) -> b
     rewrite, hook run, notification and restart on every pass. A dry run only logs. A
     failed `chmod` falls back to the rewrite. Raises `OSError` when the path cannot be
     examined.
+
+    The tighten goes through one descriptor (RT-1, closure 2026-10-12): the name is opened
+    `O_NOFOLLOW`, the descriptor is `fstat`ed and must still be a regular file, and the
+    mode is set with `fchmod`. A symlink swapped in after the `lstat` gives `ELOOP` and
+    counts as changed; `chmod` by name would have followed it to another file.
     """
     info = os.lstat(path)
     if not stat.S_ISREG(info.st_mode):
@@ -319,18 +336,31 @@ def _breaks_write_policy(path: Path, policyMode: int, dryRun: bool = False) -> b
     current = info.st_mode & 0o7777
     if not current & ~policyMode:
         return False
-    tightened = current & policyMode
     logPath = sanitize_for_log(str(path))
     if dryRun:
         globalLogger.warning(
             f"[DRYRUN] would tighten mode of {logPath} from {current:04o} to "
-            f"{tightened:04o}"
+            f"{current & policyMode:04o}"
         )
         return False
     try:
-        os.chmod(path, tightened)
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError:
+        # ELOOP (a symlink swapped in), a non-openable type, or a mode the owner
+        # cannot read: rewrite it, as a failed `chmod` did.
+        return True
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            return True
+        current = info.st_mode & 0o7777
+        tightened = current & policyMode
+        if current != tightened:
+            os.fchmod(fd, tightened)
     except OSError:
         return True
+    finally:
+        os.close(fd)
     globalLogger.warning(
         f"Tightened mode of {logPath} from {current:04o} to {tightened:04o}: wider than "
         "the export policy allows; not counted as a certificate change"
@@ -408,27 +438,289 @@ def _pfx_differs(
         return True
 
 
-def _log_pkcs12_details(
-    filename, pkcs12_bytes: bytes, passphrase: str | bytes | None
-) -> None:
+def _log_pkcs12_details(filename, certs: list[x509.Certificate]) -> None:
     """DEBUG introspection of a written PFX: subject, issuer and dates -- never key
-    material or the passphrase. Best-effort: a certificate without a CN must not turn a
-    successful write into a reported failure."""
+    material or the passphrase. Taken from the in-memory certificates the bundle was
+    built from, so the written file is not loaded again. Best-effort: a certificate
+    without a CN must not turn a successful write into a reported failure."""
     if not globalLogger.isEnabledFor(logging.DEBUG):
         return
     try:
-        (_key, cert, cas) = pkcs12.load_key_and_certificates(
-            pkcs12_bytes, _normalize_passphrase(passphrase)
-        )
+        cert = certs[0]
         globalLogger.debug(f"Created PKCS12 file: {filename}")
-        if cert is not None:
-            globalLogger.debug(f"  Subject: {cert.subject.rfc4514_string()}")
-            globalLogger.debug(f"  Issuer: {cert.issuer.rfc4514_string()}")
-            globalLogger.debug(f"  Not Before: {cert.not_valid_before_utc.date()}")
-            globalLogger.debug(f"  Not After: {cert.not_valid_after_utc.date()}")
-        globalLogger.debug(f"  Intermediates: {len(cas)}")
+        globalLogger.debug(f"  Subject: {cert.subject.rfc4514_string()}")
+        globalLogger.debug(f"  Issuer: {cert.issuer.rfc4514_string()}")
+        globalLogger.debug(f"  Not Before: {cert.not_valid_before_utc.date()}")
+        globalLogger.debug(f"  Not After: {cert.not_valid_after_utc.date()}")
+        globalLogger.debug(f"  Intermediates: {len(certs) - 1}")
     except Exception as e:  # noqa: BLE001 - diagnostics only
         globalLogger.debug(f"Could not introspect PKCS12 file '{filename}': {e}")
+
+
+def _load_private_key(keyPem: bytes, validate: bool) -> PrivateKeyTypes:
+    """The only private-key loader in the export path (ADR-0051).
+
+    `validate=False` (`settings.validatekeys: false`) skips cryptography's RSA key
+    validation, ~0.5 s per RSA-4096 key; it is safe only for keys from a trusted source --
+    the operator's own Traefik. The key/certificate match is not part of that validation:
+    `pkcs12.serialize_key_and_certificates` checks it in both modes.
+    """
+    return serialization.load_pem_private_key(
+        keyPem, password=None, unsafe_skip_rsa_key_validation=not validate
+    )
+
+
+def _serialize_pkcs12(
+    key: PrivateKeyTypes,
+    certs: list[x509.Certificate],
+    passphrase: str | bytes | None,
+) -> bytes:
+    """The PKCS12 bundle for a loaded key and its chain (leaf first). Pure: no I/O.
+
+    The intermediates are included, in order. A non-empty passphrase selects
+    `BestAvailableEncryption` (AES-256/SHA-256); `None` or empty means an unencrypted
+    bundle. Raises `ValueError` when the key does not match the leaf.
+    """
+    leaf = certs[0]
+
+    # get the common name from the certificate
+    try:
+        cert_subject_common_name: str | None = str(
+            leaf.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
+        )
+    except Exception:  # noqa: BLE001 - fall back to an unnamed certificate
+        # DEBUG, not ERROR: a CN-less leaf (Let's Encrypt's shortlived/tlsserver
+        # profiles) is valid.
+        globalLogger.debug(
+            f"Certificate has no subject common name ('{leaf.subject!s}'); using "
+            "the default PKCS12 friendly name"
+        )
+
+        cert_subject_common_name = None
+
+    # format the common name if it is a wildcard
+    if cert_subject_common_name is not None:
+        if "*." in cert_subject_common_name:
+            cert_subject_common_name = "{} (wildcard)".format(
+                cert_subject_common_name.split("*.")[1]
+            )
+    else:
+        cert_subject_common_name = "LetsEncrypt Certificate"
+
+    password = _normalize_passphrase(passphrase)
+    pkcs12_encryption = (
+        serialization.BestAvailableEncryption(password)
+        if password is not None
+        else serialization.NoEncryption()
+    )
+    return pkcs12.serialize_key_and_certificates(
+        cert_subject_common_name.encode("utf-8"),
+        key,  # type: ignore[arg-type]
+        leaf,
+        certs[1:] or None,
+        pkcs12_encryption,
+    )
+
+
+###########################################################################################################
+# The `.pfx` fingerprint sidecar (ADR-0051). One JSON object per `.pfx`, written 0600 after
+# the `.pfx`. It holds no secret: SHA-256 hashes of the `.pfx` file, of the store's key PEM
+# and of each certificate, and the passphrase only as a salted scrypt hash.
+_PFX_FINGERPRINT_FORMAT = "traefik-certificate-exporter/pfx-fingerprint"
+_PFX_FINGERPRINT_VERSION = 1
+# How the `.pfx` is built (AR-4, closure 2026-10-12): bump it whenever `_serialize_pkcs12`
+# changes the bundle it produces -- friendly name, encryption, intermediates. A sidecar
+# that records another value, or none, rebuilds the `.pfx` once. A test pins this value to
+# a hash of `_serialize_pkcs12`'s source.
+_PFX_BUILD_RECIPE = 1
+_PFX_FINGERPRINT_MAX_BYTES = 64 * 1024
+_SCRYPT_N = 2**14
+_SCRYPT_R = 8
+_SCRYPT_P = 1
+_SCRYPT_LENGTH = 32
+_SCRYPT_SALT_BYTES = 16
+# A record is read back from disk, so its cost parameters are bounded: a planted sidecar
+# must not make the check allocate unbounded memory (scrypt needs 128 * n * r bytes).
+_SCRYPT_MAX_MEMORY = 64 * 1024 * 1024
+_SCRYPT_MAX_P = 16
+
+
+def _sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _certificate_fingerprints(certs: list[x509.Certificate]) -> list[str]:
+    return [c.fingerprint(hashes.SHA256()).hex() for c in certs]
+
+
+def _scrypt_params(record: object) -> tuple[int, int, int, bytes, bytes] | None:
+    """`(n, r, p, salt, digest)` of a passphrase record, or `None` when it is unknown or
+    malformed. No derive happens here."""
+    if not isinstance(record, dict) or record.get("kdf") != "scrypt":
+        return None
+    n, r, p = record.get("n"), record.get("r"), record.get("p")
+    # `type(...) is int`, not `isinstance`: `True` is an `int` too.
+    if type(n) is not int or type(r) is not int or type(p) is not int:
+        return None
+    if n <= 0 or r <= 0 or p <= 0 or 128 * n * r > _SCRYPT_MAX_MEMORY:
+        return None
+    if p > _SCRYPT_MAX_P:
+        return None
+    salt, digest = record.get("salt"), record.get("digest")
+    if not isinstance(salt, str) or not isinstance(digest, str):
+        return None
+    try:
+        saltBytes = b64decode(salt, validate=True)
+        digestBytes = b64decode(digest, validate=True)
+    except ValueError:
+        return None
+    if len(saltBytes) != _SCRYPT_SALT_BYTES or len(digestBytes) != _SCRYPT_LENGTH:
+        return None
+    return n, r, p, saltBytes, digestBytes
+
+
+@functools.lru_cache(maxsize=4096)
+def _scrypt_verifies(
+    passphrase: bytes, salt: bytes, n: int, r: int, p: int, digest: bytes
+) -> bool:
+    """Does `passphrase` derive `digest`? Constant-time (`Scrypt.verify`). Cached on
+    hashable primitives only, so each sidecar costs one derive per process (AG-3)."""
+    try:
+        Scrypt(salt=salt, length=len(digest), n=n, r=r, p=p).verify(passphrase, digest)
+    except (InvalidKey, ValueError, MemoryError):
+        return False
+    return True
+
+
+def _passphrase_matches(passphrase: bytes, record: dict) -> bool:
+    """Does the configured passphrase match a sidecar's passphrase record? Not cached:
+    the record is a `dict`, which `lru_cache` cannot hash; the derive is cached below."""
+    params = _scrypt_params(record)
+    if params is None:
+        return False
+    n, r, p, salt, digest = params
+    return _scrypt_verifies(passphrase, salt, n, r, p, digest)
+
+
+def _pfx_fingerprint(
+    pfxBytes: bytes,
+    keyPem: bytes,
+    certs: list[x509.Certificate],
+    passphrase: str | bytes | None,
+) -> dict:
+    """The sidecar object for a `.pfx` (a new salt when a passphrase is set)."""
+    password = _normalize_passphrase(passphrase)
+    passphraseRecord: dict | None = None
+    if password is not None:
+        salt = os.urandom(_SCRYPT_SALT_BYTES)
+        digest = Scrypt(
+            salt=salt, length=_SCRYPT_LENGTH, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P
+        ).derive(password)
+        passphraseRecord = {
+            "kdf": "scrypt",
+            "n": _SCRYPT_N,
+            "r": _SCRYPT_R,
+            "p": _SCRYPT_P,
+            "salt": b64encode(salt).decode("ascii"),
+            "digest": b64encode(digest).decode("ascii"),
+        }
+    return {
+        "builder": _PFX_BUILD_RECIPE,
+        "certificates_sha256": _certificate_fingerprints(certs),
+        "format": _PFX_FINGERPRINT_FORMAT,
+        "key_sha256": _sha256_hex(keyPem),
+        "passphrase": passphraseRecord,
+        "pfx_sha256": _sha256_hex(pfxBytes),
+        "version": _PFX_FINGERPRINT_VERSION,
+    }
+
+
+def _read_pfx_fingerprint(path: Path, dryRun: bool) -> dict | None:
+    """The sidecar at `path`, or `None` when it is unusable: absent, not a regular file
+    (a symlink included), still wider than 0600 after the in-place tighten, larger than
+    64 KiB, not UTF-8 JSON, or of an unknown format/version or field type. Never raises.
+    """
+    try:
+        if _breaks_write_policy(path, _SECRET_FILE_MODE, dryRun):
+            return None
+        if path.lstat().st_size > _PFX_FINGERPRINT_MAX_BYTES:
+            return None
+        raw = path.read_bytes()
+        if len(raw) > _PFX_FINGERPRINT_MAX_BYTES:
+            return None
+        record = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, RecursionError):
+        return None
+    if not isinstance(record, dict):
+        return None
+    certificates = record.get("certificates_sha256")
+    passphrase = record.get("passphrase")
+    if (
+        record.get("format") != _PFX_FINGERPRINT_FORMAT
+        or type(record.get("version")) is not int
+        or record.get("version") != _PFX_FINGERPRINT_VERSION
+        or not isinstance(record.get("key_sha256"), str)
+        or not isinstance(record.get("pfx_sha256"), str)
+        or not isinstance(certificates, list)
+        or not all(isinstance(c, str) for c in certificates)
+        or (passphrase is not None and _scrypt_params(passphrase) is None)
+    ):
+        return None
+    return record
+
+
+def _pfx_state(
+    pfxPath: Path,
+    keyPem: bytes,
+    certs: list[x509.Certificate],
+    passphrase: str | bytes | None,
+    dryRun: bool,
+) -> Literal["current", "rebuild", "verify"]:
+    """Is the `.pfx` on disk current for these inputs (ADR-0051)?
+
+    `current`: it passes the write policy, its sidecar is usable, the sidecar's `.pfx` hash
+    equals the file's, and the key, the certificates and the passphrase state all match.
+    `rebuild`: the `.pfx` is absent or not a regular file, or the sidecar is usable and an
+    input or the build recipe differs. `verify`: the sidecar is missing or unusable, its
+    `.pfx` hash does not match the file, or the file cannot be examined -- the content
+    compare decides. Never raises.
+    """
+    try:
+        try:
+            if _breaks_write_policy(pfxPath, _SECRET_FILE_MODE, dryRun):
+                return "rebuild"
+        except FileNotFoundError:
+            return "rebuild"
+        except OSError:
+            return "verify"
+
+        record = _read_pfx_fingerprint(_pfx_fingerprint_path(pfxPath), dryRun)
+        if record is None:
+            return "verify"
+        # Built by another recipe (or recorded before the recipe was): rebuild once.
+        # `type(...) is int`: `True` must not pass as recipe 1.
+        builder = record.get("builder")
+        if type(builder) is not int or builder != _PFX_BUILD_RECIPE:
+            return "rebuild"
+        try:
+            pfxHash = _sha256_hex(pfxPath.read_bytes())
+        except OSError:
+            return "verify"
+        if record["pfx_sha256"] != pfxHash:
+            return "verify"
+
+        if record["key_sha256"] != _sha256_hex(keyPem):
+            return "rebuild"
+        if record["certificates_sha256"] != _certificate_fingerprints(certs):
+            return "rebuild"
+
+        password = _normalize_passphrase(passphrase)
+        stored = record["passphrase"]
+        if password is None or stored is None:
+            return "current" if password is None and stored is None else "rebuild"
+        return "current" if _passphrase_matches(password, stored) else "rebuild"
+    except Exception:  # noqa: BLE001 - never raises: anything unexpected verifies
+        return "verify"
 
 
 ###########################################################################################################
@@ -507,6 +799,14 @@ def _artifact_paths(
         directory / "fullchain.pem",
         directory / "cert.pfx",
     ]
+
+
+def _pfx_fingerprint_path(pfxPath: Path) -> Path:
+    """The fingerprint sidecar of a `.pfx` (ADR-0051): `cert.pfx.fingerprint.json`, or
+    `<name>.pfx.fingerprint.json` in the flat layout. Pure, and the only place this path is
+    derived. It is not one of the five artifact paths, so the restart rule never sees it.
+    """
+    return pfxPath.with_name(pfxPath.name + ".fingerprint.json")
 
 
 # One store file's recorded artifacts: `(resolverName, name) -> paths`. Keyed by resolver
@@ -966,26 +1266,20 @@ class AcmeCertificateExporter:
         """
         logName = sanitize_for_log(name)
         passphrase = self.__settings.pkcs12Passphrase
+        dryRun = self.__settings.dryRun
 
-        # 1. Build every artifact in memory. Nothing touches the output directory until
-        #    all of them exist, so a domain that cannot be exported keeps its old files.
+        # 1. Decode the key and chain strictly and parse the chain: the cheap inputs every
+        #    pass needs. Nothing touches the output directory until every artifact that
+        #    will be written exists, so a domain that cannot be exported keeps its files.
         stage = "key"
         try:
             # Strict: a non-alphabet byte is an error, never silently dropped.
             keyPem = b64decode(privatekeyB64, validate=True)
-            key = serialization.load_pem_private_key(keyPem, password=None)
             stage = "certificate chain"
             fullchainPem = b64decode(fullchainB64, validate=True)
             certs = _parse_fullchain(fullchainPem)
-            stage = "pkcs12"
-            pfx = PemToPfxConverter.build_pkcs12(keyPem, certs, passphrase)
         except Exception as e:  # noqa: BLE001 - one bad domain must not stop the rest
-            # The exception type and message only: never key bytes or the passphrase.
-            self.__logger.error(
-                f"Not exporting certificate for '{logName}': the {stage} could not be "
-                f"built ({type(e).__name__}: {sanitize_for_log(str(e))}); its existing "
-                "files are left as they were"
-            )
+            self.__logBuildFailure(logName, stage, e)
             return False, None
 
         leafPem = certs[0].public_bytes(serialization.Encoding.PEM)
@@ -996,6 +1290,7 @@ class AcmeCertificateExporter:
         basePath, paths = self.__artifactPaths(name, resolverName)
         directory = paths[0].parent
 
+        # 2. Containment and the directory sweep.
         if not _is_contained_within(basePath, directory):
             # Containment is the property that matters; the name pattern is how it is
             # normally kept, this is the assertion of it.
@@ -1015,35 +1310,87 @@ class AcmeCertificateExporter:
             (fullchainPath, fullchainPem, None),
         ]
 
-        if not self.__settings.dryRun:
+        if not dryRun:
             if not directory.exists():
                 directory.mkdir(parents=True, exist_ok=True)
             if directory not in sweptDirectories:
                 _sweep_stale_temp_files(directory)
                 sweptDirectories.add(directory)
 
-        # 2. Compare with what is on disk; keep only what would change.
+        # 3. Byte-compare the PEMs; keep only what would change.
         changed = [
             (path, data, mode)
             for (path, data, mode) in pems
-            if _file_differs(path, data, mode=mode, dryRun=self.__settings.dryRun)
+            if _file_differs(path, data, mode=mode, dryRun=dryRun)
         ]
-        if _pfx_differs(pfxPath, key, certs, passphrase, dryRun=self.__settings.dryRun):
-            changed.append((pfxPath, pfx, _SECRET_FILE_MODE))
+
+        # 4. Is the `.pfx` current (ADR-0051)? Decided from its sidecar, with no key load.
+        state = _pfx_state(pfxPath, keyPem, certs, passphrase, dryRun)
+
+        # 5. Only a `.pfx` that must be rebuilt or verified pays for loading the key (at
+        #    most once per pass) and building the bundle. Built before the first write.
+        pfx: bytes | None = None
+        verifiedPfx: bytes | None = None
+        if state == "current":
+            self.__logger.debug(f".pfx for {logName} current (fingerprint)")
+        else:
+            stage = "key"
+            try:
+                key = _load_private_key(keyPem, self.__settings.validateKeys)
+                stage = "pkcs12"
+                pfx = _serialize_pkcs12(key, certs, passphrase)
+            except Exception as e:  # noqa: BLE001 - one bad domain must not stop the rest
+                self.__logBuildFailure(logName, stage, e)
+                return False, None
+
+            reason: str | None
+            if state == "rebuild":
+                reason = (
+                    "fingerprint mismatch" if os.path.lexists(pfxPath) else "missing"
+                )
+            else:
+                try:
+                    existing = pfxPath.read_bytes()
+                except OSError:
+                    reason = "unreadable"
+                else:
+                    # The content compare, once: its answer is recorded in the sidecar.
+                    if _pfx_differs(pfxPath, key, certs, passphrase, dryRun=dryRun):
+                        reason = "content differs"
+                    else:
+                        reason = None
+                        verifiedPfx = existing
+            if reason is not None:
+                self.__logger.debug(f".pfx for {logName} rebuilt: {reason}")
+                changed.append((pfxPath, pfx, _SECRET_FILE_MODE))
 
         if not changed:
+            if verifiedPfx is not None:
+                if dryRun:
+                    self.__logger.debug(
+                        f".pfx for {logName} verified by content; dry run: fingerprint "
+                        "not recorded"
+                    )
+                else:
+                    self.__writeFingerprint(
+                        logName, pfxPath, verifiedPfx, keyPem, certs, passphrase
+                    )
+                    self.__logger.debug(
+                        f".pfx for {logName} verified by content; fingerprint recorded"
+                    )
             self.__logger.debug(f"Certificate for {logName} unchanged; nothing written")
             return False, paths
 
         changedNames = [path.name for (path, _data, _mode) in changed]
-        if self.__settings.dryRun:
+        if dryRun:
             self.__logger.debug(
                 f"Dry run: would write {', '.join(changedNames)} for {logName}"
             )
             return True, paths
 
-        # 3. Write only the changed artifacts, each atomically. Per-file atomicity plus
-        #    build-first is the contract; the set as a whole is not transactional.
+        # 6. Write only the changed artifacts, each atomically: the PEMs, then the `.pfx`,
+        #    then its sidecar. Per-file atomicity plus build-first is the contract; the
+        #    set as a whole is not transactional.
         written: list[str] = []
         for path, data, mode in changed:
             try:
@@ -1065,13 +1412,52 @@ class AcmeCertificateExporter:
                 return True, paths
             written.append(path.name)
 
-        if pfxPath.name in written:
-            _log_pkcs12_details(pfxPath, pfx, passphrase)
+        if pfx is not None and pfxPath.name in written:
+            _log_pkcs12_details(pfxPath, certs)
+            self.__writeFingerprint(logName, pfxPath, pfx, keyPem, certs, passphrase)
+        elif verifiedPfx is not None:
+            self.__writeFingerprint(
+                logName, pfxPath, verifiedPfx, keyPem, certs, passphrase
+            )
         self.__logger.debug(
             f"Exported {logName}: {len(certs) - 1} intermediate(s); changed: "
             f"{', '.join(written)}"
         )
         return True, paths
+
+    # --------------------------------------------------------------------------------------
+    def __logBuildFailure(self, logName: str, stage: str, e: Exception) -> None:
+        # The exception type and message only: never key bytes or the passphrase.
+        self.__logger.error(
+            f"Not exporting certificate for '{logName}': the {stage} could not be "
+            f"built ({type(e).__name__}: {sanitize_for_log(str(e))}); its existing "
+            "files are left as they were"
+        )
+
+    # --------------------------------------------------------------------------------------
+    def __writeFingerprint(
+        self,
+        logName: str,
+        pfxPath: Path,
+        pfxBytes: bytes,
+        keyPem: bytes,
+        certs: list[x509.Certificate],
+        passphrase: str | bytes | None,
+    ) -> None:
+        """Write the `.pfx`'s sidecar (ADR-0051), atomically at 0600. A failure is one
+        WARNING and changes nothing else: the next pass verifies the `.pfx` by content."""
+        sidecar = _pfx_fingerprint_path(pfxPath)
+        try:
+            record = _pfx_fingerprint(pfxBytes, keyPem, certs, passphrase)
+            data = (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
+            _atomic_write_bytes(sidecar, data, mode=_SECRET_FILE_MODE)
+        except Exception as e:  # noqa: BLE001 - the sidecar is an optimisation only
+            self.__logger.warning(
+                f"Could not write the .pfx fingerprint file "
+                f"'{sanitize_for_log(str(sidecar))}' for {logName} "
+                f"({type(e).__name__}: {sanitize_for_log(str(e))}); the next pass "
+                "verifies the .pfx by content"
+            )
 
     # --------------------------------------------------------------------------------------
     def exportCertificatesForFile(self, sourceFile: str) -> list[str]:
@@ -1194,52 +1580,14 @@ class PemToPfxConverter:
 
         The key is loaded with `password=None`: the ACME store's key is unencrypted PEM,
         and the passphrase protects the OUTPUT only (loading the key with it raised
-        `TypeError` for every domain -- B2). The intermediates are included, in order.
-        A non-empty passphrase selects `BestAvailableEncryption` (AES-256/SHA-256);
-        `None` or empty means an unencrypted bundle.
+        `TypeError` for every domain -- B2). The key is always validated here: this is the
+        public API, and `settings.validatekeys` applies to the export path only. The
+        intermediates are included, in order. A non-empty passphrase selects
+        `BestAvailableEncryption` (AES-256/SHA-256); `None` or empty means an unencrypted
+        bundle.
         """
-        key = serialization.load_pem_private_key(key_pem, password=None)
-        leaf = certs[0]
-
-        # get the common name from the certificate
-        try:
-            cert_subject_common_name: str | None = str(
-                leaf.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[
-                    0
-                ].value
-            )
-        except Exception:  # noqa: BLE001 - fall back to an unnamed certificate
-            # DEBUG, not ERROR: this runs on every pass for every domain, changed or not,
-            # and a CN-less leaf (Let's Encrypt's shortlived/tlsserver profiles) is valid.
-            globalLogger.debug(
-                f"Certificate has no subject common name ('{leaf.subject!s}'); using "
-                "the default PKCS12 friendly name"
-            )
-
-            cert_subject_common_name = None
-
-        # format the common name if it is a wildcard
-        if cert_subject_common_name is not None:
-            if "*." in cert_subject_common_name:
-                cert_subject_common_name = "{} (wildcard)".format(
-                    cert_subject_common_name.split("*.")[1]
-                )
-        else:
-            cert_subject_common_name = "LetsEncrypt Certificate"
-
-        password = _normalize_passphrase(passphrase)
-        pkcs12_encryption = (
-            serialization.BestAvailableEncryption(password)
-            if password is not None
-            else serialization.NoEncryption()
-        )
-        return pkcs12.serialize_key_and_certificates(
-            cert_subject_common_name.encode("utf-8"),
-            key,  # type: ignore[arg-type]
-            leaf,
-            certs[1:] or None,
-            pkcs12_encryption,
-        )
+        key = _load_private_key(key_pem, validate=True)
+        return _serialize_pkcs12(key, certs, passphrase)
 
     @staticmethod
     def export_to_pkcs12(
@@ -1277,7 +1625,7 @@ class PemToPfxConverter:
         # the documented default -- means `NoEncryption()`.
         _atomic_write_bytes(Path(filename), pkcs12_bytes, mode=_SECRET_FILE_MODE)
 
-        _log_pkcs12_details(filename, pkcs12_bytes, passphrase)
+        _log_pkcs12_details(filename, certs)
 
 
 ###########################################################################################################
@@ -1356,42 +1704,107 @@ class AcmeCertificateFileHandler(watchdog.events.PatternMatchingEventHandler):
         self.handleEvent(event)
 
     # --------------------------------------------------------------------------------------
+    def on_moved(self, event):
+        """A file renamed onto, away from, or between watched names.
+
+        `PatternMatchingEventHandler.dispatch` delivers a moved event when EITHER path
+        matches, so which of the three cases this is has to be decided here. Without this
+        override every rename went to the base class's no-op: a store replaced atomically
+        (write a temporary file, rename it onto the store -- restores, `cp`-then-`mv`,
+        editors) was never exported until some later in-place write.
+        """
+        if event.is_directory:
+            return
+
+        srcPath = os.fsdecode(event.src_path)
+        destPath = os.fsdecode(event.dest_path)
+        self.__logger.debug(
+            "Watchdog received moved event - "
+            f"{sanitize_for_log(srcPath)} -> {sanitize_for_log(destPath)}."
+        )
+
+        srcMatches = self.__matches(srcPath)
+        correlationId: str | None = None
+        if srcMatches:
+            with self.lock:
+                # The source no longer exists under that name, so exporting it would log a
+                # spurious `File not found` ERROR -- and for a matching temporary file
+                # renamed onto the store, that ERROR is all the pass would have produced.
+                # Residual race, accepted: if the drain already took the source off the
+                # queue (the rename landed more than one debounce window after the source's
+                # own event), that pass still logs `File not found` for the vanished name.
+                # Suppressing it would also hide a store that genuinely vanished mid-pass;
+                # the destination is queued below for the next drain either way.
+                self.pendingPaths.discard(srcPath)
+                correlationId = self.correlationId if self.isWaiting else None
+
+        if self.__matches(destPath):
+            self.__queuePath(destPath)
+            return
+        if not srcMatches:
+            # Unreachable through `dispatch`, which filters out a move matching neither.
+            return
+
+        token = set_correlation_id(correlationId)
+        try:
+            self.__logger.info(
+                f"Store file {sanitize_for_log(srcPath)} was renamed to "
+                f"{sanitize_for_log(destPath)}, which does not match the watched file "
+                "pattern; not exported, exported certificates left in place"
+            )
+        finally:
+            reset_correlation_id(token)
+
+    # --------------------------------------------------------------------------------------
+    def __matches(self, path: str) -> bool:
+        # The same function, on the same inputs, that `dispatch` uses -- so the handler and
+        # dispatch cannot disagree about what a watched name is.
+        return match_any_paths(
+            [path],
+            included_patterns=self.patterns,
+            excluded_patterns=self.ignore_patterns,
+            case_sensitive=self.case_sensitive,
+        )
+
+    # --------------------------------------------------------------------------------------
     def handleEvent(self, event):
 
         if not event.is_directory:
-            with self.lock:
-                # Record the path before deciding whether to arm a timer. This handler is
-                # registered with `patterns=[fileSpec]` -- `*.json` by default -- across the
-                # whole data directory, while the worker used to process one `src_path`. A
-                # change to a *second* acme file during the window was therefore discarded
-                # outright and never exported, and would stay unexported until that file
-                # happened to change again. It is a distinct file, not a duplicate to
-                # coalesce, and the multi-resolver setup this project documents is exactly
-                # several acme files in one directory.
-                if self.shuttingDown:
-                    # Shutdown has already cancelled the pending drain. watchdog's
-                    # dispatcher can still deliver an event it had in hand, and arming a
-                    # timer for it would reinstate exactly the orphaned thread `cancel()`
-                    # just removed -- and run a full export pass after "stopping...".
-                    self.__logger.debug(
-                        f"Shutting down; ignoring change to {event.src_path}"
-                    )
-                    return
+            self.__queuePath(event.src_path)
 
-                self.pendingPaths.add(event.src_path)
+    # --------------------------------------------------------------------------------------
+    def __queuePath(self, path: str) -> None:
+        with self.lock:
+            # Record the path before deciding whether to arm a timer. This handler is
+            # registered with `patterns=[fileSpec]` -- `*.json` by default -- across the
+            # whole data directory, while the worker used to process one `src_path`. A
+            # change to a *second* acme file during the window was therefore discarded
+            # outright and never exported, and would stay unexported until that file
+            # happened to change again. It is a distinct file, not a duplicate to
+            # coalesce, and the multi-resolver setup this project documents is exactly
+            # several acme files in one directory.
+            if self.shuttingDown:
+                # Shutdown has already cancelled the pending drain. watchdog's
+                # dispatcher can still deliver an event it had in hand, and arming a
+                # timer for it would reinstate exactly the orphaned thread `cancel()`
+                # just removed -- and run a full export pass after "stopping...".
+                self.__logger.debug(f"Shutting down; ignoring change to {path}")
+                return
 
-                if self.isWaiting:
-                    # Belongs to the window already open, so it is reported under that
-                    # window's id rather than opening a second one.
-                    self.__logEvent(event.src_path, self.correlationId)
-                    return
+            self.pendingPaths.add(path)
 
-                # Coalescing is still the point: watchdog fires several events per write,
-                # and adding the same path to the set again is what absorbs them.
-                self.isWaiting = True
-                self.correlationId = new_correlation_id()
-                self.__logEvent(event.src_path, self.correlationId)
-                self.__arm()
+            if self.isWaiting:
+                # Belongs to the window already open, so it is reported under that
+                # window's id rather than opening a second one.
+                self.__logEvent(path, self.correlationId)
+                return
+
+            # Coalescing is still the point: watchdog fires several events per write,
+            # and adding the same path to the set again is what absorbs them.
+            self.isWaiting = True
+            self.correlationId = new_correlation_id()
+            self.__logEvent(path, self.correlationId)
+            self.__arm()
 
     # --------------------------------------------------------------------------------------
     def __logEvent(self, path: str, correlationId: str | None) -> None:

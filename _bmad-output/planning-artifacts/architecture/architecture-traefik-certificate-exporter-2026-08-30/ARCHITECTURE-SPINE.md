@@ -149,8 +149,14 @@ graph TD
     filename-less overlay indistinguishable from the command line. confuse's `resolve()`
     then yields the next admissible source with its real source object, so `sourceOf`
     reports `environment`, `command line` or `default` accurately (verified against confuse
-    2.3.0, E015-S01-001). A `.env` file is a file source for these keys: in root mode a variable that
-    `load_dotenv` newly adds for an environment-only key is removed; a variable the real
+    2.3.0, E015-S01-001). A `.env` file is a file source: in root mode it may contribute only the environment
+    variable names of `any-source` settings (derived from the trust table through
+    `_env_name`, compared case-insensitively). Every other name `load_dotenv` newly adds is
+    removed: an environment-only key (reported below), and anything else (`LOGGING_*`,
+    `LD_PRELOAD`, `DOCKER_HOST`, …), reported in one ERROR per `.env` file that lists the
+    removed names, never values (ADR-0049 amendment 2026-10-12); a removed legacy name
+    (AD-6) is left out of that ERROR and reported once by the AD-6 legacy WARNING with its
+    replacement (E015-S01-004). A variable the real
     environment already held is kept. Each withheld key gives one start-up ERROR naming the
     setting, the file and the `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_*` name to use, never the
     value; exporting continues (no exit). The rule is inactive when the euid is not 0 or
@@ -310,7 +316,8 @@ graph TD
   by `tests/test_settings_surface.py`: `test_legacy_map_covers_documented_names` scans
   `git log -p HEAD` over the documentation pathspecs, and
   `test_legacy_map_covers_preconfuse_env_names` derives the translator files from
-  `git log -G appParams` and the names from their `${NAME+x}` presence tests plus
+  `git log -G appParams` (outside the documentation scan's excluded and vendored trees,
+  which quote the idiom without running it) and the names from their `${NAME+x}` presence tests plus
   non-`TRAEFIK_CERTIFICATE_EXPORTER_` `TRAEFIK_*` names in the documentation history, with a
   scope-attack test (a deleted second translator script) and a rule-attack test (a dropped
   row); both fail on a shallow clone. The
@@ -421,9 +428,9 @@ graph TD
     `validatekeys` rebuilds nothing. Dry run builds and compares in memory (the verify path
     included) and writes nothing, fingerprint files included.
 
-  — ADR-0043 (amends ADR-0014, ADR-0023 Decision 3, ADR-0024; its Decision 2 is amended by the
-  ADR to be written by E015-S01-002, PKCS12 change detection by fingerprint sidecar and
-  optional RSA key validation), ADR-0023, ADR-0024, ADR-0040, memlog 2026-10-11, maintainer
+  — ADR-0043 (amends ADR-0014, ADR-0023 Decision 3, ADR-0024; its Decision 2 is amended by
+  ADR-0051, PKCS12 change detection by fingerprint sidecar and
+  optional RSA key validation), ADR-0051, ADR-0023, ADR-0024, ADR-0040, memlog 2026-10-11, maintainer
   decisions MD-06/MD-07 (2026-10-12), E014-S01-002, E015-S01-002.
 
 ### AD-9 — Pass sequence and consumer contracts [ADOPTED]
@@ -734,3 +741,6 @@ graph LR
 - 2026-10-11 E014-S02-003 decision-record repair and baseline cross-check: S01-001..010 deltas routed into AD-3, AD-6, AD-7, AD-8, AD-9, AD-10, AD-12, Conventions, Stack and the Capability map; AD-13 states the enforced `import-linter` layer order; `CLI > env > config file > defaults` for every setting (BL-E014-017).
 - 2026-10-12 consolidated to a clean 0.3.1 target state (E015), no amendment layering. Sources: E015-S01-001..004 and E015-S02-003, maintainer decisions MD-06..MD-23 accepted 2026-10-12 (MD-01..MD-05 withdrawn), research brief 2026-10-12 §1-§4, E014 red-team RT-1. AD-2 states the kept LinuxServer conventions (`/config` `PUID`-owned) and the root-mode settings trust rule with its trust-class table; AD-3 the hook-source and RSA-validation start-up lines; AD-6 the trust class per key, the opt-out flag convention and the pre-confuse legacy names; AD-8 lazy key loading, `validatekeys` and the `.pfx` fingerprint file contract; AD-10 the fingerprint file is not an artifact; AD-11 the trigger events including rename; AD-12 the init resolver under the trust rule; AD-1/AD-13/Stack hook tools in the Poetry dev group; Conventions, Capability map (FR-18, FR-19, NFR-8 to NFR-10) and Deferred (BL-E015-002 open risk, BL-E015-003) updated. ADRs not yet written are named by the E015 story that writes them.
 - 2026-10-12 E015 epic architecture gate (AG-1, AG-2, AG-6, AR-1; maintainer decision 2026-10-12 extending MD-21): AD-2 class rule covers the store root trusts; `datapath` environment-only when root; `filespec` a validated file-name glob in every mode; `any-source` rationales stated as reviewed claims ("availability only"); `/data:ro` required in both modes; spawn-site guard is ruff `TID251` (ADR-0050); AD-6, Conventions and Deferred (AR-1) follow; ADR-0049 replaces "ADR to be written by E015-S01-001"; AD-8 splits the cached scrypt verify from the record check (AG-3).
+- 2026-10-12 E015-S01-001 review F1 (ADR-0049 amendment 2026-10-12): AD-2 `.env` rule in root mode narrowed from "remove environment-only keys" to "admit only `any-source` setting names, remove every other newly added name" (`LD_PRELOAD`, `DOCKER_HOST`, `LOGGING_*`), one ERROR per file listing names only.
+- 2026-10-12 E015-S01-002: ADR-0051 (PKCS12 change detection by fingerprint sidecar; optional RSA key validation) replaces "ADR to be written by E015-S01-002" in AD-8. AD-3, AD-8, AD-10 and Conventions (artifacts) checked against the shipped code; no rule text changed. The shipped `_passphrase_matches` additionally bounds the scrypt cost parameters (memory `128 * n * r` <= 64 MiB, `p` <= 16) as part of "returns false for anything unknown" (notes-E015-S01-002.md, `## Spine/ADR amendments`).
+- 2026-10-12 E015-S01-004: AD-6 pre-confuse rule checked against the shipped code; matches, except that the translator-file derivation excludes the documentation scan's own `_SCAN_EXCLUDE` trees and vendored paths (planning artifacts quote the idiom and placeholder presence tests). AD-2 `.env` rule: a legacy name removed from a root-mode `.env` is reported by the AD-6 legacy WARNING, not listed in the root-mode ERROR (ADR-0049 Decision 4 sentence added).

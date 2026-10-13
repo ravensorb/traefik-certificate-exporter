@@ -2,7 +2,7 @@
 
 [![Github Tags](https://img.shields.io/github/v/tag/ravensorb/traefik-certificate-exporter?logo=github&logoColor=white)](https://github.com/ravensorb/traefik-certificate-exporter) [![Docker Pulls](https://img.shields.io/docker/pulls/ravensorb/traefik-certificate-exporter?logo=docker&logoColor=white)](https://hub.docker.com/r/ravensorb/traefik-certificate-exporter)
 
-This tool can be used to extract acme certificates (ex: lets encrypt) from traefik json files. The tool is design to watch for changes to a folder for any files that match a filespec (defaults to *.json however can be set to a specific file name) and when changes are detected it will process the file and extract any certificates that are in it to the specified output path
+This tool can be used to extract acme certificates (ex: lets encrypt) from traefik json files. The tool is design to watch for changes to a folder for any files that match a filespec (defaults to *.json; a file name or glob, without a directory part) and when changes are detected it will process the file and extract any certificates that are in it to the specified output path
 
 ## Docker
 
@@ -94,9 +94,20 @@ prove at start-up that this account can read every ACME store file and write the
 and `settings.restartcontainers` is off. Otherwise it runs as root and logs one WARNING saying
 why. Traefik writes `acme.json` mode `0600` owned by the user it runs as, so with a stock
 (root) Traefik the exporter runs as root; to run it unprivileged, run Traefik as a non-root
-user and set `PUID`/`PGID` to that user's uid/gid. Unprivileged mode requires `/data` mounted
-read-only (`:ro`). See "Container privileges" in
-[docs/operational.md](../docs/operational.md) for the full decision table.
+user and set `PUID`/`PGID` to that user's uid/gid. Mount `/data` read-only (`:ro`) in
+both modes, root and unprivileged: the ACME store must not be writable by the `PUID`/`PGID`
+account. See "Container privileges" in [docs/operational.md](../docs/operational.md) for the
+full decision table.
+
+`/config` is owned by `PUID`/`PGID`: LinuxServer's `init-adduser` gives it to `abc` on every
+start, and you edit `/config/config.yaml` from the host as that user. Because that account can
+rewrite `config.yaml`, a root exporter takes `postexportcommand`, `outputpath` and `datapath`
+only from the container's environment or the command line, and ignores a `config.yaml` value
+with one ERROR (ADR-0049). So in root mode set the hook in the container's `environment:`
+(`TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_POSTEXPORTCOMMAND`), not in `config.yaml`, and do not
+point it at a program or script stored in `/config`. In unprivileged mode a `config.yaml` hook
+keeps working and runs as `PUID`. The start-up line
+`Post-export command: … (source: …), runs as uid …` shows which applies.
 
 ### docker run (using env vars)
 
@@ -181,6 +192,7 @@ services:
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RUNATSTART=true                 # Set this to run the export immediately on startup
       - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESOLVERINPATHNAME=true           # Include the resolver name in the path when exporting
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_PKCS12PASSPHRASE=              # Passphrase used to encrypt the exported PKCS12 (.pfx) file (default: unencrypted)
+      # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_VALIDATEKEYS=true               # false skips RSA key validation when a .pfx is built: only when the ACME store is written by your own Traefik
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_POSTEXPORTCOMMAND=             # Command run after a successful export pass (see below); receives exported domains via TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS
       - TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL=INFO                         # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL; the container cannot take -ll)
       # - TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_INCLUDE=                # comma separated list of domain names to only export (mutually exclusive with DOMAINS_EXCLUDE)

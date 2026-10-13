@@ -62,9 +62,14 @@ _SCAN_INCLUDE = ("*.md", "*.yml", "*.yaml", "*.sample", "*Dockerfile")
 _SCAN_EXCLUDE = ("_bmad-output/**", "docs/adr/**", ".github/**")
 
 
+def _scan_exclude_pathspecs() -> list[str]:
+    """The `_SCAN_EXCLUDE` trees as git exclude pathspecs."""
+    return [f":(exclude){p}" for p in _SCAN_EXCLUDE]
+
+
 def _scan_pathspecs() -> list[str]:
     """The git pathspecs that define which files document the settings surface."""
-    return [*_SCAN_INCLUDE, *(f":(exclude){p}" for p in _SCAN_EXCLUDE)]
+    return [*_SCAN_INCLUDE, *_scan_exclude_pathspecs()]
 
 
 def _vendored_exclude_pattern(root: Path = PROJECT_ROOT) -> re.Pattern[str]:
@@ -257,8 +262,10 @@ def _stale_marked_files(root: Path = PROJECT_ROOT) -> list[str]:
     ]
 
 
-def _history_names(root: Path = PROJECT_ROOT) -> set[str]:
-    """Every name ever committed in scope, reachable from HEAD.
+def _history_names(
+    root: Path = PROJECT_ROOT, pattern: re.Pattern[str] = ENV_NAME_PATTERN
+) -> set[str]:
+    """Every name matching `pattern` ever committed in scope, reachable from HEAD.
 
     `git log -p HEAD` over `_scan_pathspecs()` -- the same pathspecs as the tree scan, so
     deleted files are covered too. A pathspec cannot express the vendored `exclude:` regex,
@@ -300,7 +307,7 @@ def _history_names(root: Path = PROJECT_ROOT) -> set[str]:
             skip = bool(vendored.search(header.group(2)))
             continue
         if not skip:
-            names.update(ENV_NAME_PATTERN.findall(line))
+            names.update(pattern.findall(line))
     return names
 
 
@@ -308,8 +315,8 @@ def _history_names(root: Path = PROJECT_ROOT) -> set[str]:
 _DIFF_HEADER = re.compile(r"^diff --git a/((?:(?! b/).)+) b/((?:(?! b/).)+)$")
 
 
-def _undocumented_history_names(root: Path = PROJECT_ROOT) -> list[str]:
-    """Names in the history that are neither valid, a valid placeholder, nor legacy."""
+def _require_full_history(root: Path = PROJECT_ROOT) -> None:
+    """Fail -- never skip -- on a shallow clone: a partial history is a false green."""
     shallow = subprocess.run(
         ["git", "rev-parse", "--is-shallow-repository"],
         cwd=root,
@@ -322,6 +329,11 @@ def _undocumented_history_names(root: Path = PROJECT_ROOT) -> list[str]:
             "shallow clone: the legacy-name history check needs full history "
             "(CI checks out with fetch-depth: 0); refusing to pass on a partial history"
         )
+
+
+def _undocumented_history_names(root: Path = PROJECT_ROOT) -> list[str]:
+    """Names in the history that are neither valid, a valid placeholder, nor legacy."""
+    _require_full_history(root)
     leaves = _config_key_paths()
     source_names = _valid_env_names_from_source()
     return sorted(
@@ -684,6 +696,173 @@ def test_history_scan_refuses_an_unattributable_header(tmp_path):
         _history_names(tmp_path)
 
 
+# ---------------------------------------------------------------------------
+# Pre-confuse environment names of the 0.0.x image (E015-S01-004, product AD-6).
+#
+# Up to v0.0.9.2 the image's start script translated plain environment variables into CLI
+# flags with shell presence tests, so those names were never `TRAEFIK_CERTIFICATE_EXPORTER_*`
+# and never reached `ENV_NAME_PATTERN`. Their scope is derived from history, like the
+# documented names: the translator scripts by their idiom, the names by the presence test.
+# ---------------------------------------------------------------------------
+
+# The shell variable the 0.0.x `docker/root/app/run.sh` collected the exporter's CLI flags
+# in; a file whose history adds or removes a line using it is a translator.
+_PRECONFUSE_TRANSLATOR_IDIOM = "appParams"
+# The presence test (dollar, brace, NAME, "+x", brace) that switched a 0.0.x flag on.
+_PRECONFUSE_PRESENCE_TEST = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\+x\}")
+# A `TRAEFIK_*` name outside the product prefix, in the documentation history.
+_PRECONFUSE_DOC_PATTERN = re.compile(r"\bTRAEFIK_(?!CERTIFICATE_EXPORTER_)[A-Z0-9_]+")
+
+
+def _git_log(root: Path, *args: str) -> str:
+    """`git log` with the scan's fixed options, over HEAD only."""
+    return subprocess.run(
+        [
+            "git",
+            "-c",
+            "core.quotePath=false",
+            "log",
+            "--no-color",
+            "--no-ext-diff",
+            "--format=",
+            *args,
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        errors="replace",
+        check=True,
+    ).stdout
+
+
+def _preconfuse_translator_files(root: Path = PROJECT_ROOT) -> list[str]:
+    """Every path whose history, reachable from HEAD, adds or removes a line containing
+    `_PRECONFUSE_TRANSLATOR_IDIOM` -- deleted files included, no path list.
+
+    Planning artifacts, ADRs and CI (`_SCAN_EXCLUDE`, the documentation scan's own
+    exclusion) and vendored trees are not translators: the story and spine that describe
+    this scan quote the idiom and a placeholder presence test, and are not code that ever
+    ran. Any other file that uses the idiom is in scope, a test or doc included.
+    """
+    log = _git_log(
+        root,
+        "--name-only",
+        "-G",
+        _PRECONFUSE_TRANSLATOR_IDIOM,
+        "HEAD",
+        "--",
+        *_scan_exclude_pathspecs(),
+    )
+    vendored = _vendored_exclude_pattern(root)
+    files: set[str] = set()
+    for path in filter(None, log.splitlines()):
+        if path.startswith('"'):
+            pytest.fail(f"cannot use a C-quoted translator path: {path!r}")
+        if not vendored.search(path):
+            files.add(path)
+    return sorted(files)
+
+
+def _preconfuse_env_names(root: Path = PROJECT_ROOT) -> set[str]:
+    """Every presence-tested name on an added or removed line of a translator's history,
+    plus every non-product `TRAEFIK_*` name in the documentation history."""
+    names: set[str] = set()
+    translators = _preconfuse_translator_files(root)
+    if translators:
+        literal = [f":(literal){path}" for path in translators]
+        for line in _git_log(root, "-p", "HEAD", "--", *literal).splitlines():
+            if line.startswith(("+", "-")):
+                names.update(_PRECONFUSE_PRESENCE_TEST.findall(line))
+    names.update(_history_names(root, _PRECONFUSE_DOC_PATTERN))
+    return names
+
+
+def _uncovered_preconfuse_names(
+    root: Path = PROJECT_ROOT,
+    table: "tuple[legacy_settings.LegacyName, ...] | None" = None,
+) -> list[str]:
+    """Derived pre-confuse names that are not an exact `env` row of the legacy table.
+
+    `table` defaults to `legacy_settings.LEGACY_SETTING_NAMES` read at call time, the table
+    the runtime matches against."""
+    _require_full_history(root)
+    if table is None:
+        table = legacy_settings.LEGACY_SETTING_NAMES
+    rows = {entry.name for entry in table if entry.source == "env"}
+    return sorted(_preconfuse_env_names(root) - rows)
+
+
+def test_legacy_map_covers_preconfuse_env_names():
+    """Every environment name the 0.0.x image read is a legacy row, matched exactly.
+
+    Coverage limit (global rule 3): a future commit adding a translator with a new
+    presence test keeps `main` red until a row is added. The remedy is a row, never a
+    scope exclusion.
+    """
+    # Non-vacuity: the scan must find the 0.0.x start script and production's name.
+    assert _preconfuse_translator_files(), "no translator script found in history"
+    assert "TRAEFIK_RESOLVERID_INOUTPUTPATHNAME" in _preconfuse_env_names()
+
+    missing = _uncovered_preconfuse_names()
+
+    assert not missing, (
+        "pre-confuse environment name(s) from history have no exact env row in "
+        "LEGACY_SETTING_NAMES -- an operator still setting one gets no warning:\n  "
+        + "\n  ".join(missing)
+    )
+
+
+def _translator_script(name: str) -> str:
+    """A 0.0.x-style start script with one presence test for `name` (built, so this file
+    holds no literal presence test of its own)."""
+    test = "${" + name + "+x}"
+    return (
+        "#!/usr/bin/with-contenv bash\n"
+        'appParams=""\n'
+        f'if [ ! -z {test} ]; then appParams+=" --flag"; fi\n'
+    )
+
+
+def test_preconfuse_scan_finds_a_deleted_translator_script(tmp_path):
+    """Scope attack: a second translator at another path, deleted later, and a name only
+    in the documentation history are found; a planning artifact quoting the idiom is not
+    a translator."""
+    _repo_with_precommit_config(tmp_path)
+    (tmp_path / "docker" / "root" / "app").mkdir(parents=True)
+    (tmp_path / "docker" / "root" / "app" / "run.sh").write_text(
+        _translator_script("KNOWN")
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "start.sh").write_text(_translator_script("PLANTED_NAME"))
+    (tmp_path / "README.md").write_text("Set TRAEFIK_PLANTED_DOC=1\n")
+    (tmp_path / "_bmad-output").mkdir()
+    (tmp_path / "_bmad-output" / "story.md").write_text(
+        _translator_script("PLANNING_QUOTE")
+    )
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "0.0.x")
+    _git(tmp_path, "rm", "-q", "scripts/start.sh")
+    _git(tmp_path, "commit", "-qm", "drop the second script")
+
+    assert _preconfuse_translator_files(tmp_path) == [
+        "docker/root/app/run.sh",
+        "scripts/start.sh",
+    ]
+    names = _preconfuse_env_names(tmp_path)
+    assert {"KNOWN", "PLANTED_NAME", "TRAEFIK_PLANTED_DOC"} <= names, names
+    assert "PLANNING_QUOTE" not in names, names
+
+
+def test_preconfuse_coverage_reports_a_dropped_row(monkeypatch):
+    """Rule attack: without its row, a derived name is reported as uncovered."""
+    table = legacy_settings.LEGACY_SETTING_NAMES
+    dropped = tuple(e for e in table if e.name != "TRAEFIK_FILESPEC")
+    assert len(dropped) == len(table) - 1, "TRAEFIK_FILESPEC is not a row"
+    monkeypatch.setattr(legacy_settings, "LEGACY_SETTING_NAMES", dropped)
+
+    assert _uncovered_preconfuse_names() == ["TRAEFIK_FILESPEC"]
+
+
 def test_every_long_option_is_in_readme():
     """The README usage block is a copy of `--help`; every long flag must be in it.
 
@@ -740,3 +919,44 @@ def test_every_docker_socket_mount_carries_the_host_root_warning():
 if __name__ == "__main__":
     # The regeneration command named above `LEGACY_BLOCK_BEGIN`.
     print(render_legacy_table())
+
+
+# ---------------------------------------------------------------------------
+# Root-mode trust classes (E015-S01-001, ADR-0049): every leaf of the key registry has
+# one, so a new setting cannot reach a root process without someone deciding whether a
+# file may set it.
+# ---------------------------------------------------------------------------
+
+
+def _root_trust_violations(
+    config_file: Path = CONFIG_DEFAULT,
+    trust: "dict[tuple[str, ...], str] | None" = None,
+) -> list[str]:
+    """Every registry leaf with no class, class key that is no leaf, and unknown class."""
+    from traefik_certificate_exporter.libs import settings
+
+    trust = settings.ROOT_SETTING_TRUST if trust is None else trust
+    leaves = set(_config_key_paths(config_file))
+    allowed = {settings.ROOT_TRUST_ENVIRONMENT_ONLY, settings.ROOT_TRUST_ANY_SOURCE}
+    problems = [f"unclassified: {'.'.join(k)}" for k in sorted(leaves - set(trust))]
+    problems += [f"not a leaf: {'.'.join(k)}" for k in sorted(set(trust) - leaves)]
+    problems += [
+        f"unknown class for {'.'.join(k)}: {v!r}"
+        for k, v in sorted(trust.items())
+        if v not in allowed
+    ]
+    return problems
+
+
+def test_every_default_setting_has_a_root_trust_class():
+    assert _config_key_paths(), "the key registry is empty; this guard examined nothing"
+    assert _root_trust_violations() == []
+
+
+def test_root_trust_classification_reports_a_planted_unclassified_key(tmp_path):
+    tree = yaml.safe_load(CONFIG_DEFAULT.read_text("utf-8"))
+    tree["settings"]["plantedhook"] = "/bin/true"
+    planted = tmp_path / "config_default.yaml"
+    planted.write_text(yaml.safe_dump(tree), encoding="utf-8")
+
+    assert _root_trust_violations(planted) == ["unclassified: settings.plantedhook"]

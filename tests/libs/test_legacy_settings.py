@@ -275,3 +275,95 @@ def test_hook_output_names_are_never_suggested(caplog):
     assert len(messages) == 3, messages
     for message in messages:
         assert not any(name in message for name in HOOK_OUTPUT_ENV_NAMES), message
+
+
+# ---------------------------------------------------------------------------
+# Pre-confuse names of the 0.0.x image (E015-S01-004, FR-16, product AD-6).
+# ---------------------------------------------------------------------------
+
+
+def test_preconfuse_names_match_exactly_and_are_never_unknown(caplog):
+    """An unprefixed name is a finding only when it equals a table row exactly and
+    case-sensitively (the 0.0.x shell expansions were case-sensitive). Traefik's own
+    `TRAEFIK_*` variables, `PUID`, `TZ` and other spellings produce nothing, and are never
+    reported as unknown."""
+    messages = _run(
+        caplog,
+        {
+            "TRAEFIK_RESOLVERID": "x",
+            "TRAEFIK_ENTRYPOINTS_WEB_ADDRESS": ":80",
+            "flat": "1",
+            "Flat": "1",
+            "PUID": "1000",
+            "TZ": "UTC",
+        },
+    )
+
+    assert messages == [
+        (
+            "Legacy setting TRAEFIK_RESOLVERID in environment is ignored; "
+            f"use {PREFIX}SETTINGS_TRAEFIKRESOLVERID"
+        )
+    ]
+
+
+def test_preconfuse_values_are_never_logged(caplog, tmp_path):
+    from traefik_certificate_exporter.libs.legacy_settings import check_setting_names
+
+    secret = "tce-probe-secret-7f3a"
+    environ = {"TRAEFIK_RESOLVERID": secret, "DOMAINS_INCLUDE": secret}
+
+    with caplog.at_level(logging.DEBUG):
+        check_setting_names(environ, None, LOGGER)
+
+    assert len(caplog.records) == 2, [r.getMessage() for r in caplog.records]
+    for record in caplog.records:
+        assert secret not in record.getMessage()
+        assert secret not in repr(record.args)
+
+
+def test_settings_load_warns_about_preconfuse_env_name(caplog, tmp_path, monkeypatch):
+    """Production's case on rwusdckrls6 (BL-E014-107): the 0.0.x name is warned about at
+    load, naming the replacement."""
+    _clear_tce_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TRAEFIK_RESOLVERID_INOUTPUTPATHNAME", "1")
+
+    with caplog.at_level(logging.INFO):
+        SettingsManager().loadFromFile(
+            fileName=str(tmp_path / "absent.yaml"),
+            cmdLineArgs=Namespace(**{"settings.datapath": str(tmp_path)}),
+        )
+    warnings = _warnings(caplog)
+
+    expected = (
+        "Legacy setting TRAEFIK_RESOLVERID_INOUTPUTPATHNAME in environment is ignored; "
+        f"use {PREFIX}SETTINGS_RESOLVERINPATHNAME"
+    )
+    assert warnings.count(expected) == 1, warnings
+
+
+def test_preconfuse_and_new_name_both_set_warns_only_for_legacy(caplog):
+    messages = _run(
+        caplog,
+        {
+            "TRAEFIK_RESOLVERID": "r",
+            PREFIX + "SETTINGS_TRAEFIKRESOLVERID": "r",
+        },
+    )
+
+    assert messages == [
+        (
+            "Legacy setting TRAEFIK_RESOLVERID in environment is ignored; "
+            f"use {PREFIX}SETTINGS_TRAEFIKRESOLVERID"
+        )
+    ]
+
+
+def test_preconfuse_empty_value_is_still_warned(caplog):
+    """Presence, not value, switched the 0.0.x flag on, so `DRYRUN=` is warned about."""
+    messages = _run(caplog, {"DRYRUN": ""})
+
+    assert messages == [
+        f"Legacy setting DRYRUN in environment is ignored; use {PREFIX}SETTINGS_DRYRUN"
+    ]

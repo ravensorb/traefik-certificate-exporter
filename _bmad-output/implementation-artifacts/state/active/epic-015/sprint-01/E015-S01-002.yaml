@@ -1,0 +1,79 @@
+key: 'E015-S01-002'
+epic: 'E015'
+sprint: 'S01'
+title: 'Fast export on RSA-4096 stores: validatekeys setting and .pfx fingerprint change detection'
+status: done
+classification: complex
+resolves: [BL-E014-106]
+estimate:
+  man_hours: 17.11
+  hitl_hours: 0.09
+  elapsed_hours: 0.97
+  cost: 2.95
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.1405
+    hitl_hours: 0.1094
+    elapsed_hours: 0.1946
+    tokens_k: 1.0
+  tokens_k:
+    total: 3701
+    input: 0
+    output: 5
+    cache_write: 170
+    cache_read: 3526
+  confidence: medium
+updated_at: '2026-10-13T02:08:37Z'
+depends_on:
+- 'E015-S01-001'
+completion_evidence:
+  test_runs:
+  - command: poetry run python -c "import cryptography, sys; print(cryptography.__version__, sys.version.split()[0])"
+    exit_code: 0
+  - command: poetry run pytest -q "$T::test_unchanged_rsa4096_pass_loads_no_key_and_no_pfx" "$T::test_first_rsa4096_pass_loads_each_key_once"
+    exit_code: 0
+  - command: poetry run pytest -q "$T::test_passphrase_check_is_cached_on_hashable_values_only" "$T::test_passphrase_change_is_detected_from_the_sidecar_alone" "$T::test_upgrade_from_0_3_0_output_verifies_once_and_rewrites_nothing" "$T::test_unusable_sidecar_falls_back_to_content_verification" "$T::test_stale_sidecar_after_a_crash_is_repaired_without_reporting" "$T::test_sidecar_is_written_0600_beside_the_pfx_in_every_layout" "$T::test_sidecar_holds_no_secret" "$T::test_sidecar_does_not_move_artifact_mtime" "$T::test_dry_run_writes_no_sidecar" "$T::test_pkcs12_debug_details_do_not_reload_the_bundle" "$T::test_mismatched_key_and_certificate_is_refused_in_both_validation_modes"
+    exit_code: 0
+  - command: poetry run pytest -q "$T::test_damaged_pfx_is_rebuilt_and_reported"
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_settings_precedence.py::test_validatekeys_precedence tests/libs/test_cli_args.py::test_no_validate_keys_flag_sets_false tests/test_app.py::test_startup_logs_rsa_key_validation_setting
+    exit_code: 0
+  - command: "test \"$(grep -c '^  validatekeys: true$' src/traefik_certificate_exporter/config_default.yaml)\" = 1 && grep -qE '\\(\"settings\", \"validatekeys\"\\): ROOT_TRUST_ANY_SOURCE' src/traefik_certificate_exporter/libs/settings.py && poetry run pytest -q tests/test_settings_surface.py::test_every_default_setting_has_a_root_trust_class"
+    exit_code: 0
+  - command: grep -q -- '--no-validate-keys' README.md && grep -q 'TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_VALIDATEKEYS' docker/README.md && grep -q 'validatekeys' config.sample.yml && grep -q 'fingerprint.json' docs/operational.md
+    exit_code: 0
+  - command: poetry run pytest -q tests/test_settings_surface.py tests/libs/test_cli_args.py
+    exit_code: 0
+  - command: grep -q '^## 0.3.0 → 0.3.1' docs/upgrading.md && grep -q -i 'fingerprint' docs/upgrading.md
+    exit_code: 0
+  - command: grep -q '^## Amendment' docs/adr/0043-export-commit-and-reporting-contract.md && f=$(grep -l 'ADR-0043' docs/adr/*-pfx-fingerprint-sidecar.md) && n=$(basename "$f" | cut -c1-4) && grep -q "adr/$n-" docs/architecture.md
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_certificate_exporter.py tests/libs/test_certificate_exporter_watch.py tests/libs/test_docker.py
+    exit_code: 0
+  - command: poetry run pytest -q -s "$T::test_unchanged_rsa4096_pass_loads_no_key_and_no_pfx" "$T::test_first_rsa4096_pass_loads_each_key_once"
+    exit_code: 0
+  - command: just image && TCE_DOCKER_INTEGRATION=1 poetry run pytest -q -m integration -rs tests/test_container_pkcs12.py tests/test_container_restart.py
+    exit_code: 0
+  - command: test "$(grep -c '^## Spine/ADR amendments$' _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/notes-E015-S01-002.md)" = 1
+    exit_code: 0
+  - command: just check
+    exit_code: 0
+  - command: grep -q 'fingerprint.json' docs/operational.md && poetry run pre-commit run --files docs/operational.md docs/adr/0051-pfx-fingerprint-sidecar.md
+    exit_code: 0
+  tests_passing: true
+  fix_iterations: 1
+  files_changed: 20
+actual:
+  elapsed_hours: 0.45
+  man_hours: 24
+  hitl_hours: 0
+  tokens_k:
+    total: 12589.85
+    input: 0.194
+    output: 16.387
+    cache_write: 542.791
+    cache_read: 12030.476
+  cost: 9.82
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-13T02:08:37Z'

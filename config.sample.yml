@@ -12,6 +12,7 @@ settings:
   runatstart: false
   watchinterval: 60
   # pkcs12passphrase:                      # Passphrase used to encrypt the exported PKCS12 (.pfx) file (default: unencrypted)
+  # validatekeys: true                     # false skips RSA key validation when a .pfx is built: only when the ACME store is written by your own Traefik
   # postexportcommand:                     # Shell-like command line run after a successful export pass (see README.md)
 
 # Logging is configured from the environment, not from this file (it is set up before this

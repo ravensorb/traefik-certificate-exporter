@@ -15,7 +15,7 @@
   source for some keys in root mode); usability of PyPI installs run as root
 - **Amends:** ADR-0030. E015-S01-001 replaces ADR-0030's paragraph that `/config` stays
   root-owned with a dated amendment pointing here.
-- **Implemented by:** E015-S01-001 (planned). This ADR is the root-mode trust ADR that the
+- **Implemented by:** E015-S01-001 (merged 2026-10-12). This ADR is the root-mode trust ADR that the
   story's planning text called "ADR to be written by E015-S01-001"; the story implements it
   and does not write another one.
 - **Records:** maintainer decisions MD-19 … MD-22 (2026-10-12) and MD-21 as extended on
@@ -268,3 +268,73 @@ flowchart LR
   export -->|reads| store[("datapath store<br/>must not be PUID-writable")]
   export -->|"writes 0600 root"| certs[("outputpath")]
 ```
+
+## Amendment (2026-10-12) — E015-S01-001
+
+Code review finding F1 (`_bmad-output/implementation-artifacts/epic-015/sprint-01/closure/review-E015-S01-001.md`).
+The exporter's working directory in the image is `/config`, so the cwd `.env` a root
+exporter loads is `/config/.env`, which `abc` can write. Decision 4 as first written removed
+only the environment-only setting names; every other name that `.env` added stayed in root's
+`os.environ` and reached the hook through `os.environ.copy()` (`LD_PRELOAD`, which musl
+honours, and `DOCKER_HOST`, which bounds root's Docker reach).
+
+Decision 4 is replaced by:
+
+4. **`.env` files are files.** In root mode (euid 0), a `.env` file may contribute only the
+   environment variable names of `any-source` settings, derived from `ROOT_SETTING_TRUST`
+   and compared case-insensitively; there is no hand-kept list. A name is admitted when
+   confuse's own `build_dict` (the splitter `EnvSource` applies) maps it to the key path of
+   an `any-source` setting, or -- for a setting whose packaged default is a list
+   (`appriseurls`, `domains.include`, `domains.exclude`) -- to that key path plus one
+   all-digit segment, the indexed form confuse turns into a list element
+   (`..._SETTINGS_APPRISEURLS_0`, documented in `config_default.yaml`). Every
+   other name that `load_dotenv` newly adds is removed from `os.environ`: an environment-only
+   setting (one ERROR per key, as before, naming the `.env` file), and anything else
+   (`TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_*`, `LD_PRELOAD`, `DOCKER_HOST`, `PATH`, …), reported
+   as one ERROR per `.env` file that names the file and lists the removed variable names,
+   never their values, and points to the container's environment and this ADR. A removed
+   name that is a legacy setting name (`LEGACY_SETTING_NAMES`, product AD-6) is not listed
+   in that ERROR: it sets nothing in the container's environment either, so the start-up
+   legacy WARNING reports it once, with its replacement (E015-S01-004, 2026-10-12). A name
+   the real environment already held is untouched, because `load_dotenv` does not override.
+   Non-root behaviour is unchanged.
+
+Mechanically checked: `tests/libs/test_settings.py` plants `LD_PRELOAD`, `DOCKER_HOST` and
+`TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CFGFILE` in a cwd and a module `.env` under euid 0 and
+asserts they are absent afterwards while `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DRYRUN` still
+loads; a companion asserts a non-root load keeps them, and another that a name the real
+environment held is kept. A further root-mode test plants `..._SETTINGS_APPRISEURLS_0`,
+`..._APPRISEURLS_1` and `..._SETTINGS_DOMAINS_INCLUDE_0` (they load) beside
+`..._SETTINGS_POSTEXPORTCOMMAND_0`, `..._SETTINGS_OUTPUTPATH_X` and `..._SETTINGS_DRYRUN_0`
+(removed and listed in the ERROR). Not checked on the image: no image test writes `/config/.env`; the
+unit tests cover the loader the image runs.
+
+Accepted cost: a root-mode deployment that set logging keys, `DOCKER_HOST` or any other
+non-setting variable through a `.env` file must move them to the container's environment.
+
+## Amendment (2026-10-12) — sprint closure
+
+Findings RT-2 / AR-1 and RT-3 (`_bmad-output/implementation-artifacts/epic-015/sprint-01/closure/redteam-report.md`).
+
+- **`.env` values are not interpolated in root mode (RT-2, AR-1).** Decision 4's loader now
+  calls `load_dotenv(path, interpolate=False)` in root mode, so `${VAR}` in a `/config/.env`
+  value stays literal and cannot copy a variable from root's environment (an env-set
+  `postexportcommand`, a passphrase, a token) into an admitted `any-source` value such as
+  `..._SETTINGS_APPRISEURLS_0`. Non-root loading is unchanged and still interpolates.
+  Mechanically checked: `tests/libs/test_settings.py` plants `${...POSTEXPORTCOMMAND}` in an
+  admitted value under euid 0 and asserts the literal text is kept and the secret absent; a
+  companion asserts a non-root load still expands it. The admitted VALUES remain chosen by
+  whoever writes `/config/.env`.
+- **Correction to Context, "Impact, calibrated" (RT-3).** The text says root writes "into a
+  tree that account cannot write". That is not true in common deployments: the init script
+  chowns `outputpath` to `abc` in dropped mode and does not reverse it, and a host-created
+  `/certs` is usually owned by `PUID`. In those deployments the `PUID` account can write the
+  tree the root exporter writes into, and can replace `privkey.pem` / `cert.pem` between
+  passes without involving the exporter. This ADR's decisions bound what root READS from
+  files the `PUID` account controls; they do not make `/certs` root-owned. This is accepted
+  as a **residual risk**: `/config` and `/certs` ownership follow LinuxServer.io conventions
+  and are not changed. The root-side primitive found through this tree (an in-place `chmod`
+  that followed a swapped-in symlink, RT-1) is closed by tightening through an
+  `O_NOFOLLOW` descriptor (`fchmod`); writes into a swapped per-domain directory symlink
+  (RT-1, last paragraph) and reads through a swapped-in symlink (RT-8) are not addressed by
+  this amendment.

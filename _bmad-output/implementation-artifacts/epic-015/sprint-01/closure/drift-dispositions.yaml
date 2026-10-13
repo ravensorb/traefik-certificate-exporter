@@ -1,0 +1,18 @@
+review: _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/arch-drift-review.md
+findings:
+  SD-01-1:
+    severity: MAJOR
+    title: In root mode the shipped loader lets a `.env` file add only the variable names of `any-source` settings. It removes every other name that file adds (`LOGGING_*`, `LD_PRELOAD`, `DOCKER_HOST`, `PATH`, …). S01-001 AC 3 says "Other `.env` keys load as today", and PRD FR-18 covers only the environment-only keys. The decision is recorded in the ADR-0049 amendment (2026-10-12, Decision 4 replaced) and in spine AD-2, but the requirement that downstream planning reads still describes the narrower rule.
+    disposition: adr-justified
+    spec:
+    adr: docs/adr/0049-root-mode-trust-covers-hook-output-and-store-location.md
+    commit:
+    issue:
+  SD-01-5:
+    severity: MINOR
+    title: "ruff is now pinned twice, by the pre-commit hook's frozen `rev` and by the Poetry dev group, and a test keeps the two equal. The comment directly above (`pyproject.toml:37-38`) states the project convention for gate tools: `repo: local` hooks versioned by `poetry.lock` (C-10). ADR-0050 Decision 4 still says \"ruff is a pre-commit hook, not a dev dependency\", and its Consequences say \"nothing else changes\", although PGH004 is now selected. The amendment mentions both changes but does not replace that text."
+    disposition: resolved-in-code
+    spec:
+    adr:
+    commit:
+    issue:

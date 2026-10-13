@@ -16,6 +16,10 @@ settings:
   runatstart: false
   watchinterval: 60
   pkcs12passphrase: null
+  # RSA private-key validation when a .pfx is built (~0.5 s per RSA-4096 key). false
+  # skips it: only when the ACME store is written by your own Traefik. The key/certificate
+  # match is always checked.
+  validatekeys: true
   postexportcommand: null
   # Apprise destinations notified after an export pass completes. A list, never a
   # comma-separated string -- a comma is legal inside an Apprise URL. From the

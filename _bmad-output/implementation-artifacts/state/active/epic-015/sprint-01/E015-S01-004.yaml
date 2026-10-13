@@ -1,0 +1,63 @@
+key: 'E015-S01-004'
+epic: 'E015'
+sprint: 'S01'
+title: Warn about pre-confuse TRAEFIK_* env names
+status: done
+classification: standard
+resolves: [BL-E014-107]
+estimate:
+  man_hours: 9.99
+  hitl_hours: 0.16
+  elapsed_hours: 1.15
+  cost: 10.13
+  model: claude-opus-5
+  fix_factor: 2.7416
+  scope_ratios:
+    man_hours: 0.6072
+    hitl_hours: 0.166
+    elapsed_hours: 0.21
+    tokens_k: 3.1244
+  tokens_k:
+    total: 12688
+    input: 0
+    output: 18
+    cache_write: 582
+    cache_read: 12088
+  confidence: medium
+updated_at: '2026-10-13T02:39:02Z'
+depends_on:
+- 'E015-S01-002'
+completion_evidence:
+  test_runs:
+  - command: ( set -o pipefail && test "$(git rev-parse --is-shallow-repository)" = false && git log --format= --name-only -G appParams HEAD | sort -u && git log -p --no-color --format= HEAD -- docker/root/app/run.sh | grep -E '^[+-]' | grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*\+x\}' | sort -u && git log -p --no-color --format= HEAD -- '*.md' '*.yml' '*.yaml' '*.sample' '*Dockerfile' ':(exclude)_bmad-output/**' ':(exclude)docs/adr/**' ':(exclude).github/**' | grep -oE '\bTRAEFIK_[A-Z0-9_]+' | grep -v '^TRAEFIK_CERTIFICATE_EXPORTER_' | sort -u )
+    exit_code: 0
+  - command: poetry run pytest -q "tests/libs/test_legacy_settings.py::test_each_legacy_env_name_warns_once_with_replacement[TRAEFIK_RESOLVERID_INOUTPUTPATHNAME]" "tests/libs/test_legacy_settings.py::test_each_legacy_env_name_warns_once_with_replacement[TRAEFIK_RESOLVERID]" "tests/libs/test_legacy_settings.py::test_each_legacy_env_name_warns_once_with_replacement[TRAEFIK_FILESPEC]" "tests/libs/test_legacy_settings.py::test_each_legacy_env_name_warns_once_with_replacement[TEST_VERSION]"
+    exit_code: 0
+  - command: poetry run pytest -q tests/libs/test_legacy_settings.py::test_preconfuse_names_match_exactly_and_are_never_unknown tests/libs/test_legacy_settings.py::test_preconfuse_values_are_never_logged tests/libs/test_legacy_settings.py::test_settings_load_warns_about_preconfuse_env_name tests/libs/test_legacy_settings.py::test_preconfuse_and_new_name_both_set_warns_only_for_legacy
+    exit_code: 0
+  - command: poetry run pytest -q tests/test_settings_surface.py::test_legacy_map_covers_preconfuse_env_names tests/test_settings_surface.py::test_preconfuse_scan_finds_a_deleted_translator_script tests/test_settings_surface.py::test_preconfuse_coverage_reports_a_dropped_row
+    exit_code: 0
+  - command: poetry run pytest -q tests/test_settings_surface.py tests/libs/test_legacy_settings.py
+    exit_code: 0
+  - command: d=$(mktemp -d) && mkdir -p "$d/data" "$d/out" && echo '{}' > "$d/data/acme.json" && out=$(TRAEFIK_RESOLVERID_INOUTPUTPATHNAME=1 poetry run traefik-certificate-exporter -d "$d/data" -o "$d/out" 2>&1) && grep -qF 'Legacy setting TRAEFIK_RESOLVERID_INOUTPUTPATHNAME in environment is ignored; use TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESOLVERINPATHNAME' <<<"$out"
+    exit_code: 0
+  - command: d=$(mktemp -d) && mkdir -p "$d/data" "$d/out" && echo '{}' > "$d/data/acme.json" && out=$(TRAEFIK_RESOLVERID=tce-probe-secret-7f3a DOMAINS_INCLUDE=tce-probe-secret-7f3a poetry run traefik-certificate-exporter -d "$d/data" -o "$d/out" 2>&1) && ! printf '%s' "$out" | grep -q tce-probe-secret-7f3a && test "$(printf '%s' "$out" | grep -c 'Legacy setting')" = 2
+    exit_code: 0
+  - command: just check
+    exit_code: 0
+  tests_passing: true
+  fix_iterations: 0
+  files_changed: 10
+actual:
+  elapsed_hours: 0.35
+  man_hours: 10
+  hitl_hours: 0
+  tokens_k:
+    total: 6913.36
+    input: 0.146
+    output: 15.3
+    cache_write: 362.215
+    cache_read: 6535.697
+  cost: 5.91
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-13T02:39:02Z'

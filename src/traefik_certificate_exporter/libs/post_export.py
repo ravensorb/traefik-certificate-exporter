@@ -1,6 +1,6 @@
 import os
 import shlex
-import subprocess
+import subprocess  # noqa: TID251
 
 from .logging_utils import (
     get_correlation_id,

@@ -39,7 +39,12 @@ crash.
 
 1. Check the container/process is actually seeing file events: raise the log level to DEBUG
    (`-e TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL=DEBUG` for the container, `-ll DEBUG` on
-   the CLI) and confirm `Watchdog received modified event` appears when Traefik renews.
+   the CLI) and confirm `Watchdog received modified event` appears when Traefik renews
+   (`Watchdog received created event` or `Watchdog received moved event` when the store is
+   replaced by a new file or a rename). A rename onto the store (a restore, or a tool that
+   writes a temporary file and renames it) is detected and exported; a rename away from it
+   is logged at INFO (`Store file ... was renamed to ...`) and exports nothing. inotify sees
+   only local changes: a store on NFS/SMB that another host changes is not detected.
 2. Confirm `settings.dataPath` resolves to a real, mounted path — a misconfigured or
    unmounted data path now fails loudly with a non-zero exit (PRD backlog item #2 / review
    finding #2, fixed).
@@ -275,6 +280,47 @@ either fully in its previous state or fully in its new state — never zero-leng
 partial. Keep `outputpath` on a single filesystem (the normal bind-mount case): the rename
 is only atomic within one.
 
+### The `.pfx` fingerprint file and `settings.validatekeys`
+
+Beside every `.pfx` the exporter writes a small JSON file: `cert.pfx.fingerprint.json` in the
+per-domain layout, `<name>.pfx.fingerprint.json` in the flat layout. It is written after the
+`.pfx`, atomically, at mode `0600`
+([ADR-0051](adr/0051-pfx-fingerprint-sidecar.md)).
+
+- **What it holds:** the SHA-256 of the `.pfx` file, of the store's private-key PEM and of
+  each certificate, and the passphrase only as a salted scrypt hash. No passphrase and no key
+  bytes.
+- **What it is for:** a `.pfx` cannot be compared byte for byte (each build draws a fresh
+  salt), and opening it costs a private-key and a PKCS#12 load. With the fingerprint file the
+  exporter tells that the `.pfx` is current without opening it, so a pass over unchanged
+  certificates loads no key at all.
+- **It is never trusted alone.** The `.pfx` counts as current only when the hash in the file
+  equals the `.pfx` on disk. A missing, damaged or edited `.pfx` is rebuilt and its domain
+  reported. A missing, unreadable or malformed fingerprint file, or one whose recorded `.pfx`
+  hash no longer matches the `.pfx` on disk, makes the next pass verify the `.pfx` by content
+  once and write a new fingerprint file; when the content is current that rewrites no
+  certificate file and reports nothing. A well-formed fingerprint file whose `.pfx` hash still
+  matches but which was edited to record different inputs (key hash, certificate hashes or
+  passphrase hash) counts as an input change: the next pass rebuilds the `.pfx` and reports
+  the domain, so the restart, hook and notification follow. Deleting the fingerprint files is
+  therefore safe; editing them is not.
+- **It is not an exported artifact.** Its modification time never triggers a container
+  restart, the hook or a notification, and it is not removed when a domain leaves the store
+  (nor is any other exported file).
+- **Dry run:** a dry run writes no fingerprint file. Over output from 0.3.0 (no fingerprint
+  files yet) every dry run therefore verifies every `.pfx` by content — slow on RSA-4096
+  stores — until one real pass has written them.
+
+`settings.validatekeys` (env `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_VALIDATEKEYS`, CLI
+`--no-validate-keys`), default `true`, controls RSA private-key validation when the exporter
+builds or verifies a `.pfx`. Validation costs ~0.5 s per RSA-4096 key (Traefik's default key
+type). Set it to `false` **only when the ACME store is written by your own Traefik**: the keys
+are then trusted, not checked, and cryptography warns that an invalid key loaded that way may
+make OpenSSL misbehave. The check that a key matches its certificate always runs, in both
+modes. The start-up line `RSA key validation: on` / `RSA key validation: off (…)` shows the
+setting. It affects only passes that build a `.pfx`: an unchanged pass loads no key either
+way.
+
 ### A symlink at an export path is replaced, not followed
 
 If an export target is a symlink, the exporter replaces **the link itself** with a regular
@@ -293,12 +339,38 @@ use a copy step in `settings.postexportcommand`, or point the consumer at the re
 
 ### Trust boundary: `/config` and `settings.postexportcommand`
 
-`/config` is a **trusted mount**. Treat it exactly as you would a binary on `PATH`: it must
-be root-owned and must not be world-writable or group-writable by any account you would not
-grant arbitrary code execution inside the container. Anyone who can write into `/config`
-can set `settings.postexportcommand`, and that setting is executed by the exporter —
-**`settings.postexportcommand` is remote-code-execution-equivalent configuration**, not a
-convenience hook. The same applies to any file referenced from there.
+`/config` is owned by `PUID`/`PGID`: LinuxServer's `init-adduser` (base image) gives it to
+`abc` on every start, as in every LinuxServer image, and that account — on the host, your
+`PUID` user — edits `/config/config.yaml`. **`settings.postexportcommand` is
+remote-code-execution-equivalent configuration**, not a convenience hook, so what the
+exporter takes from `/config` depends on the uid it runs as (ADR-0049):
+
+- **When the exporter runs as root**, `postexportcommand`, `outputpath` and `datapath` are
+  taken only from `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_*` environment variables or the
+  command-line flags. A value from `config.yaml` (or the confuse user config, or a `.env`
+  file) is ignored with one ERROR at start naming the setting, the file and the variable to
+  use. Set a root hook in the container's `environment:`.
+- **When the exporter runs as root**, a `.env` file (in the image, `/config/.env`, which
+  `abc` can write) may set only `any-source` settings. Every other variable it would add —
+  `TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_*`, `LD_PRELOAD`, `DOCKER_HOST`, `PATH`, anything —
+  is dropped before the hook or the Docker client can inherit it, with one ERROR per file
+  listing the dropped names (never their values). A variable the container's environment
+  already sets is untouched. Set such variables in the container's `environment:`
+  (ADR-0049, amendment 2026-10-12).
+- **In both modes**, `filespec` is a file-name glob inside the data path. A value with a
+  directory part, `..` or an absolute path is ignored with an ERROR and `*.json` is used.
+- **In both modes**, root and unprivileged, the ACME store and its directory must not be
+  writable by `PUID`: mount `/data:ro`. A `PUID`-writable store lets that account forge what
+  a root exporter writes into `/certs` (residual risk AR-1, ADR-0049); in root mode the
+  start-up log does not yet say so (BL-E015-004).
+- **In dropped mode** (the exporter runs as `abc`) a `config.yaml` hook keeps working and
+  runs as `PUID`; that account already owns `/config`, so it gains nothing.
+- A root hook must not run a program or script stored in `/config`, and
+  `TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CFGFILE` must not point into `/config`: `abc` can
+  rewrite both. This is documented, not enforced.
+
+The start-up line `Post-export command: <set|not set> (source: …), runs as uid …` shows
+where the hook came from and which uid runs it.
 
 The logging configuration is deliberately *not* auto-discovered from the working directory
 for this reason: `logging.config.dictConfig` resolves and calls arbitrary dotted names for
@@ -370,10 +442,11 @@ the only way for another account to read it is to *be* that user. Run Traefik as
 user, and set this container's `PUID`/`PGID` to that user's uid/gid. `settings.restartcontainers`
 still forces root whatever the store permissions are.
 
-**Unprivileged mode requires `/data` mounted read-only (`:ro`).** With `PUID`/`PGID` set to
-Traefik's uid, `abc` owns the store; if `/data` is writable, a compromised exporter could
-chmod, delete or plant an unreadable `*.json` there and make the **next** start keep root
-(rows 3–5). Mount `/data:ro`. When the store is writable by `abc`, the start-up log says so
+**Unprivileged mode requires `/data` mounted read-only (`:ro`), and so does root mode — mount
+it read-only in both modes.** With `PUID`/`PGID` set to Traefik's uid, `abc` owns the store;
+if `/data` is writable, a compromised exporter could chmod, delete or plant an unreadable
+`*.json` there and make the **next** start keep root (rows 3–5), and a root exporter would
+export whatever that account forged into the store (ADR-0049, AR-1). Mount `/data:ro`. When the store is writable by `abc`, the start-up log says so
 in one line (an `INFO:` line when dropping, appended to the WARNING otherwise) — the
 container still starts, but treat that line as a deployment defect.
 
@@ -415,12 +488,13 @@ as root, which would read every file and prove nothing.
 - `restartcontainers` on: unchanged — root, now with a start-up WARNING.
 
 `/data` is never chowned or chmodded — the exporter only reads it, and Traefik requires
-`0600` — and `/config` deliberately stays root-owned, because `settings.postexportcommand`
-makes it execution-equivalent configuration and the account that runs the hook must not be
-able to rewrite it.
+`0600`. `/config` is owned by `PUID`/`PGID`, as LinuxServer's `init-adduser` makes it on every
+start; because that account can rewrite it, a root exporter does not take
+`postexportcommand`, `outputpath` or `datapath` from it (see "Trust boundary" above,
+ADR-0049).
 
 **Known limitation:** file logging (`logging.consoleonly: false`) writes a relative path
-resolved against the root-owned `/config`, so the dropped account cannot open it; the
+resolved against `/config`, so the dropped account cannot open it; the
 exporter reports the failure and continues on console logging only. Use console logging and
 your container runtime's log driver, or keep `restartcontainers` enabled, until a writable
 log location is configured.

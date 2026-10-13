@@ -132,11 +132,19 @@ def test_the_resolver_is_the_application_not_a_second_parser():
 
 
 def test_the_output_and_data_paths_are_resolved_not_assumed(tmp_path):
-    """Findings 4 and 5: /certs and /data are the image's defaults, not its values."""
+    """Findings 4 and 5: /certs and /data are the image's defaults, not its values.
+
+    The paths come from the environment, not the config file: a root resolver ignores a
+    file-sourced `outputpath`/`datapath` (ADR-0049), and this subprocess runs with the
+    runner's real euid, so a file value would make the answer depend on that uid.
+    """
     code, written = _resolve(
         tmp_path,
-        "settings:\n  outputpath: /elsewhere/certs\n  datapath: /elsewhere/acme\n"
-        "  filespec: 'acme-*.json'\n",
+        "settings:\n  filespec: 'acme-*.json'\n",
+        env={
+            "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_OUTPUTPATH": "/elsewhere/certs",
+            "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH": "/elsewhere/acme",
+        },
     )
 
     assert code == 0
@@ -154,7 +162,9 @@ def test_resolver_emits_the_applications_own_glob_matches(tmp_path):
         (data / name).write_text("{}", encoding="utf-8")
 
     code, written = _resolve(
-        tmp_path, f"settings:\n  datapath: {data}\n  filespec: '*.json'\n"
+        tmp_path,
+        "settings:\n  filespec: '*.json'\n",
+        env={"TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH": str(data)},
     )
 
     assert code == 0
@@ -165,7 +175,9 @@ def test_resolver_writes_exactly_four_lines_when_nothing_matches(tmp_path):
     data = tmp_path / "acme"
     data.mkdir()
 
-    code, written = _resolve(tmp_path, f"settings:\n  datapath: {data}\n")
+    code, written = _resolve(
+        tmp_path, "", env={"TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH": str(data)}
+    )
 
     assert code == 0
     assert len(written) == 4
@@ -176,11 +188,36 @@ def test_resolver_writes_nothing_for_a_path_containing_a_newline(tmp_path):
     data.mkdir()
     (data / "bad\nname.json").write_text("{}", encoding="utf-8")
 
-    code, written = _resolve(tmp_path, f"settings:\n  datapath: {data}\n")
+    code, written = _resolve(
+        tmp_path, "", env={"TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH": str(data)}
+    )
 
     assert code != 0
     assert written == []
     assert list(tmp_path.glob(".resolved-*")) == [], "no partial file is left behind"
+
+
+@pytest.mark.parametrize("form", ["absolute", "dotdot"])
+def test_init_resolver_never_globs_outside_the_data_path(tmp_path, form):
+    """AG-1 (ADR-0049 Decision 5): a `filespec` with a directory part used to make the
+    resolver -- and the export pass, which uses the same expression -- glob a store outside
+    `datapath`. It is ignored with an ERROR and `*.json` is used."""
+    data = tmp_path / "acme"
+    data.mkdir()
+    (data / "inside.json").write_text("{}", encoding="utf-8")
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}", encoding="utf-8")
+    fileSpec = str(outside) if form == "absolute" else "../outside.json"
+
+    code, written = _resolve(
+        tmp_path,
+        f"settings:\n  filespec: '{fileSpec}'\n",
+        env={"TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH": str(data)},
+    )
+
+    assert code == 0
+    assert written[3] == "*.json"
+    assert written[4:] == [str(data / "inside.json")]
 
 
 @pytest.mark.parametrize(

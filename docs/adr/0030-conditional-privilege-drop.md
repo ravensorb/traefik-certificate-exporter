@@ -86,9 +86,15 @@ When privileges are dropped, init also makes the `abc` account viable:
   `0700` `/root` in the base image, so without this the dropped service dies before reading
   a single certificate.
 
-`/config` is deliberately **not** chowned: it stays root-owned because
-`settings.postexportcommand` makes it execution-equivalent configuration, and handing it to
-the account that runs the hook would re-open the loop this ADR closes.
+**Amended 2026-10-12 (E015-S01-001, BL-E014-119):** the paragraph that stood here said
+`/config` is not chowned and stays root-owned. That never held in the image: LinuxServer's
+`init-adduser` (base image) runs `lsiown abc:abc` on `/config`, `/app` and `/defaults` on
+every start, so `/config` is owned by `PUID`/`PGID`. That is the LinuxServer convention and
+it is kept. Because the `PUID` account can therefore rewrite `config.yaml`, from 0.3.1 a root
+exporter takes `postexportcommand`, `outputpath` and `datapath` only from the environment or
+the command line, never from a configuration or `.env` file, and `filespec` must be a file-name
+glob inside the data path in every mode. See
+[ADR-0049](0049-root-mode-trust-covers-hook-output-and-store-location.md).
 
 No new setting, environment variable or CLI flag is introduced. `settings.restartcontainers`
 is the sole input.
@@ -107,9 +113,11 @@ is the sole input.
   it, and Traefik requires `0600`), so a store the dropped account cannot read stops exports
   until the operator sets `PUID`/`PGID` to a reader or relaxes the group permission. The
   start-up probe makes that condition loud rather than silent, but it does not fix it.
-- Negative / trade-offs accepted: file logging writes a relative path under the root-owned
-  `/config` and therefore degrades to console-only for the dropped account. Tracked as a
-  follow-up; console logging plus the runtime's log driver is the supported path meanwhile.
+- Negative / trade-offs accepted: file logging writes a relative path and therefore
+  degrades to console-only for the dropped account. Tracked as a follow-up (BL-E015-001);
+  console logging plus the runtime's log driver is the supported path meanwhile.
+  (Amended 2026-10-12, E015-S01-001: this bullet said the path lies under a root-owned
+  `/config`; `/config` is `PUID`-owned, per LinuxServer's `init-adduser`, see ADR-0049.)
 - Negative: operators needing `restartcontainers` still get root. The documented
   least-privilege path for them is a docker-socket proxy (see `docs/operational.md`), which
   this ADR does not require or implement.

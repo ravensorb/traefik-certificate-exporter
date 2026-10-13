@@ -6,6 +6,95 @@ right and this page is a defect.
 
 <!-- tce-settings-scan: legacy-names-listed -->
 
+## 0.3.0 → 0.3.1
+
+### Root mode: hook, output path and data path from the environment only
+
+- **Security (BL-E014-119): a root exporter no longer takes `postexportcommand` or
+  `outputpath` from a file.** `/config` is owned by your `PUID`/`PGID` account, as in every
+  LinuxServer image. In 0.3.0 that account could set `postexportcommand` in `config.yaml` and
+  have the next start run it as root. From 0.3.1, when the exporter runs as root, these two
+  settings are read only from `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_POSTEXPORTCOMMAND` /
+  `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_OUTPUTPATH` or the command line. A value from
+  `config.yaml` or a `.env` file is ignored, with one ERROR at start
+  ([ADR-0049](adr/0049-root-mode-trust-covers-hook-output-and-store-location.md)).
+- **Action if you run as root with a hook in `config.yaml`:** move it to the container's
+  `environment:` as `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_POSTEXPORTCOMMAND`. The start-up
+  line `Post-export command: … (source: …), runs as uid …` shows where the hook came from and
+  which uid runs it. In unprivileged mode (`runs as uid` = your `PUID`) a `config.yaml` hook
+  keeps working.
+- **Nothing changes in `/config` ownership.** It stays owned by `PUID`/`PGID` and editable
+  from the host as that user. Earlier documentation that said `/config` stays root-owned was
+  wrong and has been corrected
+  ([ADR-0030](adr/0030-conditional-privilege-drop.md) as amended 2026-10-12).
+- **PyPI installs run as root:** the same rule applies, to `datapath` as well. Pass
+  `--post-export-command` / `--output-path` / `--data-path`, or set the environment
+  variables.
+- **Security (arch gate AG-1): `datapath` joins the root-mode rule, and `filespec` must be a
+  file name or glob.** A root exporter no longer takes `datapath` from a file. In every mode,
+  `filespec` (`--file-spec`, `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FILESPEC`) must be a file
+  name or glob without a directory part, such as `acme.json` or `acme-*.json`. A value that is
+  absolute, contains `/` or `\`, or is `..` is ignored with one ERROR at start, and `*.json`
+  is used. Before 0.3.1 an absolute `filespec` let a file choose which store root exported. If
+  you used one, set `datapath` to its directory and `filespec` to its name.
+- **Mount `/data` read-only in both modes.** The ACME store must not be writable by your
+  `PUID`/`PGID` account, whether the exporter runs as root or not.
+- **Security: a root exporter loads only setting variables from a `.env` file.** In root
+  mode a `.env` file (in the image, `/config/.env`) may set only `any-source` settings such as
+  `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DRYRUN`. Any other variable it would add, such as
+  `TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_*`, `DOCKER_HOST` or `LD_PRELOAD`, is dropped with one
+  ERROR at start that lists the names. **Action:** move those variables to the container's
+  `environment:`
+  ([ADR-0049](adr/0049-root-mode-trust-covers-hook-output-and-store-location.md), amendment
+  2026-10-12).
+
+### PKCS12 fingerprint files and validatekeys
+
+- **New files: `cert.pfx.fingerprint.json`** (flat layout: `<name>.pfx.fingerprint.json`)
+  beside every `.pfx`, mode `0600`. They hold hashes only — no key bytes, the passphrase only
+  as a salted scrypt hash — and let the exporter tell that a `.pfx` is current without
+  opening it, so passes over unchanged RSA-4096 certificates are fast again (BL-E014-106).
+  They are not exported artifacts: they never trigger a restart, the hook or a notification
+  ([ADR-0051](adr/0051-pfx-fingerprint-sidecar.md), amending
+  [ADR-0043](adr/0043-export-commit-and-reporting-contract.md)). If a consumer globs the
+  output directory, exclude `*.fingerprint.json`.
+- **Upgrading from 0.3.0: one slower first pass, nothing rewritten, nothing restarted.** The
+  first pass verifies every existing `.pfx` by content once (one key and one PKCS#12 load per
+  domain) and writes its fingerprint file. It rewrites no certificate file, so no container
+  restarts and no hook or notification fires. Later passes over unchanged certificates load
+  nothing. A dry run writes no fingerprint file, so dry runs stay slow until one real pass
+  has run.
+- **Upgrading from 0.2.x** still gets the one-time `.pfx` rewrite described under
+  [0.2.0 → 0.3.0](#restarts-now-take-effect): every `.pfx` is rebuilt with its intermediates
+  once, and its fingerprint file is written with it.
+- **New setting `settings.validatekeys`** (env `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_VALIDATEKEYS`,
+  CLI `--no-validate-keys`), default `true`. `false` skips RSA private-key validation when a
+  `.pfx` is built (~0.5 s per RSA-4096 key). Use it only when the ACME store is written by
+  your own Traefik: the keys are then trusted, not checked. The key/certificate match is
+  always checked. Changing the setting rebuilds nothing. See
+  [operational.md](operational.md#the-pfx-fingerprint-file-and-settingsvalidatekeys).
+
+### Environment names of the 0.0.x image are warned about
+
+- **Start-up now warns about the environment variables of the 0.0.x image**, which have been
+  ignored since v0.0.10.0: `TRAEFIK_FILESPEC`, `TRAEFIK_RESOLVERID`,
+  `TRAEFIK_RESOLVERID_INOUTPUTPATHNAME`, `DRYRUN`, `FLAT`, `RESTART_CONTAINERS`,
+  `DOMAINS_INCLUDE`, `DOMAINS_EXCLUDE`, `RUN_AT_START`, `CONFIG_FILE` and `TEST_VERSION`. One
+  WARNING per variable present names the `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_*`
+  replacement; the value is never logged. The names are still ignored, and behaviour is
+  unchanged (BL-E014-107; table under [Legacy setting names](#legacy-setting-names)).
+- **Action:** replace each with its new name. In 0.0.x these variables switched their option
+  on whatever their value, so `FLAT=false` meant flat: set the replacement to `true` or
+  `false` explicitly.
+- Only these exact, upper-case names are matched. Other variables, Traefik's own `TRAEFIK_*`
+  included, produce no warning. Outside the container a shell that sets one of the generic
+  names (`FLAT`, `DRYRUN`, `CONFIG_FILE`, ...) for another tool gets the same advisory
+  WARNING; it changes nothing.
+- **Root mode and `.env`:** a legacy name in a `.env` file is removed in root mode like any
+  non-setting variable, but it is reported by this WARNING, with its replacement, and not
+  listed in the root-mode `.env` ERROR (moving it to the container's environment would not
+  make it work).
+
 ## 0.2.0 → 0.3.0
 
 ### Restarts now take effect
@@ -74,7 +163,11 @@ right and this page is a defect.
 config file, naming the replacement and never the value. **Legacy names are ignored**: they
 never set anything, and there are no aliases. Any other unknown
 `TRAEFIK_CERTIFICATE_EXPORTER_*` environment variable gets one WARNING with the nearest valid
-name (`src/traefik_certificate_exporter/libs/legacy_settings.py`).
+name (`src/traefik_certificate_exporter/libs/legacy_settings.py`). From 0.3.1 the start-up
+check also warns about the pre-confuse environment names of the 0.0.x image (v0.0.2 to
+v0.0.9.2), such as `TRAEFIK_RESOLVERID_INOUTPUTPATHNAME`, matched exactly and case-sensitively.
+Those names were presence-based in 0.0.x, so `NAME=false` meant on: set the replacement to
+`true` or `false` explicitly.
 
 <!-- Rendered from LEGACY_SETTING_NAMES in src/traefik_certificate_exporter/libs/legacy_settings.py;
      do not edit by hand. Regenerate: poetry run python -m tests.test_settings_surface
@@ -99,6 +192,17 @@ name (`src/traefik_certificate_exporter/libs/legacy_settings.py`).
 | env | `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_XCLUDE_DOMAINS` | `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_EXCLUDE` |
 | env | `TRAEFIK_CERTIFICATE_EXPORTER_LOGGINGLEVEL` | `TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL` |
 | env | `TRAEFIK_CERTIFICATE_EXPORTER_NOTIFY_*` | `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_APPRISEURLS_<n>` |
+| env | `TRAEFIK_FILESPEC` | `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FILESPEC` |
+| env | `TRAEFIK_RESOLVERID` | `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_TRAEFIKRESOLVERID` |
+| env | `TRAEFIK_RESOLVERID_INOUTPUTPATHNAME` | `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESOLVERINPATHNAME` |
+| env | `DRYRUN` | `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DRYRUN` |
+| env | `FLAT` | `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FLAT` |
+| env | `RESTART_CONTAINERS` | `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RESTARTCONTAINERS` |
+| env | `DOMAINS_INCLUDE` | `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_INCLUDE` |
+| env | `DOMAINS_EXCLUDE` | `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DOMAINS_EXCLUDE` |
+| env | `RUN_AT_START` | `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RUNATSTART` |
+| env | `CONFIG_FILE` | the container always reads /config/config.yaml; outside the container pass -c/--config-file on the command line |
+| env | `TEST_VERSION` | it only printed the 0.0.x image's command line; nothing replaces it |
 | config | `settings.restartcontainer` | `settings.restartcontainers` |
 <!-- legacy-settings:end -->
 
