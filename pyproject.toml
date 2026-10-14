@@ -23,7 +23,7 @@ coloredlogs = "^15.0.1"
 logging-tree = "^1.9"
 cryptography = "^50.0.2"
 python-json-logger = "^4.2.0"
-apprise = "^1.9.0"
+apprise = ">=1.9,<3.0"
 python-dateutil = "^2.9.0"
 pyyaml = "^6.0"
 
