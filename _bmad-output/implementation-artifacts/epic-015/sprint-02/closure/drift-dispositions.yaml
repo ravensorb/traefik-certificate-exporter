@@ -1,0 +1,26 @@
+review: _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/arch-drift-review.md
+findings:
+  SD-02-1:
+    severity: MAJOR
+    title: AD-13 says `PUBLISH_GHCR_TOKEN` is "needed only where the job token cannot do the job (GHCR from act or Gitea)", and ADR-0052 says the same. The flag fell back to `github.token` on every forge, so on Gitea it enabled GHCR with a token that cannot push there (AR-1).
+    disposition: resolved-in-code
+    spec:
+    adr:
+    commit:
+    issue:
+  SD-02-3:
+    severity: MINOR
+    title: The source list still said "MD-10..MD-18 accepted 2026-10-12", although MD-26 overturns five of them.
+    disposition: resolved-in-code
+    spec:
+    adr:
+    commit:
+    issue:
+  SD-02-4:
+    severity: MINOR
+    title: '"A mirrored run there publishes nothing" no longer holds: the forge release falls back to the job token on any forge (AR-2).'
+    disposition: resolved-in-code
+    spec:
+    adr:
+    commit:
+    issue:

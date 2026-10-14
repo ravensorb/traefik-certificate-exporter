@@ -937,7 +937,11 @@ def _root_trust_violations(
 
     trust = settings.ROOT_SETTING_TRUST if trust is None else trust
     leaves = set(_config_key_paths(config_file))
-    allowed = {settings.ROOT_TRUST_ENVIRONMENT_ONLY, settings.ROOT_TRUST_ANY_SOURCE}
+    allowed = {
+        settings.ROOT_TRUST_ENVIRONMENT_ONLY,
+        settings.ROOT_TRUST_ENVIRONMENT_ONLY_EVERY_MODE,
+        settings.ROOT_TRUST_ANY_SOURCE,
+    }
     problems = [f"unclassified: {'.'.join(k)}" for k in sorted(leaves - set(trust))]
     problems += [f"not a leaf: {'.'.join(k)}" for k in sorted(set(trust) - leaves)]
     problems += [

@@ -3,26 +3,88 @@ epic: 'E015'
 sprint: 'S02'
 title: Pin and audit pre-commit hook dependencies used in the build job (spec proposal BL-E014-112 / AD-2)
 classification: standard
-status: backlog
-updated_at: '2026-10-12T22:14:36Z'
+status: done
+updated_at: '2026-10-14T11:39:07Z'
 depends_on:
 - 'E015-S02-001'
 estimate:
-  man_hours: 9.99
-  hitl_hours: 0.16
-  elapsed_hours: 1.15
-  tokens_k:
-    total: 12688
-    input: 0
-    output: 18
-    cache_write: 582
-    cache_read: 12088
-  cost: 10.13
+  man_hours: 11.3
+  hitl_hours: 0.07
+  elapsed_hours: 0.75
+  cost: 9.04
   model: claude-opus-5
-  fix_factor: 2.7416
+  fix_factor: 2.0142
   scope_ratios:
-    man_hours: 0.6072
-    hitl_hours: 0.166
-    elapsed_hours: 0.21
-    tokens_k: 3.1244
+    man_hours: 0.9353
+    hitl_hours: 0.1062
+    elapsed_hours: 0.1863
+    tokens_k: 3.8076
   confidence: medium
+  tokens_k:
+    total: 11275
+    input: 0
+    output: 17
+    cache_write: 520
+    cache_read: 10738
+completion_evidence:
+  test_runs:
+  - command: "! grep -nE '^\\s*(-\\s+)?additional_dependencies\\s*:' .pre-commit-config.yaml && ! grep -n 'mirrors-mypy' .pre-commit-config.yaml"
+    exit_code: 1
+  - command: "! grep -nE '^\\s*(-\\s+)?additional_dependencies\\s*:' .pre-commit-config.yaml && ! grep -n 'mirrors-mypy' .pre-commit-config.yaml"
+    exit_code: 0
+  - command: poetry run pre-commit run precommit-hook-deps-locked --all-files
+    exit_code: 0
+  - command: test "$(poetry show --only dev | grep -cE '^(import-linter|mypy|types-pyyaml|types-python-dateutil) ')" = 4 && poetry check --lock
+    exit_code: 0
+  - command: 'Scope attack: clone && sed actionlint additional_dependencies && ! pc run precommit-hook-deps-locked --files .pre-commit-config.yaml && clone && sed zizmor language: python && ! pc run precommit-hook-deps-locked --files .pre-commit-config.yaml'
+    exit_code: 0
+  - command: H="$D/pch" && rm -rf "$H" && mkdir -p "$H" && PRE_COMMIT_HOME=$H poetry run pre-commit run mypy --all-files && PRE_COMMIT_HOME=$H poetry run pre-commit run import-linter --all-files && test "$(find "$H" -mindepth 2 -maxdepth 2 -type d -name 'py_env-*' | wc -l)" = 0
+    exit_code: 0
+  - command: test "$(poetry run pip list --format=freeze | grep -ciE '^(import-linter|grimp|mypy|types-pyyaml|types-python-dateutil)==')" = 5 && poetry run pre-commit run pip-audit --all-files
+    exit_code: 0
+  - command: 'Anti-false-green: clone && planted _e015_probe.py type error && ! pc run mypy --all-files && clone && planted import traefik_certificate_exporter.app in libs/object.py && ! pc run import-linter --all-files'
+    exit_code: 0
+  - command: "confuse types visible (AC 11): clone && planted _e015_confuse_probe.py x: int = confuse.Configuration(...) && ! pc run mypy --all-files > \"$D/7a.out\" && grep -q '_e015_confuse_probe.py:3: error: .*\"Configuration\"' \"$D/7a.out\""
+    exit_code: 0
+  - command: 'Anti-false-green (pc with repo venv active): clone && planted _e015_probe.py type error && ! pc run mypy --all-files && clone && planted import traefik_certificate_exporter.app in libs/object.py && ! pc run import-linter --all-files'
+    exit_code: 0
+  - command: "confuse types visible (AC 11, pc with repo venv active): clone && planted _e015_confuse_probe.py x: int = confuse.Configuration(...) && ! pc run mypy --all-files > \"$D/7a.out\" && grep -q '_e015_confuse_probe.py:3: error: .*\"Configuration\"' \"$D/7a.out\""
+    exit_code: 0
+  - command: uv run -q _bmad/scripts/pm-status.py show --state-root _bmad-output/implementation-artifacts/state --epic E015 --sprint 02 >/dev/null && grep -n 'ruamel.yaml' _bmad-output/implementation-artifacts/state/issues.yaml
+    exit_code: 0
+  - command: grep -q 'precommit-hook-deps-locked' <CI spine> && grep -q 'precommit-hook-deps-locked' docs/ci/pipeline-walkthrough.md && ! grep -n 'rev major equal to the locked mypy major\|additional_dependencies. (.import-linter' <CI spine> && grep -q 'Amendment (E015-S02-003)' docs/adr/0042-*.md && ! grep -n 'import-linter==2.15' docs/adr/0048-*.md .pre-commit-config.yaml && grep -q 'E015-S02-003' docs/architecture.md
+    exit_code: 0
+  - command: "! grep -q -i 'isolated environment' pyproject.toml && ! grep -q 'Pinned here, not in poetry.lock\\|or additional_dependencies instead' .pre-commit-config.yaml"
+    exit_code: 0
+  - command: "Anti-false-green (row 7 as amended): clone && plant && ! pc run mypy --all-files > \"$D/7m.out\" && grep -q '_e015_probe.py:1: error:' \"$D/7m.out\" && clone && plant && ! pc run import-linter --all-files > \"$D/7i.out\" && grep -q 'traefik_certificate_exporter.libs.object -> traefik_certificate_exporter.app' \"$D/7i.out\""
+    exit_code: 0
+  - command: "! grep -nE '^\\s*(-\\s+)?additional_dependencies\\s*:' .pre-commit-config.yaml && ! grep -n 'mirrors-mypy' .pre-commit-config.yaml"
+    exit_code: 0
+  - command: poetry run pre-commit run precommit-hook-deps-locked --all-files
+    exit_code: 0
+  - command: 'Scope attack: clone && sed actionlint additional_dependencies && ! pc run precommit-hook-deps-locked --files .pre-commit-config.yaml && clone && sed zizmor language: python && ! pc run precommit-hook-deps-locked --files .pre-commit-config.yaml'
+    exit_code: 0
+  - command: grep -q 'precommit-hook-deps-locked' <CI spine> && grep -q 'precommit-hook-deps-locked' docs/ci/pipeline-walkthrough.md && ! grep -n 'rev major equal to the locked mypy major\|additional_dependencies. (.import-linter' <CI spine> && grep -q 'Amendment (E015-S02-003)' docs/adr/0042-*.md && ! grep -n 'import-linter==2.15' docs/adr/0048-*.md .pre-commit-config.yaml && grep -q 'E015-S02-003' docs/architecture.md
+    exit_code: 0
+  - command: "! grep -q -i 'isolated environment' pyproject.toml && ! grep -q 'Pinned here, not in poetry.lock\\|or additional_dependencies instead' .pre-commit-config.yaml"
+    exit_code: 0
+  - command: rm -rf "$D"
+    exit_code: 0
+  - command: just check
+    exit_code: 0
+  tests_passing: true
+  fix_iterations: 1
+  files_changed: 13
+actual:
+  elapsed_hours: 0.3
+  man_hours: 7
+  hitl_hours: 0
+  tokens_k:
+    total: 6016.56
+    input: 0.112
+    output: 12.719
+    cache_write: 225.405
+    cache_read: 5778.319
+  cost: 4.62
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-14T11:39:07Z'

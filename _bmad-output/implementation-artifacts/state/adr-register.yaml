@@ -1,4 +1,4 @@
-next: 52
+next: 53
 reserved:
 - number: 1
   slug: action-pin-policy
@@ -148,3 +148,7 @@ reserved:
   slug: pfx-fingerprint-sidecar
   epic: E015
   reserved_at: '2026-10-13T01:44:56Z'
+- number: 52
+  slug: release-publication-one-forge-run
+  epic: E015
+  reserved_at: '2026-10-14T10:42:59Z'

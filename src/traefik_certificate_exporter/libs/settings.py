@@ -16,7 +16,7 @@ from confuse.util import build_dict
 from dotenv import load_dotenv
 
 from .legacy_settings import check_setting_names, find_legacy_settings
-from .logging_utils import globalLogger
+from .logging_utils import globalLogger, sanitize_for_log
 from .object import ObjectBase
 
 #######################################################################
@@ -46,13 +46,17 @@ SECRET_CONFIG_KEYS: tuple[tuple[str, ...], ...] = (
     ("settings", "postexportcommand"),
 )
 
-# The one place a setting's root-mode trust class is declared (ADR-0049). When the process
-# runs as root, an `environment-only-when-root` key is taken only from the environment, the
-# command line or the packaged default: a value from a configuration file or a `.env` file
-# is withheld with one ERROR, because the account that owns `/config` (LinuxServer's PUID)
-# must not choose what root runs, where root writes, or which store root trusts as the
-# source of what it writes. Every leaf of `config_default.yaml` has an entry;
-# `tests/test_settings_surface.py` fails on a missing, extra or unknown one.
+# The one place a setting's trust class is declared (ADR-0049). Three classes:
+# - `environment-only-when-root`: when the process runs as root, the key is taken only from
+#   the environment, the command line or the packaged default. A value from a configuration
+#   file or a `.env` file is withheld with one ERROR, because the account that owns
+#   `/config` (LinuxServer's PUID) must not choose what root runs, where root writes, or
+#   which store root trusts as the source of what it writes.
+# - `environment-only-in-every-mode`: the same rule for every euid, and a file value is
+#   withheld even when it would not have won (ADR-0049, amendment E015-S02-005).
+# - `any-source`: every source, every euid.
+# Every leaf of `config_default.yaml` has an entry; `tests/test_settings_surface.py` fails
+# on a missing, extra or unknown one.
 #
 # The `any-source` rationales below are REVIEWED CLAIMS, not mechanically checked: no test
 # proves that an `any-source` key cannot change what root executes or where or what it
@@ -61,8 +65,11 @@ SECRET_CONFIG_KEYS: tuple[tuple[str, ...], ...] = (
 # (`init-traefik-certificate-exporter-config/run`) (ADR-0049, "What is and is not
 # mechanically checked").
 ROOT_TRUST_ENVIRONMENT_ONLY = "environment-only-when-root"
+ROOT_TRUST_ENVIRONMENT_ONLY_EVERY_MODE = "environment-only-in-every-mode"
 ROOT_TRUST_ANY_SOURCE = "any-source"
 ROOT_SETTING_TRUST: dict[tuple[str, ...], str] = {
+    # Decides whether a .env file is read; no file may choose it.
+    ("settings", "loaddotenv"): ROOT_TRUST_ENVIRONMENT_ONLY_EVERY_MODE,
     # Root executes it.
     ("settings", "postexportcommand"): ROOT_TRUST_ENVIRONMENT_ONLY,
     # Root writes there; init chowns everything under it in dropped mode.
@@ -95,9 +102,25 @@ ROOT_SETTING_TRUST: dict[tuple[str, ...], str] = {
     ("settings", "pkcs12passphrase"): ROOT_TRUST_ANY_SOURCE,
     # Availability only, no read/write/execute reach: it changes how a store's keys are checked, never what root executes, where it writes or which store it reads.
     ("settings", "validatekeys"): ROOT_TRUST_ANY_SOURCE,
-    # Network egress only: Apprise loads no plugins and reads no local attachment.
+    # Outbound requests to any host the container reaches: json/xml/form can choose method,
+    # path and headers (RT-4). Accepted residual risk, MD-25; no local file or process reach.
     ("settings", "appriseurls"): ROOT_TRUST_ANY_SOURCE,
 }
+
+# The switch that decides whether a `.env` file is read (MD-24). Named only where the
+# decision is taken; the file-source enforcement reads its class from the map above.
+_LOAD_DOTENV_KEY = ("settings", "loaddotenv")
+
+# Command-line option per argparse `dest`, registered by `cli_args` (a higher layer, AD-13,
+# so this module cannot import it). The every-mode ERROR names the flag argparse actually
+# defines; without a registration it says "the command line".
+_COMMAND_LINE_OPTIONS: dict[str, str] = {}
+
+
+def register_command_line_options(options: dict[str, str]) -> None:
+    """Record the command-line option of each argparse `dest` (`cli_args` calls this)."""
+    _COMMAND_LINE_OPTIONS.update(options)
+
 
 # The environment prefix confuse's `set_env` reads, and the one `_env_name` derives from.
 _ENV_PREFIX = "TRAEFIK_CERTIFICATE_EXPORTER_"
@@ -159,11 +182,62 @@ def _is_file_name_glob(value: str) -> bool:
     return not os.path.isabs(value) and not os.path.splitdrive(value)[0]
 
 
+def _every_mode_keys() -> list[tuple[str, ...]]:
+    """Every key the trust map puts in `environment-only-in-every-mode`."""
+    return [
+        keyPath
+        for keyPath, trust in ROOT_SETTING_TRUST.items()
+        if trust == ROOT_TRUST_ENVIRONMENT_ONLY_EVERY_MODE
+    ]
+
+
+def _every_mode_key_of_env_name(name: str) -> tuple[str, ...] | None:
+    """The every-mode key the environment variable `name` sets, or None. A name below the
+    key (an indexed `..._0`) sets it too, so it counts."""
+    keyPath = _env_key_path(name)
+    if not keyPath:
+        return None
+    for key in _every_mode_keys():
+        if keyPath[: len(key)] == key:
+            return key
+    return None
+
+
+def _unread_dotenv_paths(fileName: str) -> list[str]:
+    """The `.env` files a run with `settings.loaddotenv` false leaves unread: the one in
+    the working directory and the one beside the configuration file, whether or not that
+    file exists (the s6 service's cwd is its service directory, not `/config`). Existence
+    only -- nothing is opened. De-duplicated by `realpath`, first spelling kept."""
+    found: list[str] = []
+    seen: set[str] = set()
+    for path in (Path(os.getcwd(), ".env"), Path(fileName).parent / ".env"):
+        if not os.path.isfile(path):
+            continue
+        real = os.path.realpath(path)
+        if real in seen:
+            continue
+        seen.add(real)
+        found.append(str(path))
+    return found
+
+
 _ROOT_WITHHELD_MESSAGE = (
     "Ignoring settings.{key} from {origin}: this process runs as root, and a file can be "
     "rewritten by an account that must not choose what root runs, where it writes, or "
     "which store it trusts. Using the {fallback} value instead. Set {env} in the "
     "container's environment, or pass the command-line flag (ADR-0049)."
+)
+
+_EVERY_MODE_WITHHELD_MESSAGE = (
+    "Ignoring settings.{key} from {origin}: it decides whether a .env file is read, so it "
+    "is taken only from the environment ({env}) or {flag}. Using the {fallback} value "
+    "(ADR-0049)."
+)
+
+_UNREAD_DOTENV_MESSAGE = (
+    "Not reading .env file(s) {paths}: settings.loaddotenv is false (the container image "
+    "sets TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV=false). Set variables in the "
+    "container's environment: or env_file:, and settings in config.yaml."
 )
 
 # Backstop only -- see above. Retained because it catches an undeclared field, and because
@@ -329,6 +403,7 @@ class Settings:
     postExportCommand: str | None
     appriseUrls: list
     validateKeys: bool
+    loadDotenv: bool
 
     def __init__(
         self,
@@ -348,6 +423,7 @@ class Settings:
         postExportCommand: str | None = None,
         appriseUrls: list | None = None,
         validateKeys: bool = True,
+        loadDotenv: bool = True,
     ) -> None:
         """
         Initialize the class with the provided parameters.
@@ -372,6 +448,8 @@ class Settings:
             validateKeys (bool): Validate RSA private keys when a .pfx is built
                 (default). False skips the check for keys from a trusted store; the
                 key/certificate match is still checked (ADR-0051).
+            loadDotenv (bool): Whether a `.env` file in the working directory was read
+                (`settings.loaddotenv`; environment or command line only, MD-24).
 
         Returns:
             None
@@ -394,6 +472,7 @@ class Settings:
         self.postExportCommand = postExportCommand
         self.appriseUrls = appriseUrls or []
         self.validateKeys = validateKeys
+        self.loadDotenv = loadDotenv
 
 
 #######################################################################
@@ -459,25 +538,30 @@ class SettingsManager(ObjectBase):
         self._removedDotenv: list[tuple[Path, list[str]]] = []
         # Legacy names removed from a `.env` in root mode, reported by the legacy check.
         self._legacyDotenv: list[str] = []
+        # Every-mode keys a `.env` set, removed in every mode, reported once merged.
+        self._everyModeDotenv: list[tuple[tuple[str, ...], Path]] = []
         isRoot = _is_root()
 
-        if os.path.exists(self.modulePath.joinpath(".env")):
-            self.__logger.debug("Loading Configuration from Module Environment File")
-            _warn_if_group_or_world_writable(
-                self.__logger, self.modulePath.joinpath(".env")
-            )
-            if isRoot:
-                self._loadDotenvAsRoot(self.modulePath.joinpath(".env"))
-            else:
-                load_dotenv(self.modulePath.joinpath(".env"))
-
-        if os.path.exists(Path(os.getcwd(), ".env")):
+        # Decided before any `.env` is read, from the environment and the command line
+        # only (MD-24). Only the working directory's `.env` is ever read: the one in the
+        # installed package's folder is not (MD-24 item 5).
+        self._loadDotenvDecided = self._decideLoadDotenv(cmdLineArgs)
+        cwdDotenv = Path(os.getcwd(), ".env")
+        if not self._loadDotenvDecided:
+            unread = _unread_dotenv_paths(fileName)
+            if unread:
+                self.__logger.warning(
+                    _UNREAD_DOTENV_MESSAGE.format(
+                        paths=", ".join(f"'{sanitize_for_log(p)}'" for p in unread)
+                    )
+                )
+        elif os.path.exists(cwdDotenv):
             self.__logger.debug("Loading Configuration from Local Environment File")
-            _warn_if_group_or_world_writable(self.__logger, Path(os.getcwd(), ".env"))
+            _warn_if_group_or_world_writable(self.__logger, cwdDotenv)
             if isRoot:
-                self._loadDotenvAsRoot(Path(os.getcwd(), ".env"))
+                self._loadDotenvAsRoot(cwdDotenv)
             else:
-                load_dotenv(Path(os.getcwd(), ".env"))
+                self._loadDotenv(cwdDotenv)
 
         if os.path.exists(fileName):
             self.__logger.debug(f"Loading Configuration from File: '{fileName}'")
@@ -504,6 +588,7 @@ class SettingsManager(ObjectBase):
         )
 
         # Every source is merged, so the winning source of each key is known (ADR-0049).
+        self._withholdEveryModeSettings()
         if isRoot:
             self._withholdFileSourcedRootSettings()
 
@@ -569,6 +654,9 @@ class SettingsManager(ObjectBase):
                 self._config["settings"]["appriseurls"].get(confuse.Optional(list))  # type: ignore
             ),
             validateKeys=self._config["settings"]["validatekeys"].get(bool),  # type: ignore
+            # Equals the value decided before any `.env` was read, because every file
+            # source of it has been withheld; a malformed one raises here as any boolean.
+            loadDotenv=self._config["settings"]["loaddotenv"].get(bool),  # type: ignore
         )
 
         self._dump_settings()
@@ -618,8 +706,12 @@ class SettingsManager(ObjectBase):
             if self._isAnySourceEnvName(name):
                 continue
             del os.environ[name]
+            everyMode = _every_mode_key_of_env_name(name)
             keyPath = environmentOnly.get(name.upper())
-            if keyPath is not None:
+            if everyMode is not None:
+                # Reported by the every-mode ERROR, as in a non-root run (MD-24).
+                self._everyModeDotenv.append((everyMode, path))
+            elif keyPath is not None:
                 self._withheldDotenv.append((keyPath, path))
             elif _is_legacy_env_name(name):
                 # It sets nothing in any mode; moving it to the container's environment,
@@ -630,6 +722,83 @@ class SettingsManager(ObjectBase):
                 removed.append(name)
         if removed:
             self._removedDotenv.append((path, removed))
+
+    def _loadDotenv(self, path: Path) -> None:
+        """`load_dotenv` for a non-root run, unchanged except that a variable of an
+        every-mode environment-only key it newly added is removed again (MD-24): the
+        `.env` loading switch was decided before this file was read, and no file may
+        choose it. A variable the real environment already held is untouched."""
+        before = set(os.environ)
+        load_dotenv(path)
+        for name in sorted(set(os.environ) - before):
+            keyPath = _every_mode_key_of_env_name(name)
+            if keyPath is not None:
+                del os.environ[name]
+                self._everyModeDotenv.append((keyPath, path))
+
+    def _decideLoadDotenv(self, cmdLineArgs) -> bool:
+        """Whether a `.env` file is read, decided before any is (MD-24). confuse evaluates
+        it over a throwaway view of exactly three sources -- the packaged default, the
+        environment as it is now, and the command line -- so no file can take part, and
+        the boolean parsing and the precedence are confuse's own. A value confuse rejects
+        fails closed: no `.env` is read, and one ERROR names the variable, never its
+        value."""
+        default = next(s for s in self._config.sources if s.default)
+        view = confuse.RootView([confuse.EnvSource(_ENV_PREFIX, sep="_"), default])
+        if cmdLineArgs is not None:
+            view.set_args(cmdLineArgs, dots=True)
+        node: confuse.ConfigView = view
+        for segment in _LOAD_DOTENV_KEY:
+            node = node[segment]
+        try:
+            return bool(node.get(bool))
+        except confuse.ConfigError:
+            self.__logger.error(
+                f"Ignoring {_env_name(_LOAD_DOTENV_KEY)}: not a boolean. No .env file "
+                "is read (ADR-0049)."
+            )
+            return False
+
+    def _withholdEveryModeSettings(self) -> None:
+        """Remove every `environment-only-in-every-mode` key from every file source that
+        carries it, in every mode, with one ERROR per file (MD-24, ADR-0049). Unlike the
+        root rule, whether the file value would have won does not matter: a file value
+        for such a key is always a misconfiguration, and the image's `ENV` would otherwise
+        hide it silently. The keys come from the trust map, never named here.
+
+        Then reports the variables a `.env` file set for such a key, which the loader
+        already removed from the environment."""
+        for keyPath in _every_mode_keys():
+            origins: list[str] = []
+            for source in self._config.sources:
+                if not _is_file_source(source):
+                    continue
+                node: object = source
+                for segment in keyPath[:-1]:
+                    node = node.get(segment) if isinstance(node, dict) else None
+                if isinstance(node, dict) and keyPath[-1] in node:
+                    node.pop(keyPath[-1])
+                    # confuse can hold one file twice (`Configuration()` already reads
+                    # the user config that `_add_user_source` adds again): one ERROR.
+                    origin = f"configuration file '{source.filename}'"
+                    if origin not in origins:
+                        origins.append(origin)
+            for origin in origins:
+                self._logEveryModeWithheld(keyPath, origin)
+        for keyPath, path in self._everyModeDotenv:
+            self._logEveryModeWithheld(keyPath, f".env file '{path}'")
+
+    def _logEveryModeWithheld(self, keyPath: tuple[str, ...], origin: str) -> None:
+        option = _COMMAND_LINE_OPTIONS.get(".".join(keyPath))
+        self.__logger.error(
+            _EVERY_MODE_WITHHELD_MESSAGE.format(
+                key=".".join(keyPath[1:]),
+                origin=sanitize_for_log(origin),
+                env=_env_name(keyPath),
+                flag=f"the command line ({option})" if option else "the command line",
+                fallback=self.sourceOf(keyPath),
+            )
+        )
 
     def _isAnySourceEnvName(self, name: str) -> bool:
         """Whether confuse's `EnvSource` maps `name` onto an `any-source` setting (F9,

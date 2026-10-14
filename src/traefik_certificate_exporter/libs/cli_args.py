@@ -5,6 +5,7 @@ import argparse
 from . import suggest
 from .docker import DOCKER_LABEL
 from .logging_utils import DEFAULT_LOG_LEVEL, LOG_LEVEL_CHOICES, LOG_LEVEL_ENV
+from .settings import register_command_line_options
 
 ###################################################################################################
 
@@ -135,6 +136,16 @@ globalArgParser.add_argument(
     "always checked.",
 )
 globalArgParser.add_argument(
+    "--no-dotenv",
+    action="store_const",
+    const=False,
+    dest="settings.loaddotenv",
+    default=None,
+    help="If specified, do not read a .env file from the current directory "
+    "(env: TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV=false). The container image "
+    "sets this.",
+)
+globalArgParser.add_argument(
     "--post-export-command",
     dest="settings.postexportcommand",
     default=None,
@@ -184,6 +195,16 @@ group.add_argument(
 )
 
 ###################################################################################################
+
+# The settings loader names a setting's flag in its ERRORs; it sits below this module
+# (AD-13), so the flags are handed down from the parser rather than typed there.
+register_command_line_options(
+    {
+        action.dest: action.option_strings[-1]
+        for action in globalArgParser._actions
+        if action.option_strings
+    }
+)
 
 # parse_known_args (not parse_args) so importing this module never crashes on an
 # unrecognized flag belonging to the host process (pytest, a REPL, etc.) — the console

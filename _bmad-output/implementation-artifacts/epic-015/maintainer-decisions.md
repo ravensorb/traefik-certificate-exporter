@@ -2,7 +2,8 @@
 
 Written by the l3io-plan run of 2026-10-12 as a list of open questions with recommendations;
 converted to a decision record on 2026-10-12 after the maintainer answered. **Every MD-06 …
-MD-23 is accepted as recommended (2026-10-12). MD-01 … MD-05 are withdrawn.** Facts behind each
+MD-23 is accepted as recommended (2026-10-12). MD-01 … MD-05 are withdrawn. MD-24 and MD-25
+were added on 2026-10-14 from the maintainer's decisions D1/D2 of 2026-10-13/14.** Facts behind each
 decision: `_bmad-output/planning-artifacts/research/research-2026-10-12-release-0.3.1.md`
 (§ cited per item).
 
@@ -31,12 +32,12 @@ tests first.
 | MD-07 | Sidecar and key-load defaults D1, D3–D6; new ADR + ADR-0043 amendment | Accepted 2026-10-12 | PRD FR-2, FR-14, FR-15, FR-19, NFR-1, NFR-8; product AD-3, AD-8, AD-10, Conventions (artifacts); E015-S01-002 |
 | MD-08 | Warn about all eleven pre-confuse names | Accepted 2026-10-12 | PRD FR-16, NFR-2; product AD-6; E015-S01-004 (D-1) |
 | MD-09 | Warn and ignore; no aliases | Accepted 2026-10-12 | PRD FR-16, §5; product AD-6; E015-S01-004 (D-2) |
-| MD-10 | GHCR: classic PAT, `write:packages` only | Accepted 2026-10-12 | PRD FR-17; CI AD-9, AD-13; E015-S02-002 (D2) |
-| MD-11 | Forge release: fine-grained PAT; backfill `v0.3.0` | Accepted 2026-10-12 | PRD FR-17, NFR-4; CI AD-9, AD-13; E015-S02-002 (D3, D7) |
-| MD-12 | Revoke the Gitea admin token; `write:package`-only token in GitHub `release` | Accepted 2026-10-12 | PRD FR-17; CI AD-9, AD-13, Deferred (namespace); E015-S02-002 (D4) |
-| MD-13 | Retag Gitea 0.3.0 to the Docker Hub digest; record the exception | Accepted 2026-10-12 | PRD NFR-4; CI AD-10; E015-S02-002 (D6) |
-| MD-14 | No workstation publishing of release versions | Accepted 2026-10-12 | PRD FR-17; CI AD-9, AD-16, Deferred; E015-S02-002 (D5) |
-| MD-15 | Digest equality as a per-release checklist command | Accepted 2026-10-12 | PRD NFR-4; CI AD-10, AD-12, Deferred; E015-S02-002 (D8), E015-S02-004 |
+| MD-10 | GHCR: classic PAT, `write:packages` only | Overturned 2026-10-14 (MD-26) | PRD FR-17; CI AD-9, AD-13; E015-S02-002 (D2) |
+| MD-11 | Forge release: fine-grained PAT; backfill `v0.3.0` | Overturned 2026-10-14 (MD-26) | PRD FR-17, NFR-4; CI AD-9, AD-13; E015-S02-002 (D3, D7) |
+| MD-12 | Revoke the Gitea admin token; `write:package`-only token in GitHub `release` | Amended 2026-10-14 (MD-26): token also kept in Infisical | PRD FR-17; CI AD-9, AD-13, Deferred (namespace); E015-S02-002 (D4) |
+| MD-13 | Retag Gitea 0.3.0 to the Docker Hub digest; record the exception | Overturned 2026-10-14 (MD-26) | PRD NFR-4; CI AD-10; E015-S02-002 (D6) |
+| MD-14 | No workstation publishing of release versions | Overturned 2026-10-14 (MD-26) | PRD FR-17; CI AD-9, AD-16, Deferred; E015-S02-002 (D5) |
+| MD-15 | Digest equality as a per-release checklist command | Overturned 2026-10-14 (MD-26) | PRD NFR-4; CI AD-10, AD-12, Deferred; E015-S02-002 (D8), E015-S02-004 |
 | MD-16 | Production: freeze on 0.2.0, hand upgrade, then track `:0.3` | Accepted 2026-10-12 | E015-S02-004 (P1–P3) only; not a spine invariant (CI `.memlog.md`); PRD §6 (Watchtower) |
 | MD-17 | Hook dependencies into the Poetry dev group (option A) + guard | Accepted 2026-10-12 | PRD NFR-9, §6; CI AD-3, Stack, Deferred; product AD-1, AD-13, Stack; E015-S02-003 |
 | MD-18 | Version 0.3.1 via `just release patch` | Accepted 2026-10-12 | PRD header; CI AD-7, AD-16; E015-S02-004 |
@@ -45,6 +46,8 @@ tests first.
 | MD-21 | Environment-only when root: `postexportcommand`, `outputpath`, `datapath`; `filespec` a validated file-name glob in every mode; `/data:ro` in both modes | Accepted 2026-10-12; extended 2026-10-12 (arch gate AG-1) | PRD FR-10, FR-11, FR-18, FR-19; product AD-2 (trust-class table), AD-6; [ADR-0049](../../../docs/adr/0049-root-mode-trust-covers-hook-output-and-store-location.md); E015-S01-001, E015-S01-002 |
 | MD-22 | Root hook opt-in is setting it in the environment/CLI; no new flag | Accepted 2026-10-12 | PRD FR-12, FR-18, §5; product AD-2, AD-9; E015-S01-001 |
 | MD-23 | Venv under `/app` and seeded config owner are separate backlog items | Accepted 2026-10-12 | PRD §6; product AD-4, AD-12, Deferred; BL-E015-002, BL-E015-003; E015-S01-001 non-goals |
+| MD-24 | `.env` only for the standalone CLI: `settings.loaddotenv` (env/CLI only), `false` in the image; no module-folder `.env` | Accepted 2026-10-14 (maintainer D1, 2026-10-13/14) | PRD FR-10, FR-18; product AD-2, AD-6; ADR-0049 amendment at dev time; E015-S02-005; supersedes BL-E015-052 |
+| MD-25 | `appriseurls` stays `any-source` for now; arbitrary-request reach recorded as an accepted residual risk | Accepted 2026-10-14 (maintainer D2, 2026-10-13/14) | PRD FR-18, §6; product AD-2 (trust table, residual risks), Deferred; ADR-0049 amendment at dev time; E015-S02-005 AC 9; BL-E015-032 (wontfix) |
 
 ## Product (sprint S01)
 
@@ -124,6 +127,33 @@ tests first.
 - **Status:** accepted 2026-10-12.
 - **Lives in:** PRD §6 (open risks); product spine AD-4 (venv stays at `/app/.venv`), AD-12 (seeded file owner), Deferred; `state/issues.yaml` BL-E015-002, BL-E015-003; E015-S01-001 non-goals and residual risks.
 
+### MD-24 — `.env` loading: standalone CLI only (E015-S02-005)
+
+- **Decision (maintainer D1, 2026-10-13/14):** keep `.env` support for the standalone CLI, because the tool may be packaged and installed outside containers, and switch it off in the container:
+  1. New setting `settings.loaddotenv`, default `true`. Env `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV`, CLI `--no-dotenv` (the `store_const` opt-out convention of `--no-validate-keys`). It is taken only from the environment or the CLI, never from `.env`, `config.yaml` or the confuse user config, because it decides whether `.env` is read. It gets a third `ROOT_SETTING_TRUST` class, `environment-only-in-every-mode`, enforced in every mode by the existing derived checks. `config_default.yaml` stays the single key list.
+  2. The Dockerfile sets `ENV TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV=false`, like the pinned `DATAPATH`/`OUTPUTPATH`. LinuxServer init, `/config` ownership and s6 stay untouched.
+  3. In the container `/config/.env` is never read. If a `.env` is present, one WARNING at start says it is not read and points to the container's `environment:`/`env_file:` or `config.yaml`. Values are never logged.
+  4. CLI: a `.env` in the current working directory loads as today. Run as root (e.g. `sudo`), S01-001's root-mode filtering stays: `any-source` settings only, no `${VAR}` expansion. This ratifies the ADR-0049 amendment of 2026-10-12 for CLI root runs.
+  5. The `.env` in the installed package's own folder (`self.modulePath`) is no longer read. Only the working-directory `.env` remains.
+  6. Docs: README (CLI), `docker/README.md` and `docs/upgrading.md` `## 0.3.0 → 0.3.1` (container), ADR-0049 amendment, PRD FR-10/FR-18, product spine AD-2/AD-6.
+  7. BL-E015-052 (ratify the root-mode `.env` narrowing) is superseded.
+- **Planning finding recorded with the decision (2026-10-14).** Probed on `traefik-certificate-exporter:local`: the s6 service's working directory is its s6 service directory (`/run/s6-rc:s6-rc-init:<id>/servicedirs/svc-traefik-certificate-exporter`), not the image `WORKDIR` `/config`. A planted `/config/.env` therefore did not reach the service in 0.3.0. It did reach `docker exec <c> traefik-certificate-exporter …`, which runs in `/config` (`dryRun: true` from the file). Two consequences for item 3:
+  - the switch closes the `docker exec`/one-off path, and also the service path should s6's cwd ever change;
+  - the WARNING checks the `.env` in the cwd **and** the one beside the configuration file (`/config/.env` for `-c /config/config.yaml`), because a cwd-only check would never see `/config/.env` from the service.
+
+  Recorded as a planning refinement of item 3's wording, not a change of intent. Also, ADR-0049's 2026-10-12 amendment ("The exporter's working directory in the image is `/config`") and two operator docs are inaccurate for the service; E015-S02-005 corrects them.
+- **Status:** accepted 2026-10-14.
+- **Lives in:** PRD FR-10, FR-18 (Target 0.3.1, delivered by E015-S02-005); product spine AD-2 (`.env` rule, trust-class table), AD-6 (the switch and the class), Changelog; `.memlog.md` (2026-10-14); E015-S02-005 (AC 1-8, 10-12); ADR-0049 dated amendment written by E015-S02-005 at dev time; `state/issues.yaml` BL-E015-052 (resolved `obsolete`, ref E015-S02-005).
+
+### MD-25 — `appriseurls` stays `any-source`: accepted residual risk (BL-E015-032, RT-4)
+
+- **Decision (maintainer D2, 2026-10-13/14):** keep `appriseurls` `any-source` "for now". Do not restrict file-sourced Apprise URLs in root mode, and do not refuse schemes.
+- **Residual risk accepted, stated plainly:** Apprise `json://`, `xml://` and `form://` (and `jsons://`, `xmls://`, `forms://`) can send a request with a chosen method, path, query and headers to any host the container can reach. The `PUID` account, which can write `config.yaml`, can therefore make the exporter send such requests whenever a pass reports a changed domain. **Example: a POST to a docker-socket-proxy's container endpoints, such as `/containers/<id>/stop`, needs no body.** So `appriseurls: ["json://docker-socket-proxy:2375/containers/traefik/stop?method=POST"]` stops a container through a proxy that allows `CONTAINERS` and `POST`. `docs/operational.md` recommends that proxy topology for `restartcontainers` without the socket. The same applies to any unauthenticated internal admin API on the container's networks. The setting gives no local file read, no local write and no process spawn (ADR-0049 review; ADR-0050).
+- **What changes now:** only the stated rationale. "Network egress only" in `ROOT_SETTING_TRUST`, ADR-0049 Decision 2 and spine AD-2 becomes "outbound requests to any reachable host, accepted residual risk (MD-25)". The code comment and the ADR amendment are written by E015-S02-005 (AC 9) at dev time; the spine and PRD were updated on 2026-10-14.
+- **Revisit when** any of these happens: the project documents or recommends a deployment where the exporter shares a network with a docker-socket-proxy or another unauthenticated control API; a user report or red-team finding shows the path used; or a release after 0.3.1 adds root-mode restrictions for another `any-source` key. In that release, decide between environment-only-when-root for `appriseurls` and refusing the free-form schemes (`json`, `xml`, `form` and their TLS forms) from files in root mode (RT-4 remediation options).
+- **Status:** accepted 2026-10-14.
+- **Lives in:** PRD FR-18 (residual sentence), §6 (open-risk row); product spine AD-2 (trust table, residual risks), Deferred; `.memlog.md` (2026-10-14); E015-S02-005 AC 9 and its ADR-0049 amendment; `state/issues.yaml` BL-E015-032 (resolved `wontfix`, ref MD-25).
+
 ## Release pipeline (sprint S02)
 
 E015-S02-002's story decisions D1–D8 follow from these: D1 (all-GitHub publishing forge from 0.3.1) is implied by MD-10 … MD-12, which store every publish token in the GitHub `release` environment; D2 = MD-10; D3 and D7 = MD-11; D4 = MD-12; D5 = MD-14; D6 = MD-13; D8 = MD-15. E015-S02-004's P1–P3 are MD-16.
@@ -163,6 +193,23 @@ E015-S02-002's story decisions D1–D8 follow from these: D1 (all-GitHub publish
 - **Decision:** (a) a per-release checklist command, each lookup followed by `echo` (fixing E014's false-green row). (c) a post-publish CI job is revisited once GHCR and Gitea publish from one run routinely. Rejected: (b) a `just` recipe.
 - **Status:** accepted 2026-10-12.
 - **Lives in:** PRD NFR-4; CI spine AD-10, AD-12 (the command), Deferred; E015-S02-002 (D8, walkthrough), E015-S02-004 (row 14).
+
+### MD-26 — CI/CD simplified to the maintainer's stated goals (2026-10-14; overturns MD-10, MD-11, MD-13, MD-14, MD-15; amends MD-12)
+
+The maintainer's goals, 2026-10-14: run under `act`, self-hosted Gitea and GitHub; use
+LiquidLogicLabs actions pinned to `@vN`; publish the package to a custom registry or PyPI
+(release) / TestPyPI (dev), and the image to a custom registry, GHCR or Docker Hub; publish
+only when a destination's variables are defined; keep the tokens for GitHub in Infisical.
+"we are massively over complicating things".
+
+- **Decision:** GHCR and the forge release use the workflow's own token (`packages: write` on
+  `publish-image`, `contents: write` on `release`); `PUBLISH_GHCR_TOKEN` and
+  `PUBLISH_RELEASE_TOKEN` become optional overrides. The Gitea token stays `write:package`
+  only and may live in Infisical. Dropped: the one-forge check, the workstation-publishing
+  rule, the Gitea `0.3.0` retag, the `v0.3.0` release backfill as a requirement, the digest
+  checklist and the token-expiry table. The `PUBLISH_GITEA_*` names stay.
+- **Lives in:** ADR-0052 (rewritten); CI spine AD-9, AD-10, AD-12, AD-13; walkthrough;
+  E015-S02-002 notes "Maintainer checklist" and Verification rows 1, 6, 8, 9, 11.
 
 ### MD-16 — How production (rwusdckrls6) upgrades (E015-S02-004)
 

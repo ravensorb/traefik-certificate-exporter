@@ -1,0 +1,61 @@
+key: 'E015-S02-005'
+epic: 'E015'
+sprint: 'S02'
+title: 'Load .env only for the standalone CLI: settings.loaddotenv, off in the image'
+classification: standard
+status: done
+updated_at: '2026-10-14T12:18:08Z'
+depends_on:
+- 'E015-S01-001'
+estimate:
+  man_hours: 11.3
+  hitl_hours: 0.07
+  elapsed_hours: 0.75
+  tokens_k:
+    total: 11275
+    input: 0
+    output: 17
+    cache_write: 520
+    cache_read: 10738
+  cost: 9.04
+  model: claude-opus-5
+  fix_factor: 2.0142
+  scope_ratios:
+    man_hours: 0.9353
+    hitl_hours: 0.1062
+    elapsed_hours: 0.1863
+    tokens_k: 3.8076
+completion_evidence:
+  test_runs:
+  - command: "row 1: grep checks for loaddotenv key, class, --no-dotenv flag/README, no module .env, no 'Network egress only' (story Verification row 1)"
+    exit_code: 0
+  - command: "row 2: grep -qE '^\\s+TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV=false' docker/Dockerfile && ! grep -q 'init-adduser' docker/Dockerfile"
+    exit_code: 0
+  - command: "row 3: poetry run pytest -q tests/libs/test_settings.py -k 'loaddotenv or every_mode' && poetry run pytest -q tests/libs tests/test_settings_surface.py tests/test_s6_privilege_drop.py tests/test_s6_run_mode.py"
+    exit_code: 0
+  - command: 'row 4: real CLI from a temp cwd: .env loads by default; --no-dotenv and LOADDOTENV=false stop it; WARNING logged (story Verification row 4)'
+    exit_code: 0
+  - command: "row 5: docs checks (upgrading 0.3.1 LOADDOTENV, docker/README LOADDOTENV+env_file, README --no-dotenv, no 'in the image, /config/.env', ADR-0049 E015-S02-005 + MD-25)"
+    exit_code: 0
+  - command: 'row 6: just image && TCE_DOCKER_INTEGRATION=1 TCE_IMAGE=traefik-certificate-exporter:local poetry run pytest -q -m integration tests/test_container_dotenv.py tests/test_container_root_trust.py tests/test_container_run_once.py tests/test_container_restart.py tests/test_container_pkcs12.py -rs'
+    exit_code: 0
+  - command: "row 7: f=$(mktemp) && just image && docker image inspect traefik-certificate-exporter:local --format '{{range .Config.Env}}{{println .}}{{end}}' > \"$f\" && grep -qx 'TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV=false' \"$f\""
+    exit_code: 0
+  - command: 'row 8: just check'
+    exit_code: 0
+  tests_passing: true
+  fix_iterations: 0
+  files_changed: 14
+actual:
+  elapsed_hours: 0.65
+  man_hours: 12
+  hitl_hours: 0
+  tokens_k:
+    total: 18318.84
+    input: 0.214
+    output: 14.829
+    cache_write: 617.481
+    cache_read: 17686.313
+  cost: 13.07
+  model: claude-opus-5
+calibration_sampled_at: '2026-10-14T12:18:08Z'

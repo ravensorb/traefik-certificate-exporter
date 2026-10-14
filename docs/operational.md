@@ -343,15 +343,18 @@ use a copy step in `settings.postexportcommand`, or point the consumer at the re
 `abc` on every start, as in every LinuxServer image, and that account — on the host, your
 `PUID` user — edits `/config/config.yaml`. **`settings.postexportcommand` is
 remote-code-execution-equivalent configuration**, not a convenience hook, so what the
-exporter takes from `/config` depends on the uid it runs as (ADR-0049):
+exporter takes from `/config` depends on the uid it runs as (ADR-0049). The image reads no
+`.env` file, `/config/.env` included: it sets
+`TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV=false`, and a leftover `/config/.env` gives
+one WARNING at start-up (ADR-0049, amendment E015-S02-005).
 
 - **When the exporter runs as root**, `postexportcommand`, `outputpath` and `datapath` are
   taken only from `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_*` environment variables or the
   command-line flags. A value from `config.yaml` (or the confuse user config, or a `.env`
   file) is ignored with one ERROR at start naming the setting, the file and the variable to
   use. Set a root hook in the container's `environment:`.
-- **When the exporter runs as root**, a `.env` file (in the image, `/config/.env`, which
-  `abc` can write) may set only `any-source` settings. Every other variable it would add —
+- **When the exporter runs as root**, a `.env` file (a CLI run as root; the image reads no
+  `.env`) may set only `any-source` settings. Every other variable it would add —
   `TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_*`, `LD_PRELOAD`, `DOCKER_HOST`, `PATH`, anything —
   is dropped before the hook or the Docker client can inherit it, with one ERROR per file
   listing the dropped names (never their values). A variable the container's environment
@@ -459,8 +462,8 @@ container to re-decide.
 The decision is made by the **installed exporter**, not by a second parser in the init
 script: the container asks `SettingsManager` for the resolved settings and uses the
 exporter's own `glob` of `settings.datapath`/`settings.filespec` as the set of store files,
-so every source the application honours (packaged default, `.env` files, config file,
-environment) and its exact truthiness apply. The probes run *as* `abc` (`s6-setuidgid`), not
+so every source the application honours (packaged default, config file, environment; the
+image reads no `.env`) and its exact truthiness apply. The probes run *as* `abc` (`s6-setuidgid`), not
 as root, which would read every file and prove nothing.
 
 **What the unprivileged mode changes.** When the container drops to `abc`:

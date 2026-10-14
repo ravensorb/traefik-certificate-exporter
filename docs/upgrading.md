@@ -40,13 +40,30 @@ right and this page is a defect.
 - **Mount `/data` read-only in both modes.** The ACME store must not be writable by your
   `PUID`/`PGID` account, whether the exporter runs as root or not.
 - **Security: a root exporter loads only setting variables from a `.env` file.** In root
-  mode a `.env` file (in the image, `/config/.env`) may set only `any-source` settings such as
+  mode a `.env` file (a CLI run as root) may set only `any-source` settings such as
   `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DRYRUN`. Any other variable it would add, such as
   `TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_*`, `DOCKER_HOST` or `LD_PRELOAD`, is dropped with one
-  ERROR at start that lists the names. **Action:** move those variables to the container's
-  `environment:`
+  ERROR at start that lists the names. **Action:** move those variables to the real
+  environment
   ([ADR-0049](adr/0049-root-mode-trust-covers-hook-output-and-store-location.md), amendment
-  2026-10-12).
+  2026-10-12). The image reads no `.env` at all; see
+  [.env files: CLI only; not read in the image](#env-files-cli-only-not-read-in-the-image).
+
+### .env files: CLI only; not read in the image
+
+- **The container no longer reads `/config/.env`.** The image sets
+  `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV=false`. Put variables in the container's
+  `environment:` or Docker's `env_file:` (Docker applies it), and settings in
+  `/config/config.yaml`. If `/config/.env` exists, start-up logs one WARNING saying it is not
+  read. The service never read it in 0.3.0 (s6 starts it outside `/config`); only one-off
+  `docker exec … traefik-certificate-exporter` runs did.
+- **CLI: `.env` is read from the current directory only.** A `.env` inside the installed
+  package's folder is no longer read. Turn `.env` loading off with `--no-dotenv` or
+  `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV=false`. The switch is read only from the
+  environment or the command line; `loaddotenv` in `config.yaml` or `.env` is ignored with one
+  ERROR.
+- **CLI run as root (`sudo`):** unchanged from the root-mode rule above. A `.env` may set only
+  `any-source` settings, and `${VAR}` is not expanded.
 
 ### PKCS12 fingerprint files and validatekeys
 
@@ -90,10 +107,30 @@ right and this page is a defect.
   included, produce no warning. Outside the container a shell that sets one of the generic
   names (`FLAT`, `DRYRUN`, `CONFIG_FILE`, ...) for another tool gets the same advisory
   WARNING; it changes nothing.
-- **Root mode and `.env`:** a legacy name in a `.env` file is removed in root mode like any
+- **Root mode and `.env` (CLI only; the image reads no `.env`):** a legacy name in a `.env` file is removed in root mode like any
   non-setting variable, but it is reported by this WARNING, with its replacement, and not
   listed in the root-mode `.env` ERROR (moving it to the container's environment would not
   make it work).
+
+### Where releases come from
+
+- **GHCR receives releases again.** 0.3.0 was not published to
+  `ghcr.io/ravensorb/traefik-certificate-exporter`, so `ghcr.io/…:latest` there moves straight
+  from 0.2.0 to 0.3.1. If you follow `ghcr.io/…:latest` (for example with Watchtower), read
+  [0.2.0 → 0.3.0](#020--030) as well: its changes reach you with this upgrade.
+- **In particular, 0.3.0's one-time post-upgrade effect applies to a 0.2.x → 0.3.1 upgrade.**
+  The first pass rewrites every `.pfx` (it now carries the intermediates), reports every
+  domain once, restarts each labelled container once, and fires the post-export hook and
+  notifications once ([Restarts now take effect](#restarts-now-take-effect)). The 0.3.1
+  "verify once, rewrite nothing" behaviour above covers output written by 0.3.0 only.
+- **GHCR has no `0.3.0` tag.** Pin `0.3.1` or later there, or use Docker Hub or the Gitea
+  registry for `0.3.0`.
+- **The Gitea and Docker Hub `0.3.0` images are different builds of the same source.**
+  Gitea's came from a local test run, Docker Hub's from the GitHub release run
+  ([ADR-0052](adr/0052-release-publication-one-forge-run.md)). 0.3.1 is one build on every
+  registry.
+- From 0.3.1 every release is one build from one GitHub release run, published to PyPI,
+  Docker Hub, GHCR, the Gitea registry and package index, and a GitHub release.
 
 ## 0.2.0 → 0.3.0
 
@@ -339,7 +376,8 @@ placeholders; [ADR-0025](adr/0025-strict-cli-parse-without-import-time-regressio
 
 - A release can be cut from GitHub or from Gitea. All destinations of one release publish
   from that one forge's run, and the forge release is created there; the other forge holds
-  no publish secret, so a mirrored run there publishes nothing. One run per release keeps one
+  no publish secret, so a mirrored run there publishes no package or image (it still creates
+  that forge's own release with its job token, ADR-0052). One run per release keeps one
   image digest across every registry and one writer per tag (CI spine AD-9,
   [docs/ci/pipeline-walkthrough.md](ci/pipeline-walkthrough.md#releasing)).
 - A Gitea release can reach every destination (PyPI, GHCR, Docker Hub and Gitea), with the

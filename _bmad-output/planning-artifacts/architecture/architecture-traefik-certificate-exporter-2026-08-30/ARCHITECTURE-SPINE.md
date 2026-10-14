@@ -8,14 +8,15 @@ scope: 'Whole product -- single-process ACME certificate exporter, distributed a
 target: '0.3.1'
 status: final
 created: '2026-08-30'
-updated: '2026-10-12'
+updated: '2026-10-14'
 binds: [FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12, FR-13, FR-14, FR-15, FR-16, FR-17, FR-18, FR-19, NFR-1, NFR-2, NFR-3, NFR-4, NFR-5, NFR-6, NFR-7, NFR-8, NFR-9, NFR-10]
 sources:
   - .memlog.md
   - _bmad-output/planning-artifacts/prds/prd-traefik-certificate-exporter-2026-08-30/prd.md
   - docs/adr/0001, 0002, 0003, 0004, 0013, 0014, 0023, 0024, 0025, 0026, 0027, 0030, 0040, 0042, 0043, 0044, 0045, 0046, 0048, 0049, 0050
-  - _bmad-output/implementation-artifacts/epic-015/maintainer-decisions.md (MD-06..MD-23 accepted 2026-10-12; MD-01..MD-05 withdrawn)
+  - _bmad-output/implementation-artifacts/epic-015/maintainer-decisions.md (MD-06..MD-23 accepted 2026-10-12; MD-01..MD-05 withdrawn; MD-24, MD-25 accepted 2026-10-14)
   - _bmad-output/implementation-artifacts/epic-015/sprint-01/stories/E015-S01-001..004.md
+  - _bmad-output/implementation-artifacts/epic-015/sprint-02/stories/E015-S02-005.md
   - _bmad-output/planning-artifacts/research/research-2026-10-12-release-0.3.1.md (§1-§4)
   - _bmad-output/implementation-artifacts/epic-014/epic-closure/closure-report.md, redteam-report.md (RT-1)
   - _bmad-output/implementation-artifacts/epic-014/sprint-01/closure/notes-E014-S01-001..010.md (S02-003 routing)
@@ -110,7 +111,8 @@ graph TD
   `libs/settings.py` (`ROOT_SETTING_TRUST`, root-mode withholding, `filespec` validation,
   `sourceOf`), `app.py` (hook-source line), `pyproject.toml` (ruff `TID251` banned-api),
   `tests/test_settings_surface.py`, `tests/libs/test_settings.py`,
-  `tests/libs/test_post_export.py`, `tests/test_container_root_trust.py`, deployment docs
+  `tests/libs/test_post_export.py`, `tests/test_container_root_trust.py`,
+  `tests/test_container_dotenv.py`, deployment docs
 - **Prevents:** a bespoke init/permission scheme; breaking LinuxServer's ownership
   conventions; an exporter that drops privileges and then cannot read its own ACME store; a
   root decision taken by a second settings parser; a file writable by the service account
@@ -164,6 +166,20 @@ graph TD
     through the same `loadFromFile`, so the `outputpath` init chowns in dropped mode never
     comes from a file. This is a trust rule over admissible sources, not a change to the
     precedence of AD-6.
+  - **`.env` loading is a standalone-CLI convenience, off in the image (MD-24; Target 0.3.1, delivered by E015-S02-005).**
+    `settings.loaddotenv` (default `true`; env `…_SETTINGS_LOADDOTENV`, CLI `--no-dotenv`) is
+    decided before any `.env` is read, over the packaged default, the real environment and
+    the CLI only (a throwaway confuse `RootView`; confuse truthiness; an invalid value fails
+    closed with one ERROR). When true, only the working-directory `.env` is read (non-root:
+    plain `load_dotenv`; root: the any-source filter above); the installed package's folder
+    is never searched. The image sets `ENV …_SETTINGS_LOADDOTENV=false` beside
+    `DATAPATH`/`OUTPUTPATH`, so no exporter process in the image (service, init resolver,
+    `docker exec`, one-off `docker run`) reads `/config/.env`; Docker's `env_file:` is the
+    environment and still applies. When false and a `.env` exists in the cwd or beside the
+    configuration file, one start-up WARNING lists the path(s), never contents. The s6
+    service's cwd is its s6 service directory, not the image `WORKDIR` `/config` (probe
+    2026-10-14), which is why the configuration file's directory is also checked. No s6,
+    `init-adduser` or ownership change.
   - **`filespec` is a file-name glob inside `datapath`, in every mode.** Validated once in
     `SettingsManager.loadFromFile` on the pattern text, for every source and every euid: an
     empty value, a `/` or `\` (every platform), exactly `.` or `..`, an absolute value or a
@@ -179,20 +195,27 @@ graph TD
     | `environment-only-when-root` | `postexportcommand` | root executes it |
     | `environment-only-when-root` | `outputpath` | root writes there; init chowns under it in dropped mode |
     | `environment-only-when-root` | `datapath` | root trusts the store it reads there as the source of what it writes |
+    | `environment-only-in-every-mode` | `loaddotenv` | decides whether a `.env` file is read; no file may choose it, in any mode (MD-24) |
     | `any-source` | `filespec` | validated at load as a file-name glob, so it cannot leave `datapath` |
     | `any-source` | `traefikresolverid`, `resolverinpathname`, `flat`, `domains.include`, `domains.exclude` | path components whitelisted, containment checked |
     | `any-source` | `restartcontainers` | `docker.py` only pings, lists by label, gets and restarts labelled containers; endpoint from `DOCKER_HOST` only |
-    | `any-source` | `appriseurls` | network egress only; Apprise loads no plugins and reads no local attachment |
+    | `any-source` | `appriseurls` | outbound requests to any host the container reaches: `json://`/`xml://`/`form://` choose method, path and headers (RT-4); no local file or process reach (Apprise loads no plugins, reads no attachment). **Accepted residual risk, MD-25** |
     | `any-source` | `pkcs12passphrase`, `dryrun`, `watchforchanges`, `runatstart`, `watchinterval`, `validatekeys` | availability only, no read/write/execute reach |
 
     The class rule: a setting whose value root executes, writes to, or trusts as the source
     of what it writes is environment-only when root, unless it is validated at load so that
-    it cannot leave an environment-only path (ADR-0049). Logging configuration is already environment-only (the `LOGGING_*` family has
+    it cannot leave an environment-only path (ADR-0049). A setting that decides which
+    sources are read is environment-only in every mode: a file value is withheld (removed
+    from every file source that carries it, never `set()`) with one ERROR per file whether
+    or not the process is root, and a `.env` that adds its variable has it removed with one
+    ERROR (MD-24). The enforcement reads the class from the table and never names a key. Logging configuration is already environment-only (the `LOGGING_*` family has
     no file key, AD-3). Enforcement, scope derived from the source of truth: a surface test
     derives the leaf set from `config_default.yaml` and fails on an unclassified leaf, a
     non-leaf entry or an unknown class, and a companion test proves it reports a planted
     leaf; a loader test records every file the loader opens (config file, confuse user config,
-    cwd and module `.env`) and proves a root load ignores the hook from each; unit tests reject
+    cwd `.env`; the module-folder `.env` is no longer read, E015-S02-005) and proves a root load
+    ignores the hook from each, and that every-mode keys are withheld from each under any
+    euid, with a planted second every-mode key; unit tests reject
     each invalid `filespec` form and withhold a file-sourced `datapath` as root; ruff `TID251`
     banned-api makes `libs/post_export.py` the only process-spawn site (ADR-0050: the
     spawn-capable `os` names are derived from `dir(os)` and checked against the banned table,
@@ -216,12 +239,15 @@ graph TD
     mode gives the same reach as a file-chosen store (AR-1; `/data:ro` required in both
     modes); an environment-set root hook that runs a program or script stored in `/config`;
     `…_LOGGING_CFGFILE` pointed into `/config`; Docker mods and `/custom-cont-init.d`; the venv
-    under the `abc`-owned `/app` (BL-E015-002, Deferred).
+    under the `abc`-owned `/app` (BL-E015-002, Deferred); `appriseurls` from `config.yaml`
+    can send requests with a chosen method, path and headers to any host the container
+    reaches. For example, a POST to a docker-socket-proxy's `/containers/<id>/stop` needs no
+    body (RT-4, BL-E015-032; accepted for now, MD-25).
 
   — ADR-0002, ADR-0030 (amended by E015-S01-001 to point to ADR-0049), ADR-0049 (root-mode
   settings trust: hook, output path and store location), ADR-0050 (spawn-site guard),
   maintainer decisions MD-19 to MD-23 (2026-10-12; MD-21 extended 2026-10-12 by the AG-1
-  resolution), E015-S01-001.
+  resolution), MD-24 and MD-25 (2026-10-14), E015-S01-001, E015-S02-005.
 
 ### AD-3 — Logging: structured, correlated, secrets never logged [ADOPTED]
 
@@ -291,8 +317,11 @@ graph TD
   rule; lists via indexed keys `…_<n>`, never comma-splitting except the existing domain
   lists). Precedence is `CLI > env > config file > packaged default` for every setting; the
   root-mode trust rule (AD-2) removes file sources from the admissible set for three keys
-  (`postexportcommand`, `outputpath`, `datapath`) when the euid is 0 and does not reorder the
-  rest. `settings.filespec` is validated at load as a file-name glob in every mode; an invalid
+  (`postexportcommand`, `outputpath`, `datapath`) when the euid is 0, and a root-mode `.env`
+  contributes only `any-source` names (AD-2); it does not reorder the rest.
+  `settings.loaddotenv` (`--no-dotenv`) is environment-only in every mode and is decided
+  before any `.env` is read; the image sets it false (AD-2, MD-24; Target 0.3.1, delivered by
+  E015-S02-005). `settings.filespec` is validated at load as a file-name glob in every mode; an invalid
   value from any source falls back to the packaged default with one ERROR (ADR-0049). A boolean opt-out flag uses
   `action="store_const"`, `const=False`, `default=None`, so an absent flag never overrides env
   or file (`--no-validate-keys` → `settings.validatekeys`). Tests derive the dest set, the
@@ -330,7 +359,7 @@ graph TD
   `Did you mean …?` from `suggest.nearest_name` and a `--help` pointer); the import-time
   `globalArgs` stays lenient. Every value-taking flag has a `metavar` without a `.`. — ADR-0025,
   E014-S01-004, E014-S01-008, maintainer decisions MD-08/MD-09 (2026-10-12), E015-S01-001,
-  E015-S01-002, E015-S01-004.
+  E015-S01-002, E015-S01-004, E015-S02-005.
 
 ### AD-7 — ACME store parsing is shape-based, CA-agnostic and isolated per resolver [ADOPTED]
 
@@ -700,6 +729,14 @@ graph LR
   `LOGGING_CFGFILE` in `/config`, Docker mods and `/custom-cont-init.d`; documented, not
   enforced (AD-2, ADR-0049). Revisit if LinuxServer ships a supported way to keep `/config`
   out of the `PUID` account's reach, or the exporter stops needing root.
+- **`appriseurls` arbitrary-request reach** (RT-4, BL-E015-032, MD-25; accepted residual
+  risk) — Apprise `json://`/`xml://`/`form://` from a `PUID`-writable `config.yaml` can send a
+  request with a chosen method, path and headers to any host the container reaches, e.g. a
+  body-less POST to a docker-socket-proxy's `/containers/<id>/stop`. Kept `any-source` for now.
+  Revisit when a documented deployment shares a network with a socket proxy or another
+  unauthenticated control API, a report or red-team finding shows the path used, or a later
+  release restricts another `any-source` key in root mode; then choose environment-only when
+  root or refusing the free-form schemes from files.
 - **`PUID`-writable store in root mode** (AR-1, ADR-0049) — if `/data` is writable by `PUID`,
   that account can forge the store a file-forced root exporter writes over `/certs`. `/data:ro`
   is required in both modes (documented, not enforced). `privilege-decision.sh` row 2
@@ -744,3 +781,4 @@ graph LR
 - 2026-10-12 E015-S01-001 review F1 (ADR-0049 amendment 2026-10-12): AD-2 `.env` rule in root mode narrowed from "remove environment-only keys" to "admit only `any-source` setting names, remove every other newly added name" (`LD_PRELOAD`, `DOCKER_HOST`, `LOGGING_*`), one ERROR per file listing names only.
 - 2026-10-12 E015-S01-002: ADR-0051 (PKCS12 change detection by fingerprint sidecar; optional RSA key validation) replaces "ADR to be written by E015-S01-002" in AD-8. AD-3, AD-8, AD-10 and Conventions (artifacts) checked against the shipped code; no rule text changed. The shipped `_passphrase_matches` additionally bounds the scrypt cost parameters (memory `128 * n * r` <= 64 MiB, `p` <= 16) as part of "returns false for anything unknown" (notes-E015-S01-002.md, `## Spine/ADR amendments`).
 - 2026-10-12 E015-S01-004: AD-6 pre-confuse rule checked against the shipped code; matches, except that the translator-file derivation excludes the documentation scan's own `_SCAN_EXCLUDE` trees and vendored paths (planning artifacts quote the idiom and placeholder presence tests). AD-2 `.env` rule: a legacy name removed from a root-mode `.env` is reported by the AD-6 legacy WARNING, not listed in the root-mode ERROR (ADR-0049 Decision 4 sentence added).
+- 2026-10-14 maintainer decisions MD-24/MD-25 (D1/D2 of 2026-10-13/14), target of E015-S02-005: AD-2 gains the `.env` rule (`settings.loaddotenv`, decided before any `.env` is read from env/CLI only; cwd `.env` only, no module-folder `.env`; image `ENV …_LOADDOTENV=false`; WARNING for an unread `.env` in the cwd or beside the configuration file, because the s6 service's cwd is its service directory), the third trust class `environment-only-in-every-mode`, the corrected `appriseurls` rationale and its accepted residual risk; AD-6 states the switch and the root-mode `.env` admissible set (closes arch-drift SD-01-4); Deferred gains the `appriseurls` residual with its revisit condition. ADR-0049 is amended by E015-S02-005 at dev time.

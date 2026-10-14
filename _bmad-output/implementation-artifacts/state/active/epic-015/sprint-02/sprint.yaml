@@ -1,29 +1,41 @@
 key: 'S02'
 epic: 'E015'
 title: 'Release pipeline: one build per release, pinned hook deps, buildx input, release 0.3.1'
-status: backlog
-updated_at: '2026-10-12T22:14:38Z'
+status: done
+updated_at: '2026-10-14T13:51:54Z'
 next: 2
 estimate:
-  man_hours_low: 55.17
-  man_hours_high: 77.98
-  hitl_hours_low: 0.83
-  hitl_hours_high: 1.05
-  elapsed_hours_low: 6.52
-  elapsed_hours_high: 8.24
-  tokens_k_min: 55827
-  tokens_k_max: 63440
+  man_hours_low: 78.0
+  man_hours_high: 110.26
+  hitl_hours_low: 0.45
+  hitl_hours_high: 0.58
+  elapsed_hours_low: 5.03
+  elapsed_hours_high: 6.21
+  tokens_k_min: 62013
+  tokens_k_max: 70469
   closure_ratios:
     man_hours: 3.8059
     hitl_hours: 2.051
-    elapsed_hours: 1.6378
+    elapsed_hours: 1.457
     tokens_k: 1.0
   orchestration_ratios:
     man_hours: 0.0
     hitl_hours: 0.1121
-    elapsed_hours: 0.3181
+    elapsed_hours: 0.2436
     tokens_k: 0
-  cost_low: 44.57
-  cost_high: 50.64
+  cost_low: 49.69
+  cost_high: 56.48
   model: claude-opus-5
   confidence: medium
+actual:
+  elapsed_hours: 4
+  man_hours: 32
+  hitl_hours: 1.25
+  tokens_k: N/A
+  cost: N/A
+closed:
+  date: '2026-10-14'
+retrospective:
+  summary: 'Four of five stories done: the buildx input fix with its guard, hook dependencies locked and audited, .env loading off in the image, and release publishing simplified to forge tokens by maintainer decision MD-26. S02-002 was blocked 2.4 h on an over-built credential design until MD-26 replaced it. Closure fixed one Medium expression bug in that design (the GHCR fallback on Gitea). The 0.3.1 release (S02-004) carries over to the maintainer.'
+  velocity: '4'
+  carry_over: '1'

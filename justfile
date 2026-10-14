@@ -49,7 +49,19 @@ image: build
         -t traefik-certificate-exporter:local \
         .
 
-# No secrets or variables are passed, so every publishing destination stays disabled.
+# No secrets or variables are passed, so every publishing destination stays disabled, and
+# act's ambient secret sources are neutralised (AD-9, AD-16, ADR-0052): HOME and
+# XDG_CONFIG_HOME are fresh temporary directories, so ~/.actrc, act's XDG actrc and
+# ~/.docker/config.json are not read (image pulls are anonymous); --secret-file and
+# --var-file are /dev/null, so ./.secrets and ./.vars are not read; `-s GITHUB_TOKEN=` is
+# an explicitly empty token, so act does not fall back to `gh auth token` (gh reads the
+# system keyring, which a fresh HOME does not hide); and a ./.actrc in the working
+# directory, which act would read, makes the recipe refuse with exit 1.
+# Not neutralised: a ./.env file still sets container environment variables (never
+# `secrets.*` or `vars.*`), and a raw `act` run outside this recipe is not covered: even
+# with no `-s`, act fills GITHUB_TOKEN from `gh auth token`, and release.yaml's forge
+# release falls back to that token (ADR-0052).
+# The platform mapping is passed here, so -P preferences in an actrc are ignored.
 # The exit status is act's own. Run `just act dev.yaml` from main (or pass an event file
 # with `ref: refs/heads/main`) so the run matches dev.yaml's branch filter.
 # --defaultbranch sets github.event.repository.default_branch, which release.yaml's
@@ -57,7 +69,8 @@ image: build
 # `origin` remote tracking the default branch, or it fails closed (ADR-0038).
 # Run a workflow locally under act with its own trigger event (AD-16).
 act workflow="ci.yaml":
-    act --detect-event -W .github/workflows/{{ workflow }} --defaultbranch {{ quote(default_branch) }} --artifact-server-path "$(mktemp -d)"
+    if [ -e .actrc ] || [ -L .actrc ]; then echo >&2 "act: refusing to run with ./.actrc present (it can pass secrets); remove it"; exit 1; fi
+    h="$(mktemp -d)" && x="$(mktemp -d)" && a="$(mktemp -d)" && HOME="$h" XDG_CONFIG_HOME="$x" act --detect-event -W .github/workflows/{{ workflow }} --defaultbranch {{ quote(default_branch) }} --artifact-server-path "$a" -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --secret-file /dev/null --var-file /dev/null -s GITHUB_TOKEN=
 
 # Creates no commit and pushes no branch.
 # Cut a release: push one annotated tag vX.Y.Z on the default branch's HEAD (AD-15).

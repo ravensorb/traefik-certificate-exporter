@@ -4,7 +4,7 @@ next:
   '012': 14
   '013': 45
   '014': 123
-  '015': 54
+  '015': 68
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -1462,18 +1462,6 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-014/sprint-02/closure/local-release-test-2026-10-12.md; CI images unaffected (workflows set labels).
-- key: BL-E014-108
-  epic: '014'
-  sprint: '02'
-  title: "docker/setup-buildx-action v4 ignores input 'config' (renamed buildkitd-config): the private-CA BuildKit config is never applied, so publish-image to a private-CA registry would fail TLS; GitHub warns 'Unexpected input(s) config' on every release/dev image job"
-  source: release (v0.3.0-run-38281339396)
-  source_phase: release
-  source_ref: v0.3.0-run-38281339396
-  severity: Medium
-  status: scheduled
-  description: 'Seen in the v0.3.0 release run log. Only affects runs with PUBLISH_CA_CERTIFICATE set (not used today). Fix: rename the input to buildkitd-config in dev.yaml and release.yaml; add a check (actionlint does not validate action inputs).'
-  story: E015-S02-001
-  scheduled_at: '2026-10-12T21:39:44Z'
 - key: BL-E013-044
   epic: '013'
   sprint: '02'
@@ -1904,16 +1892,6 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/adversarial-review.md
-- key: BL-E015-032
-  epic: '015'
-  sprint: '01'
-  title: appriseurls classed any-source/egress-only but json:// gives arbitrary-request SSRF (e.g. via docker-socket-proxy); maintainer to decide root-mode trust class
-  source: redteam (RT-4)
-  source_phase: redteam
-  source_ref: RT-4
-  severity: Medium
-  status: backlog
-  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/redteam-report.md
 - key: BL-E015-033
   epic: '015'
   sprint: '01'
@@ -2104,23 +2082,123 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/arch-drift-review.md
-- key: BL-E015-052
+- key: BL-E015-056
   epic: '015'
-  sprint: '01'
-  title: Maintainer to ratify ADR-0049 amendment (root-mode .env admits only any-source names; deviates from E015-S01-001 AC 3), then update PRD FR-18 to state it
-  source: sprint-closure (ADR-0049-amendment)
-  source_phase: sprint-closure
-  source_ref: ADR-0049-amendment
-  severity: Medium
+  sprint: '02'
+  title: 'workflows-no-removed-buildx-inputs is case-sensitive: Config:/CONFIG-INLINE: pass the guard'
+  source: code-review (E015-S02-001)
+  source_phase: code-review
+  source_ref: E015-S02-001
+  severity: Low
   status: backlog
-  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/arch-drift-review.md
-- key: BL-E015-053
+  description: 'See _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/review-E015-S02-001.md L-1. Fix: prefix the entry with (?i) and add a Config: plant; the limit is now stated in the hook comment.'
+- key: BL-E015-057
   epic: '015'
-  sprint: '01'
-  title: pre-commit mypy hook cannot see confuse types (isolated env + ignore_missing_imports), so confuse-typed errors pass the gate; two slipped through in S01-001
-  source: sprint-closure (mypy-hook)
-  source_phase: sprint-closure
-  source_ref: mypy-hook
-  severity: Medium
+  sprint: '02'
+  title: pre-commit-hooks v6.0.0 hook env resolves `ruamel.yaml>=0.15` unpinned in the build job (option B would lock it)
+  source: dev (E015-S02-003) — AC 9, maintainer decision MD-17 option A residual; ADR-0042 Not covered
+  source_phase: dev
+  source_ref: E015-S02-003
+  severity: Low
   status: backlog
-  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/closure-report.md
+  description: "pre-commit/pre-commit-hooks (frozen v6.0.0, language: python) installs ruamel.yaml>=0.15 (and tomli>=1.1.0 below 3.11) from the index, unhashed and not audited by pip-audit, in build.yaml's build job, which also builds the published dist. Option B of MD-17 (run it as a repo: local system hook from poetry.lock) would lock it. See ADR-0042 'Not covered'."
+- key: BL-E015-058
+  epic: '015'
+  sprint: '02'
+  title: 'mypy hook files: ^src/ — a pyproject.toml/poetry.lock-only commit (e.g. confuse bump) does not run mypy at commit time now that dependency types are visible; CI --all-files still catches it'
+  source: code-review (E015-S02-003)
+  source_phase: code-review
+  source_ref: E015-S02-003
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/review-E015-S02-003.md (F6)
+- key: BL-E015-059
+  epic: '015'
+  sprint: '02'
+  title: 'Dropped-mode service: logging config fails opening traefik-certificate-exporter.log in the s6 service dir; PermissionError traceback, fallback console format'
+  source: dev (E015-S02-005)
+  source_phase: dev
+  source_ref: E015-S02-005
+  severity: Low
+  status: backlog
+  description: In dropped mode (PUID 1000) the s6 service's cwd is its service directory (/run/s6-rc:s6-rc-init:<id>/servicedirs/svc-traefik-certificate-exporter), not writable by abc. logging_utils.setup_logging's dictConfig fails on 'extended_file_handler' (PermissionError opening traefik-certificate-exporter.log there) even with LOGGING_CONSOLEONLY=true, prints the traceback to docker logs and falls back to the default console format ('Error in Logging Configuration. Using default configs'). Seen on the pre-E015-S02-005 image (built 2026-10-12) and after; root mode is unaffected. Found during E015-S02-005 image tests; see closure/notes-E015-S02-005.md 'Found, not fixed'.
+- key: BL-E015-060
+  epic: '015'
+  sprint: '02'
+  title: Every-mode ERROR text hard-codes the loaddotenv rationale for every key in the class (F1)
+  source: code-review (E015-S02-005)
+  source_phase: code-review
+  source_ref: E015-S02-005
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/review-E015-S02-005.md
+- key: BL-E015-061
+  epic: '015'
+  sprint: '02'
+  title: Planted-key scope attack covers only the config-file route; ADR-0049 amendment claims more (F2)
+  source: code-review (E015-S02-005)
+  source_phase: code-review
+  source_ref: E015-S02-005
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/review-E015-S02-005.md
+- key: BL-E015-062
+  epic: '015'
+  sprint: '02'
+  title: _withholdEveryModeSettings copies the S01-001 file-source walk-and-pop instead of reusing it (F3)
+  source: code-review (E015-S02-005)
+  source_phase: code-review
+  source_ref: E015-S02-005
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/review-E015-S02-005.md
+- key: BL-E015-063
+  epic: '015'
+  sprint: '02'
+  title: Replace PUBLISH_GITEA_TOKEN (general Infisical GITEA_TOKEN, shared with E2E_/TEST_GITEA_TOKEN) with a write:package-only token, as ADR-0052 and CI AD-13 state
+  source: redteam (RT-3) — also arch-drift SD-02-2; maintainer kept the current token 2026-10-14
+  source_phase: redteam
+  source_ref: RT-3
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/redteam-report.md and _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/arch-drift-review.md
+- key: BL-E015-064
+  epic: '015'
+  sprint: '02'
+  title: 'publish-image (packages: write) and release (contents: write) job tokens are reachable by major-tag LiquidLogicLabs actions via github.token'
+  source: redteam (RT-1) — accepted residual of MD-26 goal 2; see BL-E015-005
+  source_phase: redteam
+  source_ref: RT-1
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/redteam-report.md
+- key: BL-E015-065
+  epic: '015'
+  sprint: '02'
+  title: A raw act run of release.yaml (outside just act) creates a real GitHub release with the gh auth token and locally built dist; consider requiring github.actor != 'nektos/act' for the job-token fallback
+  source: redteam (RT-2) — MD-26 dropped the workstation-publishing rule; maintainer's call
+  source_phase: redteam
+  source_ref: RT-2
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/redteam-report.md
+- key: BL-E015-066
+  epic: '015'
+  sprint: '02'
+  title: "'Not reading .env' WARNING repeats on every start with no hint that removing or renaming /config/.env clears it (e.g. Compose env_file pointing at the same file)"
+  source: ux-review (UX-1)
+  source_phase: ux-review
+  source_ref: UX-1
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/ux-review.md
+- key: BL-E015-067
+  epic: '015'
+  sprint: '02'
+  title: --no-dotenv help says 'The container image sets this' but the image sets the LOADDOTENV environment variable, not the flag
+  source: ux-review (UX-2)
+  source_phase: ux-review
+  source_ref: UX-2
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/ux-review.md

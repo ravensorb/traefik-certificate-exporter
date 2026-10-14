@@ -37,15 +37,21 @@ served by a private CA therefore needs the CA imported again inside each job tha
    ca-certificate-import  if PUBLISH_CA                -- first step that touches a secret
    ... checkout, download-artifact, setup ...
    twine upload           REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
-   setup-buildx           config: <buildkit-path output of the CA import>
-   build-push             BuildKit trusts the CA for registry pushes
+   setup-buildx           buildkitd-config: the CA import's buildkit-path output
+   build-push             BuildKit trusts the CA for the Gitea registry host
 ```
 
 - Set the `PUBLISH_CA_CERTIFICATE` secret to the PEM certificate. With it unset, the import
   step and its effects are skipped and nothing else changes (AD-9).
-- `LiquidLogicLabs/git-action-ca-certificate-import@v3` updates the system store and, with
-  `generate-buildkit: true`, writes a BuildKit config that `docker/setup-buildx-action`
-  receives as `config` (AD-18).
+- `LiquidLogicLabs/git-action-ca-certificate-import@v3` (v3.1.0 or newer) updates the system
+  store. In `publish-image` it also writes `buildkit.toml`, a BuildKit daemon config with one
+  `[registry."<host>"]` CA entry for each host in its `buildkit-registries` input, and `docker/setup-buildx-action`
+  receives that file as `buildkitd-config` (AD-18; v4 removed the old `config` input).
+- The host is `PUBLISH_GITEA_REGISTRY`, and only while the Gitea registry destination is
+  enabled; it must match the registry part of `PUBLISH_GITEA_IMAGE` exactly, port included
+  (not checked by the workflow: a mismatch shows as an x509 push failure).
+  GHCR and Docker Hub use public certificates and are not listed. With no Gitea registry
+  enabled no BuildKit file is written and `buildx create` gets no `--config`.
 - `twine` steps point `REQUESTS_CA_BUNDLE` at the system store the action updated, so Python
   trusts the imported CA. That is harmless when no CA was imported.
 - `build.yaml` holds no credential and publishes nothing, so it needs no CA import.
@@ -56,8 +62,10 @@ Gitea refuses secret and variable names that start with `GITEA_` or `GITHUB_`, a
 its own `GITEA_TOKEN`; that is why every pipeline secret is `PUBLISH_*`. Set them in the
 repository's (or organisation's) Actions secrets and variables. The full list, with the
 shape of each variable, is in [pipeline-walkthrough.md](pipeline-walkthrough.md#where-things-are-published).
-`PUBLISH_RELEASE_TOKEN` on Gitea is a Gitea token; on GitHub it is a GitHub token. Each
-forge's secret store is separate, so a rotation is done on each forge (AD-9).
+The forge release uses the job's own token on either forge, so `PUBLISH_RELEASE_TOKEN` is
+optional. GHCR from a Gitea run needs `PUBLISH_GHCR_TOKEN`, because Gitea's job token
+cannot push to ghcr.io. Each forge's secret store is separate, so a rotation is done on
+each forge (AD-9).
 
 ### Residual risk: no environments on Gitea (ADR-0039)
 
@@ -73,8 +81,8 @@ not fixed; revisit when Gitea gains environment-scoped secrets or `environment:`
 
 What actually contains it:
 
-1. **Store only Gitea-destination secrets in Gitea:** `PUBLISH_GITEA_TOKEN`, a Gitea
-   `PUBLISH_RELEASE_TOKEN`, and `PUBLISH_CA_CERTIFICATE` if the private CA is needed. Never
+1. **Store only Gitea-destination secrets in Gitea:** `PUBLISH_GITEA_TOKEN`, and
+   `PUBLISH_CA_CERTIFICATE` if the private CA is needed. Never
    store PyPI, TestPyPI, GHCR or Docker Hub tokens in Gitea.
 2. **Issue the package token from a namespace that owns only this project's packages.**
    Gitea packages belong to a user or an organisation, not to a repository, and no token

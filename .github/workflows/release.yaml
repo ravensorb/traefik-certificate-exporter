@@ -233,7 +233,6 @@ jobs:
         if: env.PUBLISH_CA == 'true'
         with:
           certificate: ${{ secrets.PUBLISH_CA_CERTIFICATE }}
-          generate-buildkit: true
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -303,19 +302,24 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # Destination flags (AD-9: token and every variable non-empty; ANY_* = any own input set),
-    # the one combined flag, and the image names of enabled registries only (AD-10).
+      packages: write # the job's own token pushes to GHCR on GitHub (ADR-0052)
+    # Destination flags (AD-9: token and every variable non-empty; ANY_* = any own input set;
+    # GHCR needs only its image and falls back to the job's own token on github.com only,
+    # since a Gitea job token cannot push to ghcr.io),
+    # the one combined flag, and the image names (and the Gitea registry host) of enabled
+    # registries only (AD-10, AD-18).
     env:
       PUBLISH_CA: ${{ secrets.PUBLISH_CA_CERTIFICATE != '' }}
-      PUBLISH_GHCR: ${{ secrets.PUBLISH_GHCR_TOKEN != '' && vars.PUBLISH_GHCR_USERNAME != '' && vars.PUBLISH_GHCR_IMAGE != '' }}
+      PUBLISH_GHCR: ${{ vars.PUBLISH_GHCR_IMAGE != '' && (secrets.PUBLISH_GHCR_TOKEN != '' || (github.server_url == 'https://github.com' && github.token != '')) }}
       ANY_GHCR: ${{ secrets.PUBLISH_GHCR_TOKEN != '' || vars.PUBLISH_GHCR_USERNAME != '' || vars.PUBLISH_GHCR_IMAGE != '' }}
       PUBLISH_GITEA: ${{ secrets.PUBLISH_GITEA_TOKEN != '' && vars.PUBLISH_GITEA_USERNAME != '' && vars.PUBLISH_GITEA_REGISTRY != '' && vars.PUBLISH_GITEA_IMAGE != '' }}
       ANY_GITEA: ${{ vars.PUBLISH_GITEA_REGISTRY != '' || vars.PUBLISH_GITEA_IMAGE != '' }}
       PUBLISH_DOCKERHUB: ${{ secrets.PUBLISH_DOCKERHUB_TOKEN != '' && vars.PUBLISH_DOCKERHUB_USERNAME != '' && vars.PUBLISH_DOCKERHUB_IMAGE != '' }}
       ANY_DOCKERHUB: ${{ secrets.PUBLISH_DOCKERHUB_TOKEN != '' || vars.PUBLISH_DOCKERHUB_USERNAME != '' || vars.PUBLISH_DOCKERHUB_IMAGE != '' }}
-      PUBLISH_IMAGE: ${{ (secrets.PUBLISH_GHCR_TOKEN != '' && vars.PUBLISH_GHCR_USERNAME != '' && vars.PUBLISH_GHCR_IMAGE != '') || (secrets.PUBLISH_GITEA_TOKEN != '' && vars.PUBLISH_GITEA_USERNAME != '' && vars.PUBLISH_GITEA_REGISTRY != '' && vars.PUBLISH_GITEA_IMAGE != '') || (secrets.PUBLISH_DOCKERHUB_TOKEN != '' && vars.PUBLISH_DOCKERHUB_USERNAME != '' && vars.PUBLISH_DOCKERHUB_IMAGE != '') }}
-      GHCR_IMAGE: ${{ secrets.PUBLISH_GHCR_TOKEN != '' && vars.PUBLISH_GHCR_USERNAME != '' && vars.PUBLISH_GHCR_IMAGE != '' && vars.PUBLISH_GHCR_IMAGE || '' }}
+      PUBLISH_IMAGE: ${{ (vars.PUBLISH_GHCR_IMAGE != '' && (secrets.PUBLISH_GHCR_TOKEN != '' || (github.server_url == 'https://github.com' && github.token != ''))) || (secrets.PUBLISH_GITEA_TOKEN != '' && vars.PUBLISH_GITEA_USERNAME != '' && vars.PUBLISH_GITEA_REGISTRY != '' && vars.PUBLISH_GITEA_IMAGE != '') || (secrets.PUBLISH_DOCKERHUB_TOKEN != '' && vars.PUBLISH_DOCKERHUB_USERNAME != '' && vars.PUBLISH_DOCKERHUB_IMAGE != '') }}
+      GHCR_IMAGE: ${{ vars.PUBLISH_GHCR_IMAGE != '' && (secrets.PUBLISH_GHCR_TOKEN != '' || (github.server_url == 'https://github.com' && github.token != '')) && vars.PUBLISH_GHCR_IMAGE || '' }}
       GITEA_IMAGE: ${{ secrets.PUBLISH_GITEA_TOKEN != '' && vars.PUBLISH_GITEA_USERNAME != '' && vars.PUBLISH_GITEA_REGISTRY != '' && vars.PUBLISH_GITEA_IMAGE != '' && vars.PUBLISH_GITEA_IMAGE || '' }}
+      GITEA_REGISTRY: ${{ secrets.PUBLISH_GITEA_TOKEN != '' && vars.PUBLISH_GITEA_USERNAME != '' && vars.PUBLISH_GITEA_REGISTRY != '' && vars.PUBLISH_GITEA_IMAGE != '' && vars.PUBLISH_GITEA_REGISTRY || '' }}
       DOCKERHUB_IMAGE: ${{ secrets.PUBLISH_DOCKERHUB_TOKEN != '' && vars.PUBLISH_DOCKERHUB_USERNAME != '' && vars.PUBLISH_DOCKERHUB_IMAGE != '' && vars.PUBLISH_DOCKERHUB_IMAGE || '' }}
     steps:
       # Classify each destination from the job-env flags: enabled (one log line), partial
@@ -328,7 +332,7 @@ jobs:
           ENVIRONMENT: release
           # <Destination>|<PUBLISH flag>|<ANY flag>|<required inputs>|<own inputs>|<hint>
           DESTINATIONS: |
-            GHCR|PUBLISH_GHCR|ANY_GHCR|secrets.PUBLISH_GHCR_TOKEN vars.PUBLISH_GHCR_USERNAME vars.PUBLISH_GHCR_IMAGE|secrets.PUBLISH_GHCR_TOKEN vars.PUBLISH_GHCR_USERNAME vars.PUBLISH_GHCR_IMAGE|
+            GHCR|PUBLISH_GHCR|ANY_GHCR|vars.PUBLISH_GHCR_IMAGE secrets.PUBLISH_GHCR_TOKEN|secrets.PUBLISH_GHCR_TOKEN vars.PUBLISH_GHCR_USERNAME vars.PUBLISH_GHCR_IMAGE|On GitHub the job's own token pushes to ghcr.io, so secrets.PUBLISH_GHCR_TOKEN is needed only on act or Gitea.
             Gitea container registry|PUBLISH_GITEA|ANY_GITEA|secrets.PUBLISH_GITEA_TOKEN vars.PUBLISH_GITEA_USERNAME vars.PUBLISH_GITEA_REGISTRY vars.PUBLISH_GITEA_IMAGE|vars.PUBLISH_GITEA_REGISTRY vars.PUBLISH_GITEA_IMAGE|
             Docker Hub|PUBLISH_DOCKERHUB|ANY_DOCKERHUB|secrets.PUBLISH_DOCKERHUB_TOKEN vars.PUBLISH_DOCKERHUB_USERNAME vars.PUBLISH_DOCKERHUB_IMAGE|secrets.PUBLISH_DOCKERHUB_TOKEN vars.PUBLISH_DOCKERHUB_USERNAME vars.PUBLISH_DOCKERHUB_IMAGE|
           # <legacy name>|<replacement, or empty when there is none>
@@ -427,14 +431,18 @@ jobs:
         if: env.PUBLISH_CA == 'true'
         with:
           certificate: ${{ secrets.PUBLISH_CA_CERTIFICATE }}
-          generate-buildkit: true
+          # BuildKit trusts the CA only for the hosts named here (one [registry."<host>"]
+          # table each); the enabled Gitea registry is the one operator-set host (AD-18).
+          # GHCR and Docker Hub are public. No Gitea registry: no file, no --config.
+          generate-buildkit: ${{ env.GITEA_REGISTRY != '' }}
+          buildkit-registries: ${{ env.GITEA_REGISTRY }}
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         if: env.PUBLISH_GHCR == 'true'
         with:
           registry: ghcr.io
-          username: ${{ vars.PUBLISH_GHCR_USERNAME }}
-          password: ${{ secrets.PUBLISH_GHCR_TOKEN }}
+          username: ${{ vars.PUBLISH_GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.PUBLISH_GHCR_TOKEN || github.token }}
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         if: env.PUBLISH_GITEA == 'true'
@@ -477,7 +485,7 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         if: env.PUBLISH_IMAGE == 'true'
         with:
-          config: ${{ steps.ca.outputs.buildkit-path }}
+          buildkitd-config: ${{ steps.ca.outputs.buildkit-path }}
 
       # One multi-arch build pushed to every enabled registry (AD-10, AD-17).
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -516,11 +524,14 @@ jobs:
     needs: [build, publish-package, publish-image]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # the job's own token creates the forge release (ADR-0052)
+      pull-requests: read # the changelog builder lists merged pull requests
     # A job-level if cannot read env, so every step is gated instead (AD-12, Conventions).
+    # The forge release uses PUBLISH_RELEASE_TOKEN when set, else the job's own token; under
+    # `just act` both are empty and the release is skipped.
     env:
       PUBLISH_CA: ${{ secrets.PUBLISH_CA_CERTIFICATE != '' }}
-      PUBLISH_RELEASE: ${{ secrets.PUBLISH_RELEASE_TOKEN != '' }}
+      PUBLISH_RELEASE: ${{ secrets.PUBLISH_RELEASE_TOKEN != '' || github.token != '' }}
     steps:
       # Classify each destination from the job-env flags: enabled (one log line), partial
       # (one ::warning::), or unconfigured (silent) (AD-9). It holds no gating rule: the HAS_*
@@ -615,7 +626,6 @@ jobs:
         if: env.PUBLISH_CA == 'true'
         with:
           certificate: ${{ secrets.PUBLISH_CA_CERTIFICATE }}
-          generate-buildkit: true
 
       # Previous plain vX.Y.Z tag; the changelog builder has no tag-pattern input.
       # Empty on the first release. awk reads all input and exits 0 on no match.
@@ -632,13 +642,13 @@ jobs:
         id: notes
         if: env.PUBLISH_RELEASE == 'true'
         with:
-          token: ${{ secrets.PUBLISH_RELEASE_TOKEN }}
+          token: ${{ secrets.PUBLISH_RELEASE_TOKEN || github.token }}
           from-tag: ${{ steps.prev.outputs.tag }}
 
       - uses: LiquidLogicLabs/git-action-release@v2
         if: env.PUBLISH_RELEASE == 'true'
         with:
-          token: ${{ secrets.PUBLISH_RELEASE_TOKEN }}
+          token: ${{ secrets.PUBLISH_RELEASE_TOKEN || github.token }}
           tag: ${{ github.ref_name }}
           body: ${{ steps.notes.outputs.changelog }}
           artifacts: dist/*.whl,dist/*.tar.gz

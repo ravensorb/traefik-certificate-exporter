@@ -20,6 +20,9 @@ settings:
   # skips it: only when the ACME store is written by your own Traefik. The key/certificate
   # match is always checked.
   validatekeys: true
+  # Read a `.env` file from the current working directory. Environment or command line
+  # only, never a file. The image sets it false.
+  loaddotenv: true
   postexportcommand: null
   # Apprise destinations notified after an export pass completes. A list, never a
   # comma-separated string -- a comma is legal inside an Apprise URL. From the

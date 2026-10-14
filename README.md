@@ -22,7 +22,7 @@ pip install traefik-certificate-exporter
 
 ```bash
 usage: traefik-certificate-exporter [-h] [-c PATH] [-d PATH] [-w] [-fs GLOB] [-o PATH] [--traefik-resolver-id RESOLVER] [--flat] [--restart-container] [--dry-run] [-r] [--include-resolvername-in-outputpath]
-                                    [--pkcs12-passphrase PASSPHRASE] [--no-validate-keys] [--post-export-command COMMAND] [-ll LEVEL] [-id [DOMAIN ...] | -xd [DOMAIN ...]]
+                                    [--pkcs12-passphrase PASSPHRASE] [--no-validate-keys] [--no-dotenv] [--post-export-command COMMAND] [-ll LEVEL] [-id [DOMAIN ...] | -xd [DOMAIN ...]]
 
 Extract traefik letsencrypt certificates.
 
@@ -35,30 +35,32 @@ options:
   -w, --watch-for-changes
                         If specified, monitor and watch for changes to acme files
   -fs GLOB, --file-spec GLOB
-                        file-name glob of the ACME store inside the data path
-                        (no directory part); default `*.json`
+                        file-name glob of the ACME store inside the data path (no directory part); default `*.json`
   -o PATH, --output-path PATH
                         The folder to exports the certificates in to
   --traefik-resolver-id RESOLVER
                         Traefik certificate-resolver-id.
   --flat                If specified, all certificates into a single folder
-  --restart-container   If specified, any container that are labeled with 'com.github.ravensorb.traefik-certificate-exporter.domain-restart=<DOMAIN>' will be restarted, only on change: when an exported certificate file
-                        for one of its domains is newer than the container's start. Multiple domains can be separated by ','
+  --restart-container   If specified, any container that are labeled with 'com.github.ravensorb.traefik-certificate-exporter.domain-restart=<DOMAIN>' will be restarted, only on change: when an exported
+                        certificate file for one of its domains is newer than the container's start. Multiple domains can be separated by ','
   --dry-run             Don't write files and do not restart docker containers.
   -r, --run-at-start    Runs Export immediately on start (used with watch-for-changes).
   --include-resolvername-in-outputpath
                         Added the resolvername in the path used to export the certificates (ignored if flat is specified).
   --pkcs12-passphrase PASSPHRASE
-                        Passphrase used to encrypt the exported PKCS12 (.pfx) file with AES-256/SHA-256 (readable by Windows 10 1709+/Server 2019+, OpenSSL 3, current macOS). The .pfx always includes the intermediates.
-                        Empty or unset: unencrypted.
+                        Passphrase used to encrypt the exported PKCS12 (.pfx) file with AES-256/SHA-256 (readable by Windows 10 1709+/Server 2019+, OpenSSL 3, current macOS). The .pfx always includes the
+                        intermediates. Empty or unset: unencrypted.
   --no-validate-keys    If specified, skip RSA private-key validation when a .pfx is built (~0.5 s per RSA-4096 key). Only when the ACME store is written by your own Traefik: the keys are then trusted, not
                         checked. The key/certificate match is always checked.
+  --no-dotenv           If specified, do not read a .env file from the current directory (env: TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV=false). The container image sets this.
   --post-export-command COMMAND
-                        Shell-like command line to run after an export pass, only on change: when at least one domain's exported files changed (no shell involved -- parsed with shlex, run via subprocess with a fixed
-                        30s timeout). The changed domain names are exposed to it as a comma-separated TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS environment variable. Treated as a secret: log lines name only its
-                        program. Skipped entirely when --dry-run is set.
+                        Shell-like command line to run after an export pass, only on change: when at least one domain's exported files changed (no shell involved -- parsed with shlex, run via subprocess with a
+                        fixed 30s timeout). The changed domain names are exposed to it as a comma-separated TRAEFIK_CERTIFICATE_EXPORTER_EXPORTED_DOMAINS environment variable. Treated as a secret: log lines
+                        name only its program. On failure only the last line of its stderr is logged, with its arguments masked; output it prints in any other form is not redacted. Skipped entirely when --dry-
+                        run is set.
   -ll LEVEL, --log-level LEVEL
-                        Set the logging level, one of: DEBUG, INFO, WARNING, ERROR, CRITICAL. When not given, TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL is used (case-insensitive); otherwise the default is INFO.
+                        Set the logging level, one of: DEBUG, INFO, WARNING, ERROR, CRITICAL. When not given, TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_LEVEL is used (case-insensitive); otherwise the default is
+                        INFO.
   -id [DOMAIN ...], --include-domains [DOMAIN ...]
                         If specified, only certificates that match domains in this list will be extracted
   -xd [DOMAIN ...], --exclude-domains [DOMAIN ...]
@@ -78,6 +80,23 @@ immediately with **code 2**, naming the closest valid flag when there is one
 configured, so nothing is written to the log file. If the container crash-loops
 at start-up with no log output, check your `command:`/`args:` override for a typo and read
 the container's stderr.
+
+### .env file (standalone CLI)
+
+The CLI reads a `.env` file from the **current working directory** only. It does not look
+for one next to the config file or in the installed package's folder. A variable from
+`.env` acts as an environment variable, so the precedence above is unchanged (a variable
+already set in the real environment wins over the file).
+
+To turn `.env` loading off, pass `--no-dotenv` or set
+`TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV=false`. The switch is read only from the
+environment or the command line: a `loaddotenv` key in `config.yaml` or in a `.env` file is
+ignored with an ERROR. The container image sets it to `false` and reads no `.env`
+([docker/README.md](docker/README.md)).
+
+Run as root (for example under `sudo`), a `.env` file may set only `any-source` settings,
+and `${VAR}` in a value is not expanded
+([ADR-0049](docs/adr/0049-root-mode-trust-covers-hook-output-and-store-location.md)).
 
 ## Examples
 

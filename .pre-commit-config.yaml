@@ -34,7 +34,12 @@ repos:
       # when pip's HTTP cache answers and the result is that run's data. CI starts cold.
       # The only remedy besides upgrading is `--ignore-vuln <ID>` in `entry`, with a comment
       # naming the ID, the reason and a BL- key; no tool polices that comment, review does. `--aliases on` prints the GHSA/CVE IDs beside pip-audit's primary PYSEC ID.
-      # Versions of this and the two hooks below come from poetry.lock, not a frozen rev (C-10).
+      # Every `language: system` hook in this block takes its tool from poetry.lock, not a
+      # frozen rev (C-10), so the tools are hashed and audited here: pip-audit,
+      # pip-audit-bootstrap, deptry, import-linter and mypy through `poetry run`, and
+      # poetry-lock's `poetry` is the dev-group one when pre-commit itself runs under
+      # `poetry run` (as `just check` and build.yaml do). `precommit-hook-deps-locked` below
+      # refuses hook-built environments; the `poetry run` entries are held by review.
       - id: pip-audit
         name: pip-audit (every poetry.lock group, ADR-0042)
         language: system
@@ -57,15 +62,29 @@ repos:
         pass_filenames: false
         files: ^(pyproject\.toml|poetry\.lock|src/.*\.py)$
       # Spine AD-13 module layering and no import cycles (SD-01-1); contracts and their
-      # coverage are in [tool.importlinter] in pyproject.toml. Pinned here, not in poetry.lock.
+      # coverage are in [tool.importlinter] in pyproject.toml. Version from poetry.lock (dev
+      # group), so hashed and audited (BL-E014-112, ADR-0042); no hook env is built.
       # PYTHONPATH=src: import-linter finds the package on sys.path, and it lives under src/.
       - id: import-linter
         name: import-linter (AD-13 layering, no cycles)
-        language: python
-        additional_dependencies: [import-linter==2.15]
-        entry: env PYTHONPATH=src lint-imports --no-cache
+        language: system
+        entry: env PYTHONPATH=src poetry run lint-imports --no-cache
         pass_filenames: false
         files: ^(pyproject\.toml|src/.*\.py)$
+      # Type gate for all of src/ (AD-3). [tool.mypy] in pyproject.toml holds its settings.
+      # Runs in the Poetry venv, so mypy, its two stub packages and the runtime dependencies
+      # (e.g. confuse) come from poetry.lock and are typed, hashed and audited (BL-E014-112,
+      # BL-E015-053, ADR-0042). It replaced the remote pre-commit mypy mirror hook, whose
+      # own env typed every runtime dependency as Any.
+      - id: mypy
+        name: mypy
+        language: system
+        entry: poetry run mypy
+        args: [--config-file=pyproject.toml]
+        pass_filenames: true
+        files: ^src/
+        types_or: [python, pyi]
+        require_serial: true
       # justfile-fmt was removed: it needs `just`, which build.yaml does not install, so it
       # would be a local-only check (AD-3).
       # Rule guards (SD-01-2). Each is a one-line regex over standard pre-commit config, not
@@ -112,11 +131,29 @@ repos:
       # Coverage limit: block-style `rev:` lines in this file only, indented or as the first
       # key of a list item (`- rev:`); a flow-style `{repo: ..., rev: ...}` mapping is not
       # matched. `repo: local` hooks have no rev and
-      # are pinned through poetry.lock or additional_dependencies instead (C-10).
+      # are pinned through poetry.lock instead (C-10).
       - id: precommit-revs-frozen
         name: Every pre-commit rev is a frozen commit SHA (BL-E013-020)
         language: pygrep
         entry: '^\s*(?:-\s+)?rev:\s+(?![0-9a-f]{40}\b)'
+        files: ^\.pre-commit-config\.yaml$
+      # BL-E014-112 / ADR-0042 (as amended by E015-S02-003) / AD-3: no hook declares
+      # additional_dependencies and no hook sets a language other than system, pygrep or
+      # unsupported (pre-commit >= 4.4's name for system), so pre-commit builds no hook
+      # environment from this file's own declarations: a `repo: local` hook's tools must come
+      # from the venv that poetry.lock pins -- hashed, audited by pip-audit.
+      # Coverage limit: block-style keys in this file only (indented or `- key:`, the key
+      # optionally quoted); a flow-style `{id: x, additional_dependencies: [y]}` hook mapping
+      # is not matched. A `system` hook's `entry` is not checked: one that calls `uvx`,
+      # `pipx run` or a tool found on PATH instead of `poetry run <tool>` bypasses the lock,
+      # and is held by review. A remote hook repo's own manifest language is not visible
+      # here; those repos (pre-commit-hooks, ruff, zizmor, shellcheck-py, gitleaks,
+      # actionlint) are the stated exception, listed with what each fetches in ADR-0042's
+      # "Not covered".
+      - id: precommit-hook-deps-locked
+        name: No pre-commit hook installs unlocked dependencies (BL-E014-112, ADR-0042)
+        language: pygrep
+        entry: '^\s*(?:-\s+)?["'']?(?:additional_dependencies["'']?\s*:|language["'']?\s*:(?!\s*["'']?(?:system|pygrep|unsupported)["'']?\s*(?:#.*)?$))'
         files: ^\.pre-commit-config\.yaml$
       # ADR-0042 / BL-E013-024: a workflow installs with pip only from a hashed requirements
       # file under .github/requirements/, so the pip-audit-bootstrap glob above sees every
@@ -186,6 +223,26 @@ repos:
         language: pygrep
         entry: 'type=raw,value=latest(?!,enable=\$\{\{\s*needs\.validate-tag\.outputs\.is-latest\s*==\s*''true''\s*\}\}\s*$)'
         files: ^\.github/.*\.ya?ml$
+      # AD-18 / BL-E014-108: docker/setup-buildx-action v4 removed its `config` and
+      # `config-inline` inputs (now `buildkitd-config`/`buildkitd-config-inline`); the old
+      # name is dropped (the runner only warns `Unexpected input(s)`), so the CA import's
+      # BuildKit file never reaches `buildx create`. actionlint validates `with:` keys only
+      # for popular actions in its embedded data referenced at a major tag (and local `./`
+      # actions), so it checks no SHA-pinned step here (AD-5) -- this hook is the static
+      # enforcement. pygrep cannot tie a key to its step, so the two names are refused for
+      # every action; a legitimate `config:` input elsewhere needs this hook narrowed in the
+      # same change.
+      # Coverage limit: the two removed key names only, block style (indented or `- key:`,
+      # optionally quoted), lower case, in files under .github/workflows/ and
+      # .github/actions/ only (a composite action elsewhere is not seen); a flow-style
+      # `with: {config: x}` or a case variant (`Config:`) is not matched, and other actions'
+      # removed or renamed inputs are not seen. The runner's `Unexpected input(s)` warning,
+      # read in the per-release checklist, covers those; it is not CI-gating.
+      - id: workflows-no-removed-buildx-inputs
+        name: No removed setup-buildx config/config-inline input (AD-18, BL-E014-108)
+        language: pygrep
+        entry: '^\s*(?:-\s+)?["'']?config(?:-inline)?["'']?\s*:'
+        files: ^\.github/(workflows|actions)/.*\.ya?ml$
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
@@ -264,12 +321,3 @@ repos:
     hooks:
       - id: zizmor
         args: [--persona=auditor]
-
-  # Type gate for all of src/. [tool.mypy] in pyproject.toml holds its settings.
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: 2834ec6639549dd6796205c8f011dedcd587288b  # frozen: v2.4.0
-    hooks:
-      - id: mypy
-        files: ^src/
-        args: [--config-file=pyproject.toml]
-        additional_dependencies: [types-PyYAML==6.0.12.20260906, types-python-dateutil==2.9.0.20260807]

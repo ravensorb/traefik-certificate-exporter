@@ -260,19 +260,23 @@ def test_sigterm_during_the_run_at_start_sweep_exits_cleanly(tmp_path):
     configFile = tmp_path / "config.yml"
     configFile.write_text(
         "settings:\n"
-        f"  datapath: {dataPath}\n"
-        f"  outputpath: {outputPath}\n"
         # No watch loop at all: the one-shot path has to exit cleanly too.
         "  watchforchanges: false\n"
         "  runatstart: true\n"
-        # Holds the process inside the sweep's try block long enough to be signalled
-        # there deterministically, rather than racing an empty data directory.
-        "  postexportcommand: sleep 20\n"
     )
 
     env = dict(os.environ)
     env["TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
+    # The paths and the hook come from the environment, not the file: a root process
+    # ignores those settings from a configuration file (ADR-0049), and this test runs as
+    # root under act (BL-E015-055). The environment is honoured for any euid, so the
+    # test exercises the same sweep either way.
+    env["TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH"] = str(dataPath)
+    env["TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_OUTPUTPATH"] = str(outputPath)
+    # Holds the process inside the sweep's try block long enough to be signalled
+    # there deterministically, rather than racing an empty data directory.
+    env["TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_POSTEXPORTCOMMAND"] = "sleep 20"
 
     proc = subprocess.Popen(
         [script, "-c", str(configFile)],

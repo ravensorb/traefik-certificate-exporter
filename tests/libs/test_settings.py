@@ -868,6 +868,12 @@ def test_root_ignores_an_environment_only_key_set_by_a_dotenv_file(
     assert manager.settings.postExportCommand is None
     assert _HOOK_ENV not in os.environ
     assert "traefik_certificate_exporter_settings_outputpath" not in os.environ
+    if where == "module_env":
+        # E015-S02-005 (MD-24 item 5): the module `.env` is never read, so it changes
+        # nothing and nothing is reported about it.
+        assert manager.settings.flat is False
+        assert _errors(caplog) == []
+        return
     # An `any-source` key still loads from the `.env` file.
     assert manager.settings.flat is True
     errors = _errors(caplog)
@@ -938,6 +944,12 @@ def test_root_drops_every_dotenv_variable_that_is_not_an_any_source_setting(
 
     for name in _DOTENV_PLANTED:
         assert name not in os.environ, name
+    if where == "module_env":
+        # E015-S02-005 (MD-24 item 5): the module `.env` is never read.
+        assert _DRYRUN_ENV not in os.environ
+        assert manager.settings.dryRun is False
+        assert _errors(caplog) == []
+        return
     # An `any-source` setting still loads from the `.env` file.
     assert os.environ.get(_DRYRUN_ENV) == "true"
     assert manager.settings.dryRun is True
@@ -1291,13 +1303,9 @@ def test_source_of_after_withholding_reports_the_real_fallback_source(
     assert manager.sourceOf(("settings", key)) == expected, case
 
 
-def test_every_file_the_loader_reads_is_subject_to_the_root_rule(
-    caplog, tmp_path, monkeypatch
-):
-    """The scope guard (AC 6, global rule 4): the files come from what the loader actually
-    opens, recorded at confuse's `YamlSource` and at `load_dotenv`, never from a list."""
-    from argparse import Namespace
-
+def _record_loader_reads(monkeypatch) -> dict[str, str]:
+    """Record every file the loader opens: confuse's `YamlSource` (config file, user
+    config) and `load_dotenv`, path -> "yaml" | "dotenv". Never a list of paths."""
     import confuse
 
     from traefik_certificate_exporter.libs import settings as settings_module
@@ -1317,6 +1325,20 @@ def test_every_file_the_loader_reads_is_subject_to_the_root_rule(
 
     monkeypatch.setattr(confuse.sources.YamlSource, "__init__", recordingYaml)
     monkeypatch.setattr(settings_module, "load_dotenv", recordingDotenv)
+    return read
+
+
+def test_every_file_the_loader_reads_is_subject_to_the_root_rule(
+    caplog, tmp_path, monkeypatch
+):
+    """The scope guard (AC 6, global rule 4): the files come from what the loader actually
+    opens, recorded at confuse's `YamlSource` and at `load_dotenv`, never from a list.
+
+    E015-S02-005: a planted module `.env` is never read, so the recorder must not see it;
+    the config file, the confuse user config and the cwd `.env` stay covered."""
+    from argparse import Namespace
+
+    read = _record_loader_reads(monkeypatch)
 
     def run(planted: "str | None") -> "str | None":
         root = tmp_path / f"run-{len(runs)}"
@@ -1357,7 +1379,9 @@ def test_every_file_the_loader_reads_is_subject_to_the_root_rule(
         if run(path) is not None:
             leaked.append(path)
     assert not leaked, f"a root load took postexportcommand from: {leaked}"
-    assert len(recorded) == 4, recorded
+    moduleReads = [p for p in read if p in {str(files[3]) for files in runs}]
+    assert not moduleReads, f"the module .env was read: {moduleReads}"
+    assert len(recorded) == 3, recorded
 
 
 @pytest.mark.parametrize(
@@ -1438,3 +1462,469 @@ def test_valid_file_spec_forms_are_kept(caplog, tmp_path, monkeypatch, value):
 
     assert manager.settings.fileSpec == value
     assert _errors(caplog) == []
+
+
+# ---------------------------------------------------------------------------
+# E015-S02-005 (MD-24, ADR-0049 amendment): `settings.loaddotenv` decides whether the
+# working directory's `.env` is read. It is taken only from the environment or the command
+# line, in every mode; the image sets it false; the module `.env` is never read.
+# ---------------------------------------------------------------------------
+
+_LOADDOTENV_ENV = "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV"
+_MARKER = "dotenv-marker.json"
+_UNREAD = "Not reading .env file(s) "
+
+
+def _register_env(monkeypatch, *names):
+    """Register names with monkeypatch so whatever `load_dotenv` adds is undone."""
+    for name in names:
+        monkeypatch.setenv(name, "placeholder")
+        monkeypatch.delenv(name)
+
+
+def _load_dotenv_case(
+    monkeypatch,
+    tmp_path,
+    *,
+    euid,
+    cwdEnv=None,
+    besideEnv=None,
+    moduleEnv=None,
+    config=None,
+    configInCwd=False,
+    userConfig=None,
+    env=None,
+    cli=None,
+):
+    """One `loadFromFile` with the given `.env`/config files planted. Returns
+    (manager, cwd `.env`, the `.env` beside the config file, config file, user config)."""
+    from argparse import Namespace
+
+    # The ERROR names the flag argparse defines; cli_args registers it at import.
+    from traefik_certificate_exporter.libs import cli_args  # noqa: F401
+
+    configFile, userConfigFile, cwdDotenv, moduleDotenv = _isolate_loader(
+        monkeypatch, tmp_path, euid
+    )
+    _register_env(
+        monkeypatch, _DRYRUN_ENV, _LOADDOTENV_ENV, _APPRISE_0_ENV, "LD_PRELOAD"
+    )
+    if configInCwd:
+        configFile = cwdDotenv.parent / "config.yaml"
+    besideDotenv = configFile.parent / ".env"
+    if config is not None:
+        configFile.write_text(config, encoding="utf-8")
+    if userConfig is not None:
+        userConfigFile.parent.mkdir(parents=True)
+        userConfigFile.write_text(userConfig, encoding="utf-8")
+    if cwdEnv is not None:
+        cwdDotenv.write_text(cwdEnv, encoding="utf-8")
+    if besideEnv is not None:
+        besideDotenv.write_text(besideEnv, encoding="utf-8")
+    if moduleEnv is not None:
+        moduleDotenv.write_text(moduleEnv, encoding="utf-8")
+    for name, value in (env or {}).items():
+        monkeypatch.setenv(name, value)
+    manager = SettingsManager()
+    manager.modulePath = moduleDotenv.parent
+    manager.loadFromFile(fileName=str(configFile), cmdLineArgs=Namespace(**(cli or {})))
+    return manager, cwdDotenv, besideDotenv, configFile, userConfigFile
+
+
+def _warnings(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+
+
+def test_loaddotenv_true_reads_only_the_cwd_dotenv(caplog, tmp_path, monkeypatch):
+    with caplog.at_level(logging.INFO):
+        manager, *_ = _load_dotenv_case(
+            monkeypatch,
+            tmp_path,
+            euid=1000,
+            cwdEnv=f"{_FILESPEC_ENV}=acme.json\n",
+            besideEnv=f"{_DRYRUN_ENV}=true\n",
+        )
+
+    assert manager.settings.loadDotenv is True
+    assert manager.settings.fileSpec == "acme.json"
+    # The `.env` beside a config file in another directory is not read.
+    assert manager.settings.dryRun is False
+    assert not any(_UNREAD in m for m in _messages(caplog))
+
+
+@pytest.mark.parametrize("euid", [0, 1000])
+def test_loaddotenv_false_from_the_environment_reads_no_dotenv(
+    caplog, tmp_path, monkeypatch, euid
+):
+    import os
+
+    with caplog.at_level(logging.INFO):
+        manager, *_ = _load_dotenv_case(
+            monkeypatch,
+            tmp_path,
+            euid=euid,
+            cwdEnv=f"{_FILESPEC_ENV}={_MARKER}\n",
+            env={_LOADDOTENV_ENV: "false"},
+        )
+
+    assert manager.settings.loadDotenv is False
+    assert manager.settings.fileSpec == "*.json"
+    assert _FILESPEC_ENV not in os.environ
+    assert _errors(caplog) == []
+
+
+@pytest.mark.parametrize("euid", [0, 1000])
+def test_loaddotenv_false_from_the_command_line_reads_no_dotenv(
+    caplog, tmp_path, monkeypatch, euid
+):
+    import os
+
+    with caplog.at_level(logging.INFO):
+        manager, *_ = _load_dotenv_case(
+            monkeypatch,
+            tmp_path,
+            euid=euid,
+            cwdEnv=f"{_FILESPEC_ENV}={_MARKER}\n",
+            cli={"settings.loaddotenv": False},
+        )
+
+    assert manager.settings.loadDotenv is False
+    assert manager.settings.fileSpec == "*.json"
+    assert _FILESPEC_ENV not in os.environ
+    assert manager.sourceOf(("settings", "loaddotenv")) == "command line"
+
+
+@pytest.mark.parametrize("environmentSet", [True, False])
+@pytest.mark.parametrize("euid", [0, 1000])
+def test_loaddotenv_from_the_config_file_is_ignored_with_one_error(
+    caplog, tmp_path, monkeypatch, euid, environmentSet
+):
+    with caplog.at_level(logging.INFO):
+        manager, _cwd, _beside, configFile, _user = _load_dotenv_case(
+            monkeypatch,
+            tmp_path,
+            euid=euid,
+            config="settings:\n  loaddotenv: false\n",
+            cwdEnv=f"{_FILESPEC_ENV}=acme.json\n",
+            env={_LOADDOTENV_ENV: "true"} if environmentSet else None,
+        )
+
+    fallback = "environment" if environmentSet else "default"
+    # The file's `false` took no part: the cwd `.env` was read.
+    assert manager.settings.loadDotenv is True
+    assert manager.settings.fileSpec == "acme.json"
+    assert manager.sourceOf(("settings", "loaddotenv")) == fallback
+    errors = _errors(caplog)
+    assert errors == [
+        (
+            f"Ignoring settings.loaddotenv from configuration file '{configFile}': it "
+            "decides whether a .env file is read, so it is taken only from the "
+            f"environment ({_LOADDOTENV_ENV}) or the command line (--no-dotenv). Using "
+            f"the {fallback} value (ADR-0049)."
+        )
+    ], errors
+
+
+def test_loaddotenv_from_the_user_config_is_ignored_with_one_error(
+    caplog, tmp_path, monkeypatch
+):
+    with caplog.at_level(logging.INFO):
+        manager, _cwd, _beside, _config, userConfig = _load_dotenv_case(
+            monkeypatch,
+            tmp_path,
+            euid=1000,
+            userConfig="settings:\n  loaddotenv: false\n",
+        )
+
+    assert manager.settings.loadDotenv is True
+    assert manager.sourceOf(("settings", "loaddotenv")) == "default"
+    errors = _errors(caplog)
+    assert len(errors) == 1, errors
+    assert errors[0].startswith(
+        f"Ignoring settings.loaddotenv from configuration file '{userConfig}': "
+    ), errors
+
+
+@pytest.mark.parametrize("euid", [0, 1000])
+def test_loaddotenv_from_a_dotenv_file_is_removed_with_one_error(
+    caplog, tmp_path, monkeypatch, euid
+):
+    import os
+
+    with caplog.at_level(logging.INFO):
+        manager, cwdEnv, *_ = _load_dotenv_case(
+            monkeypatch,
+            tmp_path,
+            euid=euid,
+            cwdEnv=f"{_LOADDOTENV_ENV}=false\n{_FILESPEC_ENV}=acme.json\n",
+        )
+
+    assert _LOADDOTENV_ENV not in os.environ
+    assert manager.settings.loadDotenv is True
+    # The rest of the file still loads (`filespec` is `any-source`).
+    assert manager.settings.fileSpec == "acme.json"
+    assert manager.sourceOf(("settings", "loaddotenv")) == "default"
+    errors = _errors(caplog)
+    # In root mode the name is not in the generic "Ignoring N variable(s)" ERROR.
+    assert errors == [
+        (
+            f"Ignoring settings.loaddotenv from .env file '{cwdEnv}': it decides whether "
+            "a .env file is read, so it is taken only from the environment "
+            f"({_LOADDOTENV_ENV}) or the command line (--no-dotenv). Using the default "
+            "value (ADR-0049)."
+        )
+    ], errors
+
+
+@pytest.mark.parametrize("where", ["cwd", "config dir", "both", "same file"])
+def test_loaddotenv_false_warns_once_about_an_unread_dotenv(
+    caplog, tmp_path, monkeypatch, where
+):
+    content = f"{_FILESPEC_ENV}={_MARKER}\nSOME_TOKEN=hunter2-value\n"
+    with caplog.at_level(logging.DEBUG):
+        manager, cwdEnv, besideEnv, *_ = _load_dotenv_case(
+            monkeypatch,
+            tmp_path,
+            euid=1000,
+            cwdEnv=content if where in ("cwd", "both", "same file") else None,
+            besideEnv=content if where in ("config dir", "both") else None,
+            configInCwd=where == "same file",
+            env={_LOADDOTENV_ENV: "false"},
+        )
+
+    expected = {
+        "cwd": [cwdEnv],
+        "config dir": [besideEnv],
+        "both": [cwdEnv, besideEnv],
+        "same file": [cwdEnv],
+    }[where]
+    assert manager.settings.fileSpec == "*.json"
+    warnings = _warnings(caplog)
+    assert warnings == [
+        _UNREAD
+        + ", ".join(f"'{p}'" for p in expected)
+        + ": settings.loaddotenv is false (the container image sets "
+        f"{_LOADDOTENV_ENV}=false). Set variables in the container's environment: or "
+        "env_file:, and settings in config.yaml."
+    ], warnings
+    for secret in (_MARKER, "SOME_TOKEN", "hunter2-value"):
+        assert not any(secret in m for m in _messages(caplog, logging.DEBUG)), secret
+
+
+def test_loaddotenv_false_without_a_dotenv_logs_no_warning(
+    caplog, tmp_path, monkeypatch
+):
+    with caplog.at_level(logging.INFO):
+        manager, *_ = _load_dotenv_case(
+            monkeypatch, tmp_path, euid=1000, env={_LOADDOTENV_ENV: "false"}
+        )
+
+    assert manager.settings.loadDotenv is False
+    assert _warnings(caplog) == []
+    assert _errors(caplog) == []
+
+
+def test_loaddotenv_true_never_warns_about_the_config_dir_dotenv(
+    caplog, tmp_path, monkeypatch
+):
+    with caplog.at_level(logging.INFO):
+        manager, *_ = _load_dotenv_case(
+            monkeypatch, tmp_path, euid=1000, besideEnv=f"{_DRYRUN_ENV}=true\n"
+        )
+
+    assert manager.settings.loadDotenv is True
+    assert manager.settings.dryRun is False
+    assert _warnings(caplog) == []
+
+
+@pytest.mark.parametrize("value", ["0", "garbage", ""])
+def test_loaddotenv_invalid_value_fails_closed(caplog, tmp_path, monkeypatch, value):
+    """No `.env` is read and one ERROR names the variable, not the value. The `Settings`
+    build then raises confuse's `ConfigTypeError`, as it does for every malformed
+    boolean (observed and kept, E015-S02-005)."""
+    import os
+
+    import confuse
+
+    with caplog.at_level(logging.INFO), pytest.raises(confuse.ConfigTypeError):
+        _load_dotenv_case(
+            monkeypatch,
+            tmp_path,
+            euid=1000,
+            cwdEnv=f"{_FILESPEC_ENV}={_MARKER}\n",
+            env={_LOADDOTENV_ENV: value},
+        )
+
+    assert _FILESPEC_ENV not in os.environ
+    assert _errors(caplog) == [
+        f"Ignoring {_LOADDOTENV_ENV}: not a boolean. No .env file is read (ADR-0049)."
+    ]
+
+
+@pytest.mark.parametrize("source", ["environment", "command line", "default"])
+@pytest.mark.parametrize("euid", [0, 1000])
+def test_loaddotenv_settings_value_equals_the_merged_config(
+    tmp_path, monkeypatch, euid, source
+):
+    expected = source == "default"
+    manager, *_ = _load_dotenv_case(
+        monkeypatch,
+        tmp_path,
+        euid=euid,
+        # A file says the opposite; it is withheld before the Settings build.
+        config=f"settings:\n  loaddotenv: {str(not expected).lower()}\n",
+        env={_LOADDOTENV_ENV: "false"} if source == "environment" else None,
+        cli={"settings.loaddotenv": False} if source == "command line" else None,
+    )
+
+    merged = manager._config["settings"]["loaddotenv"].get(bool)
+    assert manager.settings.loadDotenv is expected
+    assert manager._loadDotenvDecided is expected
+    assert merged is expected
+    assert manager.sourceOf(("settings", "loaddotenv")) == source
+
+
+@pytest.mark.parametrize("euid", [0, 1000])
+def test_loaddotenv_module_dotenv_is_never_read(caplog, tmp_path, monkeypatch, euid):
+    import os
+
+    with caplog.at_level(logging.INFO):
+        manager, *_ = _load_dotenv_case(
+            monkeypatch,
+            tmp_path,
+            euid=euid,
+            moduleEnv=f"{_FILESPEC_ENV}={_MARKER}\n",
+        )
+
+    assert manager.settings.fileSpec == "*.json"
+    assert _FILESPEC_ENV not in os.environ
+    assert _errors(caplog) == []
+
+
+def test_loaddotenv_root_cli_keeps_the_any_source_filter_and_no_interpolation(
+    caplog, tmp_path, monkeypatch
+):
+    import os
+
+    monkeypatch.setenv(_HOOK_ENV, "/usr/local/bin/notify --token s3cr3t-token")
+    with caplog.at_level(logging.INFO):
+        manager, cwdEnv, *_ = _load_dotenv_case(
+            monkeypatch,
+            tmp_path,
+            euid=0,
+            cwdEnv=(
+                f"{_DRYRUN_ENV}=true\nLD_PRELOAD=/config/x.so\n"
+                f"{_APPRISE_0_ENV}={_INTERPOLATED_URL}\n"
+            ),
+        )
+
+    assert manager.settings.loadDotenv is True
+    assert manager.settings.dryRun is True
+    assert "LD_PRELOAD" not in os.environ
+    assert os.environ.get(_APPRISE_0_ENV) == _INTERPOLATED_URL
+    errors = [m for m in _errors(caplog) if f".env file '{cwdEnv}'" in m]
+    assert len(errors) == 1 and "LD_PRELOAD" in errors[0], _errors(caplog)
+
+
+def test_loaddotenv_is_a_valid_environment_name_for_the_legacy_check(
+    caplog, tmp_path, monkeypatch
+):
+    from traefik_certificate_exporter.libs import legacy_settings
+
+    assert _LOADDOTENV_ENV in legacy_settings.valid_env_names()
+    with caplog.at_level(logging.INFO):
+        _load_dotenv_case(monkeypatch, tmp_path, euid=0, env={_LOADDOTENV_ENV: "false"})
+
+    # The image's `ENV` line gives no "unknown name" (or any other) WARNING.
+    assert _warnings(caplog) == []
+
+
+def _yaml_for(keyPath: tuple[str, ...], value: str) -> str:
+    lines = [f"{'  ' * depth}{segment}:" for depth, segment in enumerate(keyPath)]
+    lines[-1] += f" {value}"
+    return "\n".join(lines) + "\n"
+
+
+@pytest.mark.parametrize("euid", [0, 1000])
+def test_every_mode_withholding_covers_every_file_the_loader_reads(
+    caplog, tmp_path, monkeypatch, euid
+):
+    """Scope guard (global rule 4): the files come from what the loader opens, the keys
+    from the trust map. For each (file, every-mode key), set the key in that file alone:
+    one ERROR naming it, and the effective value never comes from a file."""
+    from argparse import Namespace
+
+    from traefik_certificate_exporter.libs import settings as settings_module
+
+    keys = settings_module._every_mode_keys()
+    assert keys, "no every-mode key; this guard examined nothing"
+    read = _record_loader_reads(monkeypatch)
+
+    def plant(root, target: "int | None", keyPath):
+        files = _isolate_loader(monkeypatch, root, euid)
+        _register_env(monkeypatch, *(settings_module._env_name(k) for k in keys))
+        files[1].parent.mkdir(parents=True)
+        for index, path in enumerate(files):
+            if path.name == ".env":
+                body = "TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_FLAT=true\n"
+                if index == target:
+                    body += f"{settings_module._env_name(keyPath)}=false\n"
+            else:
+                body = "settings:\n  flat: true\n"
+                if index == target:
+                    body = _yaml_for(keyPath, "false")
+            path.write_text(body, encoding="utf-8")
+        manager = SettingsManager()
+        manager.modulePath = files[3].parent
+        manager.loadFromFile(fileName=str(files[0]), cmdLineArgs=Namespace())
+        return files, manager
+
+    files, _manager = plant(tmp_path / "baseline", None, keys[0])
+    placed = [str(p) for p in files]
+    recorded = sorted(read)
+    assert recorded, "the loader read no file; this guard examined nothing"
+    assert all(p in placed for p in recorded), recorded
+
+    for path in recorded:
+        target = placed.index(path)
+        for keyPath in keys:
+            caplog.clear()
+            root = tmp_path / f"{target}-{'-'.join(keyPath)}"
+            with caplog.at_level(logging.INFO):
+                files, manager = plant(root, target, keyPath)
+            dotted = ".".join(keyPath[1:])
+            hits = [
+                m
+                for m in _errors(caplog)
+                if m.startswith(f"Ignoring settings.{dotted} from ")
+                and f"'{files[target]}'" in m
+            ]
+            assert len(hits) == 1, (path, keyPath, _errors(caplog))
+            source = manager.sourceOf(keyPath)
+            assert source in ("environment", "command line", "default"), (path, source)
+    assert len(recorded) == 3, recorded
+
+
+def test_every_mode_withholding_covers_a_planted_key(caplog, tmp_path, monkeypatch):
+    """Attacks the scope: a second key put in the every-mode class is enforced with no
+    code change, so the enforcement reads the class and never names `loaddotenv`."""
+    from traefik_certificate_exporter.libs import settings as settings_module
+
+    trust = dict(settings_module.ROOT_SETTING_TRUST)
+    trust[("settings", "dryrun")] = (
+        settings_module.ROOT_TRUST_ENVIRONMENT_ONLY_EVERY_MODE
+    )
+    monkeypatch.setattr(settings_module, "ROOT_SETTING_TRUST", trust)
+
+    with caplog.at_level(logging.INFO):
+        manager, _cwd, _beside, configFile, _user = _load_dotenv_case(
+            monkeypatch, tmp_path, euid=1000, config="settings:\n  dryrun: true\n"
+        )
+
+    assert manager.settings.dryRun is False
+    errors = _errors(caplog)
+    assert len(errors) == 1, errors
+    assert errors[0].startswith(
+        f"Ignoring settings.dryrun from configuration file '{configFile}': "
+    ), errors
+    assert "Using the default value" in errors[0]

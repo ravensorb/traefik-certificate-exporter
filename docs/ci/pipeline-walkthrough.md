@@ -64,18 +64,20 @@ Git tags are the only source of a version. `pyproject.toml` always says `0.0.0`;
 
 ## Where things are published
 
-Nothing is required. A destination is enabled when its token secret **and** every
-variable it needs are set and non-empty, on either forge, in any combination:
+Nothing is required. A destination is enabled when its token **and** every variable it
+needs are set and non-empty, on either forge, in any combination. Two exceptions use the
+forge's own job token when no `PUBLISH_*` token is set: GHCR (on GitHub) and the forge
+release (on any forge run; under `just act` the job token is empty, so both are skipped):
 
 ```text
                           dev   release   enabled when all set (secret + vars.PUBLISH_*)
  Python  Gitea index       ✓       ✓      PUBLISH_GITEA_TOKEN + GITEA_USERNAME, GITEA_PYPI_URL
          TestPyPI          ✓       -      PUBLISH_TESTPYPI_TOKEN
          PyPI              -       ✓      PUBLISH_PYPI_TOKEN
- Image   GHCR              ✓       ✓      PUBLISH_GHCR_TOKEN + GHCR_USERNAME, GHCR_IMAGE
+ Image   GHCR              ✓       ✓      GHCR_IMAGE (+ PUBLISH_GHCR_TOKEN on act/Gitea; GitHub uses its own token)
          Gitea registry    ✓       ✓      PUBLISH_GITEA_TOKEN + GITEA_USERNAME, GITEA_REGISTRY, GITEA_IMAGE
          Docker Hub        ✓       ✓      PUBLISH_DOCKERHUB_TOKEN + DOCKERHUB_USERNAME, DOCKERHUB_IMAGE
- Forge   release           -       ✓      PUBLISH_RELEASE_TOKEN
+ Forge   release           -       ✓      always on a forge run (the forge's own token, or PUBLISH_RELEASE_TOKEN)
  TLS     private CA        ✓       ✓      PUBLISH_CA_CERTIFICATE (not a destination; never warns)
 ```
 
@@ -122,7 +124,7 @@ Variables that go with them:
 | `PUBLISH_GITEA_PYPI_URL` | full upload URL | `https://git.example.com/api/packages/ravensorb/pypi` |
 | `PUBLISH_GITEA_REGISTRY` | host, no scheme | `git.example.com` |
 | `PUBLISH_GITEA_IMAGE` | full image, lower case, no tag | `git.example.com/ravensorb/traefik-certificate-exporter` |
-| `PUBLISH_GHCR_USERNAME` | GitHub user | `ravensorb` |
+| `PUBLISH_GHCR_USERNAME` | GitHub user; optional, defaults to the run's actor | `ravensorb` |
 | `PUBLISH_GHCR_IMAGE` | full image | `ghcr.io/ravensorb/traefik-certificate-exporter` |
 | `PUBLISH_DOCKERHUB_USERNAME` | Docker Hub user | `ravensorb` |
 | `PUBLISH_DOCKERHUB_IMAGE` | full image | `docker.io/ravensorb/traefik-certificate-exporter` |
@@ -131,25 +133,40 @@ Variables that go with them:
 `GITEA_` or `GITHUB_`. It also fills in its own `GITEA_TOKEN`, which would make
 "is the token set?" always true.
 
-`PUBLISH_RELEASE_TOKEN` is set separately in each forge's secrets: a GitHub token on
-GitHub, a Gitea token on Gitea. Each one creates the release on the forge running the
-workflow.
+**GHCR and the forge release use the forge's own token** (ADR-0052). On GitHub,
+`publish-image` has `packages: write` and pushes to GHCR with the job's `GITHUB_TOKEN`
+(username `vars.PUBLISH_GHCR_USERNAME`, else the run's actor), and `release` has
+`contents: write` and creates the release with it. `PUBLISH_GHCR_TOKEN` (a classic PAT with
+`write:packages`) and `PUBLISH_RELEASE_TOKEN` are optional overrides, needed only where the
+job token cannot do the job: GHCR from act or Gitea. On Gitea the job token creates the
+Gitea release; it cannot publish to Gitea's package registry, so `PUBLISH_GITEA_TOKEN` is
+always a separate `write:package` token (never an instance-admin token).
+
+Publish tokens for GitHub are kept in Infisical and copied into the GitHub environment with
+`gh secret set` reading the value from stdin.
+
+**Registry logins sit beside steps at major tags** (accepted residual, ADR-0052).
+`publish-image` logs in to every enabled registry with `docker/login-action`, which writes
+the credentials to the job's Docker config, and then runs
+`LiquidLogicLabs/git-action-docker-metadata@v6` and `LiquidLogicLabs/git-action-docker-test@v2`
+at mutable major tags (AD-5); either can read that config. Revisit: a `docker logout` before
+the image test (BL-E015-005), or SHA-pinned LiquidLogicLabs actions.
 
 On GitHub every `PUBLISH_*` secret lives in the `dev` or `release` environment, never at
 repository level, so only a publish job on `main` or on a `v*` tag can read it
-([Environments (GitHub)](#environments-github), ADR-0039). `PUBLISH_*` variables of a
-destination both workflows publish to stay at repository level. A destination meant for
-**one** workflow only (for example Docker Hub for releases only) keeps its variables in
-that workflow's environment too: repository-level variables are visible to both
-environments, so the other workflow would see them without the token and report the
-destination as partially configured on every run.
+([Environments (GitHub)](#environments-github), ADR-0039). The `PUBLISH_*` variables live
+in the environment of the workflow that publishes the destination too, and none at
+repository level (AD-13): repository-level variables are visible to both environments, so
+the other workflow would see them without the token and report the destination as
+partially configured on every run. A destination both workflows publish to has its
+variables set in both environments.
 
 ### How "publish if the token is set" is written
 
 ```text
  publish-image:
    env:                                   <- job level: computed once
-     PUBLISH_GHCR: ${{ secrets.PUBLISH_GHCR_TOKEN != '' && vars.PUBLISH_GHCR_USERNAME != '' && vars.PUBLISH_GHCR_IMAGE != '' }}
+     PUBLISH_GHCR: ${{ vars.PUBLISH_GHCR_IMAGE != '' && (secrets.PUBLISH_GHCR_TOKEN != '' || (github.server_url == 'https://github.com' && github.token != '')) }}
      ANY_GHCR:     ${{ secrets.PUBLISH_GHCR_TOKEN != '' || vars.PUBLISH_GHCR_USERNAME != '' || vars.PUBLISH_GHCR_IMAGE != '' }}
    steps:
      - name: Destination configuration    <- no if:; reads PUBLISH_*/ANY_* only
@@ -269,19 +286,25 @@ instead of going quiet.
   already exists (`--skip-existing` for PyPI/TestPyPI, a files check for Gitea; AD-11).
   Gating is evaluated per run attempt, so a variable changed between attempts changes
   what the re-run publishes, and a re-run repeats its own warnings.
-- **A release can run from either forge, one forge per release.** GitHub and Gitea run the
-  same `release.yaml`; the LiquidLogicLabs actions create the forge release on whichever
-  forge runs it. All destinations of one release publish from that one forge's run: every
-  `PUBLISH_*` secret and variable lives on the publishing forge only, and the other forge
-  holds none, so a mirrored tag's run there is silent and publishes nothing. The reason is
-  AD-10's one digest across all registries and AD-8's one writer per tag: two forges
-  publishing one release would build the image and the packages twice. A Gitea release can
-  reach every destination, with the AD-13 token mitigations (CI spine AD-9, AD-13). Not
-  mechanically enforced: the per-release checklist compares secret names on both forges.
+- **Where a release publishes.** GitHub, Gitea and `act` run the same `release.yaml`; each
+  publishes to whatever destinations are configured where it runs, and the
+  LiquidLogicLabs actions create the forge release on the forge that runs it. GitHub is the
+  release forge: its `release` environment holds the publish settings. Configure a
+  destination on only one forge, or a mirrored tag run there builds and publishes it
+  again.
+- `just act` runs with no secrets and an empty `GITHUB_TOKEN` (it does not read `~/.actrc`,
+  `.secrets`, `.vars` or your `gh` login), so a local run publishes nothing unless you pass
+  secrets to act yourself ([Running locally](#running-locally)).
 - **Per-release checklist:** the release run shows **zero destination warnings** and each
   target destination `enabled` exactly once; otherwise fix and re-run before announcing.
   This is not mechanically enforced: a partially configured destination does not fail
   the run (NFR-4 trade-off, E014 pipeline ADR).
+- **Per-release checklist:** the release run log has zero `Unexpected input` lines (not CI-gating).
+  The runner checks every step's `with:` against the pinned action and warns
+  `Unexpected input(s)` for a key the action does not declare. No static tool here validates
+  the inputs of a SHA-pinned action, so this is the only check that sees a removed or renamed
+  input of any action; `workflows-no-removed-buildx-inputs` covers only the two
+  `docker/setup-buildx-action` names (AD-18).
 - The `release` job gates its steps on `PUBLISH_RELEASE`, except its CA import, which is
   gated on `PUBLISH_CA`: a step tests exactly one flag (AD-9, AD-18), and the import
   publishes nothing.
@@ -313,8 +336,24 @@ instead of going quiet.
 | `just build` | clean `dist/`, build the wheel and sdist |
 | `just image` | build and load the image from `dist/` |
 | `just act` | run `ci.yaml` under `act` |
-| `just act dev.yaml` | run the dev pipeline; no secrets are passed, so nothing publishes |
+| `just act dev.yaml` | run the dev pipeline; no secrets are passed and act's ambient secret sources are ignored, so nothing publishes |
 | `just release patch` | see above |
+
+**`just act` ignores act's ambient secret sources** (AD-16, ADR-0052). It runs `act` with
+`HOME` and `XDG_CONFIG_HOME` set to fresh temporary directories (so `~/.actrc`, act's XDG
+actrc and `~/.docker/config.json` are not read, and image pulls are anonymous; re-run on a
+429), `--secret-file /dev/null` and `--var-file /dev/null` (so `./.secrets` and `./.vars`
+are not read), `-s GITHUB_TOKEN=` (an explicitly empty token: without it act runs
+`gh auth token`, which reads the system keyring, not `HOME`, and would hand your GitHub CLI
+token to every step), and its own `-P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest` (so a
+`-P` preference in an actrc is ignored too). A `./.actrc` in the working directory, which act
+would still read, makes the recipe exit 1 before act starts:
+`act: refusing to run with ./.actrc present (it can pass secrets); remove it`. Remove or
+rename it. Not covered: a `./.env` file still sets container environment variables (never
+`secrets.*` or `vars.*`), and a raw `act -s ...` run outside the recipe passes whatever it is
+given; never give it a publish token (releases publish only from a forge run). The temporary
+directories go under `$TMPDIR` and are not removed; a fresh `HOME` also means act downloads
+the workflow's actions again on every run.
 
 No checkout carries a `ref:` (ADR-0028), so `act` uses your working tree as it is.
 `just act release.yaml` needs a clone with an `origin` remote tracking the default branch,
@@ -416,15 +455,16 @@ rules" (ADR-0039). Two environments, so each workflow sees only its own tokens:
 
 | Environment | Policy (ref type, pattern) | Jobs | Secrets |
 | --- | --- | --- | --- |
-| `dev` | Branch `main` | `dev.yaml` `publish-package`, `publish-image` | `PUBLISH_GITEA_TOKEN`, `PUBLISH_TESTPYPI_TOKEN`, `PUBLISH_GHCR_TOKEN`, `PUBLISH_DOCKERHUB_TOKEN`, `PUBLISH_CA_CERTIFICATE` |
-| `release` | Tag `v*` | `release.yaml` `publish-package`, `publish-image`, `release` | `PUBLISH_GITEA_TOKEN`, `PUBLISH_PYPI_TOKEN`, `PUBLISH_GHCR_TOKEN`, `PUBLISH_DOCKERHUB_TOKEN`, `PUBLISH_RELEASE_TOKEN`, `PUBLISH_CA_CERTIFICATE` |
+| `dev` | Branch `main` | `dev.yaml` `publish-package`, `publish-image` | `PUBLISH_GITEA_TOKEN`, `PUBLISH_TESTPYPI_TOKEN`, `PUBLISH_DOCKERHUB_TOKEN`, `PUBLISH_CA_CERTIFICATE` (and the optional `PUBLISH_GHCR_TOKEN`) |
+| `release` | Tag `v*` | `release.yaml` `publish-package`, `publish-image`, `release` | `PUBLISH_GITEA_TOKEN`, `PUBLISH_PYPI_TOKEN`, `PUBLISH_DOCKERHUB_TOKEN`, `PUBLISH_CA_CERTIFICATE` (and the optional `PUBLISH_GHCR_TOKEN`, `PUBLISH_RELEASE_TOKEN`) |
 
 The secrets column is the [publish table](#where-things-are-published) read by column; to
 derive it from the files, run
 `grep -o 'secrets\.PUBLISH_[A-Z_]*' .github/workflows/<file> | sort -u`. Shared tokens
-(Gitea, GHCR, Docker Hub, CA) are set in both environments. `vars.PUBLISH_*` stay at
-repository level, except those of a destination only one environment publishes to, which
-go in that environment ([Where things are published](#where-things-are-published)). Gitea and `act` ignore `environment:`; see
+(Gitea, GHCR, Docker Hub, CA) are set in both environments when both workflows publish to
+that destination; GHCR and Gitea are configured in `release` only. `vars.PUBLISH_*`
+live in the environment of the workflow that publishes the destination, none at repository
+level (AD-13, [Where things are published](#where-things-are-published)). Gitea and `act` ignore `environment:`; see
 [gitea-runners.md](gitea-runners.md#secrets-and-variables-on-gitea) for what that leaves
 open on Gitea.
 
@@ -468,7 +508,7 @@ open on Gitea.
 6. Go live when you choose. Add the `dev` secrets first:
 
    ```bash
-   gh secret set PUBLISH_GHCR_TOKEN --env dev --repo ravensorb/traefik-certificate-exporter
+   gh secret set PUBLISH_TESTPYPI_TOKEN --env dev --repo ravensorb/traefik-certificate-exporter
    gh api repos/ravensorb/traefik-certificate-exporter/environments/dev/secrets --jq '.secrets[].name'
    ```
 
@@ -586,10 +626,10 @@ Only standard tools, all run by `pre-commit` (locally and in `build.yaml`):
 
 | Tool | Catches |
 | --- | --- |
-| actionlint | invalid workflow syntax and expressions |
+| actionlint | invalid workflow syntax and expressions. It checks a step's `with:` keys only for popular actions in its embedded data referenced at a major tag (and local `./` actions), so it does not validate the inputs of SHA-pinned actions, which is every non-`LiquidLogicLabs/*` action here (AD-5) |
 | zizmor | unpinned actions (everything outside `LiquidLogicLabs/*` needs a commit SHA; `LiquidLogicLabs/*` needs only some ref, so zizmor accepts a branch such as `@main` as readily as `@vN`; the major-tag form is enforced by the `workflows-lll-major-tag` pygrep hook), template injection, excessive permissions, a secret used outside an environment (auditor persona), an unnamed job |
 | gitleaks | committed secrets; the repository adds no path exemption, and gitleaks' default allowlist is inherited (ADR-0037) |
-| pygrep hooks | a `paths` allowlist in `.gitleaks.toml`; `ref:`/`repository:` or `ACT` in any workflow; a pre-commit hook `rev` that is not a frozen commit SHA (`precommit-revs-frozen`); a workflow `pip install` that is not a hashed install from `.github/requirements/` (`workflows-pip-install-from-requirements`, ADR-0042); a `LiquidLogicLabs/*` `uses:` not at a bare `@vN` (`workflows-lll-major-tag`); a literal `-H`/`--header` Authorization flag (`workflows-no-auth-header-argv`; a header built in a variable or passed by `--config`/`-K` is not seen); a metadata `pattern={{major}}` line without `enable=` (`workflows-major-tag-gated`; presence only, not the expression's value) |
+| pygrep hooks | a `paths` allowlist in `.gitleaks.toml`; `ref:`/`repository:` or `ACT` in any workflow; a pre-commit hook `rev` that is not a frozen commit SHA (`precommit-revs-frozen`); a pre-commit hook that declares `additional_dependencies` or a `language:` other than `system`/`pygrep`/`unsupported`, so pre-commit builds no hook environment from this file and the `repo: local` tools (mypy, import-linter, pip-audit, deptry) run from the `poetry.lock` venv through `poetry run` (`precommit-hook-deps-locked`, ADR-0042; block-style keys only; a `system` hook's `entry` is not checked, review holds `poetry run`; remote hook repos' own environments are listed in ADR-0042 "Not covered"); a workflow `pip install` that is not a hashed install from `.github/requirements/` (`workflows-pip-install-from-requirements`, ADR-0042); a `LiquidLogicLabs/*` `uses:` not at a bare `@vN` (`workflows-lll-major-tag`); a literal `-H`/`--header` Authorization flag (`workflows-no-auth-header-argv`; a header built in a variable or passed by `--config`/`-K` is not seen); a metadata `pattern={{major}}` line without `enable=` (`workflows-major-tag-gated`; presence only, not the expression's value); a `config:` or `config-inline:` key, the `docker/setup-buildx-action` inputs v4 removed in favour of `buildkitd-config` (`workflows-no-removed-buildx-inputs`, AD-18; block style only, and other actions' removed inputs are not seen, see the per-release checklist) |
 | ruff, mypy | Python lint, format and types |
 | pip-audit | a known advisory in any `poetry.lock` group (the venv is built by `poetry sync --all-groups`) or, as `pip-audit-bootstrap`, in any hashed `.github/requirements/*.txt` (ADR-0042). Only packages installed for the running Python and platform are audited: a lock entry gated by an environment marker for another platform or Python minor is not (BL-E014-023). Needs network access to PyPI/OSV: offline it fails rather than skips (within 15 minutes of an online run, pip's HTTP cache answers instead; CI starts with a cold cache). An advisory with no fix is accepted only by `--ignore-vuln <ID>` in the hook, with the reason and a `BL-` key |
 | deptry | a dependency `src/` imports but `pyproject.toml` does not declare in the main group, or a main dependency `src/` never imports (review m8, NFR-3) |
@@ -606,5 +646,6 @@ bootstrap file are updated by hand, as described in
   needs 1.26.
 - **Runners:** `ubuntu-latest` on GitHub, an `act_runner` mapping `ubuntu-latest` on Gitea,
   `act` locally.
-- **Private CA:** set `PUBLISH_CA_CERTIFICATE` and the publish jobs trust it,
-  BuildKit included.
+- **Private CA:** set `PUBLISH_CA_CERTIFICATE` and the publish jobs trust it. BuildKit
+  trusts it for the enabled Gitea registry host (`PUBLISH_GITEA_REGISTRY`) only; see
+  [Gitea runners](gitea-runners.md).

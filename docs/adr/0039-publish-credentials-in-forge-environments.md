@@ -2,7 +2,10 @@
 
 - **Status:** Accepted
 - **Amended by:** ADR-0046 (2026-10-11) -- a release may run fully from Gitea; see
-  "Amendment 2026-10-11 — release may run fully from Gitea" below
+  "Amendment 2026-10-11 — release may run fully from Gitea" below; ADR-0052 (2026-10-14) --
+  GHCR and the forge release use the job's own token, GitHub is the release forge, the
+  Gitea token is `write:package` only
+  ([0052-release-publication-one-forge-run.md](0052-release-publication-one-forge-run.md))
 - **Date:** 2026-10-09
 - **Deciders:** Maintainer + architecture gate (E013, story E013-S02-002)
 - **Epic:** E013

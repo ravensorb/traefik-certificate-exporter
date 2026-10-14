@@ -1538,3 +1538,88 @@ resolved:
   resolved_at: '2026-10-13T03:11:58Z'
   ref: E015-S01-001
   note: 'Closure fix AR-3: stdlib spawning functions banned or listed as reviewed; ADR-0050 closure amendment states remaining limits. See epic-015/sprint-01/closure/closure-fixes.md'
+- key: BL-E015-052
+  epic: '015'
+  sprint: '01'
+  title: Maintainer to ratify ADR-0049 amendment (root-mode .env admits only any-source names; deviates from E015-S01-001 AC 3), then update PRD FR-18 to state it
+  source: sprint-closure (ADR-0049-amendment)
+  source_phase: sprint-closure
+  source_ref: ADR-0049-amendment
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/arch-drift-review.md
+  resolution: obsolete
+  resolved_at: '2026-10-14T10:06:37Z'
+  ref: E015-S02-005
+  note: 'Superseded by maintainer decision MD-24 (D1, 2026-10-13/14): the root-mode .env any-source filter and interpolate=False are ratified for CLI root runs; the container no longer reads .env (settings.loaddotenv=false in the image). PRD FR-18 restated 2026-10-14. Delivered by E015-S02-005.'
+- key: BL-E015-032
+  epic: '015'
+  sprint: '01'
+  title: appriseurls classed any-source/egress-only but json:// gives arbitrary-request SSRF (e.g. via docker-socket-proxy); maintainer to decide root-mode trust class
+  source: redteam (RT-4)
+  source_phase: redteam
+  source_ref: RT-4
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/redteam-report.md
+  resolution: wontfix
+  resolved_at: '2026-10-14T10:06:40Z'
+  ref: MD-25
+  note: Accepted residual risk, keep appriseurls any-source for now (maintainer D2 2026-10-13/14, MD-25). Apprise json/xml/form can send a request with a chosen method, path and headers to any host the container reaches; e.g. a POST to a docker-socket-proxy's /containers/<id>/stop needs no body. Rationale corrected by E015-S02-005 AC 9 (settings.py comment, ADR-0049 amendment); PRD FR-18/section 6 and spine AD-2/Deferred updated 2026-10-14. Revisit when a documented deployment shares a network with a socket proxy or another unauthenticated control API, a report or red-team finding shows the path used, or a later release restricts another any-source key in root mode.
+- key: BL-E015-054
+  epic: '015'
+  sprint: '02'
+  title: git-action-ca-certificate-import@v3 (v3.0.7) generates a buildkit.toml BuildKit ignores, so a private CA never reaches BuildKit even with buildkitd-config
+  source: dev (E015-S02-001)
+  source_phase: dev
+  source_ref: E015-S02-001
+  severity: High
+  status: resolved
+  description: "install-certificate.sh:277-305 at f0f9116 (v3.0.7) writes [worker.oci] image=..., [[worker.oci.registry]] mirrors=[\"*\"], [worker.oci.registry.tls] ca=[...]. None of these are buildkitd.toml keys; BuildKit's per-registry CA is [registry.\"<host>\"] ca=[\"<file>\"] (no wildcard host). Proven 2026-10-13: with E015-S02-001's buildkitd-config rename, act dev.yaml publish-image runs 'buildx create ... --config <file>' and still fails the push with x509: certificate signed by unknown authority; a direct buildx probe against the same TLS registry fails with the action's file and pushes (rc=0) with [registry.\"IP:5443\"] ca=[...]. Blocks E015-S02-001 AC 2 / Verification row 8. Fix belongs in the LiquidLogicLabs action (needs a registry-host input, since BuildKit has no wildcard registry key) or a workflow-side config, which E015-S02-001's non-goals exclude. Maintainer decision. Evidence: _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/notes-E015-S02-001.md"
+  resolution: fixed
+  resolved_at: '2026-10-14T10:39:52Z'
+  ref: E015-S02-001
+  note: 'Fixed upstream: LiquidLogicLabs/git-action-ca-certificate-import PR #1, released v3.1.0 (buildkit-registries input) and v3.1.1 (cbff318; v3 tag). publish-image passes the enabled Gitea registry host; act row 8 pushes to a private-CA registry (notes-E015-S02-001.md, Unblock and resume).'
+- key: BL-E015-055
+  epic: '015'
+  sprint: '02'
+  title: tests/test_app.py::test_sigterm_during_the_run_at_start_sweep_exits_cleanly fails when pytest runs as root (act build job)
+  source: dev (E015-S02-001)
+  source_phase: dev
+  source_ref: E015-S02-001
+  severity: Medium
+  status: resolved
+  description: "Since ADR-0049 (E015-S01), a root process ignores settings.datapath/outputpath/postexportcommand from a config file. The test configures all three through config.yml, so under root (act's catthehacker runner, uid 0) the hook never runs, the sweep exits at once and 'assert proc.poll() is None' fails. Every act run of build/dev/release fails its build job on main (3565037). GitHub-hosted runners are non-root, so CI is unaffected. Fix: pass the three settings by env var or CLI flag (honoured in root mode), or run the test for both euids. E015-S02-001 worked around it in act only with --env PYTEST_ADDOPTS=--deselect=<this test>; recorded in notes-E015-S02-001.md."
+  resolution: fixed
+  resolved_at: '2026-10-14T10:39:54Z'
+  ref: E015-S02-001
+  note: Test now supplies datapath/outputpath/postexportcommand via TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_* env (honoured for any euid, ADR-0049); unmodified act build job passes as root (594 passed).
+- key: BL-E014-108
+  epic: '014'
+  sprint: '02'
+  title: "docker/setup-buildx-action v4 ignores input 'config' (renamed buildkitd-config): the private-CA BuildKit config is never applied, so publish-image to a private-CA registry would fail TLS; GitHub warns 'Unexpected input(s) config' on every release/dev image job"
+  source: release (v0.3.0-run-38281339396)
+  source_phase: release
+  source_ref: v0.3.0-run-38281339396
+  severity: Medium
+  status: resolved
+  description: 'Seen in the v0.3.0 release run log. Only affects runs with PUBLISH_CA_CERTIFICATE set (not used today). Fix: rename the input to buildkitd-config in dev.yaml and release.yaml; add a check (actionlint does not validate action inputs).'
+  story: E015-S02-001
+  scheduled_at: '2026-10-12T21:39:44Z'
+  resolution: fixed
+  resolved_at: '2026-10-14T10:41:35Z'
+  ref: E015-S02-001
+- key: BL-E015-053
+  epic: '015'
+  sprint: '01'
+  title: pre-commit mypy hook cannot see confuse types (isolated env + ignore_missing_imports), so confuse-typed errors pass the gate; two slipped through in S01-001
+  source: sprint-closure (mypy-hook)
+  source_phase: sprint-closure
+  source_ref: mypy-hook
+  severity: Medium
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-015/sprint-01/closure/closure-report.md
+  resolution: fixed
+  resolved_at: '2026-10-14T11:39:08Z'
+  ref: E015-S02-003
+  note: closed by E015-S02-003 AC 11

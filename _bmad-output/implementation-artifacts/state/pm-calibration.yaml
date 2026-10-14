@@ -90,6 +90,9 @@ scope:
       - 0.4945
       - 0.1051
       - 0.1752
+      - 1.0507
+      - 0.0745
+      - 0.3252
       models_seen:
       - claude-opus-5
     man_hours:
@@ -132,6 +135,10 @@ scope:
       - 0.5
       - 1.3331
       - 1.6664
+      - 2.0006
+      - 0.5794
+      - 2.0006
+      - 0.8277
       models_seen:
       - claude-opus-5
     hitl_hours:
@@ -174,6 +181,10 @@ scope:
       - 0.7457
       - 0.0
       - 0.0
+      - 0.764
+      - 0.0
+      - 0.0
+      - 1.5171
       models_seen:
       - claude-opus-5
     tokens_k:
@@ -202,6 +213,9 @@ scope:
       - 1.3758
       - 4.5128
       - 5.4137
+      - 53.8282
+      - 1.6892
+      - 9.0335
       models_seen:
       - claude-opus-5
   complex:
@@ -348,11 +362,11 @@ fix:
       samples: 1
   standard:
     clean:
-      mean_man_hours: 4.6667
-      samples: 9
+      mean_man_hours: 6.0
+      samples: 11
     reworked:
-      mean_man_hours: 9.3999
-      samples: 25
+      mean_man_hours: 9.3332
+      samples: 27
   complex:
     reworked:
       mean_man_hours: 21.4444
@@ -549,4 +563,19 @@ token_mix:
     output: 0.0023
     cache_write: 0.0466
     cache_read: 0.9511
+    model: claude-opus-5
+  - input: 0.0
+    output: 0.0013
+    cache_write: 0.0893
+    cache_read: 0.9094
+    model: claude-opus-5
+  - input: 0.0
+    output: 0.0021
+    cache_write: 0.0375
+    cache_read: 0.9604
+    model: claude-opus-5
+  - input: 0.0
+    output: 0.0008
+    cache_write: 0.0337
+    cache_read: 0.9655
     model: claude-opus-5

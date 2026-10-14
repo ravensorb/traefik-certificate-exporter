@@ -120,11 +120,15 @@ FROM ${BASE_IMAGE} AS runtime
 # CONSOLEJSON leaves the console as coloured human-readable text by default; set it to
 # true to emit that stream as JSON instead, so `correlation_id` reaches `docker logs` as a
 # real field rather than interpolated into a string (ADR-0023 Decision 2).
+# LOADDOTENV=false: the image reads no `.env` file, `/config/.env` included (MD-24,
+# ADR-0049). Put variables in the container's `environment:` or Docker's `env_file:`, and
+# settings in `/config/config.yaml`.
 ENV \
     TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEONLY=true \
     TRAEFIK_CERTIFICATE_EXPORTER_LOGGING_CONSOLEJSON=false \
     TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_DATAPATH=/data \
     TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_OUTPUTPATH=/certs \
+    TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV=false \
     TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_WATCHFORCHANGES=true \
     TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_RUNATSTART=true \
     PATH="/app/.venv/bin:$PATH"

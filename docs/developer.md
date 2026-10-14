@@ -68,6 +68,19 @@ just act dev.yaml     # the dev pipeline, as a push
 - No secrets or variables are passed, so every publishing destination is disabled and
   nothing is published (AD-9). `publish-package` and `publish-image` run their guards and
   skip every publishing step.
+- act's ambient secret sources are ignored (AD-16, ADR-0052): the recipe runs `act` with
+  `HOME` and `XDG_CONFIG_HOME` set to fresh temporary directories (so `~/.actrc` and
+  `~/.docker/config.json` are not read; image pulls are anonymous), `--secret-file /dev/null`,
+  `--var-file /dev/null` (so `./.secrets` and `./.vars` are not read),
+  `-s GITHUB_TOKEN=` (an explicitly empty token: otherwise act falls back to `gh auth token`,
+  which reads the system keyring and would hand your GitHub CLI token to every step) and its
+  own `-P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest`.
+- With a `./.actrc` in the working directory the recipe exits 1 before act starts:
+  `act: refusing to run with ./.actrc present (it can pass secrets); remove it`.
+- Not covered: a `./.env` file still sets container environment variables (not
+  `secrets.*`), and a raw `act -s ...` run outside the recipe. Never give `act` a publish
+  token: releases publish only from a forge run
+  ([pipeline walkthrough](ci/pipeline-walkthrough.md#releasing)).
 - The exit status is `act`'s own.
 - Run `just act dev.yaml` from `main` (or pass an event file with `ref: refs/heads/main`)
   so the run matches `dev.yaml`'s branch filter.

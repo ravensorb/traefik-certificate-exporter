@@ -35,7 +35,8 @@ as built. The maintainer decided to keep that strict layer order (2026-10-11,
    `libs-layers` (exhaustive, top to bottom: `certificate_exporter`, `cli_args`, `docker`,
    `settings`, `legacy_settings`, `notify | post_export`, `logging_utils | object |
    suggest`). The `import-linter` pre-commit hook (`.pre-commit-config.yaml`, id
-   `import-linter`, `import-linter==2.15`) runs them in `just check` and CI. Coverage limit:
+   `import-linter`; its version comes from `poetry.lock`, ADR-0042 as amended by
+   E015-S02-003) runs them in `just check` and CI. Coverage limit:
    only what the contracts declare is checked; an object handed to a function at run time
    is not an import and is not seen.
 3. **Planned work, not done now:** extract an orchestration module (the watch handler and

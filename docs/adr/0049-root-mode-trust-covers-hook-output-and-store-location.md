@@ -244,8 +244,10 @@ Not checked, reviewed instead:
   - Docker mods and `/custom-cont-init.d` run as root by the operator's choice.
   - The venv lives under the `abc`-owned `/app` (BL-E015-002, not in 0.3.1). Renaming
     `/app/.venv` as `abc` is blocked today only by overlay2 `EXDEV`.
-  - Apprise destinations from `config.yaml` can send changed domain names to any host
-    (egress, not secrets).
+  - Apprise destinations from `config.yaml` make outbound requests to any host the
+    container reaches: `json://`/`xml://`/`form://` (and their TLS forms) choose method,
+    path and headers, and a POST to a docker-socket-proxy's `/containers/<id>/stop` needs no
+    body. Accepted residual risk, MD-25 (amendment E015-S02-005).
 
 ## Revisit when
 
@@ -253,7 +255,13 @@ Not checked, reviewed instead:
   the exporter stops needing root; or
 - a new setting, or a new use of an existing one, gives a file-sourced value read, write or
   execute reach in root mode (the review trigger above); or
-- `privilege-decision.sh` is next changed (fold in the root-mode writable-store note).
+- `privilege-decision.sh` is next changed (fold in the root-mode writable-store note); or
+- (MD-25) the project documents or recommends a deployment where the exporter shares a
+  network with a docker-socket-proxy or another unauthenticated control API, a user report
+  or red-team finding shows the Apprise request path used, or a release after 0.3.1 adds
+  root-mode restrictions for another `any-source` key. Then decide between
+  environment-only-when-root for `appriseurls` and refusing the free-form schemes (`json`,
+  `xml`, `form` and their TLS forms) from files in root mode.
 
 ## Diagram
 
@@ -338,3 +346,61 @@ Findings RT-2 / AR-1 and RT-3 (`_bmad-output/implementation-artifacts/epic-015/s
   `O_NOFOLLOW` descriptor (`fchmod`); writes into a swapped per-domain directory symlink
   (RT-1, last paragraph) and reads through a swapped-in symlink (RT-8) are not addressed by
   this amendment.
+
+## Amendment (2026-10-14) — E015-S02-005
+
+Maintainer decisions MD-24 and MD-25 (2026-10-14,
+`_bmad-output/implementation-artifacts/epic-015/maintainer-decisions.md`). The Decision text
+above is not edited; this section amends it.
+
+1. **A third trust class, `environment-only-in-every-mode`, and `settings.loaddotenv`
+   (MD-24).** `settings.loaddotenv` (default `true`; environment
+   `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV`, flag `--no-dotenv`) decides whether the
+   working directory's `.env` is read. It is the one key in the new class
+   `ROOT_TRUST_ENVIRONMENT_ONLY_EVERY_MODE`: taken only from the environment, the command
+   line or the packaged default, for every euid. `SettingsManager.loadFromFile` decides it
+   before any `.env` is read, with confuse over a throwaway view of exactly three sources
+   (packaged default, the environment as it is then, the command line). A value confuse
+   rejects fails closed: no `.env` is read, one ERROR names the variable. After all sources
+   are merged, `_withholdEveryModeSettings()` removes every key of the class from **every**
+   file source that carries it (config file, confuse user config), whether or not that value
+   would have won, with one ERROR per file; a variable of the class that a `.env` file newly
+   added is removed from the environment with one ERROR naming the file. The enforcement
+   reads the class from `ROOT_SETTING_TRUST` and never names the key.
+2. **The image sets `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_LOADDOTENV=false`** beside the
+   pinned `DATAPATH`/`OUTPUTPATH`, so no exporter process in the image (service, init
+   resolver, `docker exec`, one-off `docker run`) reads `/config/.env`. When the switch is
+   false and a `.env` exists in the working directory or beside the configuration file, one
+   WARNING at start-up lists the paths, never a name or value from the file. No LinuxServer
+   init script, `/config` ownership, s6 script or `WORKDIR` changes.
+3. **The module-folder `.env` is no longer read** in any mode. Only the working directory's
+   `.env` remains, for the standalone CLI. Decision 4 (amended 2026-10-12: root mode admits
+   only `any-source` names, `interpolate=False`) still applies to it for CLI root runs.
+4. **Correction to the 2026-10-12 amendment.** "The exporter's working directory in the image
+   is `/config`" is true for `docker exec` and one-off `docker run` invocations, not for the
+   s6 service: its working directory is its s6 service directory
+   (`/run/s6-rc:s6-rc-init:<id>/servicedirs/svc-traefik-certificate-exporter`, probed
+   2026-10-14). In 0.3.0 a planted `/config/.env` reached only those one-off root runs. That
+   is why the WARNING of item 2 also checks the `.env` beside the configuration file.
+5. **Decision 2's `appriseurls` row (MD-25).** "Network egress only; Apprise loads no plugins
+   and reads no local attachment" is corrected to: outbound requests to any host the
+   container reaches (`json://`/`xml://`/`form://` choose method, path and headers); a POST
+   to a docker-socket-proxy's `/containers/<id>/stop` needs no body. Accepted residual risk,
+   MD-25; no local file read, local write or process spawn. The class stays `any-source`.
+   "Consequences → Residual risks" and "Revisit when" above carry the same text and the
+   MD-25 revisit condition.
+6. **What is and is not mechanically checked** (in addition to the list above, whose
+   "cwd and module `.env`" now reads "cwd `.env`; a planted module `.env` is asserted
+   unread"):
+   - checked: the class completeness guard accepts the third constant and still fails on an
+     unknown one; every-mode withholding is proven for every file the loader opens (recorded
+     at confuse's `YamlSource` and at `load_dotenv`, never listed), under euid 0 and 1000,
+     and a second key planted in the class is withheld with no code change
+     (`tests/libs/test_settings.py`); on the built image, a planted `/config/.env` changes no
+     setting and gives only the WARNING, in dropped and root mode, a `docker exec` from
+     `WORKDIR /config` does not read it, Docker's `--env-file` still applies, the image
+     declares `LOADDOTENV=false`, and `/config` stays `PUID`-owned
+     (`tests/test_container_dotenv.py`);
+   - not checked, reviewed instead: that no code path calls `load_dotenv` outside
+     `SettingsManager.loadFromFile`. **Review trigger:** any new `dotenv` import. A `grep`
+     in a test would only restate the source.

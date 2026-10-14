@@ -33,9 +33,14 @@ pytest = "^9.1.1"
 poetry = "^2.4.2"
 # Provides the `pysemver` CLI that `just release` uses to compute the next version (AD-15).
 semver = "==3.1.0"
+# Dependency gates, the mypy type gate and the import-linter layering gate run as
+# `repo: local`, `language: system` pre-commit hooks; their versions are pinned here by
+# poetry.lock, not by a frozen hook `rev` or `additional_dependencies` (C-10, ADR-0042 as
+# amended by E015-S02-003): hashed, audited by pip-audit and updated by Dependabot `pip`.
 mypy = "^2.3.1"
-# Dependency gates run as `repo: local` pre-commit hooks; their versions are pinned here by
-# poetry.lock, not by a frozen hook `rev` (C-10).
+types-pyyaml = "^6.0.12.20260906"
+types-python-dateutil = "^2.9.0.20260807"
+import-linter = "^2.15"
 pip-audit = "^2.10.1"
 deptry = "^0.25.1"
 # The spawn-site guard's suppression test asks ruff itself which TID251 reports are
@@ -58,12 +63,16 @@ traefik-certificate-exporter = "traefik_certificate_exporter.app:main"
 
 [tool.mypy]
 python_version = "3.11"
-# The pre-commit hook runs in an isolated environment without this project's
-# dependencies installed, so import resolution is not the thing being checked here.
+# The pre-commit hook runs `poetry run mypy` in the Poetry venv (E015-S02-003), so the
+# runtime dependencies and the two stub packages are importable and typed. This stays on
+# because some locked dependencies ship neither `py.typed` nor stubs (docker-py, see the
+# override below; jsonpickle, coloredlogs, logging-tree): import
+# resolution of untyped third-party code is not the thing this gate checks.
 ignore_missing_imports = true
 # Whether an ignore is "unused" depends on which dependencies are importable, which
-# differs between the hook's env and a developer's. Enabling it makes the gate
-# environment-dependent.
+# differs with the interpreter and platform markers a developer's venv was built with
+# (`python_version` above is fixed, the venv's interpreter is not). Enabling it makes the
+# gate environment-dependent.
 warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
