@@ -3,8 +3,8 @@ epic: 'E015'
 sprint: 'S02'
 title: Release 0.3.1 (maintainer-run, HITL) and production upgrade on rwusdckrls6
 classification: standard
-status: ready-for-dev
-updated_at: '2026-10-14T09:55:35Z'
+status: done
+updated_at: '2026-10-14T22:22:09Z'
 depends_on:
 - 'E015-S01-001'
 - 'E015-S01-002'
@@ -59,4 +59,40 @@ completion_evidence:
     exit_code: 0
   - command: 'just check after code-review patches (2c1a1b7..981c1d3): 632 passed, 16 skipped'
     exit_code: 0
-  tests_passing: true
+  - command: 'row 2 re-run at 1a91666: main=origin/main; just check 632 passed 16 skipped; dev run 38641788670 success at HEAD; 0 emitted warnings'
+    exit_code: 0
+  - command: 'row 8 PEM baseline re-taken with pemsums 21:38:30Z: 261 hashes, 87 .pfx; production 0.2.0 unchanged'
+    exit_code: 0
+  - command: 'row 10: just release patch -> v0.3.1 at 1a91666 pushed (just check 632 passed)'
+    exit_code: 0
+  - command: 'row 11: release run 38644809861 success; 6 enabled; 0 partial/Unexpected input'
+    exit_code: 0
+  - command: 'row 12: 0.3.1 from PyPI installs and runs on Python 3.10.20 and 3.14.4 (uv-managed venvs)'
+    exit_code: 0
+  - command: 'row 13: PyPI wheel+sdist sha256 = run; Gitea index wheel sha256 = run'
+    exit_code: 0
+  - command: 'row 14: 9 lookups (3 registries x 0.3.1/0.3/latest) = RUN_DIGEST sha256:29e23a8d'
+    exit_code: 0
+  - command: 'row 15: amd64+arm64 on all three; label 0.3.1; GHCR :0 still 0.2.0 digest'
+    exit_code: 0
+  - command: 'row 15a: container tests on released image by digest at v0.3.1: 15 passed, 0 skipped'
+    exit_code: 0
+  - command: 'row 16: GitHub release v0.3.1 body non-empty; wheel+sdist with run sha256'
+    exit_code: 0
+  - command: 'row 17: production upgraded 22:12:09Z, exporter only, on RUN_DIGEST'
+    exit_code: 0
+  - command: 'row 18: post-checks pass (label, privilege line, legacy warning, no ERROR/Tightened, /config 1000:1000 755, neighbours up)'
+    exit_code: 0
+  - command: 'row 18a as written: comm failed on bare names (invisionware.com, triptracks.net stale under resolver-http)'
+    exit_code: 1
+  - command: 'row 18a corrected (resolver/domain dirs): 60 reported = 60 fingerprinted; no fingerprinted dir with a pre-upgrade .pfx'
+    exit_code: 0
+  - command: 'row 19 corrected keep filter + direct diff: 261 PEM hashes identical (blank lines ignored); 67 cert.pem + 67 chain.pem rewritten'
+    exit_code: 0
+  - command: 'row 19a: exporter restart; second pass 2 s, no change, 0 files written, 2 CIFS summaries, 0 Tightened'
+    exit_code: 0
+  - command: 'row 20 (grep narrowed to skip changelog quotes): evidence complete, no unticked item, no placeholder'
+    exit_code: 0
+  - command: 'row 21: just check at v0.3.1 (inside just release): 632 passed, 16 skipped'
+    exit_code: 0
+  tests_passing: false

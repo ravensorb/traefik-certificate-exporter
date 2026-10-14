@@ -1395,3 +1395,6 @@
 {"cause": "cli", "epic": "015", "event": "issue_resolved", "key": "BL-E015-069", "ref": "E015-S02-004", "resolution": "fixed", "session": "l3io-pm-20261012T233739Z-884dad", "ts": "2026-10-14T20:09:39Z"}
 {"cause": "cli", "epic": "015", "event": "issue_opened", "key": "BL-E015-070", "session": "l3io-pm-20261012T233739Z-884dad", "severity": "Medium", "ts": "2026-10-14T21:34:13Z"}
 {"cause": "cli", "epic": "015", "event": "issue_opened", "key": "BL-E015-071", "session": "l3io-pm-20261012T233739Z-884dad", "severity": "Low", "ts": "2026-10-14T21:37:35Z"}
+{"epic": "E015", "event": "status", "from": "ready-for-dev", "key": "E015-S02-004", "node": "story", "session": "l3io-pm-20261012T233739Z-884dad", "sprint": "S02", "to": "in-progress", "ts": "2026-10-14T22:22:08Z"}
+{"epic": "E015", "event": "status", "from": "in-progress", "key": "E015-S02-004", "node": "story", "session": "l3io-pm-20261012T233739Z-884dad", "sprint": "S02", "to": "review", "ts": "2026-10-14T22:22:08Z"}
+{"epic": "E015", "event": "status", "from": "review", "key": "E015-S02-004", "node": "story", "session": "l3io-pm-20261012T233739Z-884dad", "sprint": "S02", "to": "done", "ts": "2026-10-14T22:22:09Z"}
