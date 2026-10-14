@@ -77,6 +77,19 @@ _STALE_TEMP_AGE_SECONDS = 3600
 _SYMLINK_WARNED: set[str] = set()
 _SYMLINK_WARNED_LOCK = threading.Lock()
 
+# Files whose mode the filesystem did not tighten: a CIFS/SMB mount with a fixed
+# `file_mode` accepts `fchmod` and changes nothing, so a per-file WARNING would repeat on
+# every pass. Collected during one store-file pass and reported there as one WARNING.
+_MODE_NOT_TIGHTENED: list[str] = []
+_MODE_NOT_TIGHTENED_LOCK = threading.Lock()
+
+
+def _drain_modes_not_tightened() -> list[str]:
+    with _MODE_NOT_TIGHTENED_LOCK:
+        paths = list(_MODE_NOT_TIGHTENED)
+        _MODE_NOT_TIGHTENED.clear()
+    return paths
+
 
 def _default_file_mode() -> int:
     return _DEFAULT_FILE_MODE
@@ -322,8 +335,10 @@ def _breaks_write_policy(path: Path, policyMode: int, dryRun: bool = False) -> b
     tightened in place with `os.chmod`, which leaves the mtime alone, a WARNING is logged,
     and the file does not count as changed -- so a hook that loosens a key does not cause a
     rewrite, hook run, notification and restart on every pass. A dry run only logs. A
-    failed `chmod` falls back to the rewrite. Raises `OSError` when the path cannot be
-    examined.
+    failed `chmod` falls back to the rewrite. A `chmod` that succeeds without changing the
+    mode (a filesystem with a fixed mode) is not logged per file: the path is collected for
+    the pass's one summary WARNING, and the file does not count as changed, since a rewrite
+    would land with the same mode. Raises `OSError` when the path cannot be examined.
 
     The tighten goes through one descriptor (RT-1, closure 2026-10-12): the name is opened
     `O_NOFOLLOW`, the descriptor is `fstat`ed and must still be a regular file, and the
@@ -355,12 +370,18 @@ def _breaks_write_policy(path: Path, policyMode: int, dryRun: bool = False) -> b
             return True
         current = info.st_mode & 0o7777
         tightened = current & policyMode
+        applied = current
         if current != tightened:
             os.fchmod(fd, tightened)
+            applied = os.fstat(fd).st_mode & 0o7777
     except OSError:
         return True
     finally:
         os.close(fd)
+    if applied != tightened:
+        with _MODE_NOT_TIGHTENED_LOCK:
+            _MODE_NOT_TIGHTENED.append(logPath)
+        return False
     globalLogger.warning(
         f"Tightened mode of {logPath} from {current:04o} to {tightened:04o}: wider than "
         "the export policy allows; not counted as a certificate change"
@@ -1521,6 +1542,7 @@ class AcmeCertificateExporter:
         sweptDirectories: set[Path] = set()
         recorded: _ArtifactEntry = {}
         notRebuilt: set[tuple[str | None, str]] = set()
+        _drain_modes_not_tightened()
         for c in self.__owners(candidates):
             try:
                 changed, paths = self.__exportDomain(
@@ -1550,6 +1572,17 @@ class AcmeCertificateExporter:
         if failed:
             self.__logger.warning(
                 f"{failed} of {len(resolvers)} resolvers failed in {sourceFile}"
+            )
+
+        notTightened = _drain_modes_not_tightened()
+        if notTightened:
+            self.__logger.warning(
+                f"{len(notTightened)} exported file(s) from '{sourceFile}' keep a mode wider "
+                f"than the export policy, for example '{notTightened[0]}': the filesystem "
+                "accepted chmod but did not apply it, as a CIFS/SMB mount with a fixed "
+                "file_mode does. Private keys there are as readable as the mount's "
+                "file_mode allows; restrict the mount (file_mode=0600,dir_mode=0700) or "
+                "export to a filesystem that keeps modes."
             )
 
         self.__recordArtifacts(indexKey, recorded, notRebuilt, failedResolvers)

@@ -47,4 +47,12 @@ completion_evidence:
     exit_code: 0
   - command: 'row 8: production pre-check on rwusdckrls6 (read-only)'
     exit_code: 0
+  - command: 'row 2: main=origin/main 2c1a1b7, just check green, dev.yaml run 38596838383 success, 0 partial warnings, 0 Unexpected input'
+    exit_code: 0
+  - command: 'GHCR job-token dev push: run 38596838383 attempt 2 publish-image success; dev/sha-2c1a1b7/0.3.1-dev.13 = sha256:83eb5961...; latest unchanged (0.2.0)'
+    exit_code: 0
+  - command: 'dev-image rehearsal on rwusdckrls6 (0.3.1-dev.13): first pass exit 0, 0 ERROR, 67 exported, PEMs content-identical; second pass no change; CIFS chmod no-op found (BL-E015-068)'
+    exit_code: 0
+  - command: 'just check (BL-E015-068 fix + BL-E015-069 docs): 631 passed, 16 skipped'
+    exit_code: 0
   tests_passing: true

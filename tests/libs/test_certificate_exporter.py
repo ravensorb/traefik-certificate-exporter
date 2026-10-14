@@ -2381,6 +2381,65 @@ def test_policy_tighten_does_not_follow_a_symlink_swapped_in_after_lstat(
 
 
 # ---------------------------------------------------------------------------
+# BL-E015-068: a filesystem with a fixed mode (CIFS `file_mode=0755`, nounix) accepts
+# `fchmod` and changes nothing. The pass must not claim a tighten per file on every pass;
+# it reports the files once, and rewrites nothing.
+# ---------------------------------------------------------------------------
+def _loosen(directory: Path, mode: int = 0o644) -> None:
+    for name in ("privkey.pem", "cert.pfx"):
+        (directory / name).chmod(mode)
+
+
+def _summaries(caplog) -> list[str]:
+    return [
+        m for m in _messages(caplog, logging.WARNING) if "exported file(s) from" in m
+    ]
+
+
+def test_a_filesystem_that_ignores_chmod_gets_one_summary_per_pass(
+    tmp_path, monkeypatch, caplog
+):
+    store = _v2_store(acme_v2_certificate("cifs.example.test"))
+    _, outputPath = _export(tmp_path, store)
+    directory = outputPath / "cifs.example.test"
+    _loosen(directory)
+    before = _snapshot(directory)
+    monkeypatch.setattr(certificate_exporter.os, "fchmod", lambda fd, mode: None)
+
+    for _ in range(2):
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            names, _ = _export(tmp_path, store)
+
+        assert names == []
+        assert not [
+            m for m in _messages(caplog, logging.WARNING) if "Tightened mode" in m
+        ]
+        summaries = _summaries(caplog)
+        assert len(summaries) == 1, summaries
+        assert "did not apply it" in summaries[0]
+        assert _snapshot(directory) == before
+        assert stat.S_IMODE((directory / "privkey.pem").stat().st_mode) == 0o644
+
+
+def test_a_filesystem_that_keeps_modes_is_tightened_without_a_summary(tmp_path, caplog):
+    store = _v2_store(acme_v2_certificate("local.example.test"))
+    _, outputPath = _export(tmp_path, store)
+    directory = outputPath / "local.example.test"
+    _loosen(directory)
+
+    with caplog.at_level(logging.WARNING):
+        names, _ = _export(tmp_path, store)
+
+    assert names == []
+    tightened = [m for m in _messages(caplog, logging.WARNING) if "Tightened mode" in m]
+    assert any("privkey.pem" in m for m in tightened), tightened
+    assert _summaries(caplog) == []
+    assert stat.S_IMODE((directory / "privkey.pem").stat().st_mode) == 0o600
+    assert stat.S_IMODE((directory / "cert.pfx").stat().st_mode) == 0o600
+
+
+# ---------------------------------------------------------------------------
 # Sprint closure 2026-10-12, AR-4: the sidecar records the PKCS12 build recipe, so a
 # change to `_serialize_pkcs12` reaches every existing `.pfx` once.
 # ---------------------------------------------------------------------------

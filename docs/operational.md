@@ -244,7 +244,11 @@ changed domains.
   (its mtime is kept) with a WARNING `Tightened mode of <path> from <old> to <new>`, and
   causes no rewrite, hook, notification or restart. A hook that loosens a key (for example
   `chmod 0640 privkey.pem`) is therefore reverted on every pass; have the hook give a
-  non-root consumer its own copy instead.
+  non-root consumer its own copy instead. On a filesystem that accepts `chmod` without
+  applying it (CIFS/SMB with a fixed `file_mode`), the mode cannot be tightened: the pass
+  logs one WARNING per store file, `N exported file(s) from '<store>' keep a mode wider than
+  the export policy`, instead of a line per file, and rewrites nothing. Restrict the mount
+  (`file_mode=0600,dir_mode=0700`) to protect the keys there.
 - The start-up pass runs the hook and notifies once, for the union of every store file; the
   watcher runs them once per changed store file in a drain, so the quiet-pass line is also
   per store file there.

@@ -91,6 +91,18 @@ right and this page is a defect.
   always checked. Changing the setting rebuilds nothing. See
   [operational.md](operational.md#the-pfx-fingerprint-file-and-settingsvalidatekeys).
 
+### Output on a filesystem that ignores chmod (CIFS/SMB)
+
+- **One WARNING per pass instead of one per file.** On a mount with a fixed mode, such as
+  CIFS with `nounix` and `file_mode=0755`, `chmod` succeeds and changes nothing, so the
+  exporter cannot narrow a key or `.pfx` to `0600`. 0.3.0 logged `Tightened mode of … to
+  0600` for every such file on every pass, which was not true. 0.3.1 logs one WARNING per
+  store file per pass: `N exported file(s) from '<store>' keep a mode wider than the export
+  policy …`. Nothing is rewritten because of it (BL-E015-068).
+- **Action:** the files, private keys included, are as readable as the mount's `file_mode`
+  allows. Mount the share with `file_mode=0600,dir_mode=0700` (or a `uid`/`gid` only the
+  consumers share), or export to a filesystem that keeps modes.
+
 ### Environment names of the 0.0.x image are warned about
 
 - **Start-up now warns about the environment variables of the 0.0.x image**, which have been
@@ -127,9 +139,11 @@ right and this page is a defect.
   from 0.2.0 to 0.3.1. If you follow `ghcr.io/…:latest` (for example with Watchtower), read
   [0.2.0 → 0.3.0](#020--030) as well: its changes reach you with this upgrade.
 - **In particular, 0.3.0's one-time post-upgrade effect applies to a 0.2.x → 0.3.1 upgrade.**
-  The first pass rewrites every `.pfx` (it now carries the intermediates), reports every
-  domain once, restarts each labelled container once, and fires the post-export hook and
-  notifications once ([Restarts now take effect](#restarts-now-take-effect)). The 0.3.1
+  The first pass rewrites every `.pfx` (it now carries the intermediates) and every
+  `cert.pem` and `chain.pem` (their trailing blank line goes; the certificates are the same),
+  reports every domain once, restarts each labelled container once, and fires the
+  post-export hook and notifications once
+  ([Restarts now take effect](#restarts-now-take-effect)). The 0.3.1
   "verify once, rewrite nothing" behaviour above covers output written by 0.3.0 only.
 - **GHCR has no `0.3.0` tag.** Pin `0.3.1` or later there, or use Docker Hub or the Gitea
   registry for `0.3.0`.
@@ -323,6 +337,10 @@ PEM writers).
 - An empty `pkcs12passphrase` (`""`) means no passphrase: the `.pfx` is unencrypted.
 - `cert.pem`/`chain.pem` are correct for single-certificate chains: `chain.pem` is empty when
   the store holds no intermediates, and `cert.pem` keeps its final newline.
+- **`cert.pem` and `chain.pem` change once for every domain.** 0.2.x ended both with a blank
+  line; 0.3.x ends them with one newline. The first 0.3.x pass rewrites both files for every
+  domain. The certificates in them are the same, and `fullchain.pem` is unchanged. A consumer
+  that compares file bytes or hashes sees one change per domain.
 
 ### Docker client
 

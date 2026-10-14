@@ -1623,3 +1623,31 @@ resolved:
   resolved_at: '2026-10-14T11:39:08Z'
   ref: E015-S02-003
   note: closed by E015-S02-003 AC 11
+- key: BL-E015-068
+  epic: '015'
+  sprint: '02'
+  title: On a filesystem that ignores chmod (CIFS file_mode=0755, production /mnt/certificates), every pass logs a false 'Tightened mode ... to 0600' WARNING per key/.pfx/PEM file (~400 per pass on rwusdckrls6)
+  source: live-test (S02-004-devtest)
+  source_phase: live-test
+  source_ref: S02-004-devtest
+  severity: Medium
+  status: resolved
+  description: "_breaks_write_policy fchmods and logs 'Tightened mode' without re-checking the mode. On CIFS with nounix and file_mode=0755, fchmod and chown return success and change nothing (probe 2026-10-14), so the WARNING repeats for every file on every pass and claims a tightening that did not happen; sidecars stay 0755 too. No rewrite loop (fchmod does not raise). Fix: fstat after fchmod; if the mode is unchanged, do not claim it, and log one WARNING per pass naming the count and the filesystem limit. Evidence: epic-015/sprint-02/closure/release-0.3.1-evidence.md, Dev-image rehearsal."
+  resolution: fixed
+  resolved_at: '2026-10-14T20:09:36Z'
+  ref: E015-S02-004
+  note: "_breaks_write_policy re-reads the mode after fchmod; a no-op chmod (CIFS fixed file_mode) is collected and reported as one WARNING per store per pass instead of a false 'Tightened mode' line per file. Tests: test_a_filesystem_that_ignores_chmod_gets_one_summary_per_pass, test_a_filesystem_that_keeps_modes_is_tightened_without_a_summary. Docs: upgrading.md 0.3.1, operational.md."
+- key: BL-E015-069
+  epic: '015'
+  sprint: '02'
+  title: 0.2.x -> 0.3.x rewrites cert.pem and chain.pem of every domain once (0.2.x ended them with a blank line); upgrading.md and E015-S02-004 row 19 say multi-certificate chains are unchanged
+  source: live-test (S02-004-devtest)
+  source_phase: live-test
+  source_ref: S02-004-devtest
+  severity: Low
+  status: resolved
+  description: "Dev-image rehearsal 2026-10-14: 134 of 134 changed files (67 cert.pem, 67 chain.pem) hold the same certificates; 0.2.0 ended each with '\\n\\n', 0.3.x with '\\n'. fullchain.pem unchanged. Correct the 0.2.0 -> 0.3.0 PKCS12 note and the 0.3.1 GHCR note, and make row 19 compare with blank lines ignored."
+  resolution: fixed
+  resolved_at: '2026-10-14T20:09:38Z'
+  ref: E015-S02-004
+  note: 'Documented in upgrading.md (0.2.0->0.3.0 PKCS12 and GHCR one-time effect): cert.pem/chain.pem rewritten once per domain, same certificates, fullchain.pem unchanged. E015-S02-004 row 19, AC and Context compare PEMs with blank lines removed and scope finds to /mnt/certificates/traefik/resolver-*.'
