@@ -7,6 +7,7 @@ import os
 import re
 import stat
 import sys
+import warnings
 from pathlib import Path
 
 import confuse
@@ -926,9 +927,14 @@ class SettingsManager(ObjectBase):
 
     def _dump_settings(self):
         self.__logger.debug("Current Settings (active)...")
-        safe = _redact_secrets(
-            json.loads(jsonpickle.dumps(self.settings, unpicklable=False))
-        )
+        # `keys=False` pins the pre-5.0 output (a non-string key stays a plain string, not
+        # a "json://" one); jsonpickle 4 warns on any falsy `keys`, even an explicit one.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", "keys will default to True", DeprecationWarning
+            )
+            flattened = jsonpickle.dumps(self.settings, unpicklable=False, keys=False)
+        safe = _redact_secrets(json.loads(flattened))
         # Indented, like the adjacent block-YAML config dump (BL-E011-036). jsonpickle only
         # flattens the Settings object above; `default=str` keeps a stray non-JSON value
         # from raising inside a DEBUG log call.

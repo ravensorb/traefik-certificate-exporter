@@ -122,3 +122,16 @@ def test_notification_falls_back_to_the_id_already_in_flight(caplog):
         reset_correlation_id(token)
 
     assert [r.correlation_id for r in caplog.records] == ["ambient-77"]
+
+
+def test_a_real_failed_delivery_is_reported(caplog):
+    """Unmocked Apprise: `notify()` returns an `AppriseResult` since 2.0, and only its
+    truthiness is relied on. A refused local port must still read as a failed delivery."""
+    with caplog.at_level(logging.ERROR):
+        send_export_notifications(
+            ["json://127.0.0.1:9/?cto=1&rto=1"], ["example.com"], dryRun=False
+        )
+
+    assert "One or more export notifications failed to deliver" in [
+        r.getMessage() for r in caplog.records
+    ]

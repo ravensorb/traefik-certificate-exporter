@@ -4,7 +4,7 @@
 
 - Python compatible with the `>=3.10,<3.15` constraint in `pyproject.toml`.
 - No repository interpreter pin exists; Poetry uses the active compatible Python interpreter.
-- Poetry 2.4.2 (the tested baseline). The first `poetry install` also installs the
+- Poetry 2.5.1 (the tested baseline). The first `poetry install` also installs the
   `poetry-dynamic-versioning` plugin from `[tool.poetry.requires-plugins]`, which needs
   network access.
 - `just` — every local operation below is a `just` recipe (AD-16).

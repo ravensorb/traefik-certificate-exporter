@@ -41,7 +41,7 @@ image: build
         -f docker/Dockerfile \
         --target runtime \
         --load \
-        --build-arg POETRY_VERSION=2.4.2 \
+        --build-arg POETRY_VERSION=2.5.1 \
         --build-arg WHEEL_PATH="$wheel" \
         --build-arg WHEEL_SHA256="$(sha256sum "$wheel" | cut -d' ' -f1)" \
         --build-arg VERSION="$version" \
