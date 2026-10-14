@@ -4,7 +4,7 @@ next:
   '012': 14
   '013': 45
   '014': 123
-  '015': 71
+  '015': 72
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -2212,3 +2212,13 @@ backlog:
   severity: Medium
   status: backlog
   description: "Operational, not code: BL-E015-068 only made the log truthful. /mnt/certificates is mounted nounix,forceuid=30102,gid=30103,file_mode=0755, so privkey.pem, cert.pfx and sidecars are 0755 to every local user, and other SMB clients see the server ACL. Remedy (maintainer decision, production change): remount with file_mode=0600,dir_mode=0700 and a uid/gid only the consumers (cert-distributor) share, and restrict the share ACL on 10.0.1.8; confirm cert-distributor still reads the files. Verification: the exporter's 'exported file(s) from' summary WARNING disappears."
+- key: BL-E015-071
+  epic: '015'
+  sprint: '02'
+  title: 'Sprint 02 independent review: eight Low findings (docs table, GHCR username, act GHCR fallback, settings messages, just act socket, LOADDOTENV in image, nits)'
+  source: code-review (sprint-02-independent-review)
+  source_phase: code-review
+  source_ref: sprint-02-independent-review
+  severity: Low
+  status: backlog
+  description: "From the fresh independent review of sprint 02 (2026-10-14). (1) pipeline-walkthrough.md dev row lists PUBLISH_GITEA_TOKEN/PUBLISH_GHCR_TOKEN while the prose says GHCR and Gitea are release-only. (2) vars.PUBLISH_GHCR_USERNAME || github.actor: on Gitea/act the actor is not a GitHub user; document setting the username with PUBLISH_GHCR_TOKEN. (3) BL-E015-065 is broader: raw act defaults server_url to github.com, so a gh token also enables the GHCR fallback in dev.yaml and release.yaml when PUBLISH_GHCR_IMAGE is supplied; apply any actor guard to the GHCR expressions. (4) settings.py:231-235 withheld-key ERROR hardcodes the .env reason for every key. (5) settings.py:753-760 invalid-boolean ERROR says 'No .env file is read' then ConfigTypeError exits; say it exits. (6) just act fresh HOME hides Docker Desktop/colima socket auto-detection; act-latest runner tag is mutable. (7) LOADDOTENV=true in the image does not make the s6 service read /config/.env (service cwd); undocumented. (8) Nits: init-traefik-certificate-exporter-config/run:19 still lists '.env files'; Settings.loadDotenv docstring wording. The two Medium findings (GHCR Manage Actions access, Gitea publish-settings docs) were fixed before the 0.3.1 tag."

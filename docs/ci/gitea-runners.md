@@ -81,9 +81,12 @@ not fixed; revisit when Gitea gains environment-scoped secrets or `environment:`
 
 What actually contains it:
 
-1. **Store only Gitea-destination secrets in Gitea:** `PUBLISH_GITEA_TOKEN`, and
-   `PUBLISH_CA_CERTIFICATE` if the private CA is needed. Never
-   store PyPI, TestPyPI, GHCR or Docker Hub tokens in Gitea.
+1. **Store no publish secret in Gitea while GitHub is the release forge.** This project
+   publishes every destination, the Gitea registry and package index included, from
+   GitHub's `release` environment (ADR-0052); a Gitea secret would make a mirrored tag run
+   publish a second build. A fork that releases from Gitea stores only Gitea-destination
+   secrets there (`PUBLISH_GITEA_TOKEN`, and `PUBLISH_CA_CERTIFICATE` if the private CA is
+   needed), and never PyPI, TestPyPI, GHCR or Docker Hub tokens.
 2. **Issue the package token from a namespace that owns only this project's packages.**
    Gitea packages belong to a user or an organisation, not to a repository, and no token
    setting confines a token to one package (v1.27.3 `services/context/package.go`

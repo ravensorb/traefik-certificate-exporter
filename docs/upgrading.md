@@ -413,15 +413,17 @@ placeholders; [ADR-0025](adr/0025-strict-cli-parse-without-import-time-regressio
 
 ### Where releases come from
 
-- A release can be cut from GitHub or from Gitea. All destinations of one release publish
-  from that one forge's run, and the forge release is created there; the other forge holds
-  no publish secret, so a mirrored run there publishes no package or image (it still creates
-  that forge's own release with its job token, ADR-0052). One run per release keeps one
-  image digest across every registry and one writer per tag (CI spine AD-9,
+- GitHub is the release forge (ADR-0052): its `release` environment holds every publish
+  setting, the Gitea registry and package index included, and every destination of a
+  release publishes from that one run. A Gitea mirror holds no publish secret or variable,
+  so a mirrored tag run there publishes no package or image (it still creates that forge's
+  own release with its job token). One run per release keeps one image digest across every
+  registry and one writer per tag (CI spine AD-9,
   [docs/ci/pipeline-walkthrough.md](ci/pipeline-walkthrough.md#releasing)).
-- A Gitea release can reach every destination (PyPI, GHCR, Docker Hub and Gitea), with the
-  token mitigations of CI spine AD-13: protected `main` and `v*` tags limited to trusted
-  accounts, project-scoped tokens, rotation after any untrusted push.
+- A fork may make Gitea its release forge instead; then it configures every destination
+  there and none on GitHub, with the token mitigations of CI spine AD-13: protected `main`
+  and `v*` tags limited to trusted accounts, project-scoped tokens, rotation after any
+  untrusted push ([docs/ci/gitea-runners.md](ci/gitea-runners.md)).
 - For forks and mirrors: a publish destination is enabled only when its token and every
   variable it needs are set. A partly configured destination is skipped with one warning
   naming what is missing; an unconfigured one is silent. The Gitea package index and the

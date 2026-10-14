@@ -142,6 +142,13 @@ job token cannot do the job: GHCR from act or Gitea. On Gitea the job token crea
 Gitea release; it cannot publish to Gitea's package registry, so `PUBLISH_GITEA_TOKEN` is
 always a separate `write:package` token (never an instance-admin token).
 
+The job token can push to a GHCR package only if this repository may write it: a package
+the workflow creates is linked automatically, but one pushed first with a personal token
+(as 0.2.0 was) needs this repository given the **Write** role under the package's
+*Manage Actions access*. Otherwise the first tag run's `publish-image` gets a 403 after
+PyPI may already have published. A `dev.yaml` run with `PUBLISH_GHCR_IMAGE` set in `dev`
+proves it before a tag (done for 0.3.1, 2026-10-14).
+
 Publish tokens for GitHub are kept in Infisical and copied into the GitHub environment with
 `gh secret set` reading the value from stdin.
 
