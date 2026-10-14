@@ -14,7 +14,7 @@ Supported stores: `acme.json` from any RFC 8555 CA (Let's Encrypt, ZeroSSL, Goog
 
 Installation can be done via the python package installer tool pip
 
-```basah
+```bash
 pip install traefik-certificate-exporter
 ```
 
@@ -120,7 +120,7 @@ Run it and watch for changes to the files
 traefik-certificate-exporter \
                             -d /mnt/traefik-data/letsencrypt \
                             -o /mnt/certs \
-                            -fs "acme-*.json" 
+                            -fs "acme-*.json" \
                             -w
 ```
 

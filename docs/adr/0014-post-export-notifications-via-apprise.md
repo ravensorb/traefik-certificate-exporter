@@ -106,6 +106,11 @@ prose and machine-readable record disagreeing is how the wrong fix gets implemen
 
 **5. The Apprise dependency is recorded, not just added.**
 
+> Amended 2026-10-14 (apprise 1.13.1 → 2.0.1, PR #24): the floor is now `^2.0.1`; the licence
+> is still **BSD-2-Clause** and `requires_python` still `>=3.9`. `notify()` returns an
+> `AppriseResult` whose truthiness keeps the 1.x contract (true only when every destination
+> succeeded), so the caller is unchanged. The table below records 1.13.1.
+
 | | |
 |---|---|
 | floor | `^1.9.0` — chosen for currency, not licence: the BSD line starts around 1.6.0, so the floor is not what makes it permissive |
@@ -120,6 +125,17 @@ licence and floor must be recorded; its stated reason was not, and recording the
 would have been worse than recording nothing.
 
 **6. Delivery carries an explicit timeout.**
+
+> Amended 2026-10-14 (apprise 2.0.1, PR #24): the mechanism below changed and the decision
+> stands. `notify()` still blocks the drain, but notifies destinations **in parallel** (a
+> shared thread pool, `min(32, CPUs + 4)` workers), so the worst case a pass adds is the
+> slowest destination, not the sum: about 8 s for HTTP and 19 s for SMTP at the defaults,
+> unchanged per destination (`cto`/`rto` 4.0 s, SMTP connect 15 s), plus queueing only past
+> the pool size. Apprise 2 also caps each destination at 60 s (`AppriseAsset`
+> `service_timeout`) and gives `notify()` an optional overall `timeout=`; neither is set
+> here, because the per-destination bounds already sit well under the cap. Measured: three
+> destinations hanging on connect with `cto=2` returned in 2.0 s. The paragraphs below
+> record 1.13.1.
 
 `Apprise.notify()` blocks and delivers sequentially, on the `threading.Timer` thread inside the
 drain — so its duration is added to the window in which watch events are collected rather than

@@ -6,6 +6,25 @@ right and this page is a defect.
 
 <!-- tce-settings-scan: legacy-names-listed -->
 
+## 0.3.1 → next release (unreleased)
+
+### Notifications use Apprise 2
+
+Apprise, which delivers `appriseurls` notifications, moves from 1.13.1 to 2.0.1. Most URLs
+work unchanged. Check yours if they use email PGP options:
+
+- **`?pgpkey=` and `?use_pgp=` are silently ignored.** Apprise 2 removed both. The URL is
+  still accepted, so the email is sent **unencrypted** with no error. Use
+  `?pgp=encrypt&pgppub=<path to the public key>`.
+- **`?pgp=` takes `no`, `sign` or `encrypt`.** Any other value (such as `pgp=yes`) makes
+  Apprise reject the URL. That destination is then skipped with
+  `Apprise rejected a configured destination (index N)`, and the others are still notified.
+
+Destinations are now notified in parallel, so a pass waits for the slowest one rather than
+for each in turn, and Apprise stops waiting for any one destination after 60 seconds. The
+per-destination `cto`/`rto` timeouts are unchanged
+([ADR-0014](adr/0014-post-export-notifications-via-apprise.md) §6).
+
 ## 0.3.0 → 0.3.1
 
 ### Root mode: hook, output path and data path from the environment only

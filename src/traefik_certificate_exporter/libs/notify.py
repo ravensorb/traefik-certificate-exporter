@@ -27,10 +27,11 @@ def send_export_notifications(
     propagates. An operator who needs something to *succeed* uses `postexportcommand`,
     which blocks and reports a non-zero exit.
 
-    No timeout is passed here because `Apprise.notify()` accepts none. Delivery is bounded
-    per destination by Apprise itself -- `socket_connect_timeout` / `socket_read_timeout`,
-    4.0s each by default and settable per URL as `cto`/`rto`, with the SMTP plugin
-    overriding connect to 15s. ADR-0014 §6 carries the arithmetic that follows from that.
+    No overall `timeout=` is passed to `Apprise.notify()`. Apprise 2 notifies destinations
+    in parallel and bounds each one itself -- `socket_connect_timeout` /
+    `socket_read_timeout`, 4.0s each by default and settable per URL as `cto`/`rto`, with
+    the SMTP plugin overriding connect to 15s, and a 60s per-destination cap over all of it.
+    ADR-0014 §6 carries the arithmetic that follows from that.
     """
     logger = globalLogger
 

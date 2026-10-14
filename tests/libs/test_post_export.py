@@ -394,7 +394,7 @@ def test_the_spawn_names_include_those_only_posix_or_nt_exports(monkeypatch):
 
 
 # F10 (review E015-S01-001): which comments suppress a TID251 report is ruff's to say, not a
-# regex's -- ruff 0.16.5 also honours a range `ruff: disable[...]`. So ask ruff: lint with
+# regex's -- the pinned ruff also honours a range `ruff: disable[...]`. So ask ruff: lint with
 # only TID251 selected and every suppression comment ignored (`--ignore-noqa` disregards
 # line `noqa`, file-level `ruff: noqa` / `flake8: noqa` and range `ruff: disable` alike),
 # under the project's pyproject. The gate's own run has no TID251 report, so every report

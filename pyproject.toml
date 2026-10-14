@@ -169,7 +169,7 @@ layers = [
 #   runtime-object gap above. A module that hides the spawn behind another module's call
 #   (not an import of `subprocess` or an `os.<spawn>` attribute) is not found by the scan.
 # - re-export: `traefik_certificate_exporter.libs.post_export.subprocess` is banned, and ruff
-#   0.16.5 resolves `from .post_export import subprocess`, `from . import post_export` then
+#   resolves `from .post_export import subprocess`, `from . import post_export` then
 #   `post_export.subprocess.<x>`, and the absolute forms to it (verified; the suppression test
 #   plants them). NOT caught: another module's `subprocess` or `os` attribute
 #   (`imaplib.subprocess.Popen`, `socketserver.os.fork`, a dependency's -- verified unreported),

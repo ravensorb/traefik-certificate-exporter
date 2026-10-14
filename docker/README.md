@@ -129,7 +129,7 @@ Docker applies before the exporter starts, and settings in `/config/config.yaml`
 
 ### Export notifications (Apprise)
 
-Set `appriseurls` in the config file to be notified when an export pass completes:
+Set `appriseurls` in the config file to be notified when a certificate changes:
 
 ```yaml
 settings:
