@@ -4,7 +4,7 @@ next:
   '012': 14
   '013': 45
   '014': 123
-  '015': 70
+  '015': 71
 backlog:
 - key: BL-E001-004
   epic: '001'
@@ -2202,3 +2202,13 @@ backlog:
   severity: Low
   status: backlog
   description: See _bmad-output/implementation-artifacts/epic-015/sprint-02/closure/ux-review.md
+- key: BL-E015-070
+  epic: '015'
+  sprint: '02'
+  title: Production private keys on rwusdckrls6 sit at 0755 on the CIFS share //10.0.1.8/Certificates (file_mode=0755, nounix); the exporter cannot narrow them
+  source: code-review (2c1a1b7..981c1d3)
+  source_phase: code-review
+  source_ref: 2c1a1b7..981c1d3
+  severity: Medium
+  status: backlog
+  description: "Operational, not code: BL-E015-068 only made the log truthful. /mnt/certificates is mounted nounix,forceuid=30102,gid=30103,file_mode=0755, so privkey.pem, cert.pfx and sidecars are 0755 to every local user, and other SMB clients see the server ACL. Remedy (maintainer decision, production change): remount with file_mode=0600,dir_mode=0700 and a uid/gid only the consumers (cert-distributor) share, and restrict the share ACL on 10.0.1.8; confirm cert-distributor still reads the files. Verification: the exporter's 'exported file(s) from' summary WARNING disappears."

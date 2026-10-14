@@ -76,7 +76,12 @@ path.
    `{"kdf": "scrypt", "n": 16384, "r": 8, "p": 1, "salt": <base64 16 bytes>, "digest":
    <base64 32 bytes>}`. A sidecar that is absent, not a regular file, still too permissive
    after the in-place tighten, larger than 64 KiB, not UTF-8 JSON, or of an unknown format,
-   version or field type is unusable; that is never an error.
+   version or field type is unusable; that is never an error. "Still too permissive" means
+   the `chmod` failed. A filesystem that accepts `chmod` without applying it (CIFS/SMB
+   with a fixed `file_mode`) leaves the sidecar usable at its wider mode, as it leaves the
+   `.pfx` and key; the pass names those files in one summary WARNING (BL-E015-068,
+   2026-10-14). Treating them as unusable would verify, and rewrite the sidecar, on every
+   pass without ever narrowing the mode.
 5. **Passphrase hash (D4).** cryptography's `Scrypt` with a random 16-byte salt per sidecar
    written. `_passphrase_matches(passphrase, record)` is not cached and validates the record
    first (unknown or malformed gives `False` with no derive; the implementation also bounds

@@ -80,13 +80,16 @@ _SYMLINK_WARNED_LOCK = threading.Lock()
 # Files whose mode the filesystem did not tighten: a CIFS/SMB mount with a fixed
 # `file_mode` accepts `fchmod` and changes nothing, so a per-file WARNING would repeat on
 # every pass. Collected during one store-file pass and reported there as one WARNING.
+# Process-wide, so it relies on export passes never overlapping: the start-up pass ends
+# before the watcher starts, and the watcher runs one drain at a time.
 _MODE_NOT_TIGHTENED: list[str] = []
 _MODE_NOT_TIGHTENED_LOCK = threading.Lock()
 
 
 def _drain_modes_not_tightened() -> list[str]:
+    """The collected paths, each once (a `.pfx` on the verify path is checked twice)."""
     with _MODE_NOT_TIGHTENED_LOCK:
-        paths = list(_MODE_NOT_TIGHTENED)
+        paths = list(dict.fromkeys(_MODE_NOT_TIGHTENED))
         _MODE_NOT_TIGHTENED.clear()
     return paths
 
@@ -378,6 +381,8 @@ def _breaks_write_policy(path: Path, policyMode: int, dryRun: bool = False) -> b
         return True
     finally:
         os.close(fd)
+    if current == tightened:
+        return False
     if applied != tightened:
         with _MODE_NOT_TIGHTENED_LOCK:
             _MODE_NOT_TIGHTENED.append(logPath)
@@ -658,8 +663,11 @@ def _pfx_fingerprint(
 
 def _read_pfx_fingerprint(path: Path, dryRun: bool) -> dict | None:
     """The sidecar at `path`, or `None` when it is unusable: absent, not a regular file
-    (a symlink included), still wider than 0600 after the in-place tighten, larger than
-    64 KiB, not UTF-8 JSON, or of an unknown format/version or field type. Never raises.
+    (a symlink included), wider than 0600 with a `chmod` that fails, larger than 64 KiB,
+    not UTF-8 JSON, or of an unknown format/version or field type. Never raises. A sidecar
+    wider than 0600 is tightened in place and stays usable; on a filesystem that accepts
+    `chmod` without applying it, it stays usable at the wider mode and is named in the
+    pass's summary WARNING (`_breaks_write_policy`).
     """
     try:
         if _breaks_write_policy(path, _SECRET_FILE_MODE, dryRun):
@@ -1579,10 +1587,10 @@ class AcmeCertificateExporter:
             self.__logger.warning(
                 f"{len(notTightened)} exported file(s) from '{sourceFile}' keep a mode wider "
                 f"than the export policy, for example '{notTightened[0]}': the filesystem "
-                "accepted chmod but did not apply it, as a CIFS/SMB mount with a fixed "
-                "file_mode does. Private keys there are as readable as the mount's "
-                "file_mode allows; restrict the mount (file_mode=0600,dir_mode=0700) or "
-                "export to a filesystem that keeps modes."
+                "accepted chmod but kept a wider mode, as a CIFS/SMB mount with a fixed "
+                "file_mode does. Private keys there are as readable as the mount and the "
+                "share allow; restrict both (mount file_mode=0600,dir_mode=0700, and the "
+                "share's own permissions) or export to a filesystem that keeps modes."
             )
 
         self.__recordArtifacts(indexKey, recorded, notRebuilt, failedResolvers)

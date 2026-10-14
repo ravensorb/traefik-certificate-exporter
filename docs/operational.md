@@ -248,7 +248,10 @@ changed domains.
   applying it (CIFS/SMB with a fixed `file_mode`), the mode cannot be tightened: the pass
   logs one WARNING per store file, `N exported file(s) from '<store>' keep a mode wider than
   the export policy`, instead of a line per file, and rewrites nothing. Restrict the mount
-  (`file_mode=0600,dir_mode=0700`) to protect the keys there.
+  (`file_mode=0600,dir_mode=0700`; its forced `uid`/`gid` decide who reads a `0600` file)
+  and the share's permissions on the server, which other clients see, to protect the keys
+  there. A rewrite on such a mount also logs `refusing to inherit ownership (uid N)` for
+  each file it replaces; that is expected.
 - The start-up pass runs the hook and notifies once, for the union of every store file; the
   watcher runs them once per changed store file in a drain, so the quiet-pass line is also
   per store file there.

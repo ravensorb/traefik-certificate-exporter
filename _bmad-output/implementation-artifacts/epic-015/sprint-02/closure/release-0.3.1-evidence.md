@@ -231,7 +231,7 @@ Not started.
 | --- | --- | --- |
 | 2026-10-14T14:34Z | Start S02-004 release prep (read-only Part A and production pre-check); hold the push to `main` until 0.3.x is ready | maintainer (session) |
 | 2026-10-14T16:09Z | Enable secret scanning and push protection on the GitHub repository | maintainer (session) |
-| 2026-10-14T16:09Z | Do not pin production yet; run dev builds first (dev builds publish no image, so GHCR `latest` does not move) | maintainer (session) |
+| 2026-10-14T16:09Z | Do not pin production yet; run dev builds first (dev builds publish no image, so GHCR `latest` does not move; the "no image" part is superseded at 16:44Z/18:00Z: dev builds now publish `dev`/`sha-*`/dev-version tags to GHCR, never `latest`) | maintainer (session) |
 | 2026-10-14T16:16Z | Commit and push `main` directly (ruleset bypass as admin) to start the dev build | maintainer (session) |
 | 2026-10-14T16:44Z | Set `PUBLISH_GHCR_IMAGE` / `PUBLISH_GHCR_USERNAME` in the GitHub `dev` environment and re-run `publish-image` to prove the GHCR job-token push | maintainer (session) |
 | 2026-10-14T18:00Z | Keep the GHCR `dev` variables: every push to `main` publishes `dev`, `sha-<short>` and the dev version to GHCR (never `latest`) | maintainer (session) |

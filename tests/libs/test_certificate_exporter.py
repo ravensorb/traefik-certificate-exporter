@@ -2417,9 +2417,31 @@ def test_a_filesystem_that_ignores_chmod_gets_one_summary_per_pass(
         ]
         summaries = _summaries(caplog)
         assert len(summaries) == 1, summaries
-        assert "did not apply it" in summaries[0]
+        assert summaries[0].startswith("2 exported file(s)"), summaries[0]
+        example = summaries[0].split("for example '", 1)[1].split("'", 1)[0]
+        assert example.endswith(("/privkey.pem", "/cert.pfx")), example
+        assert "kept a wider mode" in summaries[0]
         assert _snapshot(directory) == before
         assert stat.S_IMODE((directory / "privkey.pem").stat().st_mode) == 0o644
+
+
+def test_a_pfx_checked_twice_on_the_verify_path_is_counted_once(
+    tmp_path, monkeypatch, caplog
+):
+    store = _v2_store(acme_v2_certificate("verify.example.test"))
+    _, outputPath = _export(tmp_path, store)
+    directory = outputPath / "verify.example.test"
+    _loosen(directory)
+    (directory / "cert.pfx.fingerprint.json").unlink()
+    monkeypatch.setattr(certificate_exporter.os, "fchmod", lambda fd, mode: None)
+
+    with caplog.at_level(logging.WARNING):
+        names, _ = _export(tmp_path, store)
+
+    assert names == []
+    summaries = _summaries(caplog)
+    assert len(summaries) == 1, summaries
+    assert summaries[0].startswith("2 exported file(s)"), summaries[0]
 
 
 def test_a_filesystem_that_keeps_modes_is_tightened_without_a_summary(tmp_path, caplog):

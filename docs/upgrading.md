@@ -81,9 +81,10 @@ right and this page is a defect.
   restarts and no hook or notification fires. Later passes over unchanged certificates load
   nothing. A dry run writes no fingerprint file, so dry runs stay slow until one real pass
   has run.
-- **Upgrading from 0.2.x** still gets the one-time `.pfx` rewrite described under
+- **Upgrading from 0.2.x** still gets the one-time rewrite described under
   [0.2.0 → 0.3.0](#restarts-now-take-effect): every `.pfx` is rebuilt with its intermediates
-  once, and its fingerprint file is written with it.
+  once, and its fingerprint file is written with it; `cert.pem` and `chain.pem` are
+  rewritten once with the same certificates.
 - **New setting `settings.validatekeys`** (env `TRAEFIK_CERTIFICATE_EXPORTER_SETTINGS_VALIDATEKEYS`,
   CLI `--no-validate-keys`), default `true`. `false` skips RSA private-key validation when a
   `.pfx` is built (~0.5 s per RSA-4096 key). Use it only when the ACME store is written by
@@ -99,9 +100,15 @@ right and this page is a defect.
   0600` for every such file on every pass, which was not true. 0.3.1 logs one WARNING per
   store file per pass: `N exported file(s) from '<store>' keep a mode wider than the export
   policy …`. Nothing is rewritten because of it (BL-E015-068).
-- **Action:** the files, private keys included, are as readable as the mount's `file_mode`
-  allows. Mount the share with `file_mode=0600,dir_mode=0700` (or a `uid`/`gid` only the
-  consumers share), or export to a filesystem that keeps modes.
+- **Action:** the files, private keys included, are as readable as the mount and the share
+  allow. With `nounix`, `file_mode` is applied by this client only: other clients of the
+  share see the server's permissions. Mount with `file_mode=0600,dir_mode=0700` (the
+  `uid`/`gid` the mount forces decide who reads a `0600` file), restrict the share's own
+  permissions on the server, or export to a filesystem that keeps modes.
+- **Rewrites on such a mount warn about ownership.** A rewrite of a file the mount shows as
+  owned by another uid (`forceuid`) logs `refusing to inherit ownership (uid N) from an
+  existing export at …` for that file. It is expected there, and it is logged only when the
+  file is rewritten: on the first pass after the upgrade and at each renewal.
 
 ### Environment names of the 0.0.x image are warned about
 
@@ -178,7 +185,8 @@ right and this page is a defect.
   short (the next pass makes it, because the files are still newer than the container). Run
   the exporter against the local Docker daemon, whose clock the comparison shares.
 - **One-time post-upgrade effect.** The first pass after upgrading from 0.2.x rewrites every
-  `.pfx`, because it now carries the intermediates (see PKCS12 below). That pass counts as a
+  `.pfx`, because it now carries the intermediates, and every `cert.pem` and `chain.pem`,
+  whose trailing blank line goes (see PKCS12 below). That pass counts as a
   change for every domain: every labeled container restarts once, and the post-export hook
   and notifications fire once.
 - **5-minute floor, deferred not dropped.** A container is restarted at most once per
