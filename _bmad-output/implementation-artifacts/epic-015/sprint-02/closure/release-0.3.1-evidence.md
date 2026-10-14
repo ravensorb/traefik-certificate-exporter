@@ -43,7 +43,9 @@ prefix or length appears in this file.
   - `### Watch mode detects stores replaced by rename` (E015-S01-003);
   - a private-CA publishing bullet for forks under `### Where releases come from`
     (E015-S02-001).
-- Maintainer review of the section: **pending**.
+- Maintainer review of the section: **approved** 2026-10-14T21:29Z, including the later
+  additions (CIFS summary WARNING, BL-E015-068; `cert.pem`/`chain.pem` rewritten once,
+  BL-E015-069).
 
 ## AC 3 — Forge hygiene
 
@@ -68,8 +70,19 @@ prefix or length appears in this file.
 
 ## AC 5 — Production pre-check and freeze
 
-See `## Production pre-check`. Freeze (row 9) and the first-pass acknowledgement (row 8a):
-**pending maintainer approval**.
+See `## Production pre-check`.
+
+- Row 8a: **acknowledged** 2026-10-14T21:29Z. The maintainer wants production on 0.3.1 and
+  accepts the one-time first pass (every `.pfx` rebuilt with the intermediates, `cert.pem`
+  and `chain.pem` rewritten once, every domain reported once; 0 restart-labelled containers
+  at the pre-check).
+- Row 9 (freeze): **declined by the maintainer** 2026-10-14T21:29Z. The compose service
+  stays on `ghcr.io/ravensorb/traefik-certificate-exporter:latest`, so Watchtower (12 h
+  poll, enable label set) may upgrade it on its own once the release moves `latest`. To
+  keep the post-check timed, the agent runs the deliberate upgrade (row 17, with approval)
+  as soon as the release is verified; if Watchtower gets there first, the upgrade time is
+  taken from the container's `State.StartedAt` and its log. The PEM baseline is re-taken
+  with `pemsums` (blank lines ignored) before the tag.
 
 ## AC 6 — The release
 
@@ -223,3 +236,6 @@ Not started.
 | 2026-10-14T16:44Z | Set `PUBLISH_GHCR_IMAGE` / `PUBLISH_GHCR_USERNAME` in the GitHub `dev` environment and re-run `publish-image` to prove the GHCR job-token push | maintainer (session) |
 | 2026-10-14T18:00Z | Keep the GHCR `dev` variables: every push to `main` publishes `dev`, `sha-<short>` and the dev version to GHCR (never `latest`) | maintainer (session) |
 | 2026-10-14T20:09Z | Fix BL-E015-068 and BL-E015-069, push `main`, run a new dev build | maintainer (session) |
+| 2026-10-14T21:29Z | 0.3.1 upgrade notes reviewed and approved | maintainer (session) |
+| 2026-10-14T21:29Z | No production pin: production is to upgrade to 0.3.1 (row 9 declined; row 8a acknowledged) | maintainer (session) |
+| 2026-10-14T21:29Z | Run a fresh code review of `2c1a1b7..981c1d3` before the tag; push `main` | maintainer (session) |
