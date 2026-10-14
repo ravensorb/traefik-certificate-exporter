@@ -633,6 +633,7 @@ def _dump_settings_records(caplog, settings: Settings) -> list[str]:
     return [record.getMessage() for record in caplog.records]
 
 
+@pytest.mark.filterwarnings("ignore:keys will default to True:DeprecationWarning")
 def test_settings_dump_is_multiline_json_that_round_trips(caplog):
     import json
 
@@ -646,7 +647,7 @@ def test_settings_dump_is_multiline_json_that_round_trips(caplog):
 
     assert len(dump.splitlines()) > 1
     expected = _redact_secrets(
-        json.loads(jsonpickle.dumps(settings, unpicklable=False))
+        json.loads(jsonpickle.dumps(settings, unpicklable=False, keys=False))
     )
     assert json.loads(dump) == expected
     assert json.loads(dump)["appriseUrls"] == [

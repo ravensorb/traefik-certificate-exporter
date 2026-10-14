@@ -75,7 +75,8 @@ def _notify(logger, urls: list, domains: list, dryRun: bool) -> None:
     )
 
     try:
-        # Returns False when ANY destination failed, and logs the specifics itself.
+        # Falsy when ANY destination failed (an `AppriseResult` since apprise 2.0, which
+        # keeps the old boolean contract), and Apprise logs the specifics itself.
         if not client.notify(title="Traefik certificate export", body=body):
             logger.error("One or more export notifications failed to deliver")
         else:

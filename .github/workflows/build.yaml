@@ -167,7 +167,7 @@ jobs:
           load: true
           tags: traefik-certificate-exporter:build
           build-args: |
-            POETRY_VERSION=2.4.2
+            POETRY_VERSION=2.5.1
             WHEEL_PATH=${{ steps.version.outputs.wheel-path }}
             WHEEL_SHA256=${{ steps.version.outputs.wheel-sha256 }}
             VERSION=${{ steps.version.outputs.image-version }}

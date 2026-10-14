@@ -435,7 +435,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            POETRY_VERSION=2.4.2
+            POETRY_VERSION=2.5.1
             WHEEL_PATH=${{ steps.verify.outputs.wheel-path }}
             WHEEL_SHA256=${{ needs.build.outputs.wheel-sha256 }}
             VERSION=${{ needs.build.outputs.image-version }}

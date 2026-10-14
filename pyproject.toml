@@ -17,20 +17,20 @@ watchdog = "^6.0"
 docker = "^7.2"
 confuse = "^2.0.1"
 python-dotenv = "^1.2.2"
-importlib-resources = "^6.4.0"
-jsonpickle = "^3.0.3"
+importlib-resources = "^7.1.0"
+jsonpickle = "^4.1.3"
 coloredlogs = "^15.0.1"
 logging-tree = "^1.9"
 cryptography = "^50.0.2"
 python-json-logger = "^4.2.0"
-apprise = "^1.9.0"
+apprise = "^2.0.1"
 python-dateutil = "^2.9.0"
 pyyaml = "^6.0"
 
 [tool.poetry.group.dev.dependencies]
-pre-commit = "^3.2.1"
+pre-commit = "^4.6.2"
 pytest = "^9.1.1"
-poetry = "^2.4.2"
+poetry = "^2.5.1"
 # Provides the `pysemver` CLI that `just release` uses to compute the next version (AD-15).
 semver = "==3.1.0"
 # Dependency gates, the mypy type gate and the import-linter layering gate run as
@@ -46,7 +46,7 @@ deptry = "^0.25.1"
 # The spawn-site guard's suppression test asks ruff itself which TID251 reports are
 # suppressed (ADR-0050, F10 of review E015-S01-001). Held at the pre-commit hook's frozen
 # ruff version; tests/libs/test_post_export.py fails if the two differ.
-ruff = "==0.16.5"
+ruff = "==0.16.10"
 
 # Everything a credentialed publish job installs (AD-11): `poetry install --only publish
 # --no-root`, so no dev toolchain sits beside a publish token. `twine` is declared here only.
