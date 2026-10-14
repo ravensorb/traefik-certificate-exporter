@@ -55,4 +55,6 @@ completion_evidence:
     exit_code: 0
   - command: 'just check (BL-E015-068 fix + BL-E015-069 docs): 631 passed, 16 skipped'
     exit_code: 0
+  - command: 'dev.yaml run 38629832499 on 981c1d3: success, 0 config warnings; TestPyPI 0.3.1.dev14; GHCR 0.3.1-dev.14/dev/sha-981c1d3 = sha256:8876edf3'
+    exit_code: 0
   tests_passing: true

@@ -199,6 +199,14 @@ its `.recycle` copy removed. Production exporter unchanged (`sha256:feedded1…`
   (`pemsums`), and the production `find`s are scoped to `/mnt/certificates/traefik/resolver-*`
   so `.archive` and `.recycle` copies are not counted.
 - `just check`: exit 0, 631 passed, 16 skipped.
+- Pushed as `981c1d3`. dev run
+  [38629832499](https://github.com/ravensorb/traefik-certificate-exporter/actions/runs/38629832499):
+  `success`; 0 `partially configured` warnings, 0 `Unexpected input` (the only `##[warning]`
+  lines are GitHub's Node.js 20 deprecation notices for `actions/upload-artifact` and
+  `actions/download-artifact`). TestPyPI has `0.3.1.dev14` (wheel and sdist). GHCR
+  `0.3.1-dev.14`, `dev` and `sha-981c1d3` all resolve to
+  `sha256:8876edf384f34b55ca16450bc5155ccd7ab13dd26b4ef7afb08029f8a3b7dbed`; `latest` is
+  still 0.2.0 (`sha256:2e2cf7f7…536f`).
 
 ## Production post-check
 
