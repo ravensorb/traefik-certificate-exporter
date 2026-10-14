@@ -47,6 +47,10 @@ over-complicated for these goals.
 - **Dropped:** the one-forge name check, the workstation-publishing rule (`just act` still
   passes no secrets and an empty `GITHUB_TOKEN`, AD-16), the digest-equality checklist and
   the token-expiry table.
+- **Publishing from `act` is opt-in per destination** (amended 2026-10-14). `just act-publish`
+  passes Infisical's token for each destination named (PyPI, TestPyPI, Gitea, Docker Hub)
+  and the caller's var file. `GITHUB_TOKEN` stays empty, so GHCR and the forge release never
+  publish from `act`.
 - **0.3.0 is left as published.** Its Gitea image came from a local `act` run and differs
   from the Docker Hub build; 0.3.1 supersedes both. Backfilling a `v0.3.0` GitHub release
   is optional.

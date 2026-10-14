@@ -72,6 +72,46 @@ act workflow="ci.yaml":
     if [ -e .actrc ] || [ -L .actrc ]; then echo >&2 "act: refusing to run with ./.actrc present (it can pass secrets); remove it"; exit 1; fi
     h="$(mktemp -d)" && x="$(mktemp -d)" && a="$(mktemp -d)" && HOME="$h" XDG_CONFIG_HOME="$x" act --detect-event -W .github/workflows/{{ workflow }} --defaultbranch {{ quote(default_branch) }} --artifact-server-path "$a" -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --secret-file /dev/null --var-file /dev/null -s GITHUB_TOKEN=
 
+# Infisical project `home-lab-discovery`, which holds the publish tokens.
+infisical_project := "45365f20-36e8-4d4d-87f3-1554c5ae0615"
+infisical_env := "prod"
+
+# Same isolation as `act`, but each named destination gets its token from Infisical, read
+# into this recipe's environment one secret at a time (never argv, never a file) and passed
+# with `-s NAME`. Destinations: pypi (PYPI_TOKEN), testpypi (PYPI_TEST_TOKEN), gitea
+# (GITEA_TOKEN), dockerhub (DOCKERHUB_TOKEN). PyPI and TestPyPI are enabled by their token
+# alone, so a destination that is not named gets no token. The PUBLISH_* variables come from
+# `vars`, an act var file (NAME=value lines), e.g. PUBLISH_GITEA_USERNAME, _REGISTRY, _IMAGE,
+# _PYPI_URL, PUBLISH_DOCKERHUB_USERNAME, _IMAGE. GITHUB_TOKEN stays empty, so GHCR and the
+# forge release stay disabled under act (ADR-0052).
+# Run a workflow under act and publish to the named destinations, e.g.
+# `just act-publish dev.yaml ~/act/publish.vars testpypi,gitea`.
+act-publish workflow vars destinations:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -e .actrc ] || [ -L .actrc ]; then echo >&2 "act-publish: refusing to run with ./.actrc present (it can pass secrets); remove it"; exit 1; fi
+    vars={{ quote(vars) }}
+    if [ ! -f "$vars" ]; then echo >&2 "act-publish: var file '$vars' not found"; exit 1; fi
+    secret_args=()
+    IFS=',' read -ra dests <<< {{ quote(destinations) }}
+    for d in "${dests[@]}"; do
+        case "$d" in
+            pypi) from=PYPI_TOKEN; to=PUBLISH_PYPI_TOKEN ;;
+            testpypi) from=PYPI_TEST_TOKEN; to=PUBLISH_TESTPYPI_TOKEN ;;
+            gitea) from=GITEA_TOKEN; to=PUBLISH_GITEA_TOKEN ;;
+            dockerhub) from=DOCKERHUB_TOKEN; to=PUBLISH_DOCKERHUB_TOKEN ;;
+            *) echo >&2 "act-publish: unknown destination '$d' (pypi, testpypi, gitea, dockerhub)"; exit 1 ;;
+        esac
+        value="$(infisical secrets get "$from" --projectId {{ quote(infisical_project) }} --env {{ quote(infisical_env) }} --plain --silent)"
+        if [ -z "$value" ]; then echo >&2 "act-publish: Infisical secret $from is empty or missing"; exit 1; fi
+        export "$to=$value"
+        secret_args+=(-s "$to")
+        echo "act-publish: $d enabled ($from -> $to)"
+    done
+    unset value GITHUB_TOKEN GH_TOKEN
+    h="$(mktemp -d)"; x="$(mktemp -d)"; a="$(mktemp -d)"
+    HOME="$h" XDG_CONFIG_HOME="$x" act --detect-event -W .github/workflows/{{ workflow }} --defaultbranch {{ quote(default_branch) }} --artifact-server-path "$a" -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --secret-file /dev/null --var-file "$vars" -s GITHUB_TOKEN= "${secret_args[@]}"
+
 # Creates no commit and pushes no branch.
 # Cut a release: push one annotated tag vX.Y.Z on the default branch's HEAD (AD-15).
 release bump:

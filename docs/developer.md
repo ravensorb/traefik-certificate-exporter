@@ -51,6 +51,7 @@ destination table and the `PUBLISH_*` secrets, is in
 | `just build` | clean `dist/`, then `poetry build` (one wheel, one sdist) |
 | `just image` | `just build`, then build and load `traefik-certificate-exporter:local` from that wheel |
 | `just act [workflow]` | run a workflow under `act` with its own trigger event; default `ci.yaml` |
+| `just act-publish <workflow> <vars> <destinations>` | as `just act`, publishing to the named destinations with tokens from Infisical ([pipeline walkthrough](ci/pipeline-walkthrough.md#running-locally)) |
 | `just release <major\|minor\|patch>` | cut a release by pushing one `vX.Y.Z` tag |
 
 The recipes are thin: no release or verification logic lives in a script (AD-16).
@@ -78,9 +79,10 @@ just act dev.yaml     # the dev pipeline, as a push
 - With a `./.actrc` in the working directory the recipe exits 1 before act starts:
   `act: refusing to run with ./.actrc present (it can pass secrets); remove it`.
 - Not covered: a `./.env` file still sets container environment variables (not
-  `secrets.*`), and a raw `act -s ...` run outside the recipe. Never give `act` a publish
-  token: releases publish only from a forge run
-  ([pipeline walkthrough](ci/pipeline-walkthrough.md#releasing)).
+  `secrets.*`), and a raw `act -s ...` run outside the recipe. Never give a raw `act` run a
+  publish token: releases publish from a forge run
+  ([pipeline walkthrough](ci/pipeline-walkthrough.md#releasing)). To publish from `act` on
+  purpose, use `just act-publish`, which passes only the named destinations' tokens.
 - The exit status is `act`'s own.
 - Run `just act dev.yaml` from `main` (or pass an event file with `ref: refs/heads/main`)
   so the run matches `dev.yaml`'s branch filter.

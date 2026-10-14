@@ -1387,3 +1387,5 @@
 {"epic": "E015", "event": "actual", "from": null, "key": "E015-S02-002", "node": "story", "session": null, "sprint": "S02", "to": null, "ts": "2026-10-14T13:48:54Z"}
 {"epic": "E015", "event": "actual", "from": null, "key": "S02", "node": "sprint", "session": null, "sprint": "S02", "to": null, "ts": "2026-10-14T13:51:48Z"}
 {"epic": "E015", "event": "status", "from": "backlog", "key": "S02", "node": "sprint", "session": "l3io-pm-20261012T233739Z-884dad", "sprint": "S02", "to": "done", "ts": "2026-10-14T13:51:54Z"}
+{"agent": "l3io-pm-closure", "epic": "E015", "event": "dispatch_close", "session": "l3io-pm-20261012T233739Z-884dad", "sprint": "S02", "ts": "2026-10-14T14:35:08Z"}
+{"agent": "bmad-code-review", "epic": "E015", "event": "dispatch_open", "session": "l3io-pm-20261012T233739Z-884dad", "sprint": "S02", "ts": "2026-10-14T14:35:09Z"}

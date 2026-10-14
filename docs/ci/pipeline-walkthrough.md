@@ -337,6 +337,7 @@ instead of going quiet.
 | `just image` | build and load the image from `dist/` |
 | `just act` | run `ci.yaml` under `act` |
 | `just act dev.yaml` | run the dev pipeline; no secrets are passed and act's ambient secret sources are ignored, so nothing publishes |
+| `just act-publish dev.yaml <vars> <destinations>` | run under `act` and publish to the named destinations, with tokens from Infisical |
 | `just release patch` | see above |
 
 **`just act` ignores act's ambient secret sources** (AD-16, ADR-0052). It runs `act` with
@@ -354,6 +355,25 @@ rename it. Not covered: a `./.env` file still sets container environment variabl
 given; never give it a publish token (releases publish only from a forge run). The temporary
 directories go under `$TMPDIR` and are not removed; a fresh `HOME` also means act downloads
 the workflow's actions again on every run.
+
+**`just act-publish` publishes from `act` on purpose.** It has the same isolation as
+`just act`, and adds two inputs:
+
+- `vars`: an act var file (`NAME=value` lines) with the destinations' `PUBLISH_*` variables,
+  passed as `--var-file`.
+- `destinations`: a comma-separated list of `pypi`, `testpypi`, `gitea` and `dockerhub`.
+  Each one named gets its token from Infisical (project `home-lab-discovery`, environment
+  `prod`: `PYPI_TOKEN`, `PYPI_TEST_TOKEN`, `GITEA_TOKEN`, `DOCKERHUB_TOKEN`), read into the
+  recipe's environment and passed as `-s PUBLISH_*_TOKEN`, never on the command line.
+
+```bash
+just act-publish dev.yaml ~/act/publish.vars testpypi,gitea
+```
+
+PyPI and TestPyPI are enabled by their token alone, so a destination that is not named gets
+no token and stays disabled. `GITHUB_TOKEN` stays empty and Infisical's `GITHUB_TOKEN` is
+never read, so GHCR and the forge release stay disabled under `act`; they publish from a
+forge run only. Needs the `infisical` CLI, logged in.
 
 No checkout carries a `ref:` (ADR-0028), so `act` uses your working tree as it is.
 `just act release.yaml` needs a clone with an `origin` remote tracking the default branch,

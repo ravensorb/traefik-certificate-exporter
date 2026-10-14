@@ -112,6 +112,14 @@ right and this page is a defect.
   listed in the root-mode `.env` ERROR (moving it to the container's environment would not
   make it work).
 
+### Watch mode detects stores replaced by rename
+
+- **Watch mode now detects an ACME store that is replaced by renaming a file onto it** (an
+  atomic `write temp + rename`, a restore from backup, many editors). Before 0.3.1 only
+  in-place writes, which is what Traefik does, triggered an export.
+- **Renaming a store file away** (for example `acme.json` → `acme.json.bak`) is logged at INFO
+  and exports nothing. Exported certificates are left in place, as before.
+
 ### Where releases come from
 
 - **GHCR receives releases again.** 0.3.0 was not published to
@@ -131,6 +139,11 @@ right and this page is a defect.
   registry.
 - From 0.3.1 every release is one build from one GitHub release run, published to PyPI,
   Docker Hub, GHCR, the Gitea registry and package index, and a GitHub release.
+- **For forks: publishing images to a Gitea registry behind a private CA now works.** The
+  imported CA is passed to BuildKit for the `PUBLISH_GITEA_REGISTRY` host
+  (`docker/setup-buildx-action` v4 renamed its `config` input to `buildkitd-config`, and
+  `git-action-ca-certificate-import` v3.1.0+ writes a BuildKit registry config from
+  `buildkit-registries`).
 
 ## 0.2.0 → 0.3.0
 

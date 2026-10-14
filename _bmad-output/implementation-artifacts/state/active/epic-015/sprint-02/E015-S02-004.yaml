@@ -33,3 +33,18 @@ estimate:
     output: 17
     cache_write: 520
     cache_read: 10738
+completion_evidence:
+  test_runs:
+  - command: 'row 1: pm-status show S01+S02, nine story lines, all but S02-004 done'
+    exit_code: 0
+  - command: 'row 3: docs/upgrading.md 0.3.0 -> 0.3.1 covers each AC 2 topic'
+    exit_code: 0
+  - command: 'row 4: workflow permissions read/false (secret scanning disabled: gap pending)'
+    exit_code: 0
+  - command: 'row 5: environments dev/release policies, rulesets main and release-tags active'
+    exit_code: 0
+  - command: 'row 6: release env holds 3 secrets + 8 vars; no repo-level secret or PUBLISH_ var'
+    exit_code: 0
+  - command: 'row 8: production pre-check on rwusdckrls6 (read-only)'
+    exit_code: 0
+  tests_passing: true

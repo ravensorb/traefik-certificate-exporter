@@ -33,3 +33,19 @@ guidelines, developer/operational guides); the architectural review is
 - Dependency/environment tool is Poetry, not `uv` — this is a recorded decision (`docs/adr/0001`), not an oversight; don't migrate without a new ADR.
 
 <!-- /bmad:context -->
+
+## Secrets and tokens
+
+- A token or environment variable that is missing is most likely in Infisical, the key
+  management system: project `home-lab-discovery` (`45365f20-36e8-4d4d-87f3-1554c5ae0615`),
+  environment `prod`. Read it through the process environment
+  (`infisical run --projectId 45365f20-36e8-4d4d-87f3-1554c5ae0615 --env prod --silent -- …`)
+  or pipe it to `gh secret set NAME` on stdin; never print, log or write a value.
+- Infisical names differ from the pipeline's: `PYPI_TOKEN` → `PUBLISH_PYPI_TOKEN`,
+  `PYPI_TEST_TOKEN` → `PUBLISH_TESTPYPI_TOKEN`, `DOCKERHUB_TOKEN` → `PUBLISH_DOCKERHUB_TOKEN`,
+  `GITEA_TOKEN` → `PUBLISH_GITEA_TOKEN` (same value as `REGISTRY_PASSWORD`).
+  `GITHUB_TOKEN` (also `E2E_`/`TEST_GITHUB_TOKEN`) is a broad classic PAT for `ravensorb`
+  (`repo`, `write:packages`, `delete:packages`, `admin:org`): do not use it as a publish
+  token where the workflow's own token works.
+- SSH to the production host (`svc.claude`): `CLAUDE_AD_USER` / `CLAUDE_AD_PASSWORD`, method in
+  `_bmad-output/implementation-artifacts/epic-015/execution-notes.md`.
