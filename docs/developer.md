@@ -186,7 +186,9 @@ just release minor     # or major / patch
 
 A release creates no commit and needs no changelog file. The tag push triggers
 `release.yaml`, which validates the tag, builds, publishes to every configured destination,
-and creates the forge release with generated notes and the wheel and sdist attached. If the
+and creates the forge release with notes generated from the commit log since the previous
+release (grouped by commit prefix, `.github/release-notes.json`) and the wheel and sdist
+attached. If the
 push fails, the recipe prints the retry (`git push origin refs/tags/vX.Y.Z`) and abandon
 (`git tag -d vX.Y.Z`) commands. Recovery is in
 [operational.md](operational.md#ci-recovery-runbook).

@@ -1,0 +1,33 @@
+{
+  "template": "#{{CHANGELOG}}",
+  "commit_template": "- #{{TITLE}} (#{{MERGE_COMMIT_SHA}})",
+  "categories": [
+    {
+      "title": "## Features",
+      "labels": [],
+      "rules": [{ "pattern": "^feat(\\(.+\\))?!?:", "on_property": "title", "flags": "u" }]
+    },
+    {
+      "title": "## Fixes",
+      "labels": [],
+      "rules": [{ "pattern": "^fix(\\(.+\\))?!?:", "on_property": "title", "flags": "u" }]
+    },
+    {
+      "title": "## Documentation",
+      "labels": [],
+      "rules": [{ "pattern": "^docs(\\(.+\\))?!?:", "on_property": "title", "flags": "u" }]
+    },
+    {
+      "title": "## Maintenance",
+      "labels": [],
+      "rules": [
+        {
+          "pattern": "^(chore|ci|build|refactor|test|perf|style)(\\(.+\\))?!?:",
+          "on_property": "title",
+          "flags": "u"
+        }
+      ]
+    }
+  ],
+  "defaultCategory": "## Other Changes"
+}

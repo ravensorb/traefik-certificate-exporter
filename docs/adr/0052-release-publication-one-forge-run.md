@@ -35,7 +35,9 @@ over-complicated for these goals.
   `vars.PUBLISH_GHCR_USERNAME`, else `github.actor`. `PUBLISH_GHCR_TOKEN` stays as an
   optional override for `act` and Gitea runs, where the job token cannot push to ghcr.io.
 - **The forge release uses the job's own token.** The `release` job has `contents: write` and
-  `pull-requests: read` (for the changelog builder). It creates the release with
+  `pull-requests: read` (for the changelog builder). (Amended 2026-10-15: the notes come from
+  the commit log, `mode: COMMIT`, so `pull-requests: read` is dropped; v0.3.1's PR-mode notes
+  were empty because its changes landed without pull requests.) It creates the release with
   `secrets.PUBLISH_RELEASE_TOKEN` if set, else `github.token`, so every forge tag run creates
   its release. Under `just act` the token is empty and the release is skipped.
 - **Gitea keeps its own token.** Gitea's job token cannot publish to its package registry,

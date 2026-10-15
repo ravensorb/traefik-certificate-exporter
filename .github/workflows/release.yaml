@@ -525,7 +525,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # the job's own token creates the forge release (ADR-0052)
-      pull-requests: read # the changelog builder lists merged pull requests
     # A job-level if cannot read env, so every step is gated instead (AD-12, Conventions).
     # The forge release uses PUBLISH_RELEASE_TOKEN when set, else the job's own token; under
     # `just act` both are empty and the release is skipped.
@@ -638,12 +637,15 @@ jobs:
           echo "tag=$prev" >> "$GITHUB_OUTPUT"
 
       # Empty from-tag falls back to the action's auto-detection (first release only).
+      # COMMIT mode: most changes land on main without a pull request, which PR mode skips.
       - uses: LiquidLogicLabs/git-action-release-changelog-builder@v3
         id: notes
         if: env.PUBLISH_RELEASE == 'true'
         with:
           token: ${{ secrets.PUBLISH_RELEASE_TOKEN || github.token }}
           from-tag: ${{ steps.prev.outputs.tag }}
+          mode: COMMIT
+          configuration: .github/release-notes.json
 
       - uses: LiquidLogicLabs/git-action-release@v2
         if: env.PUBLISH_RELEASE == 'true'

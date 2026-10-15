@@ -95,7 +95,8 @@ vendor preference). Several are directly applicable to open findings in this rep
 Also **adopted** by ADR-0035 (versions in the spine's Stack table):
 `git-action-release@v2` creates the forge release on GitHub or Gitea from one step
 ([ADR-0010](adr/0010-forge-release-mechanism.md), amended by ADR-0035 for its credential);
-`git-action-release-changelog-builder@v3` generates its notes, so there is no changelog file;
+`git-action-release-changelog-builder@v3` generates its notes from the commit log (COMMIT
+mode, categories in `.github/release-notes.json`), so there is no changelog file;
 `git-action-tag-validate-version@v2` is `release.yaml`'s `validate-tag` (AD-12); and
 `git-action-docker-test@v2` smoke-tests the image in `build.yaml` and after each push.
 Every action is read at the tag being pinned before adoption, because Actions passes an
