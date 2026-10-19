@@ -46,7 +46,7 @@ deptry = "^0.25.1"
 # The spawn-site guard's suppression test asks ruff itself which TID251 reports are
 # suppressed (ADR-0050, F10 of review E015-S01-001). Held at the pre-commit hook's frozen
 # ruff version; tests/libs/test_post_export.py fails if the two differ.
-ruff = "==0.16.10"
+ruff = "==0.17.0"
 
 # Everything a credentialed publish job installs (AD-11): `poetry install --only publish
 # --no-root`, so no dev toolchain sits beside a publish token. `twine` is declared here only.
