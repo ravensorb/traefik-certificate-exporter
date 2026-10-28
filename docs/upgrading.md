@@ -8,6 +8,12 @@ right and this page is a defect.
 
 ## 0.3.1 → 0.3.2
 
+### Dependencies
+
+Runtime and tooling dependencies move forward (Apprise 2.0.1, jsonpickle 4.1.3,
+importlib-resources 7.1.0, Poetry 2.5.1, and related transitive updates including a
+current `certifi`). The image and the PyPI package both pick these up.
+
 ### Notifications use Apprise 2
 
 Apprise, which delivers `appriseurls` notifications, moves from 1.13.1 to 2.0.1. Most URLs

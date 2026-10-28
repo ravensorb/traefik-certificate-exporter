@@ -40,10 +40,17 @@ repos:
       # poetry-lock's `poetry` is the dev-group one when pre-commit itself runs under
       # `poetry run` (as `just check` and build.yaml do). `precommit-hook-deps-locked` below
       # refuses hook-built environments; the `poetry run` entries are held by review.
+      # BL-E015-072: filelock>=4.2.1 fixes six CVEs but requires Python >=3.11; we still
+      # support >=3.10, so the lock stays on 4.1.0. filelock is Poetry/dev only (not in the
+      # image). Drop these ignores when requires-python rises to >=3.11 or a 3.10 fix lands.
       - id: pip-audit
         name: pip-audit (every poetry.lock group, ADR-0042)
         language: system
-        entry: poetry run pip-audit --skip-editable --progress-spinner off --aliases on
+        entry: >-
+          poetry run pip-audit --skip-editable --progress-spinner off --aliases on
+          --ignore-vuln CVE-2026-112906 --ignore-vuln CVE-2026-112940
+          --ignore-vuln CVE-2026-112914 --ignore-vuln CVE-2026-112913
+          --ignore-vuln CVE-2026-112937 --ignore-vuln CVE-2026-112907
         pass_filenames: false
         files: ^(pyproject\.toml|poetry\.lock)$
       # ADR-0042: every hashed CI bootstrap requirements file, selected by this glob and never

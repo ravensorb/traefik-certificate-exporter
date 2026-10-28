@@ -8,3 +8,8 @@
 # --python 3.14 is the interpreter every workflow's setup-python installs; pip-compile writes
 # no environment markers, so the file resolves for that interpreter only.
 poetry==2.5.1
+# Transitive floors so the hashed bootstrap file clears pip-audit (BL-E015-072 for filelock:
+# 4.2.1+ needs Python >=3.11; this file is compiled for 3.14 only).
+certifi>=2026.10.18
+filelock>=4.2.1
+virtualenv>=21.14.9
