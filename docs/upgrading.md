@@ -6,7 +6,7 @@ right and this page is a defect.
 
 <!-- tce-settings-scan: legacy-names-listed -->
 
-## 0.3.1 → next release (unreleased)
+## 0.3.1 → 0.3.2
 
 ### Notifications use Apprise 2
 
