@@ -420,6 +420,8 @@ jobs:
           buildkitd-config: ${{ steps.ca.outputs.buildkit-path }}
 
       # One multi-arch build pushed to every enabled registry (AD-10, AD-17).
+      # Provenance is already the public-repo default (SLSA mode=max). sbom: true adds an
+      # SPDX SBOM attestation per platform (ADR-0008); BuildKit attaches both on push.
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         id: push
         if: env.PUBLISH_IMAGE == 'true'
@@ -432,6 +434,7 @@ jobs:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |

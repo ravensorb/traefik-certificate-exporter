@@ -159,6 +159,13 @@ the credentials to the job's Docker config, and then runs
 at mutable major tags (AD-5); either can read that config. Revisit: a `docker logout` before
 the image test (BL-E015-005), or SHA-pinned LiquidLogicLabs actions.
 
+**Published images carry SLSA provenance and an SPDX SBOM** (ADR-0008).
+`docker/build-push-action` already attaches provenance on public repos; `sbom: true` adds
+an SPDX attestation of the image filesystem. Both ride the OCI index (two platform
+manifests plus two attestation manifests). Inspect with
+`docker buildx imagetools inspect <ref>` — attestation layers use
+`application/vnd.in-toto+json` with SLSA or SPDX predicate types.
+
 On GitHub every `PUBLISH_*` secret lives in the `dev` or `release` environment, never at
 repository level, so only a publish job on `main` or on a `v*` tag can read it
 ([Environments (GitHub)](#environments-github), ADR-0039). The `PUBLISH_*` variables live
