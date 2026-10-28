@@ -77,7 +77,9 @@ Adopt the 2026-10-08 spine. In summary:
   - `docker/act-build.sh` and `scriv`.
 - The vendored `.agents/`, `.claude/` and `_bmad/` trees lose their repository-side integrity record. Secret scanning still reads them.
 - LiquidLogicLabs actions ride their major tags. A moved tag in that org reaches credentialed jobs; this is accepted because the org is the maintainer's own. Third-party actions stay commit-pinned, and Dependabot proposes updates.
-- Build provenance attestations are not produced (GitHub-only).
+- Image publish attaches BuildKit SLSA provenance (public-repo default) and an SPDX SBOM
+  (`sbom: true` on `docker/build-push-action`; ADR-0008). GitHub Attestations store signing
+  for the wheel/sdist path remains separate and optional.
 - Gitea 1.27 is the minimum server version (reusable workflows; `concurrency` needs 1.26).
 - Live verification on a Gitea runner is part of implementation. That covers the artifact actions, `workflow_call`, `concurrency` and `twine`. The artifact actions are held at upload-artifact v5.0.0 / download-artifact v6.0.0 because act 0.2.89 rejects newer majors (spine Stack and Deferred sections).
 - Superseded ADRs keep their text. Their status lines are updated to "Superseded by ADR-0035" in the implementing change, when the pipeline they describe is removed.

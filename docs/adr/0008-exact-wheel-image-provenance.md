@@ -239,12 +239,14 @@ graph and attaches them to the result, so this decision is about exporter capabi
   runner. A second native runner is not required on these numbers.
 
   One consequence for whoever asserts the published index: **`ATTESTATIONS = []`, the shipped
-  default, does not disable attestations.** BuildKit emits SLSA provenance `mode=min` regardless,
-  so the index carries four descriptors — two platforms plus two `unknown/unknown`
-  attestation manifests. Adding `type=sbom` keeps it at four (the SBOM shares the per-platform
-  attestation manifest); only `type=provenance,disabled=true` drops it to two. A count assertion
-  is therefore wrong in three separate directions. Assert the filtered set instead, keying on the
-  authoritative annotation rather than on the `unknown/unknown` compatibility convention:
+  default, does not disable attestations.** BuildKit emits SLSA provenance on a registry push
+  regardless (public repos: `mode=max` via `docker/build-push-action`), so the index carries
+  four descriptors — two platforms plus two `unknown/unknown` attestation manifests.
+  `sbom: true` (dev.yaml / release.yaml, 2026-10-28) adds an SPDX SBOM layer inside those
+  same per-platform attestation manifests; the descriptor count stays four. Only
+  `type=provenance,disabled=true` drops it to two. A count assertion is therefore wrong in
+  three separate directions. Assert the filtered set instead, keying on the authoritative
+  annotation rather than on the `unknown/unknown` compatibility convention:
 
   ```python
   platforms = {
@@ -264,3 +266,13 @@ graph and attaches them to the result, so this decision is about exporter capabi
 ## Amendment (2026-10-09) — ADR-0035
 
 The image is now built with `docker/build-push-action`, not bake (ADR-0035, AD-17). The exact-wheel principle is carried forward: the image installs the one wheel `build.yaml` produced, verified by its SHA-256.
+
+## Amendment (2026-10-28) — SPDX SBOM on published images
+
+`dev.yaml` and `release.yaml` set `sbom: true` on `docker/build-push-action`. BuildKit
+generates an SPDX SBOM of the image filesystem at build time and attaches it as an
+in-toto attestation alongside the existing SLSA provenance. No new credential: the
+generator runs in the builder and the attestation is pushed with the OCI index. Gitea
+stores the blobs when that registry is enabled; GHCR and Docker Hub are where consumers
+typically surface them. This does not re-open the verifier/`--load` decision above: only
+the publication path exports an OCI index.
