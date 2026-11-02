@@ -24,7 +24,7 @@ logging-tree = "^1.9"
 cryptography = "^50.0.2"
 python-json-logger = "^4.2.0"
 apprise = "^2.0.1"
-python-dateutil = "^2.9.0"
+python-dateutil = ">=2.9,<4.0"
 pyyaml = "^6.0"
 
 [tool.poetry.group.dev.dependencies]
