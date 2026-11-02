@@ -374,21 +374,21 @@ jobs:
           generate-buildkit: ${{ env.GITEA_REGISTRY != '' }}
           buildkit-registries: ${{ env.GITEA_REGISTRY }}
 
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         if: env.PUBLISH_GHCR == 'true'
         with:
           registry: ghcr.io
           username: ${{ vars.PUBLISH_GHCR_USERNAME || github.actor }}
           password: ${{ secrets.PUBLISH_GHCR_TOKEN || github.token }}
 
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         if: env.PUBLISH_GITEA == 'true'
         with:
           registry: ${{ vars.PUBLISH_GITEA_REGISTRY }}
           username: ${{ vars.PUBLISH_GITEA_USERNAME }}
           password: ${{ secrets.PUBLISH_GITEA_TOKEN }}
 
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         if: env.PUBLISH_DOCKERHUB == 'true'
         with:
           username: ${{ vars.PUBLISH_DOCKERHUB_USERNAME }}
