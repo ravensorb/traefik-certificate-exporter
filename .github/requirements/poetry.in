@@ -11,5 +11,5 @@ poetry==2.5.1
 # Transitive floors so the hashed bootstrap file clears pip-audit (BL-E015-072 for filelock:
 # 4.2.1+ needs Python >=3.11; this file is compiled for 3.14 only).
 certifi>=2026.10.18
-filelock>=4.2.1
+filelock>=4.2.6
 virtualenv>=21.14.9
