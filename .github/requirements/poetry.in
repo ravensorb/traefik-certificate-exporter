@@ -12,4 +12,4 @@ poetry==2.5.1
 # 4.2.1+ needs Python >=3.11; this file is compiled for 3.14 only).
 certifi>=2026.10.18
 filelock>=4.2.1
-virtualenv>=21.14.9
+virtualenv>=21.15.2
